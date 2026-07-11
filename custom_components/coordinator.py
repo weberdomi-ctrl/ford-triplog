@@ -1,0 +1,176 @@
+"""
+Ford Triplog
+
+Coordinator
+
+Version: 1.0.2-dev
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+from typing import Any
+
+from homeassistant.core import Event, HomeAssistant
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+
+from .geo import FordTriplogGeo
+from .history import FordTriplogHistory
+from .storage import FordTriplogStorage
+from .trip import Trip
+
+_LOGGER = logging.getLogger(__name__)
+
+STABLE_INTERVAL = 2
+STABLE_TIMEOUT = 20
+
+
+class FordTriplogCoordinator(DataUpdateCoordinator):
+    def __init__(self, hass: HomeAssistant,
+                 storage: FordTriplogStorage,
+                 config: dict[str, Any],
+                 geo: FordTriplogGeo) -> None:
+        super().__init__(hass, _LOGGER, name="Ford Triplog")
+        self.hass = hass
+        self.storage = storage
+        self.history = FordTriplogHistory(storage)
+        self.config = config
+        self.geo = geo
+
+        self.current_trip: Trip | None = None
+        self.vehicle_state: dict[str, Any] = {}
+        self.last_ignition = False
+        self.remove_listener = None
+
+    async def async_setup(self):
+        await self.storage.async_setup()
+        data = await self.storage.load_current_trip()
+        if data:
+            self.current_trip = Trip.from_dict(data)
+
+        entities = [
+            e for e in (
+                self.config.get("ignition"),
+                self.config.get("odometer"),
+                self.config.get("tracker"),
+                self.config.get("soc"),
+            ) if e
+        ]
+
+        self.remove_listener = async_track_state_change_event(
+            self.hass, entities, self._state_changed
+        )
+
+    def _read_vehicle_state(self):
+        data = {}
+        for key in ("ignition", "odometer", "soc"):
+            st = self.hass.states.get(self.config.get(key))
+            data[key] = st.state if st else None
+
+        tracker = self.hass.states.get(self.config.get("tracker"))
+        data["latitude"] = tracker.attributes.get("latitude") if tracker else None
+        data["longitude"] = tracker.attributes.get("longitude") if tracker else None
+        return data
+
+    async def _state_changed(self, event: Event):
+        self.vehicle_state = self._read_vehicle_state()
+        ignition = str(self.vehicle_state.get("ignition")).lower() in (
+            "on", "true", "1", "running"
+        )
+
+        if not self.last_ignition and ignition:
+            await self.start_trip()
+
+        elif self.last_ignition and not ignition:
+            await self.finish_trip()
+
+        self.last_ignition = ignition
+        self.async_set_updated_data(self.vehicle_state)
+
+    async def _wait_for_stable_vehicle_state(self):
+        last = None
+        stable = 0
+        elapsed = 0
+
+        while elapsed < STABLE_TIMEOUT:
+            current = self._read_vehicle_state()
+
+            key = (
+                current.get("odometer"),
+                current.get("soc"),
+                current.get("latitude"),
+                current.get("longitude"),
+            )
+
+            _LOGGER.debug("Vehicle state check %s", key)
+
+            if key == last:
+                stable += 1
+            else:
+                stable = 0
+
+            if stable >= 1:
+                _LOGGER.debug("Vehicle state stabilized after %ss", elapsed)
+                return current
+
+            last = key
+            await asyncio.sleep(STABLE_INTERVAL)
+            elapsed += STABLE_INTERVAL
+
+        _LOGGER.warning("Vehicle state timeout reached")
+        return self._read_vehicle_state()
+
+    async def _get_address(self, state):
+        return await self.geo.reverse_geocode(
+            state.get("latitude"),
+            state.get("longitude"),
+        )
+
+    async def start_trip(self):
+        if self.current_trip:
+            return
+
+        state = self._read_vehicle_state()
+        addr = await self._get_address(state)
+
+        self.current_trip = Trip()
+        self.current_trip.start(
+            odometer=state.get("odometer"),
+            soc=state.get("soc"),
+            latitude=state.get("latitude"),
+            longitude=state.get("longitude"),
+            address=addr,
+        )
+
+        await self.storage.save_current_trip(self.current_trip.to_dict())
+
+    async def finish_trip(self):
+        if not self.current_trip:
+            return
+
+        _LOGGER.info("Waiting for stable vehicle state...")
+
+        state = await self._wait_for_stable_vehicle_state()
+        addr = await self._get_address(state)
+
+        self.current_trip.finish(
+            odometer=state.get("odometer"),
+            soc=state.get("soc"),
+            latitude=state.get("latitude"),
+            longitude=state.get("longitude"),
+            address=addr,
+        )
+
+        trip = self.current_trip.to_dict()
+
+        await self.storage.save_trip(trip)
+        await self.storage.save_last_trip(trip)
+        await self.history.refresh_statistics()
+        await self.storage.delete_current_trip()
+
+        self.current_trip = None
+
+        self.async_set_updated_data(state)
+        _LOGGER.info("Trip saved successfully")
