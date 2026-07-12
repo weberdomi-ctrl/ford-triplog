@@ -6,13 +6,32 @@ integration**.
 
 > **Status:** v1.0.0 RC2
 
+## Purpose
+
+Ford Triplog automatically records your journeys and provides a clear
+overview of:
+
+-   Date and time
+-   Start and destination address
+-   Distance
+-   Trip duration
+-   State of Charge (SOC)
+-   Estimated energy consumption
+
+The collected information can be used as a convenient basis for travel
+expense reports or for **manually transferring trips into a company
+mileage log or other business systems**.
+
+> **Note:** Ford Triplog is **not** a certified tax-compliant mileage
+> log. It is intended as a personal trip log and documentation tool.
+
 ## Features
 
 -   Automatic trip detection using ignition state
 -   Start and destination addresses (reverse geocoding)
 -   Distance calculation using the Ford odometer
 -   Trip duration
--   State of Charge (SOC) consumption
+-   SOC consumption
 -   Estimated energy consumption
 -   Trip history stored as JSON
 -   Overall statistics
@@ -21,16 +40,15 @@ integration**.
 
 ## Requirements
 
--   Home Assistant
+-   Home Assistant 2026.6.x or newer
 -   FordPass Home Assistant integration
--   Ford vehicle supported by the FordPass integration (tested with Ford
-    Explorer EV)
+-   Supported Ford vehicle (tested with Ford Explorer EV)
 
 ## Installation
 
-1.  Install the FordPass integration in Home Assistant.
-2.  Copy the `custom_components/ford_triplog` folder into your Home
-    Assistant configuration.
+1.  Install and configure the FordPass integration.
+2.  Copy `custom_components/ford_triplog` into
+    `/config/custom_components/`.
 3.  Restart Home Assistant.
 4.  Add **Ford Triplog** via **Settings → Devices & Services → Add
     Integration**.
@@ -40,9 +58,7 @@ integration**.
     -   Tracker
     -   State of Charge (SOC)
 
-## Sensors
-
-The integration provides, among others:
+## Included Sensors
 
 -   Trip Count
 -   Total Distance
@@ -53,33 +69,33 @@ The integration provides, among others:
 -   Last Trip SOC Used
 -   Last Trip Start Address
 -   Last Trip End Address
--   Trip Active (Binary Sensor)
+-   Trip Active
 
 ## Storage
 
-Trips are stored locally as JSON files. Statistics are generated
+Trips are stored locally as JSON files. Statistics are updated
 automatically after every completed trip.
 
 ## Roadmap
 
-### Version 1.1.0
+### v1.1.0
 
--   Charging history
--   Charging stop detection
 -   Smart Trip Continuation
--   Pause detection
+-   Charging stop detection
+-   Charging history
 -   Configurable timing options
+-   Dashboard
 -   Extended statistics
 
 ## Compatibility
 
-Currently tested with:
+Tested:
 
 -   Ford Explorer EV (MEB)
 
-Likely compatible:
+Wanted:
 
--   Ford Capri EV (Tester wanted)
+-   Ford Capri EV
 
 ## Feedback
 
