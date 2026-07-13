@@ -113,10 +113,10 @@ class FordTriplogSensorBase(SensorEntity):
     def update_values(self, statistics, last_trip):
         pass
 
-    @callback
-    def _handle_update(self) -> None:
-        """Handle coordinator updates."""
-        self.hass.async_create_task(self._async_handle_update())
+@callback
+def _handle_update(self) -> None:
+    """Handle coordinator updates."""
+    self.hass.async_create_task(self._async_handle_update())
 
     async def _async_handle_update(self) -> None:
         await self.async_update()
@@ -177,7 +177,7 @@ class FordTriplogDurationSensor(FordTriplogSensorBase):
 
 
 class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
-    _attr_name = "Last Trip Distance"
+    _attr_name = "Last Distance"
     _attr_unique_id = "ford_triplog_last_trip_distance"
     _attr_native_unit_of_measurement = "km"
 
