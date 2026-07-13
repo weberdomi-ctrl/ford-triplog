@@ -16,7 +16,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 
@@ -49,6 +49,7 @@ class FordTriplogActiveTripBinarySensor(
     _attr_has_entity_name = True
     _attr_name = "Trip Active"
     _attr_unique_id = "ford_triplog_trip_active"
+    _attr_icon = "mdi:car-connected"
 
     def __init__(
         self,
@@ -62,18 +63,9 @@ class FordTriplogActiveTripBinarySensor(
             self._handle_coordinator_update
         )
 
-    def _handle_coordinator_update(
-        self,
-    ) -> None:
-        """Schedule entity update."""
-
-        self.hass.async_create_task(
-            self._async_handle_coordinator_update()
-        )
-
-    async def _async_handle_coordinator_update(
-        self,
-    ) -> None:
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        """Handle coordinator update."""
         self.async_write_ha_state()
 
     @property
