@@ -1,5 +1,5 @@
 """
-Ford Triplog
+Ford Triplog 
 
 Home Assistant sensor platform.
 
