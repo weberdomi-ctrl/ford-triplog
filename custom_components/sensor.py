@@ -10,9 +10,13 @@ from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorDeviceClass,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 
 from .const import DOMAIN
 
@@ -43,16 +47,15 @@ def format_address(address: dict[str, Any] | None) -> str | None:
         )
     )
 
-    return ", ".join(
-        filter(
-            None,
-            [
-                street,
-                city,
-                address.get("country"),
-            ],
-        )
+    return "\n".join(
+    filter(
+        None,
+        [
+            street,
+            city,
+        ],
     )
+)
 
 
 async def async_setup_entry(
@@ -110,7 +113,9 @@ class FordTriplogSensorBase(SensorEntity):
     def update_values(self, statistics, last_trip):
         pass
 
+    @callback
     def _handle_update(self) -> None:
+        """Handle coordinator updates."""
         self.hass.async_create_task(self._async_handle_update())
 
     async def _async_handle_update(self) -> None:
@@ -143,6 +148,7 @@ class FordTriplogSensorBase(SensorEntity):
 class FordTriplogTripCountSensor(FordTriplogSensorBase):
     _attr_name = "Trip Count"
     _attr_unique_id = "ford_triplog_trip_count"
+    _attr_icon = "mdi:counter"
 
     def update_values(self, statistics, last_trip):
         self._value = statistics.get("trip_count", 0)
@@ -153,6 +159,9 @@ class FordTriplogDistanceSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_total_distance"
     _attr_native_unit_of_measurement = "km"
 
+    _attr_icon = "mdi:map-marker-distance"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+        
     def update_values(self, statistics, last_trip):
         self._value = statistics.get("total_distance_km", 0)
 
@@ -161,6 +170,7 @@ class FordTriplogDurationSensor(FordTriplogSensorBase):
     _attr_name = "Total Duration"
     _attr_unique_id = "ford_triplog_total_duration"
     _attr_native_unit_of_measurement = "s"
+    _attr_icon = "mdi:timer-outline"
 
     def update_values(self, statistics, last_trip):
         self._value = statistics.get("total_duration_seconds", 0)
@@ -176,7 +186,8 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
 
 
 class FordTriplogLastDurationSensor(FordTriplogSensorBase):
-    _attr_name = "Last Trip Duration"
+    _attr_name = "Last Duration"
+    _attr_icon = "mdi:clock-outline"
     _attr_unique_id = "ford_triplog_last_trip_duration"
     _attr_native_unit_of_measurement = "s"
 
@@ -185,7 +196,9 @@ class FordTriplogLastDurationSensor(FordTriplogSensorBase):
 
 
 class FordTriplogLastSocSensor(FordTriplogSensorBase):
-    _attr_name = "Last Trip SOC Used"
+    _attr_name = "Last SOC Used"
+    _attr_icon = "mdi:battery-arrow-down-outline"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_trip_soc_used"
     _attr_native_unit_of_measurement = "%"
 
@@ -194,8 +207,9 @@ class FordTriplogLastSocSensor(FordTriplogSensorBase):
 
 
 class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
-    _attr_name = "Last Trip Start Address"
+    _attr_name = "Last Start"
     _attr_unique_id = "ford_triplog_last_trip_start_address"
+    _attr_icon = "mdi:map-marker-start"
 
     def update_values(self, statistics, last_trip):
         self._value = format_address(
@@ -204,10 +218,10 @@ class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
             else None
         )
 
-
 class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
-    _attr_name = "Last Trip End Address"
+    _attr_name = "Last Destination"
     _attr_unique_id = "ford_triplog_last_trip_end_address"
+    _attr_icon = "mdi:map-marker-check"
 
     def update_values(self, statistics, last_trip):
         self._value = format_address(
