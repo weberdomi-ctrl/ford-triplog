@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.0.0
+Version: 1.0.1
 """
 
 from __future__ import annotations
