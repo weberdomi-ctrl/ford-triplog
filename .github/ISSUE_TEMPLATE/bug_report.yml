@@ -1,0 +1,13 @@
+name: Bug Report
+description: Report a problem with Ford Triplog
+body:
+  - type: textarea
+    id: description
+    attributes:
+      label: Description
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs
