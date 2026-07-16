@@ -37,13 +37,12 @@ def format_address(address: dict[str, Any] | None) -> str | None:
         )
     )
 
-    return ", ".join(
+    return "\n".join(
         filter(
             None,
             [
-                street,
-                city,
-                address.get("country"),
+            street,
+            city,
             ],
         )
     )
