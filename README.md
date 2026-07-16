@@ -28,3 +28,15 @@ Automatic trip logging for Ford vehicles using the FordPass integration.
 
 Issues:
 https://github.com/weberdomi-ctrl/ford-triplog/issues
+
+## ❤️ Support Ford Triplog
+
+Ford Triplog is a free and open-source project developed in my spare time.
+
+If you enjoy using the integration and would like to support future development, you can buy me a coffee.
+
+https://www.paypal.com/paypalme/dompressor
+
+Every contribution helps improve Ford Triplog and is greatly appreciated.
+
+Thank you for your support!
