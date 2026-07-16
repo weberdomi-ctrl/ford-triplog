@@ -21,6 +21,8 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 
+from .const import SMART_TRIP_TIMEOUT
+
 _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
@@ -43,6 +45,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.vehicle_state: dict[str, Any] = {}
         self.last_ignition = False
         self.remove_listener = None
+
+        # Smart Trip
+        self.trip_pause_time = None
+        self.trip_pause_data = None
+        self.smart_trip_timer = None
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -132,6 +139,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if self.current_trip:
             return
 
+        # Smart Trip: Resume paused trip
+        if self.trip_pause_data is not None:
+            
+            if self.smart_trip_timer:
+                self.smart_trip_timer.cancel()
+                self.smart_trip_timer = None
+
+            self.current_trip = self.trip_pause_data    
+            self.trip_pause_data = None
+            self.trip_pause_time = None
+
+            await self.storage.save_current_trip(
+                self.current_trip.to_dict()
+            )
+
+            _LOGGER.info("Smart Trip resumed")
+
+            return
+    
         state = self._read_vehicle_state()
         addr = await self._get_address(state)
 
@@ -155,13 +181,41 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         state = await self._wait_for_stable_vehicle_state()
         addr = await self._get_address(state)
 
-        self.current_trip.finish(
-            odometer=state.get("odometer"),
-            soc=state.get("soc"),
-            latitude=state.get("latitude"),
-            longitude=state.get("longitude"),
-            address=addr,
+        #self.current_trip.finish(
+        #    odometer=state.get("odometer"),
+        #    soc=state.get("soc"),
+        #    latitude=state.get("latitude"),
+        #    longitude=state.get("longitude"),
+        #    address=addr,
+        #)
+      
+        if self.smart_trip_timer:
+            self.smart_trip_timer.cancel()
+            self.smart_trip_timer = None
+        
+        # Smart Trip
+        self.trip_pause_data = self.current_trip
+        self.trip_pause_time = self.hass.loop.time()
+
+        self.smart_trip_timer = self.hass.loop.call_later(
+            SMART_TRIP_TIMEOUT,
+            lambda: self.hass.async_create_task(
+                self._smart_trip_timeout()
+            ),
         )
+
+
+        _LOGGER.info(
+            "Trip paused for Smart Trip (%ss)",
+            SMART_TRIP_TIMEOUT,
+)
+
+
+    async def _finalize_trip(self, state):
+        """Finalize and save trip."""
+
+        if not self.current_trip:
+            return
 
         trip = self.current_trip.to_dict()
 
@@ -171,6 +225,32 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         await self.storage.delete_current_trip()
 
         self.current_trip = None
+        self.trip_pause_data = None
+        self.trip_pause_time = None
+        self.smart_trip_timer = None
 
         self.async_set_updated_data(state)
+
         _LOGGER.info("Trip saved successfully")
+
+    async def _smart_trip_timeout(self):
+        """Finalize paused trip after timeout."""
+
+        if not self.trip_pause_data:
+            return
+
+        self.current_trip = self.trip_pause_data
+
+        state = await self._wait_for_stable_vehicle_state()
+
+        self.current_trip.finish(
+            odometer=state.get("odometer"),
+            soc=state.get("soc"),
+            latitude=state.get("latitude"),
+            longitude=state.get("longitude"),
+            address=await self._get_address(state),
+        )
+
+        await self._finalize_trip(state)
+        self.current_trip = None
+              
