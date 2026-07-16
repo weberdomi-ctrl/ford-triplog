@@ -49,10 +49,15 @@ async def async_setup_entry(
         hass
     )
 
+    config = {
+        **entry.data,
+        **entry.options,
+    }
+
     coordinator = FordTriplogCoordinator(
         hass,
         storage,
-        entry.data,
+        config,
         geo,
     )
 
@@ -68,7 +73,7 @@ async def async_setup_entry(
         "history": history,
         "geo": geo,
         "coordinator": coordinator,
-        "config": entry.data,
+        "config": config,
     }
 
     await hass.config_entries.async_forward_entry_setups(
@@ -105,3 +110,20 @@ async def async_unload_entry(
         )
 
     return unload_ok
+
+
+async def async_reload_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Reload config entry."""
+
+    await async_unload_entry(
+        hass,
+        entry,
+    )
+
+    await async_setup_entry(
+        hass,
+        entry,
+    )

@@ -21,8 +21,6 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 
-from .const import SMART_TRIP_TIMEOUT
-
 _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
@@ -39,6 +37,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.storage = storage
         self.history = FordTriplogHistory(storage)
         self.config = config
+        self.smart_trip_enabled = config.get(
+            "smart_trip",
+            True,
+        )
+
+        self.smart_trip_timeout = config.get(
+            "smart_trip_timeout",
+            300,
+        )
         self.geo = geo
 
         self.current_trip: Trip | None = None
@@ -160,7 +167,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
     
         if self.current_trip:
-                return
+            return
 
         state = self._read_vehicle_state()
         addr = await self._get_address(state)
@@ -181,6 +188,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         _LOGGER.info("Waiting for stable vehicle state...")
+        if not self.smart_trip_enabled:
+            state = await self._wait_for_stable_vehicle_state()
+
+            self.current_trip.finish(
+                odometer=state.get("odometer"),
+                soc=state.get("soc"),
+                latitude=state.get("latitude"),
+                longitude=state.get("longitude"),
+                address=await self._get_address(state),
+            )
+
+            await self._finalize_trip(state)
+            return
 
 
         if self.smart_trip_timer:
@@ -200,11 +220,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug(
         "Trip paused - waiting %s seconds",
-        SMART_TRIP_TIMEOUT,
+        self.smart_trip_timeout,
         )
 
         self.smart_trip_timer = self.hass.loop.call_later(
-            SMART_TRIP_TIMEOUT,
+            self.smart_trip_timeout,
             lambda: self.hass.async_create_task(
                 self._smart_trip_timeout()
             ),
@@ -213,7 +233,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(
             "Trip paused for Smart Trip (%ss)",
-            SMART_TRIP_TIMEOUT,
+            self.smart_trip_timeout
 )
 
 
