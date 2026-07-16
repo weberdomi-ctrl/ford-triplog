@@ -4,8 +4,6 @@
 
 # Ford Triplog
 
-# Ford Triplog
-
 Automatic trip logging for Ford vehicles using the FordPass integration.
 
 ## Features
