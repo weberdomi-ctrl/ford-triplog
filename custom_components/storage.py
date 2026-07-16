@@ -13,6 +13,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import functools
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -76,7 +77,7 @@ class FordTriplogStorage:
     ) -> bool:
         """Save JSON atomically."""
 
-        try:
+        def _write():
             path.parent.mkdir(
                 parents=True,
                 exist_ok=True,
@@ -97,6 +98,10 @@ class FordTriplogStorage:
 
             os.replace(temp, path)
 
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
             return True
 
         except Exception:
@@ -109,18 +114,23 @@ class FordTriplogStorage:
     async def _load_json(
         self,
         path: Path,
-    ) -> dict[str, Any] | None:
+) -> dict[str, Any] | None:
         """Load JSON."""
 
-        if not path.exists():
-            return None
+        def _read():
+            if not path.exists():
+                return None
 
-        try:
             with path.open(
                 "r",
                 encoding="utf-8",
             ) as file:
                 return json.load(file)
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
 
         except Exception:
             _LOGGER.exception(

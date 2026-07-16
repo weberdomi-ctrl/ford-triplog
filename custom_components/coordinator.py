@@ -136,9 +136,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
     async def start_trip(self):
-        if self.current_trip:
-            return
-
+        
         # Smart Trip: Resume paused trip
         if self.trip_pause_data is not None:
             
@@ -152,12 +150,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             await self.storage.save_current_trip(
                 self.current_trip.to_dict()
+            )           
+
+            self.async_set_updated_data(
+                self._read_vehicle_state()
             )
 
             _LOGGER.info("Smart Trip resumed")
-
             return
     
+        if self.current_trip:
+                return
+
         state = self._read_vehicle_state()
         addr = await self._get_address(state)
 
@@ -178,24 +182,26 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info("Waiting for stable vehicle state...")
 
-        state = await self._wait_for_stable_vehicle_state()
-        addr = await self._get_address(state)
 
-        #self.current_trip.finish(
-        #    odometer=state.get("odometer"),
-        #    soc=state.get("soc"),
-        #    latitude=state.get("latitude"),
-        #    longitude=state.get("longitude"),
-        #    address=addr,
-        #)
-      
         if self.smart_trip_timer:
             self.smart_trip_timer.cancel()
             self.smart_trip_timer = None
         
         # Smart Trip
         self.trip_pause_data = self.current_trip
+        
+        await self.storage.save_current_trip(
+           self.current_trip.to_dict()
+        )
+
+        self.current_trip = None
+        
         self.trip_pause_time = self.hass.loop.time()
+
+        _LOGGER.debug(
+        "Trip paused - waiting %s seconds",
+        SMART_TRIP_TIMEOUT,
+        )
 
         self.smart_trip_timer = self.hass.loop.call_later(
             SMART_TRIP_TIMEOUT,
@@ -227,6 +233,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.current_trip = None
         self.trip_pause_data = None
         self.trip_pause_time = None
+
+        if self.smart_trip_timer:
+            self.smart_trip_timer.cancel()
+
         self.smart_trip_timer = None
 
         self.async_set_updated_data(state)
@@ -236,10 +246,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     async def _smart_trip_timeout(self):
         """Finalize paused trip after timeout."""
 
+        _LOGGER.warning("=== SMART TRIP TIMEOUT STARTED ===")
+
         if not self.trip_pause_data:
             return
 
+        if self.current_trip:
+            _LOGGER.debug(
+                "Smart Trip cancelled - trip already resumed"
+            )
+            return
+
+
         self.current_trip = self.trip_pause_data
+        self.trip_pause_data = None
 
         state = await self._wait_for_stable_vehicle_state()
 

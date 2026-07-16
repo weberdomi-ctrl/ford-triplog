@@ -72,11 +72,14 @@ class FordTriplogSensorBase(SensorEntity):
         self.history = history
         self._value = None
 
-        coordinator.async_add_listener(
+
+    async def async_added_to_hass(self) -> None:
+        """Entity added to Home Assistant."""
+
+        self.coordinator.async_add_listener(
             self._handle_update
         )
 
-    async def async_added_to_hass(self) -> None:
         await self.async_update()
 
     async def async_update(self) -> None:
