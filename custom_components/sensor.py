@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.0.1
+Version: 1.0.0
 """
 
 from __future__ import annotations
@@ -13,47 +13,9 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from .utils import format_address
 
 from .const import DOMAIN
-
-
-def format_address(address: dict[str, Any] | None) -> str | None:
-    """Format address for display."""
-
-    if not address:
-        return None
-
-    street = " ".join(
-        filter(
-            None,
-            [
-                address.get("road"),
-                address.get("house_number"),
-            ],
-        )
-    )
-
-    city = " ".join(
-        filter(
-            None,
-            [
-                address.get("postcode"),
-                address.get("city"),
-            ],
-        )
-    )
-
-    return ", ".join(
-        filter(
-            None,
-            [
-                street,
-                city,
-                address.get("country"),
-            ],
-        )
-    )
-
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -202,7 +164,7 @@ class FordTriplogLastSocSensor(FordTriplogSensorBase):
 class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
     _attr_name = "Last Start Address"
     _attr_unique_id = "ford_triplog_last_trip_start_address"
-    _attr_icon = "mdi:map-marker-start"
+    _attr_icon = "mdi:map-marker-plus"
 
     def update_values(self, statistics, last_trip):
         self._value = format_address(
