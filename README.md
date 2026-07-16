@@ -1,3 +1,9 @@
+<p align="center">
+  <img src="docs/logo.png" width="220">
+</p>
+
+# Ford Triplog
+
 # Ford Triplog
 
 Automatic trip logging for Ford vehicles using the FordPass integration.
