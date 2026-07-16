@@ -107,4 +107,4 @@ SIGNAL_STATISTICS_UPDATED: Final = "ford_triplog_statistics_updated"
 SIGNAL_STATUS_UPDATED: Final = "ford_triplog_status_updated"
 
 #Smart Trip Timeout
-SMART_TRIP_TIMEOUT: Final = 300  # 5 minutes
+SMART_TRIP_TIMEOUT: Final = 30  # 5 minutes
