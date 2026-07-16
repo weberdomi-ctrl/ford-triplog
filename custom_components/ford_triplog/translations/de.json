@@ -28,8 +28,8 @@
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
         },
         "data_description": {
-          "smart_trip": "Kurze Stopps werden automatisch zu einer Fahrt zusammengefasst.",
-          "smart_trip_timeout": "Kleinster Wert: 30 Sekunden."
+          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
+          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden."
         }
       }
     }
