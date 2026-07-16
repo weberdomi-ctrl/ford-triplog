@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ford Triplog",
+        "description": "Configure Ford Triplog.",
+        "data": {
+          "ignition": "Ignition",
+          "odometer": "Odometer",
+          "tracker": "Vehicle tracker",
+          "soc": "State of charge",
+          "smart_trip": "Enable Smart Trip",
+          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+        },
+        "data_description": {
+          "smart_trip": "Merge short stops into one trip.",
+          "smart_trip_timeout": "Time before a paused trip is finalized."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "Ford Triplog options",
+        "data": {
+          "smart_trip": "Enable Smart Trip",
+          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+        },
+        "data_description": {
+          "smart_trip": "Merge short stops into one trip.",
+          "smart_trip_timeout": "Minimum value: 30 seconds."
+        }
+      }
+    }
+  }
+}

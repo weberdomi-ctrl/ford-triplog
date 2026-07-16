@@ -5,28 +5,41 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 0.8.5-dev
+Version: 1.1.0
 """
 
 from __future__ import annotations
 
 import logging
+from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.const import Platform
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.BINARY_SENSOR,
+]
 
 from .const import DOMAIN
 from .coordinator import FordTriplogCoordinator
 from .geo import FordTriplogGeo
-from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
+
 
 _LOGGER = logging.getLogger(__name__)
 
-PLATFORMS = [
-    "sensor",
-    "binary_sensor",
-]
+
+
+def _build_config(
+    entry: ConfigEntry,
+) -> dict[str, Any]:
+    """Return merged configuration."""
+
+    return {
+        **entry.data,
+        **entry.options,
+    }
 
 
 async def async_setup_entry(
@@ -36,24 +49,24 @@ async def async_setup_entry(
     """Set up Ford Triplog from a config entry."""
 
     storage = FordTriplogStorage(
-        hass
+        hass,
     )
 
     await storage.async_setup()
 
-    history = FordTriplogHistory(
-        storage
+    geo = FordTriplogGeo(
+        hass,
     )
 
-    geo = FordTriplogGeo(
-        hass
+    config = _build_config(
+        entry,
     )
 
     coordinator = FordTriplogCoordinator(
-        hass,
-        storage,
-        entry.data,
-        geo,
+        hass=hass,
+        storage=storage,
+        config=config,
+        geo=geo,
     )
 
     await coordinator.async_setup()
@@ -65,11 +78,17 @@ async def async_setup_entry(
 
     hass.data[DOMAIN][entry.entry_id] = {
         "storage": storage,
-        "history": history,
+        "history": coordinator.history,
         "geo": geo,
         "coordinator": coordinator,
-        "config": entry.data,
+        "config": config,
     }
+
+    entry.async_on_unload(
+        entry.add_update_listener(
+            entry_update_listener,
+        )
+    )
 
     await hass.config_entries.async_forward_entry_setups(
         entry,
@@ -77,17 +96,15 @@ async def async_setup_entry(
     )
 
     _LOGGER.debug(
-        "Ford Triplog initialized"
+        "Ford Triplog initialized",
     )
 
     return True
-
-
 async def async_unload_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> bool:
-    """Unload Ford Triplog."""
+    """Unload a config entry."""
 
     unload_ok = await hass.config_entries.async_unload_platforms(
         entry,
@@ -101,7 +118,16 @@ async def async_unload_entry(
         )
 
         _LOGGER.debug(
-            "Ford Triplog unloaded"
+            "Ford Triplog unloaded",
         )
 
     return unload_ok
+async def entry_update_listener(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Reload the integration when options change."""
+
+    await hass.config_entries.async_reload(
+        entry.entry_id,
+    )

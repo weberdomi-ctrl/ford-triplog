@@ -1,0 +1,37 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ford Triplog",
+        "description": "Ford Triplog konfigurieren.",
+        "data": {
+          "ignition": "Zündung",
+          "odometer": "Kilometerstand",
+          "tracker": "Fahrzeug-Tracker",
+          "soc": "Ladestand (SOC)",
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+        },
+        "data_description": {
+          "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
+          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "Einstellungsoptionen für Ford Triplog",
+        "data": {
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+        },
+        "data_description": {
+          "smart_trip": "Kurze Stopps werden automatisch zu einer Fahrt zusammengefasst.",
+          "smart_trip_timeout": "Kleinster Wert: 30 Sekunden."
+        }
+      }
+    }
+  }
+}

@@ -4,6 +4,8 @@ Ford Triplog
 Track your Ford.
 
 Configuration Flow.
+
+Version: 1.1.0
 """
 
 from __future__ import annotations
@@ -13,32 +15,54 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigFlowResult,
+    OptionsFlow,
+)
+from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
-    DOMAIN,
-    NAME,
     CONF_IGNITION,
     CONF_ODOMETER,
-    CONF_TRACKER,
+    CONF_SMART_TRIP,
+    CONF_SMART_TRIP_TIMEOUT,
     CONF_SOC,
+    CONF_TRACKER,
+    DOMAIN,
+    NAME,
 )
-
-
-class FordTriplogConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for Ford Triplog."""
+class FordTriplogConfigFlow(
+    config_entries.ConfigFlow,
+    domain=DOMAIN,
+):
+    """Handle Ford Triplog configuration."""
 
     VERSION = 1
+
+    @staticmethod
+    @callback
+    def async_get_options_flow(
+        config_entry: ConfigEntry,
+    ) -> OptionsFlow:
+        """Return the options flow."""
+
+        return FordTriplogOptionsFlow(
+            config_entry,
+        )
 
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
-    ):
-        """Handle the initial step."""
+    ) -> ConfigFlowResult:
+        """Handle the initial configuration."""
 
         if user_input is not None:
 
-            await self.async_set_unique_id(DOMAIN)
+            await self.async_set_unique_id(
+                DOMAIN,
+            )
 
             self._abort_if_unique_id_configured()
 
@@ -47,7 +71,15 @@ class FordTriplogConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data=user_input,
             )
 
-        schema = vol.Schema(
+        return self.async_show_form(
+            step_id="user",
+            data_schema=self._build_schema(),
+        )
+    @staticmethod
+    def _build_schema() -> vol.Schema:
+        """Return configuration schema."""
+
+        return vol.Schema(
             {
                 vol.Required(
                     CONF_IGNITION,
@@ -77,10 +109,77 @@ class FordTriplogConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                         domain="sensor",
                     )
                 ),
+                vol.Required(
+                    CONF_SMART_TRIP,
+                    default=True,
+                ): selector.BooleanSelector(),
+                vol.Required(
+                    CONF_SMART_TRIP_TIMEOUT,
+                    default=300,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=30,
+                        max=900,
+                        step=10,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+            }
+        )
+class FordTriplogOptionsFlow(
+    OptionsFlow,
+):
+    """Ford Triplog options."""
+
+    def __init__(
+        self,
+        config_entry: ConfigEntry,
+    ) -> None:
+        """Initialize options flow."""
+
+        self._options = {
+            **config_entry.data,
+            **config_entry.options,
+        }
+
+    async def async_step_init(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Manage integration options."""
+
+        if user_input is not None:
+
+            return self.async_create_entry(
+                title="",
+                data=user_input,
+            )
+
+        return self.async_show_form(
+            step_id="init",
+            data_schema=self.add_suggested_values_to_schema(
+                self._build_options_schema(),
+                self._options,
+            ),
+        )
+    def _build_options_schema(
+        self,
+    ) -> vol.Schema:
+        """Return options schema."""
+
+        return vol.Schema(
+            {
+                vol.Optional(
+                    CONF_SMART_TRIP,
+                ): bool,
+
+                vol.Optional(
+                    CONF_SMART_TRIP_TIMEOUT,
+                ): int,
             }
         )
 
-        return self.async_show_form(
-            step_id="user",
-            data_schema=schema,
-        )
+
+#
+# End of configuration flow.
+#
