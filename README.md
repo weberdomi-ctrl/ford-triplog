@@ -1,138 +1,168 @@
 # Ford Triplog
 
-A Home Assistant custom integration that automatically records trips for
-Ford electric vehicles using the existing **FordPass Home Assistant
-integration**.
+A Home Assistant integration that automatically records trips for Ford vehicles using the FordPass integration.
 
-> \\\*\\\*Status:\\\*\\\* v1.0.0 RC2
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6%2B-blue.svg)
+![Version](https://img.shields.io/badge/version-1.1.0-green.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
 
-## Purpose
-
-Ford Triplog automatically records your journeys and provides a clear
-overview of:
-
-* Date and time
-* Start and destination address
-* Distance
-* Trip duration
-* State of Charge (SOC)
-* Estimated energy consumption
-
-The collected information can be used as a convenient basis for travel
-expense reports or for **manually transferring trips into a company
-mileage log or other business systems**.
-
-> \\\*\\\*Note:\\\*\\\* Ford Triplog is \\\*\\\*not\\\*\\\* a certified tax-compliant mileage
-> log. It is intended as a personal trip log and documentation tool.
+---
 
 ## Features
 
-* Automatic trip detection using ignition state
-* Start and destination addresses (reverse geocoding)
-* Distance calculation using the Ford odometer
-* Trip duration
-* SOC consumption
-* Estimated energy consumption
-* Trip history stored as JSON
-* Overall statistics
-* Home Assistant sensors
-* Active trip binary sensor
+- Automatic trip detection
+- Smart Trip (merge short stops)
+- Start and destination address
+- GPS coordinates
+- Odometer tracking
+- State of Charge (SOC)
+- Home Assistant Config Flow
+- Options Flow
+- Local storage
+- Home Assistant Brands API support
+- German and English translations
+
+---
 
 ## Requirements
 
-* Home Assistant 2026.6.x or newer
-* FordPass Home Assistant integration
-* Supported Ford vehicle (tested with Ford Explorer EV)
+- Home Assistant Core **2026.6** or newer
+- FordPass Home Assistant Integration
+- A working FordPass vehicle
+
+---
 
 ## Installation
 
-1. Install and configure the FordPass integration.
-2. Copy `custom\\\_components/ford\\\_triplog` into
-`/config/custom\\\_components/`.
-3. Restart Home Assistant.
-4. Add **Ford Triplog** via **Settings → Devices \& Services → Add
-Integration**.
-5. Select the required FordPass entities:
+### HACS
 
-   * Ignition
-   * Odometer
-   * Tracker
-   * State of Charge (SOC)
+Coming soon.
 
-## Included Sensors
+### Manual Installation
 
-* Trip Count
-* Total Distance
-* Total Duration
-* Total Energy Used
-* Last Trip Distance
-* Last Trip Duration
-* Last Trip SOC Used
-* Last Trip Start Address
-* Last Trip End Address
-* Trip Active
+Copy the folder
 
-## Storage
+```
+custom_components/ford_triplog
+```
 
-Trips are stored locally as JSON files. Statistics are updated
-automatically after every completed trip.
+to
+
+```
+config/custom_components/
+```
+
+Restart Home Assistant.
+
+---
+
+## Configuration
+
+After restarting Home Assistant:
+
+Settings
+
+→ Devices & Services
+
+→ Add Integration
+
+→ **Ford Triplog**
+
+Configure the following entities:
+
+| Setting | Required |
+|----------|----------|
+| Ignition Sensor | ✅ |
+| Odometer Sensor | ✅ |
+| Device Tracker | ✅ |
+| State of Charge (SOC) | Optional |
+
+---
+
+## Smart Trip
+
+Smart Trip automatically combines short stops into a single trip.
+
+Example:
+
+Home → Bakery → Gas Station → Work
+
+instead of
+
+3 individual trips
+
+Ford Triplog records
+
+Home → Work
+
+if the stop time is shorter than the configured timeout.
+
+---
+
+## Current Features
+
+- Automatic trip logging
+- Start / End time
+- Duration
+- Distance
+- Odometer
+- GPS coordinates
+- Reverse Geocoding
+- Start address
+- Destination address
+- SOC
+- Smart Trip
+
+---
 
 ## Roadmap
 
-### v1.1.0
+### Version 1.2
 
-* Smart Trip Continuation
-* Charging stop detection
-* Charging history
-* Configurable timing options
-* Dashboard
-* Extended statistics
+- Charging History
+- AC/DC Detection
+- Charging Locations
+- Energy Statistics
 
-## Compatibility
+### Version 1.3
 
-Ford Triplog works with vehicles that are supported by the Home Assistant FordPass integration.
+- CSV Export
+- GPX Export
+- Dashboard Cards
+- Advanced Statistics
 
+### Version 1.4
 
+- Multi Vehicle Support
+- Cloud Backup
+- Maintenance Tracking
 
-Confirmed working:
+---
 
+## Screenshots
 
+*(coming soon)*
 
-\- Ford Explorer EV
+---
 
+## Support
 
+GitHub Issues
 
-Potentially compatible (testing welcome):
+https://github.com/weberdomi-ctrl/ford-triplog/issues
 
-
-
-\- Ford Capri EV
-
-\- Ford Mustang Mach-E
-
-\- Ford Puma Gen-E
-
-\- Other Ford vehicles supported by the FordPass integration
-
-
-
-Compatibility depends on the availability of the required FordPass entities, including:
-
-
-
-\- Ignition
-
-\- Odometer
-
-\- Vehicle Location (GPS)
-
-\- State of Charge (SOC) or Fuel Level
-
-## Feedback
-
-Bug reports and feature requests are welcome via GitHub Issues.
+---
 
 ## License
 
 MIT License
 
+---
+
+## Credits
+
+Developed by
+
+**Dominik Weber**
+
+Special thanks to all beta testers for their valuable feedback.
