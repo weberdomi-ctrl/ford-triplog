@@ -4,8 +4,13 @@
 
 ### Added
 - New sensors:
-  - Last Trip Start Time
-  - Last Trip End Time
+- Last Trip Start Time
+- Last Trip End Time
+- Last Trip Date
+- Average Trip Distance
+- Average Trip Duration
+- Longest Trip
+- Shortest Trip
 - Human-readable trip timestamps ("Heute", "Gestern", Datum/Uhrzeit).
 
 ### Changed
