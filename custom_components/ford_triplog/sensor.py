@@ -50,6 +50,7 @@ async def async_setup_entry(
             FordTriplogLastDistanceSensor(coordinator, history),
             FordTriplogLastConsumptionSensor(coordinator, history),
             FordTriplogLastEfficiencySensor(coordinator, history),
+            FordTriplogLastAverageSpeedSensor(coordinator, history),
             FordTriplogLastDurationFormattedSensor(coordinator, history),
             FordTriplogLastDurationSensor(coordinator, history),
             FordTriplogLastSocSensor(coordinator, history),
@@ -204,6 +205,20 @@ class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
             else None
         )
 
+class FordTriplogLastAverageSpeedSensor(FordTriplogSensorBase):
+    """Average speed of the last trip."""
+
+    _attr_name = "Last Average Speed"
+    _attr_unique_id = "ford_triplog_last_trip_average_speed"
+    _attr_native_unit_of_measurement = "km/h"
+    _attr_icon = "mdi:speedometer-medium"
+
+    def update_values(self, statistics, last_trip):
+        self._value = (
+            last_trip.get("average_speed_kmh")
+            if last_trip
+            else None
+        )
 
 class FordTriplogLastDurationSensor(FordTriplogSensorBase):
     _attr_name = "Last Duration (Raw)"
