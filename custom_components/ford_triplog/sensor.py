@@ -49,6 +49,7 @@ async def async_setup_entry(
             FordTriplogLastEndAddressSensor(coordinator, history),
             FordTriplogLastDistanceSensor(coordinator, history),
             FordTriplogLastConsumptionSensor(coordinator, history),
+            FordTriplogLastEfficiencySensor(coordinator, history),
             FordTriplogLastDurationFormattedSensor(coordinator, history),
             FordTriplogLastDurationSensor(coordinator, history),
             FordTriplogLastSocSensor(coordinator, history),
@@ -176,7 +177,6 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
 
 class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     """Energy used during the last trip."""
-
     _attr_name = "Last Consumption"
     _attr_unique_id = "ford_triplog_last_trip_consumption"
     _attr_native_unit_of_measurement = "kWh"
@@ -188,6 +188,21 @@ class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
             if last_trip
             else None
         )        
+
+class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
+    """Average consumption of the last trip."""
+
+    _attr_name = "Last Efficiency"
+    _attr_unique_id = "ford_triplog_last_trip_efficiency"
+    _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_icon = "mdi:speedometer"
+
+    def update_values(self, statistics, last_trip):
+        self._value = (
+            last_trip.get("consumption_kwh_100km")
+            if last_trip
+            else None
+        )
 
 
 class FordTriplogLastDurationSensor(FordTriplogSensorBase):
