@@ -106,6 +106,8 @@ Copy the folder into your Home Assistant configuration directory and restart Hom
 | Last Consumption | kWh |
 | Last Efficiency | kWh/100 km |
 | Last Average Speed | km/h |
+| Last Start Time | - |
+| Last End Time | - |
 
 ## Statistics
 
@@ -120,6 +122,14 @@ Copy the folder into your Home Assistant configuration directory and restart Hom
 
 ---
 
+## Example Dashboard
+
+![Dashboard](docs/images/dashboard.png)
+
+*Example Home Assistant dashboard created with the included Ford Triplog sensors.  
+This dashboard is provided as inspiration only and is not part of the integration.*
+
+---
 # What's New in 1.2.0
 
 ### Added
