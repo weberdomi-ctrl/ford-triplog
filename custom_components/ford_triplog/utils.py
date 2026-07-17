@@ -3,7 +3,7 @@ Ford Triplog
 
 Utility functions.
 
-Version: 1.1.0-dev
+Version: 1.2.0
 """
 from __future__ import annotations
 
@@ -99,9 +99,6 @@ def format_duration(seconds: int | float | None) -> str | None:
     secs = total_seconds % 60
 
     return f"{hours:02}:{minutes:02}:{secs:02}"
-
-
-
 
 def format_datetime(value: str | None) -> str | None:
     """Format ISO datetime for display."""
