@@ -3,14 +3,17 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.0.0
+Version: 1.2.0
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import (
+    SensorEntity,
+    SensorStateClass,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from .utils import (
@@ -131,6 +134,7 @@ class FordTriplogSensorBase(SensorEntity):
 class FordTriplogTripCountSensor(FordTriplogSensorBase):
     _attr_name = "Trip Count"
     _attr_unique_id = "ford_triplog_trip_count"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = ICON_TRIP_COUNT
 
     def update_values(self, statistics, last_trip):
@@ -141,6 +145,7 @@ class FordTriplogDistanceSensor(FordTriplogSensorBase):
     _attr_name = "Total Distance"
     _attr_unique_id = "ford_triplog_total_distance"
     _attr_native_unit_of_measurement = "km"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = ICON_DISTANCE
 
     def update_values(self, statistics, last_trip):
@@ -153,6 +158,7 @@ class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
     _attr_name = "Total Energy"
     _attr_unique_id = "ford_triplog_total_energy"
     _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:lightning-bolt"
 
     def update_values(self, statistics, last_trip):
@@ -203,6 +209,7 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
     _attr_name = "Last Distance"
     _attr_unique_id = "ford_triplog_last_trip_distance"
     _attr_native_unit_of_measurement = "km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:map-marker-distance"
 
     def update_values(self, statistics, last_trip):
@@ -213,6 +220,7 @@ class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     _attr_name = "Last Consumption"
     _attr_unique_id = "ford_triplog_last_trip_consumption"
     _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:lightning-bolt"
 
     def update_values(self, statistics, last_trip):
@@ -228,6 +236,7 @@ class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
     _attr_name = "Last Efficiency"
     _attr_unique_id = "ford_triplog_last_trip_efficiency"
     _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:speedometer"
 
     def update_values(self, statistics, last_trip):
@@ -243,6 +252,7 @@ class FordTriplogLastAverageSpeedSensor(FordTriplogSensorBase):
     _attr_name = "Last Average Speed"
     _attr_unique_id = "ford_triplog_last_trip_average_speed"
     _attr_native_unit_of_measurement = "km/h"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = "mdi:speedometer-medium"
 
     def update_values(self, statistics, last_trip):
@@ -279,6 +289,7 @@ class FordTriplogLastSocSensor(FordTriplogSensorBase):
     _attr_name = "Last SOC Used"
     _attr_unique_id = "ford_triplog_last_trip_soc_used"
     _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_icon = ICON_SOC
 
     def update_values(self, statistics, last_trip):
