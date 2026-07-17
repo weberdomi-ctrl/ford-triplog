@@ -159,6 +159,7 @@ class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_total_energy"
     _attr_native_unit_of_measurement = "kWh"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
 
     def update_values(self, statistics, last_trip):
@@ -171,6 +172,7 @@ class FordTriplogAverageConsumptionSensor(FordTriplogSensorBase):
     _attr_name = "Average Consumption"
     _attr_unique_id = "ford_triplog_average_consumption"
     _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:chart-line"
 
     def update_values(self, statistics, last_trip):
@@ -210,6 +212,7 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_last_trip_distance"
     _attr_native_unit_of_measurement = "km"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:map-marker-distance"
 
     def update_values(self, statistics, last_trip):
@@ -221,6 +224,7 @@ class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_last_trip_consumption"
     _attr_native_unit_of_measurement = "kWh"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
 
     def update_values(self, statistics, last_trip):
@@ -237,6 +241,7 @@ class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_last_trip_efficiency"
     _attr_native_unit_of_measurement = "kWh/100 km"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:speedometer"
 
     def update_values(self, statistics, last_trip):
@@ -253,6 +258,7 @@ class FordTriplogLastAverageSpeedSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_last_trip_average_speed"
     _attr_native_unit_of_measurement = "km/h"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:speedometer-medium"
 
     def update_values(self, statistics, last_trip):
