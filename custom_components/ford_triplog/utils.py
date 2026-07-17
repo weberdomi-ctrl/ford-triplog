@@ -5,11 +5,12 @@ Utility functions.
 
 Version: 1.1.0-dev
 """
-
 from __future__ import annotations
 
-from typing import Any
+from datetime import datetime
+from homeassistant.util import dt as dt_util
 
+from typing import Any
 
 def format_address(address: dict[str, Any] | None) -> str | None:
     """Format an address for display."""
@@ -98,6 +99,35 @@ def format_duration(seconds: int | float | None) -> str | None:
     secs = total_seconds % 60
 
     return f"{hours:02}:{minutes:02}:{secs:02}"
+
+
+
+
+def format_datetime(value: str | None) -> str | None:
+    """Format ISO datetime for display."""
+
+    if not value:
+        return None
+
+    try:
+        dt = datetime.fromisoformat(
+            value.replace("Z", "+00:00")
+        )
+
+        dt = dt_util.as_local(dt)
+        now = dt_util.now()
+
+        if dt.date() == now.date():
+            return f"Heute {dt:%H:%M}"
+
+        if (now.date() - dt.date()).days == 1:
+            return f"Gestern {dt:%H:%M}"
+
+        return dt.strftime("%d.%m.%Y %H:%M")
+
+    except Exception:
+        return value
+
 
 
 def format_distance(distance: float | None) -> str | None:

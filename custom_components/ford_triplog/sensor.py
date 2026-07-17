@@ -20,6 +20,7 @@ from .utils import (
     format_address,
     format_address_short,
     format_duration,
+    format_datetime,
 )
 from .icons import (
     ICON_TRIP_COUNT,
@@ -29,6 +30,8 @@ from .icons import (
     ICON_SOC,
     ICON_START,
     ICON_DESTINATION,
+    ICON_START_TIME,
+    ICON_END_TIME,
 )
 
 from .const import DOMAIN
@@ -50,6 +53,8 @@ async def async_setup_entry(
             # Last trip
             FordTriplogLastStartAddressSensor(coordinator, history),
             FordTriplogLastEndAddressSensor(coordinator, history),
+            FordTriplogLastStartTimeSensor(coordinator, history),
+            FordTriplogLastEndTimeSensor(coordinator, history),
             FordTriplogLastDistanceSensor(coordinator, history),
             FordTriplogLastConsumptionSensor(coordinator, history),
             FordTriplogLastEfficiencySensor(coordinator, history),
@@ -64,7 +69,7 @@ async def async_setup_entry(
             FordTriplogAverageConsumptionSensor(coordinator, history),
             FordTriplogDurationFormattedSensor(coordinator, history),
             FordTriplogDurationSensor(coordinator, history),
-            FordTriplogTripCountSensor(coordinator, history),
+            FordTriplogTripCountSensor(coordinator, history),         
         ]
     )
 
@@ -323,6 +328,35 @@ class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     def update_values(self, statistics, last_trip):
         self._value = format_address_short(
             last_trip.get("end_address")
+            if last_trip
+            else None
+        )
+
+class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
+    """Formatted start time of the last trip."""
+
+    _attr_name = "Last Start Time"
+    _attr_unique_id = "ford_triplog_last_trip_start_time"
+    _attr_icon = ICON_START_TIME
+
+    def update_values(self, statistics, last_trip):
+        self._value = format_datetime(
+            last_trip.get("start_time")
+            if last_trip
+            else None
+        )
+
+
+class FordTriplogLastEndTimeSensor(FordTriplogSensorBase):
+    """Formatted end time of the last trip."""
+
+    _attr_name = "Last End Time"
+    _attr_unique_id = "ford_triplog_last_trip_end_time"
+    _attr_icon = ICON_END_TIME
+
+    def update_values(self, statistics, last_trip):
+        self._value = format_datetime(
+            last_trip.get("end_time")
             if last_trip
             else None
         )

@@ -1,0 +1,140 @@
+title: Ford Triplog
+
+views:
+  - title: Ford Triplog
+    path: ford-triplog
+    icon: mdi:car-electric
+
+    cards:
+
+      ####################################################
+      # Letzte Fahrt
+      ####################################################
+
+      - type: heading
+        heading: Letzte Fahrt
+        icon: mdi:car
+
+      - type: grid
+        columns: 3
+        square: false
+
+        cards:
+
+          - type: tile
+            entity: sensor.ford_triplog_last_distance
+            name: Strecke
+            icon: mdi:map-marker-distance
+
+          - type: tile
+            entity: sensor.ford_triplog_last_driving_time
+            name: Fahrzeit
+            icon: mdi:clock-outline
+
+          - type: tile
+            entity: sensor.ford_triplog_last_average_speed
+            name: Ø Geschwindigkeit
+            icon: mdi:speedometer
+
+          - type: tile
+            entity: sensor.ford_triplog_last_trip_consumption
+            name: Energie
+            icon: mdi:lightning-bolt
+
+          - type: tile
+            entity: sensor.ford_triplog_last_trip_efficiency
+            name: Verbrauch
+            icon: mdi:ev-station
+
+          - type: tile
+            entity: sensor.ford_triplog_last_soc_used
+            name: SOC
+            icon: mdi:battery-minus
+
+      ####################################################
+      # Gesamtstatistik
+      ####################################################
+
+      - type: heading
+        heading: Gesamtstatistik
+        icon: mdi:chart-line
+
+      - type: grid
+        columns: 2
+        square: false
+
+        cards:
+
+          - type: tile
+            entity: sensor.ford_triplog_total_distance
+            name: Gesamtstrecke
+
+          - type: tile
+            entity: sensor.ford_triplog_trip_count
+            name: Fahrten
+
+          - type: tile
+            entity: sensor.ford_triplog_total_energy
+            name: Energie
+
+          - type: tile
+            entity: sensor.ford_triplog_average_consumption
+            name: Durchschnitt
+
+      ####################################################
+      # Verlauf
+      ####################################################
+
+      - type: heading
+        heading: Verbrauchsverlauf
+        icon: mdi:chart-areaspline
+
+      - type: statistics-graph
+        title: Durchschnittsverbrauch
+        chart_type: line
+        period: month
+
+        entities:
+          - sensor.ford_triplog_average_consumption
+
+      - type: statistics-graph
+        title: Gesamtenergie
+        chart_type: line
+        period: month
+
+        entities:
+          - sensor.ford_triplog_total_energy
+
+      ####################################################
+      # Letzte Route
+      ####################################################
+
+      - type: heading
+        heading: Letzte Route
+        icon: mdi:map-marker-path
+
+      - type: entities
+
+        entities:
+          - entity: sensor.ford_triplog_last_start_address
+            name: Start
+
+          - entity: sensor.ford_triplog_last_destination_address
+            name: Ziel
+
+      ####################################################
+      # Diagnose
+      ####################################################
+
+      - type: heading
+        heading: Diagnose
+        icon: mdi:information-outline
+
+      - type: entities
+
+        entities:
+
+          - sensor.ford_triplog_version
+          - sensor.ford_triplog_trip_count
+          - sensor.ford_triplog_total_distance
+          - sensor.ford_triplog_total_energy
