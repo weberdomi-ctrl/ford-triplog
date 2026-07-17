@@ -58,6 +58,7 @@ async def async_setup_entry(
             # Statistics
             FordTriplogDistanceSensor(coordinator, history),
             FordTriplogTotalEnergySensor(coordinator, history),
+            FordTriplogAverageConsumptionSensor(coordinator, history),
             FordTriplogDurationFormattedSensor(coordinator, history),
             FordTriplogDurationSensor(coordinator, history),
             FordTriplogTripCountSensor(coordinator, history),
@@ -158,6 +159,22 @@ class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
         self._value = statistics.get("total_energy_used_kwh", 0)
 
 
+class FordTriplogAverageConsumptionSensor(FordTriplogSensorBase):
+    """Average consumption over all trips."""
+
+    _attr_name = "Average Consumption"
+    _attr_unique_id = "ford_triplog_average_consumption"
+    _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_icon = "mdi:chart-line"
+
+    def update_values(self, statistics, last_trip):
+        distance = statistics.get("total_distance_km", 0)
+        energy = statistics.get("total_energy_used_kwh", 0)
+
+        if distance > 0:
+            self._value = round((energy / distance) * 100, 1)
+        else:
+            self._value = None
 
 
 class FordTriplogDurationSensor(FordTriplogSensorBase):
