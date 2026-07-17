@@ -1,106 +1,134 @@
-# Ford Triplog
+\
+<p align="center">
+  <img src="docs/images/banner.png" alt="Ford Triplog Banner" width="100%">
+</p>
+
+<h1 align="center">Ford Triplog</h1>
 
 <p align="center">
-  <img src="docs/images/banner.png" alt="Ford Triplog" width="900">
+Automatic Trip & Energy Logging for Ford vehicles in Home Assistant
 </p>
 
 <p align="center">
-Automatic trip logging for Ford vehicles in Home Assistant.
+  <a href="#"><img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant" alt="HA"></a>
+  <a href="#"><img src="https://img.shields.io/badge/HACS-Coming%20Soon-41BDF5" alt="HACS"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Version-1.2.0--beta-blue" alt="Version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-green" alt="MIT"></a>
+  <a href="#"><img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python" alt="Python"></a>
 </p>
 
-> **Status:** Beta 1.2.0
+---
+
+## Contents
+
+- [Overview](#overview)
+- [Features](#features)
+- [Screenshots](#screenshots)
+- [Installation](#installation)
+- [Sensors](#sensors)
+- [What's New](#whats-new-in-120)
+- [Roadmap](#roadmap)
+- [FAQ](#faq)
+- [Support](#support)
 
 ---
 
 # Overview
 
-Ford Triplog is a Home Assistant custom integration that automatically records every journey using the FordPass integration. Every completed trip is stored with detailed information and exposed through native Home Assistant sensors.
+Ford Triplog extends the FordPass integration by automatically recording every completed trip and exposing detailed driving statistics through native Home Assistant sensors.
 
-## Highlights
+Unlike FordPass, the integration keeps a persistent trip history including:
 
-- Automatic trip detection
-- Smart Trip support
-- Start & destination addresses
-- Distance and driving time
+- Distance
+- Driving time
 - Average speed
 - Battery usage (SOC)
-- Energy consumption (kWh)
-- Efficiency (kWh/100 km)
-- Trip history
-- Statistics
-- Native Home Assistant sensors
-- Config Flow
-- Options Flow
-- English & German translations
-- Local branding
+- Energy consumption
+- Efficiency
+- Start & destination addresses
+- Long-term statistics
+
+All data remains **local** in Home Assistant.
+
+---
+
+# Features
+
+| 🚗 Trip Logging | ⚡ Energy | 📊 Statistics | 🏠 Home Assistant |
+|---|---|---|---|
+| Automatic trip detection | Consumption (kWh) | Total distance | Config Flow |
+| Smart Trip | Efficiency | Total energy | Options Flow |
+| Start & destination | SOC usage | Average consumption | Native sensors |
+| Driving time | Average speed | Trip history | Local branding |
 
 ---
 
 # Screenshots
 
-> Screenshots will be added before the first public release.
+> Replace placeholders before the public release.
 
-- Integration setup
-- Sensors
-- Dashboard example
-- Trip history
+| Integration | Dashboard |
+|-------------|-----------|
+| ![](docs/images/integration.png) | ![](docs/images/dashboard.png) |
 
----
-
-# Available Sensors
-
-## Last Trip
-
-| Sensor | Unit | Description |
-|--------|------|-------------|
-| Last Start Address | - | Trip start |
-| Last End Address | - | Trip destination |
-| Last Distance | km | Distance of last trip |
-| Last Driving Time | - | Formatted duration |
-| Last Duration (Raw) | s | Raw duration |
-| Last SOC Used | % | Battery used |
-| Last Consumption | kWh | Energy consumed |
-| Last Efficiency | kWh/100 km | Average consumption |
-| Last Average Speed | km/h | Average speed |
-
-## Statistics
-
-| Sensor | Unit | Description |
-|--------|------|-------------|
-| Trip Count | Trips | Recorded trips |
-| Total Distance | km | Overall distance |
-| Total Energy | kWh | Overall energy |
-| Average Consumption | kWh/100 km | Fleet average |
-| Total Driving Time | - | Formatted time |
-| Total Duration (Raw) | s | Raw duration |
+| Trip History | Statistics |
+|--------------|------------|
+| ![](docs/images/history.png) | ![](docs/images/statistics.png) |
 
 ---
 
 # Installation
 
-## HACS (planned)
+## HACS *(coming soon)*
 
-1. Add the Ford Triplog repository.
-2. Install the integration.
+1. Add the repository.
+2. Install **Ford Triplog**.
 3. Restart Home Assistant.
-4. Add Ford Triplog from **Settings → Devices & Services**.
+4. Add the integration.
 
 ## Manual
 
-Copy the `custom_components/ford_triplog` folder into your Home Assistant configuration directory and restart Home Assistant.
+```text
+custom_components/
+└── ford_triplog/
+```
+
+Restart Home Assistant and add the integration.
 
 ---
 
-# Requirements
+# Sensors
 
-- Home Assistant 2026.6+
-- FordPass Integration
+## Last Trip
+
+| Sensor | Unit |
+|---|---|
+| Last Start Address | — |
+| Last End Address | — |
+| Last Distance | km |
+| Last Driving Time | formatted |
+| Last Duration (Raw) | s |
+| Last SOC Used | % |
+| Last Consumption | kWh |
+| Last Efficiency | kWh/100 km |
+| Last Average Speed | km/h |
+
+## Statistics
+
+| Sensor | Unit |
+|---|---|
+| Trip Count | trips |
+| Total Distance | km |
+| Total Energy | kWh |
+| Average Consumption | kWh/100 km |
+| Total Driving Time | formatted |
+| Total Duration (Raw) | s |
 
 ---
 
-# What's New in Version 1.2
+# What's New in 1.2.0
 
-## New
+### New
 
 - Last Consumption sensor
 - Last Efficiency sensor
@@ -108,27 +136,27 @@ Copy the `custom_components/ford_triplog` folder into your Home Assistant config
 - Total Energy sensor
 - Average Consumption sensor
 
-## Improved
+### Improved
 
-- Home Assistant SensorStateClass support
-- Improved long-term statistics
-- Better dashboard compatibility
+- SensorStateClass support
+- Long-term statistics
+- Dashboard compatibility
 
 ---
 
 # Roadmap
 
-## Version 1.2
+### Version 1.2
 
 - Charging history
 - Charging statistics
-- More trip analytics
+- More analytics
 
-## Future
+### Future
 
+- Multi vehicle support
 - GPX export
 - CSV export
-- Multi-vehicle support
 - Dashboard cards
 - Maintenance tracking
 
@@ -136,17 +164,27 @@ Copy the `custom_components/ford_triplog` folder into your Home Assistant config
 
 # FAQ
 
-### Does Ford Triplog replace FordPass?
+**Does Ford Triplog replace FordPass?**
 
-No. Ford Triplog extends the FordPass integration with trip logging and statistics.
+No. It extends the FordPass integration with trip logging and statistics.
 
-### Does it support multiple vehicles?
+**Where is my data stored?**
 
-Not yet. Planned for a future release.
+Everything is stored locally inside Home Assistant.
 
-### Is internet access required?
+**Does it support multiple vehicles?**
 
-Ford Triplog relies on the FordPass integration.
+Not yet.
+
+---
+
+# Support
+
+Ford Triplog is developed in my spare time.
+
+If you enjoy using it, consider supporting future development:
+
+☕ https://ko-fi.com/dompressor
 
 ---
 
@@ -156,20 +194,6 @@ Bug reports, feature requests and pull requests are welcome.
 
 ---
 
-# Support
-
-Ford Triplog is developed in my spare time and released free of charge.
-
-If you enjoy using the integration, consider supporting future development:
-
-**Ko-fi**
-
-https://ko-fi.com/dompressor
-
-Every contribution helps improve Ford Triplog.
-
----
-
 # License
 
-Released under the MIT License.
+MIT License
