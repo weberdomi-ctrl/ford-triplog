@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant" alt="HA">
   <img src="https://img.shields.io/badge/HACS-Coming%20Soon-41BDF5" alt="HACS">
-  <img src="https://img.shields.io/badge/Version-1.2.0--blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.2.0-success" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python" alt="Python">
 </p>
