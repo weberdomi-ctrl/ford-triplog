@@ -24,6 +24,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CHARGING_STATUS,
     CONF_IGNITION,
     CONF_ODOMETER,
     CONF_SMART_TRIP,
@@ -104,6 +105,13 @@ class FordTriplogConfigFlow(
                 ),
                 vol.Optional(
                     CONF_SOC,
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="sensor",
+                    )
+                ),
+                vol.Optional(
+                    CONF_CHARGING_STATUS,
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="sensor",

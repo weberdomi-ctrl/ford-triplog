@@ -101,6 +101,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             await self.finish_trip()
 
         self.last_ignition = ignition
+
+        # Charging Status überwachen
+        charging_status = str(
+            self.vehicle_state.get("charging_status", "")
+        ).upper()
+
+        if charging_status != self.last_charging_status:
+            _LOGGER.debug(
+                "Charging status changed: %s -> %s",
+                self.last_charging_status,
+                charging_status,
+            )
+
+        self.last_charging_status = charging_status
+
         self.async_set_updated_data(self.vehicle_state)
 
     async def _wait_for_stable_vehicle_state(self):
@@ -116,6 +131,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 current.get("soc"),
                 current.get("latitude"),
                 current.get("longitude"),
+                current.get("charging_status"),
             )
 
             _LOGGER.debug("Vehicle state check %s", key)
