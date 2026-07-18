@@ -19,6 +19,7 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .geo import FordTriplogGeo
 from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
+from .charging_storage import FordTriplogChargingStorage
 from .trip import Trip
 
 from .const import SMART_TRIP_TIMEOUT
@@ -38,6 +39,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.storage = storage
         self.history = FordTriplogHistory(storage)
+        self.charging_storage = FordTriplogChargingStorage(hass)
+        self.current_charge = None
+        self.last_charging_status = None
         self.config = config
         self.geo = geo
 
@@ -53,6 +57,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self):
         await self.storage.async_setup()
+        self.current_charge = (
+        await self.charging_storage.async_load_current_charge()
+        )
         data = await self.storage.load_current_trip()
         if data:
             self.current_trip = Trip.from_dict(data)
@@ -72,7 +79,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     def _read_vehicle_state(self):
         data = {}
-        for key in ("ignition", "odometer", "soc"):
+        for key in ("ignition", "odometer", "soc", "charging_status"):
             st = self.hass.states.get(self.config.get(key))
             data[key] = st.state if st else None
 
