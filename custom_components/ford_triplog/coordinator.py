@@ -77,16 +77,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.hass, entities, self._state_changed
         )
 
-    def _read_vehicle_state(self):
-        data = {}
-        for key in ("ignition", "odometer", "soc", "charging_status"):
-            st = self.hass.states.get(self.config.get(key))
-            data[key] = st.state if st else None
+        def _read_vehicle_state(self):
+            data = {}
 
-        tracker = self.hass.states.get(self.config.get("tracker"))
-        data["latitude"] = tracker.attributes.get("latitude") if tracker else None
-        data["longitude"] = tracker.attributes.get("longitude") if tracker else None
-        return data
+            for key in ("ignition", "odometer", "soc", "charging_status"):
+                entity_id = self.config.get(key)
+                if not entity_id:
+                    data[key] = None
+                    continue
+
+                st = self.hass.states.get(entity_id)
+                data[key] = st.state if st else None
+
+            tracker_id = self.config.get("tracker")
+            tracker = self.hass.states.get(tracker_id) if tracker_id else None
+
+            data["latitude"] = tracker.attributes.get("latitude") if tracker else None
+            data["longitude"] = tracker.attributes.get("longitude") if tracker else None
+
+            return data
 
     async def _state_changed(self, event: Event):
         self.vehicle_state = self._read_vehicle_state()
