@@ -218,18 +218,20 @@ This dashboard is provided as inspiration only and is not part of the integratio
 
 ## Next
 
+### Smart Charging
+
+- Integrate charging stops into trips
+- Automatic trip continuation after charging
+- Detect charging pauses
 - AC/DC charging detection
 - Charged energy (kWh)
 - Named charging locations
+
+### Trip Analytics
+
 - Trip ↔ Charging correlation
-
-## Future
-
-- Multi-vehicle support
-- GPX export
-- CSV export
-- Dashboard cards
-- Maintenance tracking
+- Charging time per trip
+- Improved trip statistics
 
 ---
 
