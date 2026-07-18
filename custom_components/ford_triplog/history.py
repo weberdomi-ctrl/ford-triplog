@@ -9,6 +9,7 @@ Version: 1.0.1
 from __future__ import annotations
 
 import logging
+from datetime import datetime
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -21,6 +22,9 @@ class FordTriplogHistory:
 
     async def get_last_trip(self):
         return await self.storage.load_last_trip()
+    
+    async def get_last_charge(self):
+        return await self.storage.load_last_charge()
 
     async def get_all_trips(self):
         trips = []
@@ -32,23 +36,72 @@ class FordTriplogHistory:
 
         return trips
 
+    async def get_all_charges(self):
+        charges = []
+
+        for path in await self.storage.list_charges():
+            charge = await self.storage.load_charge_file(path)
+            if charge:
+                charges.append(charge)
+
+        return charges
+
     async def get_statistics(self):
         trips = await self.get_all_trips()
+        charges = await self.get_all_charges()
 
         total_distance = 0.0
         total_duration = 0
         total_energy = 0.0
+        charge_count = 0
+        total_charge_duration = 0.0
+        total_soc_added = 0
+
+        for charge in charges:
+            charge_count += 1
+
+            start_soc = charge.get("start_soc")
+            end_soc = charge.get("end_soc")
+
+            if start_soc is not None and end_soc is not None:
+                total_soc_added += end_soc - start_soc
+
+            start_time = charge.get("start_time")
+            end_time = charge.get("end_time")
+
+            if start_time and end_time:
+                start_dt = datetime.fromisoformat(start_time)
+                end_dt = datetime.fromisoformat(end_time)
+                total_charge_duration += (
+                    end_dt - start_dt
+                ).total_seconds()
 
         for trip in trips:
             total_distance += float(trip.get("distance_km") or 0)
             total_duration += int(trip.get("duration_seconds") or 0)
             total_energy += float(trip.get("energy_used_kwh") or 0)
 
+        average_charge_duration = (
+            total_charge_duration / charge_count
+            if charge_count
+            else 0
+        )
+
+        average_soc_added = (
+            total_soc_added / charge_count
+            if charge_count
+            else 0
+        )       
+
         return {
             "trip_count": len(trips),
             "total_distance_km": round(total_distance, 1),
             "total_duration_seconds": total_duration,
             "total_energy_used_kwh": round(total_energy, 2),
+            "charge_count": charge_count,
+            "total_charge_duration": round(total_charge_duration, 1),
+            "average_charge_duration": round(average_charge_duration, 1),
+            "average_soc_added": round(average_soc_added, 1),
         }
 
     async def refresh_statistics(self):

@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.0.2-dev
+Version: 1.2.0
 """
 
 from __future__ import annotations
@@ -343,6 +343,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         charge = self.current_charge.to_dict()
 
         await self.storage.save_charge(charge)
+        await self.storage.save_last_charge(charge)
+
         await self.storage.delete_current_charge()
 
         self.current_charge = None

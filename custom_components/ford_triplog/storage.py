@@ -149,6 +149,15 @@ class FordTriplogStorage:
         """Load archived trip file."""
 
         return await self._load_json(path)
+    
+    async def load_charge_file(
+        self,
+        path: Path,
+    ) -> dict[str, Any] | None:
+        """Load archived charge file."""
+
+        return await self._load_json(path)
+
 
     async def _delete_file(
         self,
@@ -167,6 +176,9 @@ class FordTriplogStorage:
 
     def _last_trip_file(self) -> Path:
         return self.cache_path / "last_trip.json"
+    
+    def _last_charge_file(self) -> Path:
+        return self.cache_path / "last_charge.json"
 
     def _statistics_file(self) -> Path:
         return self.cache_path / "statistics.json"
@@ -301,6 +313,17 @@ class FordTriplogStorage:
         return sorted(
             self.trips_path.rglob("*.json")
         )
+    
+    async def list_charges(self) -> list[Path]:
+        """Return archived charging sessions."""
+
+        if not self.charges_path.exists():
+            return []
+
+        return sorted(
+            self.charges_path.rglob("*.json")
+        )
+
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:
         return await self._save_json(
@@ -312,6 +335,23 @@ class FordTriplogStorage:
         return await self._load_json(
             self._last_trip_file()
         )
+
+    async def save_last_charge(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        return await self._save_json(
+            self._last_charge_file(),
+            data,
+        )
+
+    async def load_last_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        return await self._load_json(
+            self._last_charge_file()
+        )
+
 
     async def save_statistics(self, data: dict[str, Any]) -> bool:
         return await self._save_json(
