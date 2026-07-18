@@ -3,7 +3,7 @@ Ford Triplog
 
 Trip model.
 
-Version: 1.0.1
+Version: 1.2.0
 """
 
 from __future__ import annotations

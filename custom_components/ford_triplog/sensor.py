@@ -83,7 +83,15 @@ async def async_setup_entry(
             FordTriplogDurationSensor(coordinator, history),
             FordTriplogTripCountSensor(coordinator, history),         
             FordTriplogChargeCountSensor(coordinator,history,),
-        
+            FordTriplogAverageChargeSocAddedSensor(coordinator,history,),
+            FordTriplogAverageChargeDurationSensor(coordinator,history,),
+            FordTriplogAverageChargeStartSocSensor(coordinator,history,),
+            FordTriplogAverageChargeEndSocSensor(coordinator,history,),
+            FordTriplogAverageTripDistanceSensor(coordinator,history,),
+            FordTriplogAverageTripDurationSensor(coordinator,history,),
+            FordTriplogAverageTripEnergySensor(coordinator,history,),
+            FordTriplogAverageTripSocUsedSensor(coordinator,history,),
+            FordTriplogAverageTripConsumptionSensor(coordinator,history,),
         ]
 
 
@@ -640,4 +648,191 @@ class FordTriplogChargeCountSensor(FordTriplogSensorBase):
             statistics.get("charge_count", 0)
             if statistics
             else 0
+        )
+class FordTriplogAverageChargeSocAddedSensor(FordTriplogSensorBase):
+    """Average SOC added per charging session."""
+
+    _attr_name = "Average Charge SOC Added"
+    _attr_unique_id = "ford_triplog_average_charge_soc_added"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:battery-plus"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_soc_added")
+            if statistics
+            else None
+        )
+class FordTriplogAverageChargeDurationSensor(FordTriplogSensorBase):
+    """Average charging duration."""
+
+    _attr_name = "Average Charge Duration"
+    _attr_unique_id = "ford_triplog_average_charge_duration"
+    _attr_icon = "mdi:clock-outline"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        seconds = (
+            statistics.get("average_charge_duration")
+            if statistics
+            else None
+        )
+
+        self._value = format_duration(seconds)
+
+class FordTriplogAverageChargeStartSocSensor(FordTriplogSensorBase):
+    """Average SOC at the start of charging sessions."""
+
+    _attr_name = "Average Charge Start SOC"
+    _attr_unique_id = "ford_triplog_average_charge_start_soc"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = ICON_SOC
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_start_soc")
+            if statistics
+            else None
+        )
+
+class FordTriplogAverageChargeEndSocSensor(FordTriplogSensorBase):
+    """Average SOC at the end of charging sessions."""
+
+    _attr_name = "Average Charge End SOC"
+    _attr_unique_id = "ford_triplog_average_charge_end_soc"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = ICON_SOC
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_end_soc")
+            if statistics
+            else None
+        )
+
+class FordTriplogAverageTripDistanceSensor(FordTriplogSensorBase):
+    """Average trip distance."""
+
+    _attr_name = "Average Trip Distance"
+    _attr_unique_id = "ford_triplog_average_trip_distance"
+    _attr_native_unit_of_measurement = "km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:map-marker-distance"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_trip_distance_km")
+            if statistics
+            else None
+        )
+
+class FordTriplogAverageTripDurationSensor(FordTriplogSensorBase):
+    """Average trip duration."""
+
+    _attr_name = "Average Trip Duration"
+    _attr_unique_id = "ford_triplog_average_trip_duration"
+    _attr_icon = "mdi:clock-outline"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        seconds = (
+            statistics.get("average_trip_duration_seconds")
+            if statistics
+            else None
+        )
+
+        self._value = format_duration(seconds)
+
+class FordTriplogAverageTripEnergySensor(FordTriplogSensorBase):
+    """Average trip energy used."""
+
+    _attr_name = "Average Trip Energy Used"
+    _attr_unique_id = "ford_triplog_average_trip_energy_used"
+    _attr_native_unit_of_measurement = "kWh"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:lightning-bolt"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_trip_energy_used_kwh")
+            if statistics
+            else None
+        )
+
+class FordTriplogAverageTripSocUsedSensor(FordTriplogSensorBase):
+    """Average SOC used per trip."""
+
+    _attr_name = "Average Trip SOC Used"
+    _attr_unique_id = "ford_triplog_average_trip_soc_used"
+    _attr_native_unit_of_measurement = "%"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:battery-minus"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_trip_soc_used")
+            if statistics
+            else None
+        )
+
+class FordTriplogAverageTripConsumptionSensor(FordTriplogSensorBase):
+    """Average trip consumption."""
+
+    _attr_name = "Average Trip Consumption"
+    _attr_unique_id = "ford_triplog_average_trip_consumption"
+    _attr_native_unit_of_measurement = "kWh/100 km"
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_icon = "mdi:ev-station"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            statistics.get("average_trip_consumption")
+            if statistics
+            else None
         )

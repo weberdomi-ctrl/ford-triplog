@@ -3,9 +3,9 @@ Ford Triplog
 
 Track your Ford.
 
-Storage layer for trips, recovery data and cache.
+Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.0.0
+Version: 1.2.0
 """
 
 from __future__ import annotations

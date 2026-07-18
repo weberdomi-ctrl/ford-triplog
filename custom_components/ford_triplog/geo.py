@@ -3,7 +3,7 @@ Ford Triplog
 
 Geo helper for reverse geocoding.
 
-Version: 1.0.0
+Version: 1.2.0
 """
 
 from __future__ import annotations

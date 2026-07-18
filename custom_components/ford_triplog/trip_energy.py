@@ -1,6 +1,6 @@
 """
 Ford Triplog Trip
-Version 1.0.0
+Version 1.2.0
 """
 
 from __future__ import annotations

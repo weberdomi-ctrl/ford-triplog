@@ -1,6 +1,69 @@
 # Changelog
 
-## Version 1.2.0
+## 1.2.0
+
+### New
+
+#### Charging
+
+- Added complete charging session recording
+- Automatic charging start detection
+- Automatic charging end detection
+- Charging recovery after Home Assistant restart
+- Local charging history
+- Last charging cache
+
+#### Charging Sensors
+
+- Last Charge Time
+- Last Charge End Time
+- Last Charge Duration
+- Last Charge Address
+- Last Charge Start SOC
+- Last Charge End SOC
+- Last Charge SOC Added
+
+#### Trip Sensors
+
+- Last Trip Start SOC
+- Last Trip End SOC
+- Last Trip SOC Used
+
+#### Statistics
+
+Added charging statistics:
+
+- Charge Count
+- Average Charge Duration
+- Average Charge Start SOC
+- Average Charge End SOC
+- Average Charge SOC Added
+
+Added trip statistics:
+
+- Average Trip Distance
+- Average Trip Duration
+- Average Trip Energy Used
+- Average Trip Consumption
+- Average Trip SOC Used
+
+### Changed
+
+- Improved history handling
+- Improved statistics engine
+- Improved recovery handling
+- Improved local storage
+- Cleaner sensor naming
+- Improved address formatting
+
+### Fixed
+
+- Various recovery issues
+- Storage consistency improvements
+- Sensor update improvements
+- Statistics calculation improvements
+
+## Version 1.2.0 beta
 
 ### Added
 - New sensors:

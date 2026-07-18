@@ -28,13 +28,16 @@ The official FordPass integration provides vehicle data, but it does not maintai
 ### Highlights
 
 - 🚗 Automatic trip detection
+- ⚡ Automatic charging detection
 - 📍 Start & destination addresses
-- ⚡ Energy consumption (kWh)
 - 🔋 Battery usage (SOC)
-- 📈 Efficiency (kWh/100 km)
-- 📊 Long-term statistics
+- ⚡ Energy consumption (kWh)
+- 🔌 Charging history
+- 📈 Driving & charging statistics
+- 💾 Automatic recovery after Home Assistant restart
 - 🏠 100% local data storage
 - 🔧 Native Home Assistant integration
+
 
 ---
 
@@ -62,12 +65,15 @@ The official FordPass integration provides vehicle data, but it does not maintai
 
 # Features
 
-| Trip Logging | Energy | Statistics | Home Assistant |
+| Trips | Charging | Statistics | Home Assistant |
 |---|---|---|---|
-| Automatic trip detection | Consumption (kWh) | Total distance | Config Flow |
-| Smart Trip | Efficiency | Total energy | Options Flow |
-| Start & End Address | SOC usage | Average consumption | Native Sensors |
-| Driving Time | Average Speed | Trip History | Local Branding |
+| Automatic trip detection | Automatic charge detection | Trip statistics | Config Flow |
+| Smart Trip | Charge history | Charging statistics | Options Flow |
+| Start & End Address | Charge Address | Average Consumption | Native Sensors |
+| Start & End SOC | Start & End SOC | Average Charge Duration | Local Storage |
+| Driving Time | Charging Duration | Trip Count | Recovery |
+| Distance | SOC Added | Charge Count | Local Branding |
+| Energy Used | Charging History | Average SOC | |
 
 ---
 
@@ -102,23 +108,46 @@ Copy the folder into your Home Assistant configuration directory and restart Hom
 | Last Distance | km |
 | Last Driving Time | formatted |
 | Last Duration (Raw) | s |
+| Last Start SOC | % |
+| Last End SOC | % |
 | Last SOC Used | % |
 | Last Consumption | kWh |
 | Last Efficiency | kWh/100 km |
 | Last Average Speed | km/h |
-| Last Start Time | - |
-| Last End Time | - |
+| Last Start Time | — |
+| Last End Time | — |
+
+## Last Charging Session
+
+| Sensor | Unit |
+|---|---|
+| Last Charge Address | — |
+| Last Charge Start Time | — |
+| Last Charge End Time | — |
+| Last Charge Duration | formatted |
+| Last Charge Start SOC | % |
+| Last Charge End SOC | % |
+| Last Charge SOC Added | % |
+
 
 ## Statistics
 
 | Sensor | Unit |
 |---|---|
 | Trip Count | trips |
+| Charge Count | charges |
 | Total Distance | km |
 | Total Energy | kWh |
-| Average Consumption | kWh/100 km |
 | Total Driving Time | formatted |
-| Total Duration (Raw) | s |
+| Average Trip Distance | km |
+| Average Trip Duration | formatted |
+| Average Trip Energy | kWh |
+| Average Consumption | kWh/100 km |
+| Average Trip SOC Used | % |
+| Average Charge Duration | formatted |
+| Average Charge Start SOC | % |
+| Average Charge End SOC | % |
+| Average Charge SOC Added | % |
 
 ---
 
@@ -132,31 +161,69 @@ This dashboard is provided as inspiration only and is not part of the integratio
 ---
 # What's New in 1.2.0
 
-### Added
+## Added
 
-- Last Consumption sensor
-- Last Efficiency sensor
-- Last Average Speed sensor
-- Total Energy sensor
-- Average Consumption sensor
+### Charging
 
-### Improved
-
-- Home Assistant SensorStateClass support
-- Long-term statistics compatibility
-- Dashboard compatibility
-
----
-
-# Roadmap
-
-### Next
-
+- Automatic charging detection
 - Charging history
-- Charging statistics
-- More trip analytics
+- Charging recovery after Home Assistant restart
+- Local charging storage
+- Last charge cache
 
-### Future
+### New Charging Sensors
+
+- Last Charge Address
+- Last Charge Start Time
+- Last Charge End Time
+- Last Charge Duration
+- Last Charge Start SOC
+- Last Charge End SOC
+- Last Charge SOC Added
+
+### New Trip Sensors
+
+- Last Trip Start SOC
+- Last Trip End SOC
+- Last Trip SOC Used
+
+### Statistics
+
+- Charge Count
+- Average Charge Duration
+- Average Charge Start SOC
+- Average Charge End SOC
+- Average Charge SOC Added
+- Average Trip Distance
+- Average Trip Duration
+- Average Trip Energy Used
+- Average Trip Consumption
+- Average Trip SOC Used
+
+## Improved
+
+- Statistics engine
+- Recovery handling
+- Local storage
+- Address formatting
+- Sensor naming
+- Home Assistant SensorStateClass support
+
+## Fixed
+
+- Statistics calculation
+- Storage consistency
+- Sensor update reliability
+- Recovery handling
+
+## Next
+
+- AC/DC charging detection
+- Charged energy (kWh)
+- Named charging locations
+- Trip ↔ Charging correlation
+
+## Future
 
 - Multi-vehicle support
 - GPX export
