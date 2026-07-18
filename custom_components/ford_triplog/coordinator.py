@@ -19,7 +19,6 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from .geo import FordTriplogGeo
 from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
-from .charging_storage import FordTriplogChargingStorage
 from .trip import Trip
 
 from .const import SMART_TRIP_TIMEOUT
@@ -39,9 +38,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.hass = hass
         self.storage = storage
         self.history = FordTriplogHistory(storage)
-        self.charging_storage = FordTriplogChargingStorage(hass)
-        self.current_charge = None
-        self.last_charging_status = None
         self.config = config
         self.geo = geo
 
@@ -57,9 +53,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self):
         await self.storage.async_setup()
-        self.current_charge = (
-        await self.charging_storage.async_load_current_charge()
-        )
         data = await self.storage.load_current_trip()
         if data:
             self.current_trip = Trip.from_dict(data)
@@ -77,25 +70,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.hass, entities, self._state_changed
         )
 
-        def _read_vehicle_state(self):
-            data = {}
+    def _read_vehicle_state(self):
+        data = {}
+        for key in ("ignition", "odometer", "soc"):
+            st = self.hass.states.get(self.config.get(key))
+            data[key] = st.state if st else None
 
-            for key in ("ignition", "odometer", "soc", "charging_status"):
-                entity_id = self.config.get(key)
-                if not entity_id:
-                    data[key] = None
-                    continue
-
-                st = self.hass.states.get(entity_id)
-                data[key] = st.state if st else None
-
-            tracker_id = self.config.get("tracker")
-            tracker = self.hass.states.get(tracker_id) if tracker_id else None
-
-            data["latitude"] = tracker.attributes.get("latitude") if tracker else None
-            data["longitude"] = tracker.attributes.get("longitude") if tracker else None
-
-            return data
+        tracker = self.hass.states.get(self.config.get("tracker"))
+        data["latitude"] = tracker.attributes.get("latitude") if tracker else None
+        data["longitude"] = tracker.attributes.get("longitude") if tracker else None
+        return data
 
     async def _state_changed(self, event: Event):
         self.vehicle_state = self._read_vehicle_state()
@@ -110,21 +94,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             await self.finish_trip()
 
         self.last_ignition = ignition
-
-        # Charging Status überwachen
-        charging_status = str(
-            self.vehicle_state.get("charging_status", "")
-        ).upper()
-
-        if charging_status != self.last_charging_status:
-            _LOGGER.debug(
-                "Charging status changed: %s -> %s",
-                self.last_charging_status,
-                charging_status,
-            )
-
-        self.last_charging_status = charging_status
-
         self.async_set_updated_data(self.vehicle_state)
 
     async def _wait_for_stable_vehicle_state(self):
@@ -140,7 +109,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 current.get("soc"),
                 current.get("latitude"),
                 current.get("longitude"),
-                current.get("charging_status"),
             )
 
             _LOGGER.debug("Vehicle state check %s", key)
