@@ -20,6 +20,7 @@ from .geo import FordTriplogGeo
 from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
+from .charge import Charge
 
 from .const import SMART_TRIP_TIMEOUT
 
@@ -42,9 +43,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.geo = geo
 
         self.current_trip: Trip | None = None
+        self.current_charge: Charge | None = None
+
         self.vehicle_state: dict[str, Any] = {}
+
         self.last_ignition = False
+        self.last_charging = False
+
         self.remove_listener = None
+
 
         # Smart Trip
         self.trip_pause_time = None
@@ -53,9 +60,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self):
         await self.storage.async_setup()
+
         data = await self.storage.load_current_trip()
         if data:
             self.current_trip = Trip.from_dict(data)
+
+        data = await self.storage.load_current_charge()
+        if data:
+            self.current_charge = Charge.from_dict(data)        
 
         entities = [
             e for e in (
@@ -63,6 +75,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.config.get("odometer"),
                 self.config.get("tracker"),
                 self.config.get("soc"),
+                self.config.get("charging"),
             ) if e
         ]
 
@@ -72,14 +85,27 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     def _read_vehicle_state(self):
         data = {}
-        for key in ("ignition", "odometer", "soc"):
-            st = self.hass.states.get(self.config.get(key))
+
+        for key in (
+            "ignition",
+            "odometer",
+            "soc",
+            "charging",    
+        ):
+            entity_id = self.config.get(key)
+            st = self.hass.states.get(entity_id) if entity_id else None
             data[key] = st.state if st else None
+
+
+
 
         tracker = self.hass.states.get(self.config.get("tracker"))
         data["latitude"] = tracker.attributes.get("latitude") if tracker else None
         data["longitude"] = tracker.attributes.get("longitude") if tracker else None
         return data
+
+
+
 
     async def _state_changed(self, event: Event):
         self.vehicle_state = self._read_vehicle_state()
@@ -87,13 +113,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "on", "true", "1", "running"
         )
 
+        charging_state = str(
+            self.vehicle_state.get("charging")
+        ).upper()
+
+        charging = charging_state == "IN_PROGRESS"
+
+
+        # Trip handling
         if not self.last_ignition and ignition:
             await self.start_trip()
 
         elif self.last_ignition and not ignition:
             await self.finish_trip()
 
+        # Charge handling
+        if not self.last_charging and charging:
+            await self.start_charge()
+
+        elif self.last_charging and not charging:
+            await self.finish_charge()
+
         self.last_ignition = ignition
+        self.last_charging = charging
+
         self.async_set_updated_data(self.vehicle_state)
 
     async def _wait_for_stable_vehicle_state(self):
@@ -216,6 +259,53 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             SMART_TRIP_TIMEOUT,
 )
 
+    async def start_charge(self):
+        """Start charging session."""
+    
+        if self.current_charge:
+            return
+
+        state = self._read_vehicle_state()
+        address = await self._get_address(state)
+
+        self.current_charge = Charge()
+
+
+        self.current_charge.start(
+            soc=state.get("soc"),
+            latitude=state.get("latitude"),
+            longitude=state.get("longitude"),
+            address=address,
+        )
+        await self.storage.save_current_charge(
+            self.current_charge.to_dict()
+        )
+
+        _LOGGER.info(
+            "Charging started at %s%%",
+            state.get("soc"),
+        )
+
+        self.async_set_updated_data(state)
+
+
+    async def finish_charge(self):
+        """Finish charging session."""
+
+        if not self.current_charge:
+            return
+
+        state = self._read_vehicle_state()
+        address = await self._get_address(state)
+
+        self.current_charge.finish(
+            soc=state.get("soc"),
+            latitude=state.get("latitude"),
+            longitude=state.get("longitude"),
+            address=address,
+        )
+
+        await self._finalize_charge(state)
 
     async def _finalize_trip(self, state):
         """Finalize and save trip."""
@@ -242,6 +332,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.async_set_updated_data(state)
 
         _LOGGER.info("Trip saved successfully")
+
+
+    async def _finalize_charge(self, state):
+        """Finalize and save charging session."""
+
+        if not self.current_charge:
+            return
+
+        charge = self.current_charge.to_dict()
+
+        await self.storage.save_charge(charge)
+        await self.storage.delete_current_charge()
+
+        self.current_charge = None
+
+        self.async_set_updated_data(state)
+
+        _LOGGER.info("Charging session saved successfully")
+
 
     async def _smart_trip_timeout(self):
         """Finalize paused trip after timeout."""

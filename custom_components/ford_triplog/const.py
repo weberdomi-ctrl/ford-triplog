@@ -42,6 +42,9 @@ CONF_IGNITION: Final = "ignition"
 CONF_ODOMETER: Final = "odometer"
 CONF_TRACKER: Final = "tracker"
 CONF_SOC: Final = "soc"
+CONF_CHARGING: Final = "charging"
+
+
 
 CONF_SMART_TRIP: Final = "smart_trip"
 CONF_SMART_TRIP_TIMEOUT: Final = "smart_trip_timeout"

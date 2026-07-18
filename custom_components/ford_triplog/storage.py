@@ -38,7 +38,9 @@ class FordTriplogStorage:
 
         self.recovery_path = self.base_path / "recovery"
         self.trips_path = self.base_path / "trips"
+        self.charges_path = self.base_path / "charges"
         self.cache_path = self.base_path / "cache"
+
 
     async def async_setup(self) -> None:
         """Initialize storage directories."""
@@ -46,6 +48,7 @@ class FordTriplogStorage:
         for path in (
             self.recovery_path,
             self.trips_path,
+            self.charges_path,
             self.cache_path,
         ):
             path.mkdir(parents=True, exist_ok=True)
@@ -158,6 +161,9 @@ class FordTriplogStorage:
 
     def _current_trip_file(self) -> Path:
         return self.recovery_path / "current_trip.json"
+    
+    def _current_charge_file(self) -> Path:
+        return self.recovery_path / "current_charge.json"
 
     def _last_trip_file(self) -> Path:
         return self.cache_path / "last_trip.json"
@@ -167,6 +173,8 @@ class FordTriplogStorage:
 
     def _diagnostics_file(self) -> Path:
         return self.cache_path / "diagnostics.json"
+
+
 
     async def save_current_trip(self, data: dict[str, Any]) -> bool:
         return await self._save_json(
@@ -183,6 +191,31 @@ class FordTriplogStorage:
         await self._delete_file(
             self._current_trip_file()
         )
+
+    async def save_current_charge(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        return await self._save_json(
+            self._current_charge_file(),
+            data,
+        )
+
+    async def load_current_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        return await self._load_json(
+            self._current_charge_file()
+        )
+
+    async def delete_current_charge(
+        self,
+    ) -> None:
+        await self._delete_file(
+            self._current_charge_file()
+        )
+
+
 
     async def save_trip(self, data: dict[str, Any]) -> bool:
         """Archive completed trip."""
@@ -220,6 +253,44 @@ class FordTriplogStorage:
             counter += 1
 
         return await self._save_json(path, data)
+
+    async def save_charge(self, data: dict[str, Any]) -> bool:
+        """Archive completed charging session."""
+
+        start = data.get("start_time")
+
+        if not start:
+            _LOGGER.error("Charge without start_time")
+            return False
+
+        timestamp = datetime.fromisoformat(
+            start.replace("Z", "+00:00")
+        )
+
+        folder = (
+            self.charges_path
+            / timestamp.strftime("%Y")
+            / timestamp.strftime("%m")
+        )
+
+        filename = timestamp.strftime(
+            "%Y-%m-%d_%H-%M-%S.json"
+        )
+
+        path = folder / filename
+        counter = 1
+
+        while path.exists():
+            path = folder / (
+                timestamp.strftime(
+                    "%Y-%m-%d_%H-%M-%S"
+                )
+                + f"_{counter}.json"
+            )
+            counter += 1
+
+        return await self._save_json(path, data)
+
 
     async def list_trips(self) -> list[Path]:
         """Return archived trips."""
