@@ -86,7 +86,7 @@ The official FordPass integration provides vehicle data, but it does not maintai
 ## Requirements
 
 - Home Assistant 2026.6 or newer
-- Official FordPass Integration
+- [HACS FordPass Integration](https://github.com/marq24/ha-fordpass)
 - Supported Ford vehicle
 
 ## HACS 
