@@ -26,7 +26,8 @@
         "data": {
           "soh": "State of Health (SOH)",
           "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+          "smart_trip_timeout": "Smart Trip timeout (seconds)",
+          "charging": "Charging status sensor"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
