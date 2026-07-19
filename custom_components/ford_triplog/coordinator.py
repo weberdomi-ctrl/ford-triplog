@@ -72,26 +72,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if data:
             self.current_trip = Trip.from_dict(data)
 
-            state = self._read_vehicle_state()
-
-            ignition = str(state.get("ignition")).lower() in (
-                "on",
-                "true",
-                "1",
-                "running",
-            )
-
-            if not ignition:
-                _LOGGER.info(
-                    "Recovered unfinished trip with ignition OFF - finalizing."
-                )
-
-                self.trip_pause_data = self.current_trip
-                self.current_trip = None
-
-                await self._smart_trip_timeout()
-
-         
+          
         data = await self.storage.load_current_charge()
         if data:
             self.current_charge = Charge.from_dict(data)        
@@ -146,18 +127,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         ).upper()
 
         charging = charging_state == "IN_PROGRESS"
-
-        # Recover unfinished trip after Home Assistant restart
-        if (
-            self.current_trip
-            and not ignition
-            and self.trip_pause_data is None
-        ):
-            _LOGGER.info(
-                "Recovered unfinished trip with ignition OFF."
-            )
-            await self.finish_trip()
-            return
 
 
         # Trip handling
@@ -357,8 +326,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         trip = self.current_trip.to_dict()
 
         # Energy calculation
-        start_soc = float(trip.get("start_soc", 0))
-        end_soc = float(trip.get("end_soc", 0))
+        start_soc = float(trip.get("start_soc") or 0)
+        end_soc = float(trip.get("end_soc") or 0)
         soc_delta = max(0, start_soc - end_soc)
 
         trip["energy_used_kwh"] = round(
@@ -388,8 +357,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         charge = self.current_charge.to_dict()
 
-        start_soc = float(charge.get("start_soc", 0))
-        end_soc = float(charge.get("end_soc", 0))
+        start_soc = float(charge.get("start_soc") or 0)
+        end_soc = float(charge.get("end_soc") or 0)
         soc_delta = max(0, end_soc - start_soc)
 
         charge["energy_added_kwh"] = round(
