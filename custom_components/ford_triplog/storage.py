@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.2.0
+Version: 1.2.2
 """
 
 from __future__ import annotations
@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import functools
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -85,12 +86,11 @@ class FordTriplogStorage:
                 parents=True,
                 exist_ok=True,
             )
-
-            temp = path.with_suffix(".tmp")
-
-            with temp.open(
-                "w",
+            with tempfile.NamedTemporaryFile(
+                mode="w",
                 encoding="utf-8",
+                dir=path.parent,
+                delete=False,
             ) as file:
                 json.dump(
                     self._add_metadata(data),
@@ -99,8 +99,14 @@ class FordTriplogStorage:
                     ensure_ascii=False,
                 )
 
+                file.flush()
+                os.fsync(file.fileno())
+
+                temp = Path(file.name)
+
             os.replace(temp, path)
 
+           
         try:
             await self.hass.async_add_executor_job(
                 functools.partial(_write)
