@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.2.0
+Version: 1.2.2
 """
 
 from __future__ import annotations
@@ -63,7 +63,6 @@ async def async_setup_entry(
             FordTriplogLastAverageSpeedSensor(coordinator, history),
             FordTriplogLastDurationFormattedSensor(coordinator, history),
             FordTriplogLastDurationSensor(coordinator, history),
-            FordTriplogLastSocSensor(coordinator, history),
             FordTriplogLastChargeStartTimeSensor(coordinator,history,),
             FordTriplogLastChargeEndTimeSensor(coordinator,history,),
             FordTriplogLastChargeStartSocSensor(coordinator,history,),
@@ -327,17 +326,6 @@ class FordTriplogLastDurationFormattedSensor(FordTriplogSensorBase):
             else None
         )
 
-class FordTriplogLastSocSensor(FordTriplogSensorBase):
-    _attr_name = "Last SOC Used"
-    _attr_unique_id = "ford_triplog_last_trip_soc_used"
-    _attr_native_unit_of_measurement = "%"
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_icon = ICON_SOC
-
-    def update_values(self, statistics, last_trip,last_charge):
-        self._value = last_trip.get("soc_used") if last_trip else None
-
-
 class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
     _attr_name = "Last Start Address"
     _attr_unique_id = "ford_triplog_last_trip_start_address"
@@ -349,7 +337,6 @@ class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
             if last_trip
             else None
         )
-
 
 class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     _attr_name = "Last End Address"

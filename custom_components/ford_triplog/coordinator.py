@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.2.0
+Version: 1.2.2
 """
 
 from __future__ import annotations
@@ -42,6 +42,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.config = config
         self.geo = geo
 
+        # Battery capacity (kWh)
+        self.battery_capacity = float(config.get("battery_capacity_kwh", 77))
+
+        self.smart_trip_timeout = int(
+        config.get("smart_trip_timeout", SMART_TRIP_TIMEOUT)
+)
+
+
         self.current_trip: Trip | None = None
         self.current_charge: Charge | None = None
 
@@ -52,11 +60,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.remove_listener = None
 
-
         # Smart Trip
-        self.trip_pause_time = None
-        self.trip_pause_data = None
-        self.smart_trip_timer = None
+        self.trip_pause_time: float | None = None
+        self.trip_pause_data: Trip | None = None
+        self.smart_trip_timer: asyncio.TimerHandle | None = None
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -243,11 +250,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug(
         "Trip paused - waiting %s seconds",
-        SMART_TRIP_TIMEOUT,
+        self.smart_trip_timeout,
         )
 
         self.smart_trip_timer = self.hass.loop.call_later(
-            SMART_TRIP_TIMEOUT,
+            self.smart_trip_timeout,
             lambda: self.hass.async_create_task(
                 self._smart_trip_timeout()
             ),
@@ -256,7 +263,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.info(
             "Trip paused for Smart Trip (%ss)",
-            SMART_TRIP_TIMEOUT,
+            self.smart_trip_timeout,
 )
 
     async def start_charge(self):
@@ -307,6 +314,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         await self._finalize_charge(state)
 
+
     async def _finalize_trip(self, state):
         """Finalize and save trip."""
 
@@ -315,19 +323,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         trip = self.current_trip.to_dict()
 
+        # Energy calculation
+        start_soc = float(trip.get("start_soc", 0))
+        end_soc = float(trip.get("end_soc", 0))
+        soc_delta = max(0, start_soc - end_soc)
+
+        trip["energy_used_kwh"] = round(
+            (soc_delta / 100) * self.battery_capacity,
+            2,
+        )
+
         await self.storage.save_trip(trip)
         await self.storage.save_last_trip(trip)
         await self.history.refresh_statistics()
         await self.storage.delete_current_trip()
 
         self.current_trip = None
-        self.trip_pause_data = None
-        self.trip_pause_time = None
 
-        if self.smart_trip_timer:
-            self.smart_trip_timer.cancel()
-
-        self.smart_trip_timer = None
+    
 
         self.async_set_updated_data(state)
 
@@ -341,6 +354,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         charge = self.current_charge.to_dict()
+
+        start_soc = float(charge.get("start_soc", 0))
+        end_soc = float(charge.get("end_soc", 0))
+        soc_delta = max(0, end_soc - start_soc)
+
+        charge["energy_added_kwh"] = round(
+            (soc_delta / 100) * self.battery_capacity,
+            2,
+        )
 
         await self.storage.save_charge(charge)
         await self.storage.save_last_charge(charge)
@@ -357,7 +379,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     async def _smart_trip_timeout(self):
         """Finalize paused trip after timeout."""
 
-        _LOGGER.warning("=== SMART TRIP TIMEOUT STARTED ===")
+        _LOGGER.info("Smart Trip timeout reached")
 
         if not self.trip_pause_data:
             return

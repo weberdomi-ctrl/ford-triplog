@@ -26,12 +26,14 @@
         "data": {
           "smart_trip": "Smart Trip aktivieren",
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
-          "charging": "Ladestatus Sensor"
+          "charging": "Ladestatus Sensor",
+          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)"   
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
-          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)"
+          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",       
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität deines Fahrzeugs. Standard: 77 kWh."   
         }
       }
     }

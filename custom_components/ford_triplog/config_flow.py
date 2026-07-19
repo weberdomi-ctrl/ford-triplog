@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.2.0
+Version: 1.2.2
 """
 
 from __future__ import annotations
@@ -31,9 +31,12 @@ from .const import (
     CONF_SMART_TRIP_TIMEOUT,
     CONF_SOC,
     CONF_TRACKER,
+    CONF_BATTERY_CAPACITY,
     DOMAIN,
     NAME,
 )
+
+
 class FordTriplogConfigFlow(
     config_entries.ConfigFlow,
     domain=DOMAIN,
@@ -48,10 +51,7 @@ class FordTriplogConfigFlow(
         config_entry: ConfigEntry,
     ) -> OptionsFlow:
         """Return the options flow."""
-
-        return FordTriplogOptionsFlow(
-            config_entry,
-        )
+        return FordTriplogOptionsFlow(config_entry)
 
     async def async_step_user(
         self,
@@ -61,10 +61,7 @@ class FordTriplogConfigFlow(
 
         if user_input is not None:
 
-            await self.async_set_unique_id(
-                DOMAIN,
-            )
-
+            await self.async_set_unique_id(DOMAIN)
             self._abort_if_unique_id_configured()
 
             return self.async_create_entry(
@@ -76,55 +73,30 @@ class FordTriplogConfigFlow(
             step_id="user",
             data_schema=self._build_schema(),
         )
+
     @staticmethod
     def _build_schema() -> vol.Schema:
         """Return configuration schema."""
 
         return vol.Schema(
             {
-                vol.Required(
-                    CONF_IGNITION,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                    )
+                vol.Required(CONF_IGNITION): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Required(
-                    CONF_ODOMETER,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                    )
+                vol.Required(CONF_ODOMETER): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Required(
-                    CONF_TRACKER,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="device_tracker",
-                    )
+                vol.Required(CONF_TRACKER): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="device_tracker")
                 ),
-                vol.Optional(
-                    CONF_SOC,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                    )
+                vol.Optional(CONF_SOC): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Optional(
-                    CONF_CHARGING,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                    )
+                vol.Optional(CONF_CHARGING): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Required(
-                    CONF_SMART_TRIP,
-                    default=True,
-                ): selector.BooleanSelector(),
-                vol.Required(
-                    CONF_SMART_TRIP_TIMEOUT,
-                    default=300,
-                ): selector.NumberSelector(
+                vol.Required(CONF_SMART_TRIP, default=True): selector.BooleanSelector(),
+                vol.Required(CONF_SMART_TRIP_TIMEOUT, default=300): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=30,
                         max=900,
@@ -134,15 +106,12 @@ class FordTriplogConfigFlow(
                 ),
             }
         )
-class FordTriplogOptionsFlow(
-    OptionsFlow,
-):
+
+
+class FordTriplogOptionsFlow(OptionsFlow):
     """Ford Triplog options."""
 
-    def __init__(
-        self,
-        config_entry: ConfigEntry,
-    ) -> None:
+    def __init__(self, config_entry: ConfigEntry) -> None:
         """Initialize options flow."""
 
         self._options = {
@@ -157,7 +126,6 @@ class FordTriplogOptionsFlow(
         """Manage integration options."""
 
         if user_input is not None:
-
             return self.async_create_entry(
                 title="",
                 data=user_input,
@@ -170,30 +138,34 @@ class FordTriplogOptionsFlow(
                 self._options,
             ),
         )
-    def _build_options_schema(
-        self,
-    ) -> vol.Schema:
+
+    def _build_options_schema(self) -> vol.Schema:
         """Return options schema."""
 
         return vol.Schema(
             {
-                vol.Optional(
-                    CONF_CHARGING,
-                ): selector.EntitySelector(
-                    selector.EntitySelectorConfig(
-                        domain="sensor",
-                    )
+                vol.Optional(CONF_CHARGING): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
                 ),
 
-                vol.Optional(
-                    CONF_SMART_TRIP,
-                ): bool,
+                vol.Optional(CONF_SMART_TRIP): bool,
+
+                vol.Optional(CONF_SMART_TRIP_TIMEOUT): int,
 
                 vol.Optional(
-                    CONF_SMART_TRIP_TIMEOUT,
-                ): int,
+                    CONF_BATTERY_CAPACITY,
+                    default=self._options.get(CONF_BATTERY_CAPACITY, 77),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=40,
+                        max=120,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
             }
         )
+
 
 #
 # End of configuration flow.

@@ -216,9 +216,13 @@ Ford Triplog stores all trip, charging and statistics data **locally** inside yo
 This dashboard is provided as inspiration only and is not part of the integration.*
 
 ---
-# What's New in 1.2.0
+# What's New in 1.2.2
 
 ## Added
+
+- Added configurable usable battery capacity (kWh)
+- Added trip energy calculation (kWh)
+- Added charging energy calculation (kWh)
 
 ### Charging
 
@@ -272,6 +276,11 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - Storage consistency
 - Sensor update reliability
 - Recovery handling
+- Smart Trip now uses the configured timeout value
+- Improved type hints in the coordinator
+- Prevent negative energy values caused by invalid SOC readings
+- Removed duplicate trip finalization logic
+- Updated version information and Smart Trip timeout defaults
 
 ## Supported Vehicles
 

@@ -16,7 +16,7 @@ from typing import Final
 
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
-VERSION: Final = "1.0.0"
+VERSION: Final = "1.2.2"
 
 #
 # Storage
@@ -43,7 +43,7 @@ CONF_ODOMETER: Final = "odometer"
 CONF_TRACKER: Final = "tracker"
 CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
-
+CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
 
 
 CONF_SMART_TRIP: Final = "smart_trip"
@@ -113,4 +113,4 @@ SIGNAL_STATISTICS_UPDATED: Final = "ford_triplog_statistics_updated"
 SIGNAL_STATUS_UPDATED: Final = "ford_triplog_status_updated"
 
 #Smart Trip Timeout
-SMART_TRIP_TIMEOUT: Final = 30  # 5 minutes
+SMART_TRIP_TIMEOUT: Final = 300  # 5 minutes
