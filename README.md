@@ -147,6 +147,10 @@ To restore your data after a new Home Assistant installation:
 
 Ford Triplog will automatically restore all trips, charging sessions and statistics.
 
+Ford Triplog stores all trip, charging and statistics data **locally** inside your Home Assistant configuration.
+
+**No data is uploaded to the cloud.** Ford Triplog does not use external databases or online storage. Your complete driving history remains entirely under your control.
+
 ------------------------
 
 
