@@ -72,9 +72,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if data:
             self.current_trip = Trip.from_dict(data)
 
+            state = self._read_vehicle_state()
+
+            ignition = str(state.get("ignition")).lower() in (
+                "on",
+                "true",
+                "1",
+                "running",
+            )
+
+            if not ignition:
+                _LOGGER.info(
+                    "Recovered unfinished trip with ignition OFF - finalizing."
+                )
+
+                self.trip_pause_data = self.current_trip
+                self.current_trip = None
+
+                await self._smart_trip_timeout()
+
+         
         data = await self.storage.load_current_charge()
         if data:
             self.current_charge = Charge.from_dict(data)        
+
 
         entities = [
             e for e in (
@@ -125,6 +146,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         ).upper()
 
         charging = charging_state == "IN_PROGRESS"
+
+        # Recover unfinished trip after Home Assistant restart
+        if (
+            self.current_trip
+            and not ignition
+            and self.trip_pause_data is None
+        ):
+            _LOGGER.info(
+                "Recovered unfinished trip with ignition OFF."
+            )
+            await self.finish_trip()
+            return
 
 
         # Trip handling
