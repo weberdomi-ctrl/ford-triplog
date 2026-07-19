@@ -8,7 +8,7 @@
           "ignition": "Ignition",
           "odometer": "Odometer",
           "tracker": "Vehicle tracker",
-          "soc": "State of charge (SOC) Sensor (only available for Ford Pass EVs)",
+          "charging": "Charging status sensor (only available for Ford Pass EVs)",
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)"
         },
@@ -31,7 +31,7 @@
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
           "smart_trip_timeout": "Minimum value: 30 seconds.",
-          "soc": "State of charge (SOC) Sensor (only available for Ford Pass EVs)"
+          "charging": "Charging status sensor (only available for Ford Pass EVs)"
         }
       }
     }
