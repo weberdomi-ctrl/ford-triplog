@@ -49,6 +49,10 @@ The official FordPass integration provides vehicle data, but it does not maintai
 
 *Ford Triplog integrates seamlessly into Home Assistant through Config Flow.*
 
+## Installation
+
+![Installation](docs/images/installation.png)
+
 ## Options
 
 ![Options](docs/images/options.png)
