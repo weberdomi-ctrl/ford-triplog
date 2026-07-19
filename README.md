@@ -11,7 +11,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant" alt="HA">
-  <img src="https://img.shields.io/badge/HACS-Coming%20Soon-41BDF5" alt="HACS">
+  <img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS">
   <img src="https://img.shields.io/badge/Version-1.2.0-success" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python" alt="Python">
@@ -79,12 +79,19 @@ The official FordPass integration provides vehicle data, but it does not maintai
 
 # Installation
 
-## HACS *(coming soon)*
+## Requirements
+
+- Home Assistant 2026.6 or newer
+- Official FordPass Integration
+- Supported Ford vehicle
+
+## HACS 
 
 1. Add the Ford Triplog repository.
 2. Install **Ford Triplog**.
 3. Restart Home Assistant.
 4. Add the integration from **Settings → Devices & Services**.
+
 
 ## Manual Installation
 
@@ -95,6 +102,7 @@ custom_components/
 
 Copy the folder into your Home Assistant configuration directory and restart Home Assistant.
 
+Settings → Devices & Services → Add Integration → Ford Triplog
 ---
 
 # Sensors
@@ -216,22 +224,31 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - Sensor update reliability
 - Recovery handling
 
-## Next
+## Supported Vehicles
 
-### Smart Charging
+✅ Ford Explorer EV
 
-- Integrate charging stops into trips
-- Automatic trip continuation after charging
-- Detect charging pauses
+Testers welcome:
+
+- Ford Capri EV
+- Mustang Mach-E
+- Puma Gen-E
+
+
+## Roadmap
+
+### v1.3
+
 - AC/DC charging detection
 - Charged energy (kWh)
+- Charging pauses
 - Named charging locations
 
-### Trip Analytics
+### v1.4
 
-- Trip ↔ Charging correlation
-- Charging time per trip
-- Improved trip statistics
+- Multi Vehicle
+- Dashboard cards
+- Export
 
 ---
 
