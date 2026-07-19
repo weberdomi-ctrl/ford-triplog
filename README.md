@@ -281,6 +281,8 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - Prevent negative energy values caused by invalid SOC readings
 - Removed duplicate trip finalization logic
 - Updated version information and Smart Trip timeout defaults
+- Improved storage reliability by using unique temporary files for atomic JSON writes.
+- Fixed a rare issue where concurrent writes could fail with `FileNotFoundError`.
 
 ## Supported Vehicles
 

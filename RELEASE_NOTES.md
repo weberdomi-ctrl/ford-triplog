@@ -28,6 +28,10 @@
 
 \- Updated version information and Smart Trip timeout defaults
 
+\- Improved storage reliability by using unique temporary files for atomic JSON writes.
+
+\- Fixed a rare issue where concurrent writes could fail with `FileNotFoundError`.
+
 
 
 First stable beta release.
