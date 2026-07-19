@@ -111,21 +111,33 @@ Settings → Devices & Services → Add Integration → Ford Triplog
 
 # Backup & Restore
 
-Ford Triplog stores all trip and charging history locally inside your Home Assistant configuration.
+Ford Triplog stores all data locally inside your Home Assistant configuration. No trip or charging data is sent to external services.
 
-Before reinstalling Home Assistant or removing the integration, make a backup of the following folder:
+Before reinstalling Home Assistant or removing the integration, create a backup of the following folder:
 
 ```text
 /config/.storage/ford_triplog/
 ```
 
-The folder contains your trip history, charging history and statistics.
+This folder contains all data collected by Ford Triplog, including:
 
-To restore your data after a new installation:
+- Complete trip history
+- Complete charging history
+- Overall driving and charging statistics
+- Last recorded trip
+- Last recorded charging session
+- Current active trip (if Home Assistant restarts during a trip)
+- Current active charging session (if Home Assistant restarts while charging)
+- Named charging locations (future versions)
+- All data required for automatic recovery after a Home Assistant restart
+
+## Restore
+
+To restore your data after a new Home Assistant installation:
 
 1. Install Ford Triplog.
 2. Stop Home Assistant.
-3. Copy the backup of the `ford_triplog` folder back to:
+3. Copy the backed-up `ford_triplog` folder back to:
 
 ```text
 /config/.storage/
@@ -133,7 +145,7 @@ To restore your data after a new installation:
 
 4. Start Home Assistant.
 
-All trips, charging sessions and statistics will be restored automatically.
+Ford Triplog will automatically restore all trips, charging sessions and statistics.
 
 ------------------------
 
