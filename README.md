@@ -1,6 +1,6 @@
 
 <p align="center">
-  <img src="docs/images/banner.png" alt="Ford Triplog Banner" width="100%">
+  <img src="https://github.com/weberdomi-ctrl/ford-triplog/raw/main/docs/images/banner.png" alt="Ford Triplog Banner" width="100%">
 </p>
 
 <h1 align="center">Ford Triplog</h1>
