@@ -50,9 +50,10 @@ class Trip:
         self.start_latitude=latitude
         self.start_longitude=longitude
         self.start_address=address
+        
 
-    def finish(self, odometer=None, soc=None, latitude=None, longitude=None, address=None):
-        now = dt_util.now()
+    def finish(self, odometer=None, soc=None, latitude=None, longitude=None, address=None, end_time=None):
+        now = end_time or dt_util.now()    
         self.end_time=now.isoformat()
         self.end_odometer=float(odometer) if odometer not in (None,"","unknown") else None
         self.end_soc=float(soc) if soc not in (None,"","unknown") else None
@@ -60,6 +61,7 @@ class Trip:
         self.end_longitude=longitude
         self.end_address=address
         self._calculate_values()
+
 
     def _calculate_values(self):
         if self.start_time and self.end_time:
@@ -104,7 +106,7 @@ class Trip:
             "notes":self.notes,
             "tags":self.tags,
             "generator":"Ford Triplog",
-            "version":"1.0.0"
+            "version":"1.2.3"
         }
 
     @classmethod
