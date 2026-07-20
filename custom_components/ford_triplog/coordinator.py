@@ -15,6 +15,7 @@ from typing import Any
 from homeassistant.core import Event, HomeAssistant
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.util import dt as dt_util
 
 from .geo import FordTriplogGeo
 from .history import FordTriplogHistory
@@ -64,6 +65,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.trip_pause_time: float | None = None
         self.trip_pause_data: Trip | None = None
         self.smart_trip_timer: asyncio.TimerHandle | None = None
+        self.trip_end_time = None
+
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -199,7 +202,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_trip = self.trip_pause_data    
             self.trip_pause_data = None
             self.trip_pause_time = None
-
+           
             await self.storage.save_current_trip(
                 self.current_trip.to_dict()
             )           
@@ -249,6 +252,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.current_trip = None
         
         self.trip_pause_time = self.hass.loop.time()
+        self.trip_end_time = dt_util.now()
 
         _LOGGER.debug(
         "Trip paused - waiting %s seconds",
@@ -412,8 +416,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             latitude=state.get("latitude"),
             longitude=state.get("longitude"),
             address=await self._get_address(state),
+            end_time=self.trip_end_time,
         )
 
         await self._finalize_trip(state)
+        self.trip_end_time = None
         self.current_trip = None
               
