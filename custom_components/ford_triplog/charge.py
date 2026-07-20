@@ -6,7 +6,7 @@ Charge object.
 
 from __future__ import annotations
 
-from datetime import datetime
+from homeassistant.util import dt as dt_util
 from typing import Any
 
 
@@ -36,7 +36,7 @@ class Charge:
         longitude,
         address,
     ) -> None:
-        self.start_time = datetime.now().isoformat()
+        self.start_time = dt_util.now().isoformat()
 
         self.start_soc = float(soc) if soc is not None else None
 
@@ -52,7 +52,7 @@ class Charge:
         longitude,
         address,
     ) -> None:
-        self.end_time = datetime.now().isoformat()
+        self.end_time = dt_util.now().isoformat()
 
         self.end_soc = float(soc) if soc is not None else None
 

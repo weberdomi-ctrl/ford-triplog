@@ -3,12 +3,13 @@ Ford Triplog
 
 Trip model.
 
-Version: 1.2.0
+Version: 1.2.3
 """
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime
+from homeassistant.util import dt as dt_util
 from typing import Any
 
 BATTERY_CAPACITY_KWH = 77.0
@@ -40,7 +41,7 @@ class Trip:
         self.tags=data.get("tags",[])
 
     def start(self, odometer=None, soc=None, latitude=None, longitude=None, address=None):
-        now=datetime.now(timezone.utc)
+        now = dt_util.now()
         self.trip_id=now.strftime("%Y%m%dT%H%M%S")
         self.created=now.isoformat().replace("+00:00","Z")
         self.start_time=now.isoformat()
@@ -51,7 +52,7 @@ class Trip:
         self.start_address=address
 
     def finish(self, odometer=None, soc=None, latitude=None, longitude=None, address=None):
-        now=datetime.now(timezone.utc)
+        now = dt_util.now()
         self.end_time=now.isoformat()
         self.end_odometer=float(odometer) if odometer not in (None,"","unknown") else None
         self.end_soc=float(soc) if soc not in (None,"","unknown") else None
