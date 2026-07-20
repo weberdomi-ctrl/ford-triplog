@@ -287,6 +287,10 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - All timestamps now use Home Assistant's timezone-aware datetime handling.
 - Improved consistency of trip and charge data.
 - Fixed incorrect UTC display for "Last Charge" timestamps.
+- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
+- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
+- Improved consistency of trip and charging history records.
+- Fixed timezone handling for trips and charging sessions.
 
 ## Supported Vehicles
 

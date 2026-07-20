@@ -16,9 +16,19 @@
 
 \- Fixed incorrect UTC display for "Last Charge" timestamps.
 
+\- Fixed timezone handling for trips and charging sessions.
+
+\- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
+
+\- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
+
+\- Improved consistency of trip and charging history records.
+
 
 
 ### New
+
+
 
 #### Charging
 
@@ -27,7 +37,10 @@
 * Automatic charging end detection
 * Charging recovery after Home Assistant restart
 * Local charging history
-* Last charging cache
+* Last charging Cache
+* HACS Integration
+
+#### 
 
 #### Charging Sensors
 
@@ -39,11 +52,15 @@
 * Last Charge End SOC
 * Last Charge SOC Added
 
+#### 
+
 #### Trip Sensors
 
 * Last Trip Start SOC
 * Last Trip End SOC
 * Last Trip SOC Used
+
+#### 
 
 #### Statistics
 
@@ -63,6 +80,8 @@ Added trip statistics:
 * Average Trip Consumption
 * Average Trip SOC Used
 
+### 
+
 ### Changed
 
 * Improved history handling
@@ -72,6 +91,8 @@ Added trip statistics:
 * Cleaner sensor naming
 * Improved address formatting
 
+### 
+
 ### Fixed
 
 * Various recovery issues
@@ -79,7 +100,11 @@ Added trip statistics:
 * Sensor update improvements
 * Statistics calculation improvements
 
+## 
+
 ## Version 1.2.0 beta
+
+### 
 
 ### Added
 
@@ -93,16 +118,22 @@ Added trip statistics:
 * Shortest Trip
 * Human-readable trip timestamps ("Heute", "Gestern", Datum/Uhrzeit).
 
+### 
+
 ### Changed
 
 * Improved local time handling using Home Assistant's timezone utilities.
 * Trip timestamps are now correctly converted from UTC to the configured Home Assistant timezone.
 * Internal date/time formatting moved to a shared utility function.
 
+### 
+
 ### Fixed
 
 * Fixed incorrect UTC display for trip start and end times.
 * Improved consistency of date and time formatting across all trip sensors.
+
+## 
 
 ## 1.1.0
 
@@ -115,11 +146,15 @@ Added trip statistics:
 * Home Assistant Brands Proxy API
 * German and English translations
 
+### 
+
 ### Improved
 
 * Modernized integration architecture
 * Automatic reload after option changes
 * Improved configuration handling
+
+### 
 
 ### Fixed
 
