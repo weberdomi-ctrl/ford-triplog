@@ -5,7 +5,7 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.2.0
+Version: 1.2.3
 """
 
 from __future__ import annotations

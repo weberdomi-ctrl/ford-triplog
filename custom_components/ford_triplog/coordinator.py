@@ -61,12 +61,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.remove_listener = None
 
+
         # Smart Trip
         self.trip_pause_time: float | None = None
         self.trip_pause_data: Trip | None = None
         self.smart_trip_timer: asyncio.TimerHandle | None = None
         self.trip_end_time = None
-
+       
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -202,6 +203,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_trip = self.trip_pause_data    
             self.trip_pause_data = None
             self.trip_pause_time = None
+            self.trip_end_time = None
            
             await self.storage.save_current_trip(
                 self.current_trip.to_dict()
