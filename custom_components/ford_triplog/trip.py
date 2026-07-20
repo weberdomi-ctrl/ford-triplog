@@ -43,7 +43,7 @@ class Trip:
     def start(self, odometer=None, soc=None, latitude=None, longitude=None, address=None):
         now = dt_util.now()
         self.trip_id=now.strftime("%Y%m%dT%H%M%S")
-        self.created=now.isoformat().replace("+00:00","Z")
+        self.created = now.isoformat()
         self.start_time=now.isoformat()
         self.start_odometer=float(odometer) if odometer not in (None,"","unknown") else None
         self.start_soc=float(soc) if soc not in (None,"","unknown") else None
