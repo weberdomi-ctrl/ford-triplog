@@ -1,6 +1,10 @@
-# Ford Triplog 1.2.2
+# Ford Triplog 1.2.3
 
-
+### Fixed
+- Fixed timezone handling for trip and charging timestamps.
+- All timestamps now use Home Assistant's timezone-aware datetime handling.
+- Improved consistency of trip and charge data.
+- Fixed incorrect UTC display for "Last Charge" timestamps.
 
 \## Added
 
