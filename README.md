@@ -88,6 +88,7 @@ The official FordPass integration provides vehicle data, but it does not maintai
 - Home Assistant 2026.6 or newer
 - [HACS FordPass Integration](https://github.com/marq24/ha-fordpass)
 - Supported Ford vehicle
+- Ford Triplog extends the FordPass Home Assistant integration and requires it to be installed and configured before setup.
 
 ## HACS installation
 
