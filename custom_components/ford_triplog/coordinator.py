@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.2.2
+Version: 1.2.3
 """
 
 from __future__ import annotations
@@ -304,7 +304,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not self.current_charge:
             return
 
-        state = self._read_vehicle_state()
+        state = await self._wait_for_stable_vehicle_state()
+        _LOGGER.info(
+            "Charge end: soc=%s charging=%s lat=%s lon=%s",
+            state.get("soc"),
+            state.get("charging"),
+            state.get("latitude"),
+            state.get("longitude"),
+        )
+
         address = await self._get_address(state)
 
         self.current_charge.finish(
