@@ -210,7 +210,7 @@ Ford Triplog stores all trip, charging and statistics data **locally** inside yo
 This dashboard is provided as inspiration only and is not part of the integration.*
 
 ---
-# What's New in 1.2.2
+# What's New in 1.2.3
 
 ## Added
 
@@ -285,6 +285,10 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
 - Improved consistency of trip and charging history records.
 - Fixed timezone handling for trips and charging sessions.
+- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
+- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
+- Improved consistency of trip and charging history records.
+
 
 ## Supported Vehicles
 
