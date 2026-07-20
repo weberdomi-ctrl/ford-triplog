@@ -89,24 +89,18 @@ The official FordPass integration provides vehicle data, but it does not maintai
 - [HACS FordPass Integration](https://github.com/marq24/ha-fordpass)
 - Supported Ford vehicle
 
-## HACS 
+## HACS installation
 
-1. Add the Ford Triplog repository.
-2. Install **Ford Triplog**.
+Install the integration by clicking the button below.
+
+[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weberdomi-ctrl&repository=ford-triplog)
+
+1. Click the button above.
+2. Add the repository to HACS.
 3. Restart Home Assistant.
-4. Add the integration from **Settings → Devices & Services**.
+4. Go to **Settings → Devices & Services → Add Integration**.
+5. Search for **Ford Triplog**.
 
-
-## Manual Installation
-
-```text
-custom_components/
-└── ford_triplog/
-```
-
-Copy the folder into your Home Assistant configuration directory and restart Home Assistant.
-
-Settings → Devices & Services → Add Integration → Ford Triplog
 ---
 
 # Backup & Restore
