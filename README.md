@@ -210,6 +210,10 @@ Ford Triplog stores all trip, charging and statistics data **locally** inside yo
 This dashboard is provided as inspiration only and is not part of the integration.*
 
 ---
+# What's New in 1.2.4
+
+- Readme Corrections
+
 # What's New in 1.2.3
 
 ## Added
