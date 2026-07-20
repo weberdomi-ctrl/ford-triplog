@@ -12,7 +12,7 @@
 <p align="center">
   <img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant" alt="HA">
   <img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS">
-  <img src="https://img.shields.io/badge/Version-1.2.2-success" alt="Version">
+  <img src="https://img.shields.io/badge/Version-1.2.3-success" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
   <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python" alt="Python">
 </p>
@@ -283,6 +283,10 @@ This dashboard is provided as inspiration only and is not part of the integratio
 - Updated version information and Smart Trip timeout defaults
 - Improved storage reliability by using unique temporary files for atomic JSON writes.
 - Fixed a rare issue where concurrent writes could fail with `FileNotFoundError`.
+- Fixed timezone handling for trip and charging timestamps.
+- All timestamps now use Home Assistant's timezone-aware datetime handling.
+- Improved consistency of trip and charge data.
+- Fixed incorrect UTC display for "Last Charge" timestamps.
 
 ## Supported Vehicles
 
