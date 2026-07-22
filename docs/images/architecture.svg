@@ -1,0 +1,127 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1180" viewBox="0 0 1400 1180" role="img" aria-labelledby="title desc">
+  <title id="title">Ford Triplog Architecture</title>
+  <desc id="desc">Architecture diagram showing FordPass entities, ExplorerCoordinator, trip detection, charging detection, statistics engine, JSON storage, active session recovery, Home Assistant sensors, dashboards, automations and history.</desc>
+
+  <style>
+    :root {
+      color-scheme: light dark;
+    }
+    .bg { fill: #f7f9fb; }
+    .panel { fill: #ffffff; stroke: #d7dee7; stroke-width: 2; }
+    .panel-blue { fill: #eaf5ff; stroke: #3b82f6; stroke-width: 2.5; }
+    .panel-orange { fill: #fff4e8; stroke: #f59e0b; stroke-width: 3; }
+    .panel-green { fill: #ecfdf3; stroke: #22c55e; stroke-width: 2.5; }
+    .panel-purple { fill: #f4efff; stroke: #8b5cf6; stroke-width: 2.5; }
+    .title { font: 700 30px Arial, sans-serif; fill: #111827; }
+    .node-title { font: 700 24px Arial, sans-serif; fill: #111827; }
+    .text { font: 18px Arial, sans-serif; fill: #374151; }
+    .small { font: 16px Arial, sans-serif; fill: #4b5563; }
+    .arrow { stroke: #64748b; stroke-width: 3; fill: none; marker-end: url(#arrowhead); }
+    .line { stroke: #94a3b8; stroke-width: 3; fill: none; }
+    .footer { font: 15px Arial, sans-serif; fill: #6b7280; }
+    @media (prefers-color-scheme: dark) {
+      .bg { fill: #111827; }
+      .panel { fill: #1f2937; stroke: #475569; }
+      .panel-blue { fill: #132238; stroke: #60a5fa; }
+      .panel-orange { fill: #352312; stroke: #fbbf24; }
+      .panel-green { fill: #123022; stroke: #4ade80; }
+      .panel-purple { fill: #251a3c; stroke: #a78bfa; }
+      .title, .node-title { fill: #f8fafc; }
+      .text { fill: #e5e7eb; }
+      .small { fill: #cbd5e1; }
+      .footer { fill: #94a3b8; }
+      .arrow { stroke: #94a3b8; }
+      .line { stroke: #64748b; }
+    }
+  </style>
+
+  <defs>
+    <marker id="arrowhead" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M0,0 L12,6 L0,12 z" fill="#64748b"/>
+    </marker>
+    <filter id="shadow" x="-15%" y="-15%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="4" stdDeviation="7" flood-opacity="0.12"/>
+    </filter>
+  </defs>
+
+  <rect class="bg" x="0" y="0" width="1400" height="1180" rx="28"/>
+
+  <text x="700" y="58" text-anchor="middle" class="title">Ford Triplog Architecture</text>
+
+  <!-- FordPass -->
+  <rect x="470" y="90" width="460" height="110" rx="22" class="panel-blue" filter="url(#shadow)"/>
+  <text x="700" y="132" text-anchor="middle" class="node-title">FordPass Integration</text>
+  <text x="700" y="166" text-anchor="middle" class="text">Official Home Assistant vehicle entities</text>
+
+  <path d="M700 200 L700 255" class="arrow"/>
+  <text x="718" y="234" class="small">entity updates</text>
+
+  <!-- Coordinator -->
+  <rect x="420" y="260" width="560" height="150" rx="24" class="panel-orange" filter="url(#shadow)"/>
+  <text x="700" y="309" text-anchor="middle" class="node-title">ExplorerCoordinator</text>
+  <text x="700" y="346" text-anchor="middle" class="text">Monitors vehicle state and controls integration logic</text>
+  <text x="700" y="378" text-anchor="middle" class="small">Trip detection · Charging detection · Statistics · Storage</text>
+
+  <!-- Branch -->
+  <path d="M700 410 L700 455" class="line"/>
+  <path d="M250 455 L1150 455" class="line"/>
+  <path d="M250 455 L250 500" class="arrow"/>
+  <path d="M700 455 L700 500" class="arrow"/>
+  <path d="M1150 455 L1150 500" class="arrow"/>
+
+  <!-- Trip -->
+  <rect x="70" y="505" width="360" height="230" rx="22" class="panel" filter="url(#shadow)"/>
+  <text x="250" y="550" text-anchor="middle" class="node-title">Trip Detection</text>
+  <text x="110" y="596" class="text">• Ignition</text>
+  <text x="110" y="631" class="text">• Odometer</text>
+  <text x="110" y="666" class="text">• GPS position</text>
+  <text x="110" y="701" class="text">• Smart Trip</text>
+
+  <!-- Charge -->
+  <rect x="520" y="505" width="360" height="230" rx="22" class="panel-green" filter="url(#shadow)"/>
+  <text x="700" y="550" text-anchor="middle" class="node-title">Charge Detection</text>
+  <text x="560" y="596" class="text">• Start and stop</text>
+  <text x="560" y="631" class="text">• State of charge</text>
+  <text x="560" y="666" class="text">• Duration</text>
+  <text x="560" y="701" class="text">• Charging location</text>
+
+  <!-- Statistics -->
+  <rect x="970" y="505" width="360" height="230" rx="22" class="panel-purple" filter="url(#shadow)"/>
+  <text x="1150" y="550" text-anchor="middle" class="node-title">Statistics Engine</text>
+  <text x="1010" y="596" class="text">• Totals</text>
+  <text x="1010" y="631" class="text">• Averages</text>
+  <text x="1010" y="666" class="text">• Shared cache</text>
+  <text x="1010" y="701" class="text">• Fast sensor updates</text>
+
+  <!-- Merge -->
+  <path d="M250 735 L250 790 L700 790" class="line"/>
+  <path d="M700 735 L700 805" class="line"/>
+  <path d="M1150 735 L1150 790 L700 790" class="line"/>
+  <path d="M700 790 L700 835" class="arrow"/>
+
+  <!-- Storage -->
+  <rect x="210" y="840" width="500" height="210" rx="22" class="panel-blue" filter="url(#shadow)"/>
+  <text x="460" y="885" text-anchor="middle" class="node-title">Local JSON Storage</text>
+  <text x="255" y="930" class="text">• trips/</text>
+  <text x="255" y="965" class="text">• charges/</text>
+  <text x="455" y="930" class="text">• statistics.json</text>
+  <text x="455" y="965" class="text">• last_trip.json</text>
+  <text x="455" y="1000" class="text">• last_charge.json</text>
+
+  <!-- Recovery -->
+  <rect x="760" y="840" width="430" height="210" rx="22" class="panel" filter="url(#shadow)"/>
+  <text x="975" y="885" text-anchor="middle" class="node-title">Active Session Recovery</text>
+  <text x="975" y="930" text-anchor="middle" class="text">Restores unfinished trips and</text>
+  <text x="975" y="965" text-anchor="middle" class="text">charging sessions after restart</text>
+  <text x="975" y="1005" text-anchor="middle" class="small">Home Assistant restart support</text>
+
+  <path d="M710 945 L760 945" class="arrow"/>
+
+  <!-- Sensors -->
+  <path d="M460 1050 L460 1085 L700 1085" class="line"/>
+  <path d="M975 1050 L975 1085 L700 1085" class="line"/>
+  <path d="M700 1085 L700 1100" class="arrow"/>
+
+  <rect x="460" y="1103" width="480" height="58" rx="18" class="panel-orange"/>
+  <text x="700" y="1140" text-anchor="middle" class="node-title">Home Assistant Sensors → Dashboards · Automations · History</text>
+</svg>

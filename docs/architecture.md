@@ -2,46 +2,27 @@
 
 Ford Triplog is built around Home Assistant's recommended integration architecture.
 
-The integration follows an event-driven design and uses a single coordinator to manage all trip detection, charging detection, storage and sensor updates.
+The integration follows an event-driven design and uses a central coordinator to manage trip detection, charging detection, statistics, storage and sensor updates.
 
----
+<p align="center">
+  <img src="images/architecture.svg" width="1000" alt="Ford Triplog architecture">
+</p>
 
-# Overview
+## Overview
 
-```
-                    FordPass Integration
-                           │
-                           │
-                           ▼
-                  Home Assistant Entities
-                           │
-                           ▼
-                ExplorerCoordinator
-                           │
-        ┌──────────────────┼──────────────────┐
-        │                  │                  │
-        ▼                  ▼                  ▼
-   Trip Detection    Charge Detection   Statistics
-        │                  │                  │
-        └──────────────┬───┴──────────────────┘
-                       │
-                       ▼
-                Local JSON Storage
-                       │
-                       ▼
-               Home Assistant Sensors
-                       │
-                       ▼
-          Dashboard • Automations • History
-```
+FordPass provides the vehicle entities used by Ford Triplog. The `ExplorerCoordinator` monitors those entities and controls the integration logic.
 
----
+The coordinator delegates work to three main areas:
 
-# Core Components
+- Trip detection
+- Charging detection
+- Statistics processing
 
-Ford Triplog consists of several independent components that work together.
+Completed records are written to local JSON storage. Active sessions can be restored after a Home Assistant restart. Home Assistant sensors expose the prepared values to dashboards, automations and history.
 
-## ExplorerCoordinator
+## Core components
+
+### ExplorerCoordinator
 
 The `ExplorerCoordinator` is the central component of the integration.
 
@@ -52,211 +33,82 @@ It is responsible for:
 - detecting charging sessions
 - updating statistics
 - writing JSON files
+- restoring active sessions
 - refreshing Home Assistant sensors
 
-All major logic is handled here.
+### Trip detection
 
----
+Trip detection uses vehicle state changes and data from:
 
-## Trip Detection
+- ignition
+- odometer
+- vehicle position
+- state of charge
 
-Trip detection is based on vehicle state changes.
+Smart Trip prevents short stops from fragmenting one journey into multiple trips.
 
-Information used includes:
+### Charging detection
 
-- Ignition
-- Vehicle position
-- Odometer
-- State of Charge
-
-When a trip starts, the coordinator records the initial values.
-
-When the trip ends, the complete trip is calculated and stored.
-
----
-
-## Smart Trip
-
-Smart Trip prevents unnecessary trip fragmentation.
-
-Instead of immediately finishing a trip after the vehicle stops, the coordinator waits for the configured timeout.
-
-```
-Vehicle Stops
-
-↓
-
-Start Timer
-
-↓
-
-Vehicle Moves Again?
-
-YES → Continue Trip
-
-NO → Finish Trip
-```
-
-This produces cleaner trip histories.
-
----
-
-## Charge Detection
-
-Charging sessions are monitored independently of trips.
+Charging sessions are recorded independently from trips.
 
 The coordinator records:
 
-- charging start
-- charging end
-- duration
-- battery level
+- charging start and end
+- charging duration
+- start and end SOC
 - charging location
+- estimated charged energy
 
-Trips and charging sessions remain separate data structures.
+### Statistics engine
 
----
+Ford Triplog maintains aggregated statistics instead of repeatedly scanning the complete history for every sensor update.
 
-# Statistics Engine
+This reduces disk access and keeps sensor updates responsive.
 
-Instead of recalculating all historical data after every update, Ford Triplog maintains aggregated statistics.
+### Storage layer
 
-These include:
+Ford Triplog stores data as local JSON files:
 
-- total trips
-- total charges
-- total distance
-- average consumption
-- average durations
-
-This greatly improves performance.
-
----
-
-# Storage Layer
-
-The storage layer uses simple JSON files.
-
-```
-Trips
-
-↓
-
-trips/
+```text
+/config/.storage/ford_triplog/
+├── trips/
+├── charges/
+├── statistics.json
+├── last_trip.json
+└── last_charge.json
 ```
 
-```
-Charging Sessions
+### Active session recovery
 
-↓
+Unfinished trips and charging sessions can be restored after a Home Assistant restart.
 
-charges/
-```
+Completed history remains unaffected.
 
-```
-Statistics
+### Home Assistant sensors
 
-↓
+Sensors receive prepared data from the coordinator and storage layer.
 
-statistics.json
-```
+They expose:
 
-```
-Latest Activity
+- latest trip information
+- latest charging information
+- lifetime statistics
+- translated entity names
+- native Home Assistant units and device classes
 
-↓
+## Design goals
 
-last_trip.json
+Ford Triplog is designed around:
 
-last_charge.json
-```
+- reliability
+- local data ownership
+- transparent storage
+- low disk activity
+- native Home Assistant integration
+- future extensibility
 
-This approach keeps the implementation transparent and easy to back up.
+## Next step
 
----
+See the troubleshooting guide:
 
-# Sensor Updates
-
-Home Assistant sensors never calculate values themselves.
-
-Instead they receive prepared values from the coordinator.
-
-Benefits:
-
-- lower CPU usage
-- less disk access
-- consistent values
-- easier maintenance
-
----
-
-# Home Assistant Integration
-
-Ford Triplog follows Home Assistant best practices.
-
-The integration uses:
-
-- Config Entries
-- DataUpdateCoordinator
-- Entity Registry
-- Device Registry
-- Native Sensors
-- Translation System
-
-No unsupported techniques or custom frameworks are required.
-
----
-
-# Performance Optimizations
-
-Several optimizations reduce system load.
-
-These include:
-
-- Shared statistics cache
-- Minimal disk access
-- Incremental statistics updates
-- Coordinator-based sensor refresh
-- Individual JSON records
-
-These optimizations allow Ford Triplog to scale efficiently even with extensive trip histories.
-
----
-
-# Extensibility
-
-The modular architecture allows new functionality to be added without changing existing data.
-
-Examples include:
-
-- additional statistics
-- charging provider information
-- charging costs
-- trip exports
-- dashboards
-- timeline views
-
-Existing installations remain compatible with future versions.
-
----
-
-# Design Goals
-
-Ford Triplog was designed with the following priorities:
-
-- Reliability
-- Transparency
-- Performance
-- Simplicity
-- Native Home Assistant integration
-- Local-first data storage
-
-Every architectural decision supports one or more of these goals.
-
----
-
-# Next Step
-
-If something does not work as expected, see the troubleshooting guide.
-
-➡ **[Troubleshooting](troubleshooting.md)**
+[ Troubleshooting](troubleshooting.md)
