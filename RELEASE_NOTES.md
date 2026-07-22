@@ -1,50 +1,38 @@
-# Ford Triplog 1.2.3
+# Release Notes
+
+## v1.3.1
+
+### Added
+
+-   Trip ↔ Charge linking
+-   Shared statistics cache
+-   Improved recovery logic
+
+### Changed
+
+-   Faster sensor updates
+-   Reduced file access
+-   Improved coordinator synchronization
 
 ### Fixed
-- Fixed timezone handling for trip and charging timestamps.
-- All timestamps now use Home Assistant's timezone-aware datetime handling.
-- Improved consistency of trip and charge data.
-- Fixed incorrect UTC display for "Last Charge" timestamps.
 
-\## Added
+-   Duplicate trip protection
+-   Duplicate charging protection
+-   Statistics refresh reliability
+-   Various stability improvements
 
-\- Added configurable usable battery capacity (kWh)
+------------------------------------------------------------------------
 
-\- Added trip energy calculation (kWh)
+## v1.3.0
 
-\- Added charging energy calculation (kWh)
+-   Smart Trip
+-   Charging history
+-   Home Assistant sensors
+-   Config Flow
+-   Options Flow
 
+------------------------------------------------------------------------
 
+## v1.2.4
 
-\## Changed
-
-\- Smart Trip now uses the configured timeout value
-
-\- Improved type hints in the coordinator
-
-
-
-\## Fixed
-
-\- Prevent negative energy values caused by invalid SOC readings
-
-\- Removed duplicate trip finalization logic
-
-\- Updated version information and Smart Trip timeout defaults
-
-\- Improved storage reliability by using unique temporary files for atomic JSON writes.
-
-\- Fixed a rare issue where concurrent writes could fail with `FileNotFoundError`.
-
-
-
-First stable beta release.
-
-Highlights:
-
-* Smart Trip
-* Config Flow
-* Options Flow
-* Home Assistant 2026.6 support
-* New branding
-
+-   Documentation improvements

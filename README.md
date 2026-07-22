@@ -1,364 +1,149 @@
-
+```{=html}
 <p align="center">
-  <img src="https://github.com/weberdomi-ctrl/ford-triplog/raw/main/docs/images/banner.png" alt="Ford Triplog Banner" width="100%">
+```
+`<img src="https://github.com/weberdomi-ctrl/ford-triplog/raw/main/docs/images/banner.png" alt="Ford Triplog Banner" width="100%">`{=html}
+```{=html}
 </p>
-
-<h1 align="center">Ford Triplog</h1>
-
+```
+```{=html}
+<h1 align="center">
+```
+Ford Triplog
+```{=html}
+</h1>
+```
+```{=html}
 <p align="center">
-<b>Automatic Trip & Energy Logging for Ford vehicles in Home Assistant</b>
+```
+`<b>`{=html}Automatic Trip & Energy Logging for Ford vehicles in Home
+Assistant`</b>`{=html}
+```{=html}
 </p>
-
+```
+```{=html}
 <p align="center">
-  <img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant" alt="HA">
-  <img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg" alt="HACS">
-  <img src="https://img.shields.io/badge/Version-1.2.4-success" alt="Version">
-  <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT">
-  <img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python" alt="Python">
+```
+`<img src="https://img.shields.io/badge/Home%20Assistant-2026.6%2B-41BDF5?logo=homeassistant">`{=html}
+`<img src="https://img.shields.io/badge/HACS-Default-41BDF5.svg">`{=html}
+`<img src="https://img.shields.io/badge/Version-1.3.1-success">`{=html}
+`<img src="https://img.shields.io/badge/License-MIT-green">`{=html}
+`<img src="https://img.shields.io/badge/Python-3.12+-3776AB?logo=python">`{=html}
+```{=html}
 </p>
+```
 
----
+------------------------------------------------------------------------
 
 ## Why Ford Triplog?
 
-The official FordPass integration provides vehicle data, but it does not maintain a complete trip history.
-
-**Ford Triplog extends FordPass** by automatically recording every journey and exposing detailed trip statistics through native Home Assistant entities.
+Ford Triplog extends the official FordPass integration by automatically
+recording trips and charging sessions and exposing detailed Home
+Assistant sensors and statistics.
 
 ### Highlights
 
-- 🚗 Automatic trip detection
-- ⚡ Automatic charging detection
-- 📍 Start & destination addresses
-- 🔋 Battery usage (SOC)
-- ⚡ Energy consumption (kWh)
-- 🔌 Charging history
-- 📈 Driving & charging statistics
-- 💾 Automatic recovery after Home Assistant restart
-- 🏠 100% local data storage
-- 🔧 Native Home Assistant integration
+-   🚗 Automatic trip detection
+-   ⚡ Automatic charging detection
+-   🔗 Trip ↔ Charge linking
+-   📍 Start & destination addresses
+-   🔋 Battery and energy statistics
+-   📊 Native Home Assistant sensors
+-   💾 Local JSON storage
+-   🔄 Automatic recovery after restart
+-   🚀 Optimized statistics cache
+-   🛡 Duplicate trip and charge protection
 
-
----
-
-# Screenshots
-
-## Integration
-
-![Integration](docs/images/integration.png)
-
-*Ford Triplog integrates seamlessly into Home Assistant through Config Flow.*
-
-## Installation
-
-![Installation](docs/images/installation.png)
-
-## Options
-
-![Options](docs/images/options.png)
-
-*Smart Trip automatically merges short stops into a single trip.*
-
-## Sensors
-
-![Sensors](docs/images/sensors.png)
-
-*Native Home Assistant sensors provide detailed information about your last trip and overall driving statistics.*
-
----
+------------------------------------------------------------------------
 
 # Features
 
-| Trips | Charging | Statistics | Home Assistant |
-|---|---|---|---|
-| Automatic trip detection | Automatic charge detection | Trip statistics | Config Flow |
-| Smart Trip | Charge history | Charging statistics | Options Flow |
-| Start & End Address | Charge Address | Average Consumption | Native Sensors |
-| Start & End SOC | Start & End SOC | Average Charge Duration | Local Storage |
-| Driving Time | Charging Duration | Trip Count | Recovery |
-| Distance | SOC Added | Charge Count | Local Branding |
-| Energy Used | Charging History | Average SOC | |
+  -----------------------------------------------------------------------
+  Trips             Charging          Statistics        Home Assistant
+  ----------------- ----------------- ----------------- -----------------
+  Automatic trip    Automatic charge  Trip statistics   Config Flow
+  detection         detection                           
 
----
+  Smart Trip        Charge history    Charging          Options Flow
+                                      statistics        
+
+  Trip ↔ Charge     Charging duration Average           Native Sensors
+  linking                             consumption       
+
+  Start & End       Charge Address    Average distance  Local Storage
+  Address                                               
+
+  SOC tracking      Energy added      Totals            Recovery
+  -----------------------------------------------------------------------
+
+------------------------------------------------------------------------
 
 # Installation
 
-## Requirements
+### Requirements
 
-- Home Assistant 2026.6 or newer
-- [HACS FordPass Integration](https://github.com/marq24/ha-fordpass)
-- Supported Ford vehicle
-- Ford Triplog extends the FordPass Home Assistant integration and requires it to be installed and configured before setup.
+-   Home Assistant 2026.6+
+-   FordPass Integration
+-   Supported Ford vehicle
 
-## HACS installation
+### HACS
 
-Install the integration by clicking the button below.
+1.  Add the repository to HACS.
+2.  Restart Home Assistant.
+3.  Open **Settings → Devices & Services**.
+4.  Add **Ford Triplog**.
 
-[![Open your Home Assistant instance and open this repository in HACS.](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=weberdomi-ctrl&repository=ford-triplog)
+------------------------------------------------------------------------
 
-1. Click the button above.
-2. Add the repository to HACS.
-3. Restart Home Assistant.
-4. Go to **Settings → Devices & Services → Add Integration**.
-5. Search for **Ford Triplog**.
-
----
-
-# Backup & Restore
-
-Ford Triplog stores all data locally inside your Home Assistant configuration. No trip or charging data is sent to external services.
-
-Before reinstalling Home Assistant or removing the integration, create a backup of the following folder:
-
-```text
-/config/.storage/ford_triplog/
-```
-
-This folder contains all data collected by Ford Triplog, including:
-
-- Complete trip history
-- Complete charging history
-- Overall driving and charging statistics
-- Last recorded trip
-- Last recorded charging session
-- Current active trip (if Home Assistant restarts during a trip)
-- Current active charging session (if Home Assistant restarts while charging)
-- Named charging locations (future versions)
-- All data required for automatic recovery after a Home Assistant restart
-
-## Restore
-
-To restore your data after a new Home Assistant installation:
-
-1. Install Ford Triplog.
-2. Stop Home Assistant.
-3. Copy the backed-up `ford_triplog` folder back to:
-
-```text
-/config/.storage/
-```
-
-4. Start Home Assistant.
-
-Ford Triplog will automatically restore all trips, charging sessions and statistics.
-
-Ford Triplog stores all trip, charging and statistics data **locally** inside your Home Assistant configuration.
-
-**No data is uploaded to the cloud.** Ford Triplog does not use external databases or online storage. Your complete driving history remains entirely under your control.
-
-------------------------
-
-
-# Sensors
-
-## Last Trip
-
-| Sensor | Unit |
-|---|---|
-| Last Start Address | — |
-| Last End Address | — |
-| Last Distance | km |
-| Last Driving Time | formatted |
-| Last Duration (Raw) | s |
-| Last Start SOC | % |
-| Last End SOC | % |
-| Last SOC Used | % |
-| Last Consumption | kWh |
-| Last Efficiency | kWh/100 km |
-| Last Average Speed | km/h |
-| Last Start Time | — |
-| Last End Time | — |
-
-## Last Charging Session
-
-| Sensor | Unit |
-|---|---|
-| Last Charge Address | — |
-| Last Charge Start Time | — |
-| Last Charge End Time | — |
-| Last Charge Duration | formatted |
-| Last Charge Start SOC | % |
-| Last Charge End SOC | % |
-| Last Charge SOC Added | % |
-
-
-## Statistics
-
-| Sensor | Unit |
-|---|---|
-| Trip Count | trips |
-| Charge Count | charges |
-| Total Distance | km |
-| Total Energy | kWh |
-| Total Driving Time | formatted |
-| Average Trip Distance | km |
-| Average Trip Duration | formatted |
-| Average Trip Energy | kWh |
-| Average Consumption | kWh/100 km |
-| Average Trip SOC Used | % |
-| Average Charge Duration | formatted |
-| Average Charge Start SOC | % |
-| Average Charge End SOC | % |
-| Average Charge SOC Added | % |
-
----
-
-## Example Dashboard
-
-![Dashboard](docs/images/dashboard.png)
-
-*Example Home Assistant dashboard created with the included Ford Triplog sensors.  
-This dashboard is provided as inspiration only and is not part of the integration.*
-
----
-# What's New in 1.2.4
-
-- Readme Corrections
-
-# What's New in 1.2.3
+# What's New in 1.3.1
 
 ## Added
 
-- Added configurable usable battery capacity (kWh)
-- Added trip energy calculation (kWh)
-- Added charging energy calculation (kWh)
-
-### Charging
-
-- Automatic charging detection
-- Charging history
-- Charging recovery after Home Assistant restart
-- Local charging storage
-- Last charge cache
-
-### New Charging Sensors
-
-- Last Charge Address
-- Last Charge Start Time
-- Last Charge End Time
-- Last Charge Duration
-- Last Charge Start SOC
-- Last Charge End SOC
-- Last Charge SOC Added
-
-### New Trip Sensors
-
-- Last Trip Start SOC
-- Last Trip End SOC
-- Last Trip SOC Used
-
-### Statistics
-
-- Charge Count
-- Average Charge Duration
-- Average Charge Start SOC
-- Average Charge End SOC
-- Average Charge SOC Added
-- Average Trip Distance
-- Average Trip Duration
-- Average Trip Energy Used
-- Average Trip Consumption
-- Average Trip SOC Used
+-   Trip ↔ Charge linking
+-   Shared statistics cache
+-   Improved recovery logic
 
 ## Improved
 
-- Statistics engine
-- Recovery handling
-- Local storage
-- Address formatting
-- Sensor naming
-- Home Assistant SensorStateClass support
+-   Faster sensor updates
+-   Reduced disk access
+-   Better coordinator synchronization
+-   Improved storage reliability
 
 ## Fixed
 
-- Statistics calculation
-- Storage consistency
-- Sensor update reliability
-- Recovery handling
-- Smart Trip now uses the configured timeout value
-- Improved type hints in the coordinator
-- Prevent negative energy values caused by invalid SOC readings
-- Removed duplicate trip finalization logic
-- Updated version information and Smart Trip timeout defaults
-- Improved storage reliability by using unique temporary files for atomic JSON writes.
-- Fixed a rare issue where concurrent writes could fail with `FileNotFoundError`.
-- Fixed timezone handling for trip and charging timestamps.
-- All timestamps now use Home Assistant's timezone-aware datetime handling.
-- Improved consistency of trip and charge data.
-- Fixed incorrect UTC display for "Last Charge" timestamps.
-- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
-- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
-- Improved consistency of trip and charging history records.
-- Fixed timezone handling for trips and charging sessions.
-- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
-- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
-- Improved consistency of trip and charging history records.
+-   Duplicate trip protection
+-   Duplicate charging protection
+-   Statistics refresh reliability
+-   Various stability improvements
 
+------------------------------------------------------------------------
 
-## Supported Vehicles
+# Supported Vehicles
 
 ✅ Ford Explorer EV
 
-Testers welcome:
+Community tested:
 
-- Ford Capri EV
-- Mustang Mach-E
-- Puma Gen-E
+-   Ford Capri EV
+-   Mustang Mach-E
+-   Puma Gen-E
 
+------------------------------------------------------------------------
 
-## Roadmap
+# Roadmap
 
-### v1.3
+See **ROADMAP.md**.
 
-- AC/DC charging detection
-- Charged energy (kWh)
-- Charging pauses
-- Named charging locations
-
-### v1.4
-
-- Multi Vehicle
-- Dashboard cards
-- Export
-
----
-
-# FAQ
-
-### Does Ford Triplog replace FordPass?
-
-No. It extends the official FordPass integration with comprehensive trip logging and statistics.
-
-### Where is my data stored?
-
-All trip data remains stored locally inside your Home Assistant instance.
-
-### Does it support multiple vehicles?
-
-Not yet. Multi-vehicle support is planned.
-
----
+------------------------------------------------------------------------
 
 # Support
 
-Ford Triplog is developed in my spare time.
+If you enjoy Ford Triplog you can support future development:
 
-If you enjoy using the integration and would like to support future development:
+**☕ https://ko-fi.com/dompressor**
 
-**☕ Ko-fi**
-
-https://ko-fi.com/dompressor
-
-Every contribution helps improve the project.
-
----
-
-# Contributing
-
-Bug reports, feature requests and pull requests are welcome.
-
----
+------------------------------------------------------------------------
 
 # License
 
-Released under the MIT License.
+MIT License

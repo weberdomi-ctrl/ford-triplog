@@ -1,18 +1,27 @@
 # Roadmap
 
-## 1.2.0
-- Charging history
-- AC/DC detection
-- Charging locations
-- Energy statistics
+## v1.4
 
-## 1.3.0
-- CSV export
-- GPX export
-- Advanced statistics
-- Dashboard cards
+-   Smart Charge (Pause / Resume)
+-   Named charging locations
+-   AC/DC charging detection
+-   Charging provider detection (OpenStreetMap)
+-   Dashboard improvements
 
-## 1.4.0
-- Multi vehicle support
-- Maintenance tracking
-- Optional cloud backup
+## v1.5
+
+-   Dashboard cards
+-   CSV export
+-   GPX export
+-   Maintenance tracking
+
+## v1.6
+
+-   Multi vehicle support
+-   Optional cloud backup
+
+## v1.7
+
+-   Statistics rebuild
+-   Charging costs
+-   Maintenance tools
