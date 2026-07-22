@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.3.0.1
+Version: 1.3.0
 """
 
 from __future__ import annotations
