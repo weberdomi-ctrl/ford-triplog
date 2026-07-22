@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.2.2
+Version: 1.3.0
 """
 
 from __future__ import annotations
@@ -111,16 +111,19 @@ class FordTriplogSensorBase(SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Entity added to Home Assistant."""
 
-        self.coordinator.async_add_listener(
-            self._handle_update
+        self.async_on_remove(
+            self.coordinator.async_add_listener(
+                self._handle_update
+            )
         )
 
         await self.async_update()
 
     async def async_update(self) -> None:
-        statistics = await self.history.get_statistics()
-        last_trip = await self.history.get_last_trip()
-        last_charge = await self.history.get_last_charge()
+        """Update the sensor from the shared history snapshot."""
+        statistics, last_trip, last_charge = (
+            await self.history.get_sensor_data()
+        )
 
         self.update_values(
             statistics,
@@ -547,7 +550,7 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
             if postcode or city:
                 self._value = f"{street}, {postcode} {city}".strip(", ")
         else:
-            self._value = street
+            self._value = address
     
 class FordTriplogLastTripStartSocSensor(FordTriplogSensorBase):
     """SOC at the start of the last trip."""
