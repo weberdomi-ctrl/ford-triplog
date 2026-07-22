@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.3.0
+Version: 1.3.1 (Phase 2 entity metadata)
 """
 
 from __future__ import annotations
@@ -13,8 +13,16 @@ from typing import Any
 from datetime import datetime
 
 from homeassistant.components.sensor import (
+    SensorDeviceClass,
     SensorEntity,
     SensorStateClass,
+)
+from homeassistant.const import (
+    PERCENTAGE,
+    UnitOfEnergy,
+    UnitOfLength,
+    UnitOfSpeed,
+    UnitOfTime,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -170,7 +178,7 @@ class FordTriplogSensorBase(SensorEntity):
 
 
 class FordTriplogTripCountSensor(FordTriplogSensorBase):
-    _attr_name = "Trip Count"
+    _attr_translation_key = "trip_count"
     _attr_unique_id = "ford_triplog_trip_count"
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = ICON_TRIP_COUNT
@@ -180,10 +188,12 @@ class FordTriplogTripCountSensor(FordTriplogSensorBase):
 
 
 class FordTriplogDistanceSensor(FordTriplogSensorBase):
-    _attr_name = "Total Distance"
+    _attr_translation_key = "total_distance"
+    _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_unique_id = "ford_triplog_total_distance"
-    _attr_native_unit_of_measurement = "km"
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_DISTANCE
 
     def update_values(self, statistics, last_trip,last_charge):
@@ -193,9 +203,10 @@ class FordTriplogDistanceSensor(FordTriplogSensorBase):
 class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
     """Total energy used."""
 
-    _attr_name = "Total Energy"
+    _attr_translation_key = "total_energy_used"
+    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_total_energy"
-    _attr_native_unit_of_measurement = "kWh"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
@@ -207,7 +218,7 @@ class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
 class FordTriplogAverageConsumptionSensor(FordTriplogSensorBase):
     """Average consumption over all trips."""
 
-    _attr_name = "Average Consumption"
+    _attr_translation_key = "average_consumption"
     _attr_unique_id = "ford_triplog_average_consumption"
     _attr_native_unit_of_measurement = "kWh/100 km"
     _attr_suggested_display_precision = 1
@@ -224,9 +235,12 @@ class FordTriplogAverageConsumptionSensor(FordTriplogSensorBase):
 
 
 class FordTriplogDurationSensor(FordTriplogSensorBase):
-    _attr_name = "Total Duration (Raw)"
+    _attr_translation_key = "total_duration"
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_unique_id = "ford_triplog_total_duration"
-    _attr_native_unit_of_measurement = "s"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    _attr_suggested_display_precision = 0
     _attr_icon = ICON_DURATION
 
     def update_values(self, statistics, last_trip,last_charge):
@@ -235,7 +249,7 @@ class FordTriplogDurationSensor(FordTriplogSensorBase):
 class FordTriplogDurationFormattedSensor(FordTriplogSensorBase):
     """Formatted total driving time."""
 
-    _attr_name = "Total Driving Time"
+    _attr_translation_key = "total_driving_time"
     _attr_unique_id = "ford_triplog_total_duration_formatted"
     _attr_icon = ICON_DRIVING_TIME
 
@@ -246,9 +260,10 @@ class FordTriplogDurationFormattedSensor(FordTriplogSensorBase):
 
 
 class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
-    _attr_name = "Last Distance"
+    _attr_translation_key = "last_distance"
+    _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_unique_id = "ford_triplog_last_trip_distance"
-    _attr_native_unit_of_measurement = "km"
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:map-marker-distance"
@@ -258,9 +273,10 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
 
 class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     """Energy used during the last trip."""
-    _attr_name = "Last Consumption"
+    _attr_translation_key = "last_energy_used"
+    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_last_trip_consumption"
-    _attr_native_unit_of_measurement = "kWh"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
@@ -275,7 +291,7 @@ class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
 class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
     """Average consumption of the last trip."""
 
-    _attr_name = "Last Efficiency"
+    _attr_translation_key = "last_consumption"
     _attr_unique_id = "ford_triplog_last_trip_efficiency"
     _attr_native_unit_of_measurement = "kWh/100 km"
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -292,9 +308,10 @@ class FordTriplogLastEfficiencySensor(FordTriplogSensorBase):
 class FordTriplogLastAverageSpeedSensor(FordTriplogSensorBase):
     """Average speed of the last trip."""
 
-    _attr_name = "Last Average Speed"
+    _attr_translation_key = "last_average_speed"
+    _attr_device_class = SensorDeviceClass.SPEED
     _attr_unique_id = "ford_triplog_last_trip_average_speed"
-    _attr_native_unit_of_measurement = "km/h"
+    _attr_native_unit_of_measurement = UnitOfSpeed.KILOMETERS_PER_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:speedometer-medium"
@@ -307,9 +324,11 @@ class FordTriplogLastAverageSpeedSensor(FordTriplogSensorBase):
         )
 
 class FordTriplogLastDurationSensor(FordTriplogSensorBase):
-    _attr_name = "Last Duration (Raw)"
+    _attr_translation_key = "last_duration"
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_unique_id = "ford_triplog_last_trip_duration"
-    _attr_native_unit_of_measurement = "s"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
+    _attr_suggested_display_precision = 0
     _attr_icon = "mdi:clock-outline"
 
     def update_values(self, statistics, last_trip,last_charge):
@@ -318,7 +337,7 @@ class FordTriplogLastDurationSensor(FordTriplogSensorBase):
 class FordTriplogLastDurationFormattedSensor(FordTriplogSensorBase):
     """Formatted duration of the last trip."""
 
-    _attr_name = "Last Driving Time"
+    _attr_translation_key = "last_driving_time"
     _attr_unique_id = "ford_triplog_last_trip_duration_formatted"
     _attr_icon = "mdi:clock-time-eight-outline"
 
@@ -330,7 +349,7 @@ class FordTriplogLastDurationFormattedSensor(FordTriplogSensorBase):
         )
 
 class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
-    _attr_name = "Last Start Address"
+    _attr_translation_key = "last_start_address"
     _attr_unique_id = "ford_triplog_last_trip_start_address"
     _attr_icon = ICON_START
 
@@ -342,7 +361,7 @@ class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
         )
 
 class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
-    _attr_name = "Last End Address"
+    _attr_translation_key = "last_destination"
     _attr_unique_id = "ford_triplog_last_trip_end_address"
     _attr_icon = ICON_DESTINATION
 
@@ -356,7 +375,7 @@ class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
 class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
     """Formatted start time of the last trip."""
 
-    _attr_name = "Last Start Time"
+    _attr_translation_key = "last_start_time"
     _attr_unique_id = "ford_triplog_last_trip_start_time"
     _attr_icon = ICON_START_TIME
 
@@ -371,7 +390,7 @@ class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
 class FordTriplogLastEndTimeSensor(FordTriplogSensorBase):
     """Formatted end time of the last trip."""
 
-    _attr_name = "Last End Time"
+    _attr_translation_key = "last_end_time"
     _attr_unique_id = "ford_triplog_last_trip_end_time"
     _attr_icon = ICON_END_TIME
 
@@ -385,7 +404,7 @@ class FordTriplogLastEndTimeSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeStartTimeSensor(FordTriplogSensorBase):
     """Formatted start time of the last charging session."""
 
-    _attr_name = "Last Charge Start Time"
+    _attr_translation_key = "last_charge_start_time"
     _attr_unique_id = "ford_triplog_last_charge_start_time"
     _attr_icon = "mdi:ev-station"
 
@@ -404,7 +423,7 @@ class FordTriplogLastChargeStartTimeSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
     """Formatted end time of the last charging session."""
 
-    _attr_name = "Last Charge End Time"
+    _attr_translation_key = "last_charge_end_time"
     _attr_unique_id = "ford_triplog_last_charge_end_time"
     _attr_icon = "mdi:ev-station"
 
@@ -422,10 +441,12 @@ class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeStartSocSensor(FordTriplogSensorBase):
     """SOC at the start of the last charging session."""
 
-    _attr_name = "Last Charge Start SOC"
+    _attr_translation_key = "last_charge_start_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_charge_start_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -442,10 +463,12 @@ class FordTriplogLastChargeStartSocSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeEndSocSensor(FordTriplogSensorBase):
     """SOC at the end of the last charging session."""
 
-    _attr_name = "Last Charge End SOC"
+    _attr_translation_key = "last_charge_end_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_charge_end_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -463,10 +486,12 @@ class FordTriplogLastChargeEndSocSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeSocAddedSensor(FordTriplogSensorBase):
     """SOC added during the last charging session."""
 
-    _attr_name = "Last Charge SOC Added"
+    _attr_translation_key = "last_charge_soc_added"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_charge_soc_added"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:battery-plus"
 
     def update_values(
@@ -491,10 +516,12 @@ class FordTriplogLastChargeSocAddedSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
     """Duration of the last charging session."""
 
-    _attr_name = "Last Charge Duration"
+    _attr_translation_key = "last_charge_duration"
+    _attr_device_class = SensorDeviceClass.DURATION
     _attr_unique_id = "ford_triplog_last_charge_duration"
-    _attr_native_unit_of_measurement = "s"
+    _attr_native_unit_of_measurement = UnitOfTime.SECONDS
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 0
     _attr_icon = "mdi:clock-outline"
 
     def update_values(
@@ -523,7 +550,7 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
     """Address of the last charging session."""
 
-    _attr_name = "Last Charge Address"
+    _attr_translation_key = "last_charging_location"
     _attr_unique_id = "ford_triplog_last_charge_address"
     _attr_icon = "mdi:map-marker"
 
@@ -555,10 +582,12 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
 class FordTriplogLastTripStartSocSensor(FordTriplogSensorBase):
     """SOC at the start of the last trip."""
 
-    _attr_name = "Last Trip Start SOC"
+    _attr_translation_key = "last_trip_start_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_trip_start_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -575,10 +604,12 @@ class FordTriplogLastTripStartSocSensor(FordTriplogSensorBase):
 class FordTriplogLastTripEndSocSensor(FordTriplogSensorBase):
     """SOC at the end of the last trip."""
 
-    _attr_name = "Last Trip End SOC"
+    _attr_translation_key = "last_trip_end_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_trip_end_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -596,10 +627,12 @@ class FordTriplogLastTripEndSocSensor(FordTriplogSensorBase):
 class FordTriplogLastTripSocUsedSensor(FordTriplogSensorBase):
     """SOC used during the last trip."""
 
-    _attr_name = "Last Trip SOC Used"
+    _attr_translation_key = "last_trip_soc_used"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_trip_soc_used"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:battery-minus"
 
     def update_values(
@@ -624,8 +657,9 @@ class FordTriplogLastTripSocUsedSensor(FordTriplogSensorBase):
 class FordTriplogChargeCountSensor(FordTriplogSensorBase):
     """Number of recorded charging sessions."""
 
-    _attr_name = "Charge Count"
+    _attr_translation_key = "charge_count"
     _attr_unique_id = "ford_triplog_charge_count"
+    _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = "mdi:counter"
 
     def update_values(
@@ -642,10 +676,12 @@ class FordTriplogChargeCountSensor(FordTriplogSensorBase):
 class FordTriplogAverageChargeSocAddedSensor(FordTriplogSensorBase):
     """Average SOC added per charging session."""
 
-    _attr_name = "Average Charge SOC Added"
+    _attr_translation_key = "average_charge_soc_added"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_average_charge_soc_added"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:battery-plus"
 
     def update_values(
@@ -662,7 +698,7 @@ class FordTriplogAverageChargeSocAddedSensor(FordTriplogSensorBase):
 class FordTriplogAverageChargeDurationSensor(FordTriplogSensorBase):
     """Average charging duration."""
 
-    _attr_name = "Average Charge Duration"
+    _attr_translation_key = "average_charge_duration"
     _attr_unique_id = "ford_triplog_average_charge_duration"
     _attr_icon = "mdi:clock-outline"
 
@@ -683,10 +719,12 @@ class FordTriplogAverageChargeDurationSensor(FordTriplogSensorBase):
 class FordTriplogAverageChargeStartSocSensor(FordTriplogSensorBase):
     """Average SOC at the start of charging sessions."""
 
-    _attr_name = "Average Charge Start SOC"
+    _attr_translation_key = "average_charge_start_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_average_charge_start_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -704,10 +742,12 @@ class FordTriplogAverageChargeStartSocSensor(FordTriplogSensorBase):
 class FordTriplogAverageChargeEndSocSensor(FordTriplogSensorBase):
     """Average SOC at the end of charging sessions."""
 
-    _attr_name = "Average Charge End SOC"
+    _attr_translation_key = "average_charge_end_soc"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_average_charge_end_soc"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = ICON_SOC
 
     def update_values(
@@ -725,10 +765,12 @@ class FordTriplogAverageChargeEndSocSensor(FordTriplogSensorBase):
 class FordTriplogAverageTripDistanceSensor(FordTriplogSensorBase):
     """Average trip distance."""
 
-    _attr_name = "Average Trip Distance"
+    _attr_translation_key = "average_trip_distance"
+    _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_unique_id = "ford_triplog_average_trip_distance"
-    _attr_native_unit_of_measurement = "km"
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:map-marker-distance"
 
     def update_values(
@@ -746,7 +788,7 @@ class FordTriplogAverageTripDistanceSensor(FordTriplogSensorBase):
 class FordTriplogAverageTripDurationSensor(FordTriplogSensorBase):
     """Average trip duration."""
 
-    _attr_name = "Average Trip Duration"
+    _attr_translation_key = "average_trip_duration"
     _attr_unique_id = "ford_triplog_average_trip_duration"
     _attr_icon = "mdi:clock-outline"
 
@@ -767,10 +809,12 @@ class FordTriplogAverageTripDurationSensor(FordTriplogSensorBase):
 class FordTriplogAverageTripEnergySensor(FordTriplogSensorBase):
     """Average trip energy used."""
 
-    _attr_name = "Average Trip Energy Used"
+    _attr_translation_key = "average_trip_energy"
+    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_average_trip_energy_used"
-    _attr_native_unit_of_measurement = "kWh"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
 
     def update_values(
@@ -788,10 +832,12 @@ class FordTriplogAverageTripEnergySensor(FordTriplogSensorBase):
 class FordTriplogAverageTripSocUsedSensor(FordTriplogSensorBase):
     """Average SOC used per trip."""
 
-    _attr_name = "Average Trip SOC Used"
+    _attr_translation_key = "average_trip_soc_used"
+    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_average_trip_soc_used"
-    _attr_native_unit_of_measurement = "%"
+    _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:battery-minus"
 
     def update_values(
@@ -809,10 +855,11 @@ class FordTriplogAverageTripSocUsedSensor(FordTriplogSensorBase):
 class FordTriplogAverageTripConsumptionSensor(FordTriplogSensorBase):
     """Average trip consumption."""
 
-    _attr_name = "Average Trip Consumption"
+    _attr_translation_key = "average_trip_consumption"
     _attr_unique_id = "ford_triplog_average_trip_consumption"
     _attr_native_unit_of_measurement = "kWh/100 km"
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
     _attr_icon = "mdi:ev-station"
 
     def update_values(

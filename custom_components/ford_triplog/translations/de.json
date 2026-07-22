@@ -27,14 +27,127 @@
           "smart_trip": "Smart Trip aktivieren",
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus Sensor",
-          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)"   
+          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
+          "soh": "Batteriezustand (SOH)"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
-          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",       
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität deines Fahrzeugs. Standard: 77 kWh."   
+          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität deines Fahrzeugs. Standard: 77 kWh."
         }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "trip_count": {
+        "name": "Anzahl Fahrten"
+      },
+      "total_distance": {
+        "name": "Gesamtdistanz"
+      },
+      "total_energy_used": {
+        "name": "Gesamtenergieverbrauch"
+      },
+      "average_consumption": {
+        "name": "Durchschnittsverbrauch"
+      },
+      "total_duration": {
+        "name": "Gesamtdauer"
+      },
+      "total_driving_time": {
+        "name": "Gesamte Fahrzeit"
+      },
+      "last_distance": {
+        "name": "Letzte Fahrtdistanz"
+      },
+      "last_energy_used": {
+        "name": "Energieverbrauch der letzten Fahrt"
+      },
+      "last_consumption": {
+        "name": "Verbrauch der letzten Fahrt"
+      },
+      "last_average_speed": {
+        "name": "Durchschnittsgeschwindigkeit der letzten Fahrt"
+      },
+      "last_duration": {
+        "name": "Dauer der letzten Fahrt"
+      },
+      "last_driving_time": {
+        "name": "Fahrzeit der letzten Fahrt"
+      },
+      "last_start_address": {
+        "name": "Startadresse der letzten Fahrt"
+      },
+      "last_destination": {
+        "name": "Letztes Ziel"
+      },
+      "last_start_time": {
+        "name": "Startzeit der letzten Fahrt"
+      },
+      "last_end_time": {
+        "name": "Endzeit der letzten Fahrt"
+      },
+      "last_charge_start_time": {
+        "name": "Startzeit des letzten Ladevorgangs"
+      },
+      "last_charge_end_time": {
+        "name": "Endzeit des letzten Ladevorgangs"
+      },
+      "last_charge_start_soc": {
+        "name": "Ladestand zu Beginn des letzten Ladevorgangs"
+      },
+      "last_charge_end_soc": {
+        "name": "Ladestand am Ende des letzten Ladevorgangs"
+      },
+      "last_charge_soc_added": {
+        "name": "Geladener Ladestand beim letzten Ladevorgang"
+      },
+      "last_charge_duration": {
+        "name": "Dauer des letzten Ladevorgangs"
+      },
+      "last_charging_location": {
+        "name": "Letzter Ladeort"
+      },
+      "last_trip_start_soc": {
+        "name": "Ladestand zu Beginn der letzten Fahrt"
+      },
+      "last_trip_end_soc": {
+        "name": "Ladestand am Ende der letzten Fahrt"
+      },
+      "last_trip_soc_used": {
+        "name": "Verbrauchter Ladestand der letzten Fahrt"
+      },
+      "charge_count": {
+        "name": "Anzahl Ladevorgänge"
+      },
+      "average_charge_soc_added": {
+        "name": "Durchschnittlich geladener Ladestand"
+      },
+      "average_charge_duration": {
+        "name": "Durchschnittliche Ladedauer"
+      },
+      "average_charge_start_soc": {
+        "name": "Durchschnittlicher Ladestand bei Ladebeginn"
+      },
+      "average_charge_end_soc": {
+        "name": "Durchschnittlicher Ladestand bei Ladeende"
+      },
+      "average_trip_distance": {
+        "name": "Durchschnittliche Fahrtdistanz"
+      },
+      "average_trip_duration": {
+        "name": "Durchschnittliche Fahrtdauer"
+      },
+      "average_trip_energy": {
+        "name": "Durchschnittlicher Energieverbrauch pro Fahrt"
+      },
+      "average_trip_soc_used": {
+        "name": "Durchschnittlich verbrauchter Ladestand pro Fahrt"
+      },
+      "average_trip_consumption": {
+        "name": "Durchschnittlicher Verbrauch pro Fahrt"
       }
     }
   }
