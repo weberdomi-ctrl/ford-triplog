@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from typing import Any
 
 from homeassistant.core import Event, HomeAssistant
@@ -29,6 +30,9 @@ _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
+
+MAX_LINK_TIME_SECONDS = 1800
+MAX_LINK_DISTANCE_METERS = 300
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -53,6 +57,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.current_trip: Trip | None = None
         self.current_charge: Charge | None = None
+        self.last_completed_trip: Trip | None = None
 
         self.vehicle_state: dict[str, Any] = {}
 
@@ -191,6 +196,125 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             state.get("longitude"),
         )
 
+    @staticmethod
+    def _distance_meters(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Return the distance between two coordinates in meters."""
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value),
+            math.sqrt(1 - value),
+        )
+
+    async def _try_link_charge_to_trip(
+        self,
+        state: dict[str, Any],
+    ) -> None:
+        """Link the current charge to the last completed trip when plausible."""
+        if self.current_charge is None:
+            return
+
+        trip = self.last_completed_trip
+        if trip is None:
+            _LOGGER.debug("No completed trip available for charge linking")
+            return
+
+        if not trip.trip_id or not trip.end_time:
+            _LOGGER.debug(
+                "Last completed trip has no ID or end time; charge not linked"
+            )
+            return
+
+        trip_end = dt_util.parse_datetime(trip.end_time)
+        charge_start = dt_util.parse_datetime(
+            self.current_charge.start_time or ""
+        )
+
+        if trip_end is None or charge_start is None:
+            _LOGGER.debug(
+                "Trip or charge timestamp could not be parsed; charge not linked"
+            )
+            return
+
+        time_difference = (charge_start - trip_end).total_seconds()
+
+        if time_difference < 0:
+            _LOGGER.debug(
+                "Charge started before trip ended (%ss); charge not linked",
+                round(time_difference),
+            )
+            return
+
+        if time_difference > MAX_LINK_TIME_SECONDS:
+            _LOGGER.debug(
+                "Trip link rejected: time difference %ss exceeds %ss",
+                round(time_difference),
+                MAX_LINK_TIME_SECONDS,
+            )
+            return
+
+        coordinates = (
+            trip.end_latitude,
+            trip.end_longitude,
+            state.get("latitude"),
+            state.get("longitude"),
+        )
+
+        if any(value is None for value in coordinates):
+            _LOGGER.debug(
+                "Trip or charge coordinates missing; charge not linked"
+            )
+            return
+
+        try:
+            distance = self._distance_meters(
+                float(trip.end_latitude),
+                float(trip.end_longitude),
+                float(state["latitude"]),
+                float(state["longitude"]),
+            )
+        except (TypeError, ValueError):
+            _LOGGER.debug(
+                "Trip or charge coordinates invalid; charge not linked"
+            )
+            return
+
+        if distance > MAX_LINK_DISTANCE_METERS:
+            _LOGGER.debug(
+                "Trip link rejected: distance %.0fm exceeds %sm",
+                distance,
+                MAX_LINK_DISTANCE_METERS,
+            )
+            return
+
+        self.current_charge.trip_id = trip.trip_id
+        self.current_charge.previous_trip_id = trip.trip_id
+
+        _LOGGER.info(
+            "Linked charge %s to trip %s (%.0fs, %.0fm)",
+            self.current_charge.charge_id,
+            trip.trip_id,
+            time_difference,
+            distance,
+        )
+
     async def start_trip(self):
         
         # Smart Trip: Resume paused trip
@@ -292,6 +416,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             longitude=state.get("longitude"),
             address=address,
         )
+
+        await self._try_link_charge_to_trip(state)
+
         await self.storage.save_current_charge(
             self.current_charge.to_dict()
         )
@@ -337,7 +464,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not self.current_trip:
             return
 
-        trip = self.current_trip.to_dict()
+        trip_obj = self.current_trip
+        trip = trip_obj.to_dict()
 
         # Energy calculation
         start_soc = float(trip.get("start_soc") or 0)
@@ -353,6 +481,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         await self.storage.save_last_trip(trip)
         await self.history.refresh_statistics()
         await self.storage.delete_current_trip()
+
+        self.last_completed_trip = trip_obj
+
+        _LOGGER.debug(
+            "Stored last completed trip %s",
+            trip_obj.trip_id,
+        )
 
         self.current_trip = None
 
