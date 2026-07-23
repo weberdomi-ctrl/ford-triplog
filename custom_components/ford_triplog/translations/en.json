@@ -26,11 +26,13 @@
         "description": "Select the section you want to manage.",
         "menu_options": {
           "settings": "Settings",
-          "import_charging_sites": "Import charging-site database"
+          "import_charging_sites": "Import charging-site database",
+          "download_charging_sites": "Download charging-site database from OpenStreetMap"
         },
         "menu_option_descriptions": {
           "settings": "Manage trip, charging, and vehicle settings.",
-          "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately."
+          "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately.",
+          "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately."
         }
       },
       "settings": {
@@ -63,10 +65,25 @@
       "import_charging_sites_success": {
         "title": "Import successful",
         "description": "The charging-site database was imported and activated immediately.\n\nDetected charging sites: {searchable_sites}\nGeohash cells: {index_cells}"
+      },
+      "download_charging_sites": {
+        "title": "Download charging-site database",
+        "description": "Select the country whose charging locations should be downloaded directly from OpenStreetMap. The current database will be backed up automatically before the new database is activated. Depending on the country, this process may take several seconds or minutes.",
+        "data": {
+          "charging_site_country": "Country"
+        },
+        "data_description": {
+          "charging_site_country": "A new charging-site database will be generated and activated immediately for the selected country."
+        }
+      },
+      "download_charging_sites_success": {
+        "title": "Charging-site database activated",
+        "description": "The charging-site database for **{country} ({country_code})** was successfully downloaded from OpenStreetMap, processed and activated.\n\n**Download and processing**\n- OpenStreetMap elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Logical charging sites: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging-site detection."
       }
     },
     "error": {
-      "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database."
+      "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database.",
+      "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details."
     }
   },
   "entity": {

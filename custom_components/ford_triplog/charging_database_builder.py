@@ -4,7 +4,7 @@ Ford Triplog
 Build a charging-site database directly from OpenStreetMap.
 
 File: charging_database_builder.py
-Version: 1.4.1
+Version: 1.4.2
 Date: 2026-07-23
 
 Purpose:
@@ -22,6 +22,8 @@ build_charging_database() in an executor job.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
+from time import perf_counter
 from pathlib import Path
 from typing import Any
 
@@ -49,7 +51,9 @@ from .validator import (
 )
 
 
-FILE_VERSION = "1.4.1"
+FILE_VERSION = "1.4.2"
+
+_LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True, slots=True)
@@ -195,7 +199,20 @@ def build_charging_database(
     country_name = str(country["name"])
     iso_code = str(country["iso_code"])
 
+    total_started = perf_counter()
+
+    _LOGGER.info(
+        "Charging database build started for %s (%s)",
+        country_name,
+        normalized_country_code,
+    )
+
     try:
+        stage_started = perf_counter()
+        _LOGGER.info(
+            "Step 1/6: Downloading OpenStreetMap charging data for %s",
+            normalized_country_code,
+        )
         raw_data = download_overpass_data(country_code=iso_code)
 
         elements = raw_data.get("elements")
@@ -204,10 +221,37 @@ def build_charging_database(
                 "The Overpass response contains no valid element list."
             )
 
+        _LOGGER.info(
+            "Step 1/6 completed: %s OpenStreetMap elements downloaded in %.1f s",
+            len(elements),
+            perf_counter() - stage_started,
+        )
+
+        stage_started = perf_counter()
+        _LOGGER.info("Step 2/6: Normalizing OpenStreetMap data")
         stations, _source_counter, skipped_elements = normalize_data(raw_data)
+        _LOGGER.info(
+            "Step 2/6 completed: %s charging-station records normalized, "
+            "%s elements skipped in %.1f s",
+            len(stations),
+            skipped_elements,
+            perf_counter() - stage_started,
+        )
 
+        stage_started = perf_counter()
+        _LOGGER.info("Step 3/6: Validating normalized charging-station records")
         duplicate_count = _validate_normalized_stations(stations)
+        _LOGGER.info(
+            "Step 3/6 completed: %s records validated in %.1f s",
+            len(stations),
+            perf_counter() - stage_started,
+        )
 
+        stage_started = perf_counter()
+        _LOGGER.info(
+            "Step 4/6: Building geohash index with precision %s",
+            GEOHASH_PRECISION,
+        )
         buckets, skipped_index_entries = build_index(
             stations,
             GEOHASH_PRECISION,
@@ -223,6 +267,21 @@ def build_charging_database(
                 "No charging stations could be added to the geohash index."
             )
 
+        _LOGGER.info(
+            "Step 4/6 completed: %s records indexed in %s geohash buckets, "
+            "%s entries skipped in %.1f s",
+            indexed_station_count,
+            len(buckets),
+            skipped_index_entries,
+            perf_counter() - stage_started,
+        )
+
+        stage_started = perf_counter()
+        _LOGGER.info(
+            "Step 5/6: Grouping station records into logical charging sites "
+            "with a %s m radius",
+            DEFAULT_CLUSTER_RADIUS_M,
+        )
         sites = build_sites(
             stations,
             DEFAULT_CLUSTER_RADIUS_M,
@@ -233,6 +292,17 @@ def build_charging_database(
                 "No logical charging sites could be built."
             )
 
+        _LOGGER.info(
+            "Step 5/6 completed: %s logical charging sites built in %.1f s",
+            len(sites),
+            perf_counter() - stage_started,
+        )
+
+        stage_started = perf_counter()
+        _LOGGER.info(
+            "Step 6/6: Writing charging database to %s",
+            output_file,
+        )
         database = _build_database_object(
             country_code=normalized_country_code,
             country_name=country_name,
@@ -251,6 +321,19 @@ def build_charging_database(
         save_database(database, temporary_file)
         temporary_file.replace(output_file)
 
+        file_size_mib = output_file.stat().st_size / (1024 * 1024)
+        _LOGGER.info(
+            "Step 6/6 completed: database saved (%.2f MiB) in %.1f s",
+            file_size_mib,
+            perf_counter() - stage_started,
+        )
+        _LOGGER.info(
+            "Charging database build completed for %s: %s sites in %.1f s",
+            normalized_country_code,
+            len(sites),
+            perf_counter() - total_started,
+        )
+
         return ChargingDatabaseBuildResult(
             country_code=normalized_country_code,
             country_name=country_name,
@@ -266,8 +349,18 @@ def build_charging_database(
         )
 
     except ChargingDatabaseBuildError:
+        _LOGGER.exception(
+            "Charging database build failed for %s after %.1f s",
+            normalized_country_code,
+            perf_counter() - total_started,
+        )
         raise
     except (OSError, RuntimeError, ValueError) as error:
+        _LOGGER.exception(
+            "Unexpected charging database build error for %s after %.1f s",
+            normalized_country_code,
+            perf_counter() - total_started,
+        )
         raise ChargingDatabaseBuildError(
             f"Charging database build failed for "
             f"{normalized_country_code}: {error}"

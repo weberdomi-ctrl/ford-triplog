@@ -26,11 +26,13 @@
         "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
           "settings": "Einstellungen",
-          "import_charging_sites": "Ladeort-Datenbank importieren"
+          "import_charging_sites": "Ladeort-Datenbank importieren",
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
+          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren."
         }
       },
       "settings": {
@@ -63,10 +65,25 @@
       "import_charging_sites_success": {
         "title": "Import erfolgreich",
         "description": "Die Ladeort-Datenbank wurde importiert und sofort aktiviert.\n\nErkannte Ladeorte: {searchable_sites}\nGeohash-Zellen: {index_cells}"
+      },
+      "download_charging_sites": {
+        "title": "Ladeort-Datenbank herunterladen",
+        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert. Der Vorgang kann einige Sekunden oder Minuten dauern.",
+        "data": {
+          "charging_site_country": "Land"
+        },
+        "data_description": {
+          "charging_site_country": "Für das ausgewählte Land wird eine neue Ladeort-Datenbank erstellt und sofort aktiviert."
+        }
+      },
+      "download_charging_sites_success": {
+        "title": "Ladeort-Datenbank erfolgreich aktiviert",
+        "description": "Die Ladeort-Datenbank für **{country} ({country_code})** wurde erfolgreich von OpenStreetMap heruntergeladen, verarbeitet und sofort aktiviert.\n\n**Download und Verarbeitung**\n- OSM-Elemente: **{downloaded_elements}**\n- Normalisierte Ladestationen: **{normalized_stations}**\n- Erkannte Ladeorte: **{searchable_sites}**\n- Geohash-Zellen: **{index_cells}**\n- Übersprungene Elemente: **{skipped_elements}**\n\n**Datenbank**\n- Größe: **{database_size}**\n- Gesamtdauer: **{duration}**\n\nDie neue Datenbank steht sofort für die Ladeorterkennung zur Verfügung."
       }
     },
     "error": {
-      "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank."
+      "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
+      "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll auf weitere Details."
     }
   },
   "entity": {

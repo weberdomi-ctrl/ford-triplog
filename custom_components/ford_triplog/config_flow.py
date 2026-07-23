@@ -5,11 +5,12 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.4.0
+Version: 1.4.2
 """
 
 from __future__ import annotations
 
+from time import perf_counter
 from typing import Any
 
 import voluptuous as vol
@@ -25,7 +26,11 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
-from .services import async_import_charging_site_database
+from .countries import COUNTRIES
+from .services import (
+    async_download_charging_database,
+    async_import_charging_site_database,
+)
 
 from .const import (
     CONF_CHARGING,
@@ -42,6 +47,7 @@ from .const import (
 
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
+CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
 
 
 class FordTriplogConfigFlow(
@@ -126,6 +132,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             **config_entry.options,
         }
         self._import_result: dict[str, str] = {}
+        self._download_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -138,6 +145,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=[
                 "settings",
                 "import_charging_sites",
+                "download_charging_sites",
             ],
         )
 
@@ -226,6 +234,110 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema({}),
             description_placeholders=self._import_result,
         )
+
+
+    async def async_step_download_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Download and activate a charging-site database from OpenStreetMap."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            country_code = user_input[CONF_CHARGING_SITE_COUNTRY]
+            started = perf_counter()
+
+            try:
+                build_result, backup_path, active_lookup = (
+                    await async_download_charging_database(
+                        self.hass,
+                        country_code,
+                    )
+                )
+            except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                errors["base"] = "charging_site_download_failed"
+            else:
+                duration_seconds = perf_counter() - started
+                database_size_mib = (
+                    build_result.output_file.stat().st_size
+                    / (1024 * 1024)
+                )
+
+                self._download_result = {
+                    "country": build_result.country_name,
+                    "country_code": build_result.country_code,
+                    "downloaded_elements": self._format_count(
+                        build_result.downloaded_elements
+                    ),
+                    "normalized_stations": self._format_count(
+                        build_result.normalized_stations
+                    ),
+                    "searchable_sites": self._format_count(
+                        active_lookup.searchable_site_count
+                    ),
+                    "index_cells": self._format_count(
+                        active_lookup.index_cell_count
+                    ),
+                    "skipped_elements": self._format_count(
+                        build_result.skipped_elements
+                    ),
+                    "database_size": f"{database_size_mib:.2f} MiB",
+                    "duration": f"{duration_seconds:.1f} s",
+                    "backup_status": (
+                        "yes" if backup_path is not None else "no"
+                    ),
+                }
+                return await self.async_step_download_charging_sites_success()
+
+        country_options = [
+            selector.SelectOptionDict(
+                value=country_code,
+                label=f"{country['name']} ({country_code})",
+            )
+            for country_code, country in COUNTRIES.items()
+        ]
+
+        return self.async_show_form(
+            step_id="download_charging_sites",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGING_SITE_COUNTRY,
+                        default="CH",
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=country_options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_download_charging_sites_success(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the successful OpenStreetMap download result."""
+
+        if user_input is not None:
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="download_charging_sites_success",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._download_result,
+        )
+
+
+    @staticmethod
+    def _format_count(value: int) -> str:
+        """Format an integer for readable result placeholders."""
+
+        return f"{value:,}".replace(",", "'")
+
 
     def _build_options_schema(self) -> vol.Schema:
         """Return options schema."""
