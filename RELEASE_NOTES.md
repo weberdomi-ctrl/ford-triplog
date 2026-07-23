@@ -1,5 +1,18 @@
 # Release Notes
 
+## v1.3.2
+
+### Fixed
+
+-   Fixed an issue where charging statistics were not always updated immediately after a charging session.
+-   Charging-related sensors and dashboard statistics now refresh correctly without requiring an integration reload.
+
+### Improvements
+
+-   Minor internal improvements and stability fixes.
+
+------------------------------------------------------------------------
+
 ## v1.3.1
 
 ### Added
