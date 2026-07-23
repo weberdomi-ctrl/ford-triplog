@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -78,6 +78,7 @@ async def async_setup_entry(
             FordTriplogLastChargeSocAddedSensor(coordinator,history,),
             FordTriplogLastChargeDurationSensor(coordinator,history,),
             FordTriplogLastChargeStartAddressSensor(coordinator,history,),
+            FordTriplogLastChargingSiteSensor(coordinator, history),
             FordTriplogLastTripStartSocSensor(coordinator,history,),
             FordTriplogLastTripEndSocSensor(coordinator,history,),
             FordTriplogLastTripSocUsedSensor(coordinator,history,),
@@ -579,6 +580,63 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
         else:
             self._value = address
     
+class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
+    """Detected charging site of the last charging session."""
+
+    _attr_translation_key = "last_charging_site"
+    _attr_unique_id = "ford_triplog_last_charging_site"
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, history) -> None:
+        super().__init__(coordinator, history)
+        self._attributes: dict[str, Any] = {}
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        if not last_charge:
+            self._value = None
+            self._attributes = {}
+            return
+
+        name = last_charge.get("charging_site_name")
+        brand = last_charge.get("charging_site_brand")
+        operator = last_charge.get("charging_site_operator")
+        network = last_charge.get("charging_site_network")
+
+        self._value = (
+            name
+            or brand
+            or operator
+            or network
+        )
+
+        self._attributes = {
+            "site_id": last_charge.get("charging_site_id"),
+            "name": name,
+            "brand": brand,
+            "operator": operator,
+            "network": network,
+            "power_kw": last_charge.get("charging_site_power_kw", []),
+            "capacity": last_charge.get("charging_site_capacity", []),
+            "connectors": last_charge.get(
+                "charging_site_connectors",
+                [],
+            ),
+            "quality": last_charge.get("charging_site_quality"),
+            "distance_m": last_charge.get(
+                "charging_site_distance_m"
+            ),
+        }
+
+    @property
+    def extra_state_attributes(self):
+        return self._attributes
+
+
 class FordTriplogLastTripStartSocSensor(FordTriplogSensorBase):
     """SOC at the start of the last trip."""
 

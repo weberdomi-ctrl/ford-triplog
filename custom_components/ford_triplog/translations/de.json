@@ -110,6 +110,9 @@
       "last_charging_location": {
         "name": "Letzter Ladeort"
       },
+      "last_charging_site": {
+        "name": "Letzte Ladestation"
+      },
       "last_trip_start_soc": {
         "name": "Ladestand zu Beginn der letzten Fahrt"
       },

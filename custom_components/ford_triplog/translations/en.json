@@ -110,6 +110,9 @@
       "last_charging_location": {
         "name": "Last Charging Location"
       },
+      "last_charging_site": {
+        "name": "Last Charging Station"
+      },
       "last_trip_start_soc": {
         "name": "Last Trip Start SOC"
       },

@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+from pathlib import Path
 from typing import Any
 
 from homeassistant.core import Event, HomeAssistant
@@ -23,6 +24,10 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .charging_site_lookup import (
+    ChargingSiteDatabaseError,
+    ChargingSiteLookup,
+)
 
 from .const import SMART_TRIP_TIMEOUT
 
@@ -33,6 +38,9 @@ STABLE_TIMEOUT = 20
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
+
+DEFAULT_CHARGING_SITE_RADIUS_METERS = 10
+CHARGING_SITE_DATABASE_FILE = "charging_sites_ch.json"
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -46,6 +54,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.history = FordTriplogHistory(storage)
         self.config = config
         self.geo = geo
+
+        self.charging_site_radius = int(
+            config.get(
+                "charging_site_radius",
+                DEFAULT_CHARGING_SITE_RADIUS_METERS,
+            )
+        )
+        self.charging_site_lookup: ChargingSiteLookup | None = None
 
         # Battery capacity (kWh)
         self.battery_capacity = float(config.get("battery_capacity_kwh", 77))
@@ -76,6 +92,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self):
         await self.storage.async_setup()
+        await self._async_setup_charging_site_lookup()
 
         data = await self.storage.load_current_trip()
         if data:
@@ -99,6 +116,110 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.remove_listener = async_track_state_change_event(
             self.hass, entities, self._state_changed
+        )
+
+    async def _async_setup_charging_site_lookup(self) -> None:
+        """Load the local charging-site database without blocking Home Assistant."""
+
+        database_path = Path(__file__).with_name(
+            CHARGING_SITE_DATABASE_FILE
+        )
+
+        try:
+            self.charging_site_lookup = (
+                await self.hass.async_add_executor_job(
+                    ChargingSiteLookup,
+                    database_path,
+                )
+            )
+        except ChargingSiteDatabaseError as error:
+            self.charging_site_lookup = None
+            _LOGGER.warning(
+                "Charging-site database unavailable: %s",
+                error,
+            )
+            return
+        except (OSError, ValueError) as error:
+            self.charging_site_lookup = None
+            _LOGGER.warning(
+                "Charging-site lookup could not be initialized: %s",
+                error,
+            )
+            return
+
+        _LOGGER.info(
+            "Charging-site database loaded: %s searchable sites, "
+            "%s geohash cells, radius %sm",
+            self.charging_site_lookup.searchable_site_count,
+            self.charging_site_lookup.index_cell_count,
+            self.charging_site_radius,
+        )
+
+    async def _get_charging_site(
+        self,
+        state: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Resolve vehicle coordinates to a charging site."""
+
+        if self.charging_site_lookup is None:
+            return None
+
+        latitude = state.get("latitude")
+        longitude = state.get("longitude")
+
+        if latitude is None or longitude is None:
+            return None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                self.charging_site_lookup.find,
+                float(latitude),
+                float(longitude),
+                float(self.charging_site_radius),
+            )
+        except (TypeError, ValueError) as error:
+            _LOGGER.debug(
+                "Charging-site lookup skipped because coordinates are invalid: %s",
+                error,
+            )
+            return None
+
+    def _apply_charging_site(
+        self,
+        site: dict[str, Any] | None,
+    ) -> None:
+        """Store a resolved charging site on the active charging session."""
+
+        if self.current_charge is None or site is None:
+            return
+
+        self.current_charge.charging_site_id = site.get("site_id")
+        self.current_charge.charging_site_name = site.get("name")
+        self.current_charge.charging_site_brand = site.get("brand")
+        self.current_charge.charging_site_operator = site.get("operator")
+        self.current_charge.charging_site_network = site.get("network")
+        self.current_charge.charging_site_power_kw = list(
+            site.get("power_kw") or []
+        )
+        self.current_charge.charging_site_capacity = list(
+            site.get("capacity") or []
+        )
+        self.current_charge.charging_site_connectors = list(
+            site.get("connectors") or []
+        )
+        self.current_charge.charging_site_quality = site.get("quality")
+        self.current_charge.charging_site_distance_m = site.get("distance_m")
+
+        _LOGGER.info(
+            "Charging site detected: %s (%s, %.1fm)",
+            (
+                self.current_charge.charging_site_name
+                or self.current_charge.charging_site_brand
+                or self.current_charge.charging_site_operator
+                or self.current_charge.charging_site_id
+            ),
+            self.current_charge.charging_site_id,
+            self.current_charge.charging_site_distance_m or 0.0,
         )
 
     def _read_vehicle_state(self):
@@ -417,6 +538,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=address,
         )
 
+        charging_site = await self._get_charging_site(state)
+        self._apply_charging_site(charging_site)
+
         await self._try_link_charge_to_trip(state)
 
         await self.storage.save_current_charge(
@@ -454,6 +578,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             longitude=state.get("longitude"),
             address=address,
         )
+
+        # Retry charging-site detection at the end of the session if the
+        # start coordinates did not produce a match.
+        if not self.current_charge.charging_site_id:
+            charging_site = await self._get_charging_site(state)
+            self._apply_charging_site(charging_site)
+
+            if charging_site:
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
 
         await self._finalize_charge(state)
 

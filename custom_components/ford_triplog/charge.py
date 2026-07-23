@@ -3,7 +3,7 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class Charge:
     """Represents one charging session."""
 
     def __init__(self) -> None:
-        self.schema: int = 1
+        self.schema: int = 2
         self.charge_id: str | None = None
         self.created: str | None = None
 
@@ -41,6 +41,18 @@ class Charge:
 
         self.trip_id: str | None = None
         self.previous_trip_id: str | None = None
+
+        self.charging_site_id: str | None = None
+        self.charging_site_name: str | None = None
+        self.charging_site_brand: str | None = None
+        self.charging_site_operator: str | None = None
+        self.charging_site_network: str | None = None
+        self.charging_site_power_kw: list[float] = []
+        self.charging_site_capacity: list[str] = []
+        self.charging_site_connectors: list[str] = []
+        self.charging_site_quality: str | None = None
+        self.charging_site_distance_m: float | None = None
+
 
     def start(
         self,
@@ -98,6 +110,16 @@ class Charge:
             "tags": self.tags,
             "trip_id": self.trip_id,
             "previous_trip_id": self.previous_trip_id,
+            "charging_site_id": self.charging_site_id,
+            "charging_site_name": self.charging_site_name,
+            "charging_site_brand": self.charging_site_brand,
+            "charging_site_operator": self.charging_site_operator,
+            "charging_site_network": self.charging_site_network,
+            "charging_site_power_kw": self.charging_site_power_kw,
+            "charging_site_capacity": self.charging_site_capacity,
+            "charging_site_connectors": self.charging_site_connectors,
+            "charging_site_quality": self.charging_site_quality,
+            "charging_site_distance_m": self.charging_site_distance_m,
             "generator": "Ford Triplog",
             "version": "1.3.0",
         }
@@ -131,5 +153,16 @@ class Charge:
 
         charge.trip_id = data.get("trip_id")
         charge.previous_trip_id = data.get("previous_trip_id")
+
+        charge.charging_site_id = data.get("charging_site_id")
+        charge.charging_site_name = data.get("charging_site_name")
+        charge.charging_site_brand = data.get("charging_site_brand")
+        charge.charging_site_operator = data.get("charging_site_operator")
+        charge.charging_site_network = data.get("charging_site_network")
+        charge.charging_site_power_kw = data.get("charging_site_power_kw", [])
+        charge.charging_site_capacity = data.get("charging_site_capacity", [])
+        charge.charging_site_connectors = data.get("charging_site_connectors", [])
+        charge.charging_site_quality = data.get("charging_site_quality")
+        charge.charging_site_distance_m = data.get("charging_site_distance_m")
 
         return charge
