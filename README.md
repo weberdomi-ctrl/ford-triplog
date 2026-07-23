@@ -62,11 +62,6 @@ Detailed documentation of the integration architecture, component design, data f
 
 ➡ **[Architecture](docs/architecture.md)**
 
----
-
-# Dashboard (Sample)
-
-<img src="docs/images/overview.png" alt="Ford Triplog Banner" width="50%">
 
 ---
 
