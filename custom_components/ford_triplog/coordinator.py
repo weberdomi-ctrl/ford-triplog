@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.3.1
+Version: 1.3.2
 """
 
 from __future__ import annotations
@@ -33,9 +33,6 @@ STABLE_TIMEOUT = 20
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
-
-# Charging interruptions shorter than this remain one charging session.
-SMART_CHARGE_TIMEOUT = 60
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -69,22 +66,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.remove_listener = None
 
-        # Serialize state transitions. Home Assistant can deliver several
-        # entity updates within a few seconds (SOC, tracker, ignition, charging).
-        # Without a lock, two callbacks can start or finalize the same event.
-        self._transition_lock = asyncio.Lock()
-        self._trip_finalizing = False
-        self._charge_finalizing = False
 
         # Smart Trip
         self.trip_pause_time: float | None = None
         self.trip_pause_data: Trip | None = None
         self.smart_trip_timer: asyncio.TimerHandle | None = None
         self.trip_end_time = None
-
-        # Smart Charge
-        self.charge_pause_time: float | None = None
-        self.smart_charge_timer: asyncio.TimerHandle | None = None
        
 
     async def async_setup(self):
@@ -110,23 +97,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             ) if e
         ]
 
-        # Seed edge-detection state before registering the listener. This avoids
-        # interpreting the first unrelated entity update as a fresh ignition or
-        # charging transition after a Home Assistant restart.
-        self.vehicle_state = self._read_vehicle_state()
-        self.last_ignition = str(
-            self.vehicle_state.get("ignition")
-        ).lower() in ("on", "true", "1", "running")
-        self.last_charging = str(
-            self.vehicle_state.get("charging")
-        ).upper() == "IN_PROGRESS"
-
         self.remove_listener = async_track_state_change_event(
             self.hass, entities, self._state_changed
         )
-
-        if self.current_charge and not self.last_charging:
-            self._schedule_charge_timeout()
 
     def _read_vehicle_state(self):
         data = {}
@@ -153,33 +126,37 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
 
     async def _state_changed(self, event: Event):
-        """Process vehicle state changes in a strictly serialized order."""
-        async with self._transition_lock:
-            self.vehicle_state = self._read_vehicle_state()
+        self.vehicle_state = self._read_vehicle_state()
+        ignition = str(self.vehicle_state.get("ignition")).lower() in (
+            "on", "true", "1", "running"
+        )
 
-            ignition = str(
-                self.vehicle_state.get("ignition")
-            ).lower() in ("on", "true", "1", "running")
+        charging_state = str(
+            self.vehicle_state.get("charging")
+        ).upper()
 
-            charging = str(
-                self.vehicle_state.get("charging")
-            ).upper() == "IN_PROGRESS"
+        charging = charging_state == "IN_PROGRESS"
 
-            # Charging has priority over ignition. The vehicle may report
-            # ignition=on while the driver is sitting in the car during a charge.
-            if charging:
-                if self.smart_charge_timer:
-                    self.smart_charge_timer.cancel()
-                    self.smart_charge_timer = None
-                    self.charge_pause_time = None
-                    _LOGGER.info("Smart Charge resumed")
 
-                if not self.current_charge:
-                    await self.start_charge()
+        # Trip handling
+        if not self.last_ignition and ignition:
+            await self.start_trip()
 
-                self.last_charging = True
-                self.last_ignition = False
-                self.async_set_updated_data(self.vehicle_state)
+        elif self.last_ignition and not ignition:
+            await self.finish_trip()
+
+        # Charge handling
+        if not self.last_charging and charging:
+            await self.start_charge()
+
+        elif self.last_charging and not charging:
+            await self.finish_charge()
+
+        self.last_ignition = ignition
+        self.last_charging = charging
+
+        self.async_set_updated_data(self.vehicle_state)
+
     async def _wait_for_stable_vehicle_state(self):
         last = None
         stable = 0
@@ -422,15 +399,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 )
 
     async def start_charge(self):
-        """Start or resume a charging session."""
-
-        if self.smart_charge_timer:
-            self.smart_charge_timer.cancel()
-            self.smart_charge_timer = None
-            self.charge_pause_time = None
-
+        """Start charging session."""
+    
         if self.current_charge:
-            _LOGGER.info("Continuing existing charging session")
             return
 
         state = self._read_vehicle_state()
@@ -458,54 +429,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         self.async_set_updated_data(state)
-
-
-    def _schedule_charge_timeout(self) -> None:
-        """Schedule finalization of the current charge after a short pause."""
-
-        if not self.current_charge:
-            return
-
-        if self.smart_charge_timer:
-            self.smart_charge_timer.cancel()
-
-        self.charge_pause_time = self.hass.loop.time()
-        self.smart_charge_timer = self.hass.loop.call_later(
-            SMART_CHARGE_TIMEOUT,
-            lambda: self.hass.async_create_task(
-                self._smart_charge_timeout()
-            ),
-        )
-
-        _LOGGER.info(
-            "Charging paused for Smart Charge (%ss)",
-            SMART_CHARGE_TIMEOUT,
-        )
-
-
-    async def _smart_charge_timeout(self) -> None:
-        """Finalize a paused charge after the timeout."""
-        async with self._transition_lock:
-            self.smart_charge_timer = None
-            self.charge_pause_time = None
-
-            state = self._read_vehicle_state()
-            charging = str(
-                state.get("charging")
-            ).upper() == "IN_PROGRESS"
-
-            if charging:
-                _LOGGER.debug(
-                    "Smart Charge timeout cancelled - charging resumed"
-                )
-                self.last_charging = True
-                return
-
-            if not self.current_charge:
-                return
-
-            _LOGGER.info("Smart Charge timeout reached")
-            await self.finish_charge()
 
 
     async def finish_charge(self):
@@ -536,12 +459,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
 
     async def _finalize_trip(self, state):
-        """Finalize and save trip exactly once."""
+        """Finalize and save trip."""
 
-        if not self.current_trip or self._trip_finalizing:
+        if not self.current_trip:
             return
 
-        self._trip_finalizing = True
         trip_obj = self.current_trip
         trip = trip_obj.to_dict()
 
@@ -573,50 +495,41 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.async_set_updated_data(state)
 
-        self._trip_finalizing = False
         _LOGGER.info("Trip saved successfully")
 
 
     async def _finalize_charge(self, state):
-        """Finalize and save charging session exactly once."""
+        """Finalize and save charging session."""
 
-        if not self.current_charge or self._charge_finalizing:
+        if not self.current_charge:
             return
 
-        self._charge_finalizing = True
+        charge = self.current_charge.to_dict()
 
-        try:
-            charge = self.current_charge.to_dict()
+        start_soc = float(charge.get("start_soc") or 0)
+        end_soc = float(charge.get("end_soc") or 0)
+        soc_delta = max(0, end_soc - start_soc)
 
-            start_soc = float(charge.get("start_soc") or 0)
-            end_soc = float(charge.get("end_soc") or 0)
-            soc_delta = max(0, end_soc - start_soc)
+        charge["energy_added_kwh"] = round(
+            (soc_delta / 100) * self.battery_capacity,
+            2,
+        )
 
-            charge["energy_added_kwh"] = round(
-                (soc_delta / 100) * self.battery_capacity,
-                2,
-            )
+        await self.storage.save_charge(charge)
+        await self.storage.save_last_charge(charge)
+        await self.history.refresh_statistics()
 
-            await self.storage.save_charge(charge)
-            await self.storage.save_last_charge(charge)
-            await self.history.refresh_statistics()
-            await self.storage.delete_current_charge()
+        await self.storage.delete_current_charge()
 
-            self.current_charge = None
-            self.async_set_updated_data(state)
+        self.current_charge = None
 
-            _LOGGER.info("Charging session saved successfully")
-        finally:
-            self._charge_finalizing = False
+        self.async_set_updated_data(state)
+
+        _LOGGER.info("Charging session saved successfully")
 
 
     async def _smart_trip_timeout(self):
-        """Finalize a paused trip after timeout without racing a resume."""
-        async with self._transition_lock:
-            await self._smart_trip_timeout_locked()
-
-    async def _smart_trip_timeout_locked(self):
-        """Locked Smart Trip timeout implementation."""
+        """Finalize paused trip after timeout."""
 
         _LOGGER.info("Smart Trip timeout reached")
 
@@ -628,6 +541,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 "Smart Trip cancelled - trip already resumed"
             )
             return
+
 
         self.current_trip = self.trip_pause_data
         self.trip_pause_data = None
@@ -646,3 +560,4 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         await self._finalize_trip(state)
         self.trip_end_time = None
         self.current_trip = None
+              
