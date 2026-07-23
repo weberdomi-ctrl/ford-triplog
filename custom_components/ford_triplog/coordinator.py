@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.4.0
+Version: 1.4.1
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import math
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
 
 DEFAULT_CHARGING_SITE_RADIUS_METERS = 10
+CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
 CHARGING_SITE_DATABASE_FILE = "charging_sites_ch.json"
 
 
@@ -118,14 +120,50 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.hass, entities, self._state_changed
         )
 
-    async def _async_setup_charging_site_lookup(self) -> None:
-        """Load the local charging-site database without blocking Home Assistant."""
+    def _prepare_charging_site_database(self) -> Path:
+        """Create the persistent database directory and initial database."""
 
-        database_path = Path(__file__).with_name(
+        database_directory = Path(
+            self.hass.config.path(
+                ".storage",
+                "ford_triplog",
+                CHARGING_SITE_DATABASE_DIRECTORY,
+            )
+        )
+        database_directory.mkdir(parents=True, exist_ok=True)
+
+        database_path = database_directory / CHARGING_SITE_DATABASE_FILE
+
+        if database_path.exists():
+            return database_path
+
+        bundled_database_path = Path(__file__).with_name(
             CHARGING_SITE_DATABASE_FILE
         )
 
+        if not bundled_database_path.is_file():
+            raise ChargingSiteDatabaseError(
+                "Bundled charging-site database is missing: "
+                f"{bundled_database_path}"
+            )
+
+        shutil.copy2(bundled_database_path, database_path)
+
+        _LOGGER.info(
+            "Initial charging-site database copied to persistent storage: %s",
+            database_path,
+        )
+
+        return database_path
+
+    async def _async_setup_charging_site_lookup(self) -> None:
+        """Load the persistent charging-site database."""
+
         try:
+            database_path = await self.hass.async_add_executor_job(
+                self._prepare_charging_site_database
+            )
+
             self.charging_site_lookup = (
                 await self.hass.async_add_executor_job(
                     ChargingSiteLookup,
@@ -148,8 +186,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         _LOGGER.info(
-            "Charging-site database loaded: %s searchable sites, "
+            "Charging-site database loaded from %s: %s searchable sites, "
             "%s geohash cells, radius %sm",
+            database_path,
             self.charging_site_lookup.searchable_site_count,
             self.charging_site_lookup.index_cell_count,
             self.charging_site_radius,

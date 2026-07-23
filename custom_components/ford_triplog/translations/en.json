@@ -22,7 +22,20 @@
   "options": {
     "step": {
       "init": {
-        "description": "Ford Triplog options",
+        "title": "Ford Triplog",
+        "description": "Select the section you want to manage.",
+        "menu_options": {
+          "settings": "Settings",
+          "import_charging_sites": "Import charging-site database"
+        },
+        "menu_option_descriptions": {
+          "settings": "Manage trip, charging, and vehicle settings.",
+          "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately."
+        }
+      },
+      "settings": {
+        "title": "Settings",
+        "description": "Configure Ford Triplog.",
         "data": {
           "soh": "State of Health (SOH)",
           "smart_trip": "Enable Smart Trip",
@@ -32,11 +45,28 @@
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
-          "smart_trip_timeout": "Minimum value: 30 seconds.",
-          "charging": "Charging status sensor (only available for Ford Pass EVs)",
-          "battery_capacity_kwh": "The usable battery capacity of your vehicle. Default: 77 kWh."
+          "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
+          "charging": "Charging status sensor (only available for Ford Pass EVs).",
+          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh."
         }
+      },
+      "import_charging_sites": {
+        "title": "Import charging-site database",
+        "description": "Select a Ford Triplog charging-site database in JSON format. The active database is backed up automatically and replaced after successful validation.",
+        "data": {
+          "charging_site_file": "JSON file"
+        },
+        "data_description": {
+          "charging_site_file": "For example charging_sites_de.json, charging_sites_at.json, or charging_sites_ch.json."
+        }
+      },
+      "import_charging_sites_success": {
+        "title": "Import successful",
+        "description": "The charging-site database was imported and activated immediately.\n\nDetected charging sites: {searchable_sites}\nGeohash cells: {index_cells}"
       }
+    },
+    "error": {
+      "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database."
     }
   },
   "entity": {

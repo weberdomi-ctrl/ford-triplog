@@ -5,7 +5,7 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ from .const import DOMAIN
 from .coordinator import FordTriplogCoordinator
 from .geo import FordTriplogGeo
 from .storage import FordTriplogStorage
+from .services import async_register_services
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -70,6 +71,8 @@ async def async_setup_entry(
     )
 
     await coordinator.async_setup()
+
+    await async_register_services(hass)
 
     hass.data.setdefault(
         DOMAIN,

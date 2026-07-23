@@ -22,21 +22,51 @@
   "options": {
     "step": {
       "init": {
-        "description": "Einstellungsoptionen für Ford Triplog",
+        "title": "Ford Triplog",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "menu_options": {
+          "settings": "Einstellungen",
+          "import_charging_sites": "Ladeort-Datenbank importieren"
+        },
+        "menu_option_descriptions": {
+          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
+          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
+        "description": "Ford Triplog konfigurieren.",
         "data": {
           "smart_trip": "Smart Trip aktivieren",
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
-          "charging": "Ladestatus Sensor",
+          "charging": "Ladestatus-Sensor",
           "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
           "soh": "Batteriezustand (SOH)"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
-          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität deines Fahrzeugs. Standard: 77 kWh."
+          "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh."
         }
+      },
+      "import_charging_sites": {
+        "title": "Ladeort-Datenbank importieren",
+        "description": "Wähle eine Ford-Triplog-Ladeort-Datenbank im JSON-Format aus. Die bestehende Datenbank wird automatisch gesichert und nach erfolgreicher Prüfung ersetzt.",
+        "data": {
+          "charging_site_file": "JSON-Datei"
+        },
+        "data_description": {
+          "charging_site_file": "Zum Beispiel charging_sites_de.json, charging_sites_at.json oder charging_sites_ch.json."
+        }
+      },
+      "import_charging_sites_success": {
+        "title": "Import erfolgreich",
+        "description": "Die Ladeort-Datenbank wurde importiert und sofort aktiviert.\n\nErkannte Ladeorte: {searchable_sites}\nGeohash-Zellen: {index_cells}"
       }
+    },
+    "error": {
+      "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank."
     }
   },
   "entity": {

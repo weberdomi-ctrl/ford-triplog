@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -15,13 +15,17 @@ from typing import Any
 import voluptuous as vol
 
 from homeassistant import config_entries
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlowResult,
     OptionsFlow,
 )
 from homeassistant.core import callback
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+
+from .services import async_import_charging_site_database
 
 from .const import (
     CONF_CHARGING,
@@ -35,6 +39,9 @@ from .const import (
     DOMAIN,
     NAME,
 )
+
+
+CONF_CHARGING_SITE_FILE = "charging_site_file"
 
 
 class FordTriplogConfigFlow(
@@ -118,12 +125,27 @@ class FordTriplogOptionsFlow(OptionsFlow):
             **config_entry.data,
             **config_entry.options,
         }
+        self._import_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Manage integration options."""
+        """Show the Ford Triplog options menu."""
+
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=[
+                "settings",
+                "import_charging_sites",
+            ],
+        )
+
+    async def async_step_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Manage integration settings."""
 
         if user_input is not None:
             return self.async_create_entry(
@@ -132,11 +154,77 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="init",
+            step_id="settings",
             data_schema=self.add_suggested_values_to_schema(
                 self._build_options_schema(),
                 self._options,
             ),
+        )
+
+    async def async_step_import_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Upload and import a charging-site database."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            uploaded_file_id = user_input[CONF_CHARGING_SITE_FILE]
+
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    _, active_lookup = (
+                        await async_import_charging_site_database(
+                            self.hass,
+                            uploaded_path,
+                        )
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "invalid_charging_site_database"
+            else:
+                self._import_result = {
+                    "searchable_sites": str(
+                        active_lookup.searchable_site_count
+                    ),
+                    "index_cells": str(
+                        active_lookup.index_cell_count
+                    ),
+                }
+                return await self.async_step_import_charging_sites_success()
+
+        return self.async_show_form(
+            step_id="import_charging_sites",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGING_SITE_FILE
+                    ): selector.FileSelector(
+                        selector.FileSelectorConfig(
+                            accept=".json,application/json"
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_import_charging_sites_success(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the successful charging-site import result."""
+
+        if user_input is not None:
+            return await self.async_step_init()
+
+        return self.async_show_form(
+            step_id="import_charging_sites_success",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._import_result,
         )
 
     def _build_options_schema(self) -> vol.Schema:

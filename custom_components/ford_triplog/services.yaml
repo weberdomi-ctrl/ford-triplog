@@ -1,0 +1,11 @@
+import_charging_sites:
+  name: Import charging sites
+  description: Import a charging-site database from a JSON file in the Home Assistant configuration directory.
+  fields:
+    file:
+      name: File
+      description: Relative path below /config, for example import/charging_sites_ch.json.
+      required: true
+      example: import/charging_sites_ch.json
+      selector:
+        text:
