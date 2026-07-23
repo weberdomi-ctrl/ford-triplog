@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.3.2
+Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -342,13 +342,90 @@ class FordTriplogStorage:
             self._last_trip_file()
         )
 
+    async def _load_archived_charge_by_id(
+        self,
+        charge_id: str | None,
+    ) -> dict[str, Any] | None:
+        """Return the archived charging session matching ``charge_id``."""
+
+        if not charge_id:
+            return None
+
+        for path in reversed(await self.list_charges()):
+            charge = await self.load_charge_file(path)
+
+            if charge and charge.get("charge_id") == charge_id:
+                return charge
+
+        return None
+
     async def save_last_charge(
         self,
         data: dict[str, Any],
     ) -> bool:
+        """Save the latest charging session cache.
+
+        The completed charging session is archived immediately before this
+        method is called. Use that archived record as a defensive source for
+        charging-site fields if the cache input unexpectedly contains empty
+        values.
+        """
+
+        last_charge = dict(data)
+        archived_charge = await self._load_archived_charge_by_id(
+            last_charge.get("charge_id")
+        )
+
+        charging_site_fields = (
+            "charging_site_id",
+            "charging_site_name",
+            "charging_site_brand",
+            "charging_site_operator",
+            "charging_site_network",
+            "charging_site_power_kw",
+            "charging_site_capacity",
+            "charging_site_connectors",
+            "charging_site_quality",
+            "charging_site_distance_m",
+        )
+
+        recovered_fields: list[str] = []
+
+        if archived_charge:
+            for field in charging_site_fields:
+                current_value = last_charge.get(field)
+                archived_value = archived_charge.get(field)
+
+                if current_value in (None, [], "") and archived_value not in (
+                    None,
+                    [],
+                    "",
+                ):
+                    last_charge[field] = archived_value
+                    recovered_fields.append(field)
+
+        if recovered_fields:
+            _LOGGER.warning(
+                "Recovered charging-site fields for last_charge %s from "
+                "archived charge: %s",
+                last_charge.get("charge_id"),
+                ", ".join(recovered_fields),
+            )
+
+        _LOGGER.debug(
+            "Saving last_charge %s with charging site %s",
+            last_charge.get("charge_id"),
+            (
+                last_charge.get("charging_site_name")
+                or last_charge.get("charging_site_brand")
+                or last_charge.get("charging_site_operator")
+                or last_charge.get("charging_site_id")
+            ),
+        )
+
         return await self._save_json(
             self._last_charge_file(),
-            data,
+            last_charge,
         )
 
     async def load_last_charge(
