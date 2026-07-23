@@ -79,11 +79,20 @@
       "download_charging_sites_success": {
         "title": "Charging-site database activated",
         "description": "The charging-site database for **{country} ({country_code})** was successfully downloaded from OpenStreetMap, processed and activated.\n\n**Download and processing**\n- OpenStreetMap elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Logical charging sites: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging-site detection."
+      },
+      "download_charging_sites_progress": {
+        "title": "Building charging-site database",
+        "description": "Country: {country_code}\n\nStep: {stage}\n{message}\n\nProgress: {progress}%\nStep {step} of {total_steps}\nElapsed: {elapsed} s\n\n{progress_log}"
+      },
+      "download_charging_sites_result": {
+        "title": "Charging-site database completed",
+        "description": "The charging-site database has been generated and activated successfully."
       }
     },
     "error": {
       "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database.",
-      "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details."
+      "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details.",
+      "charging_site_download_in_progress": "A charging-site database download is already running."
     }
   },
   "entity": {

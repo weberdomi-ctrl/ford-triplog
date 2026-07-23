@@ -4,7 +4,7 @@ Ford Triplog
 Thread-safe progress management for long-running tasks.
 
 File: progress_manager.py
-Version: 1.4.0
+Version: 1.4.4
 Date: 2026-07-23
 
 Purpose:
@@ -12,6 +12,7 @@ Purpose:
 - Allow worker threads to publish progress safely.
 - Allow Home Assistant flows and entities to read a serializable snapshot.
 - Store successful completion and failure information.
+- Keep a bounded, structured progress log for live status output.
 """
 
 from __future__ import annotations
@@ -23,18 +24,32 @@ from time import monotonic
 from typing import Any
 
 
-FILE_VERSION = "1.4.0"
+FILE_VERSION = "1.4.4"
 
 STATE_IDLE = "idle"
 STATE_RUNNING = "running"
 STATE_FINISHED = "finished"
 STATE_FAILED = "failed"
 
+LOG_LEVEL_INFO = "info"
+LOG_LEVEL_SUCCESS = "success"
+LOG_LEVEL_WARNING = "warning"
+LOG_LEVEL_ERROR = "error"
+
+DEFAULT_MAX_LOG_ENTRIES = 50
+
 _VALID_STATES = {
     STATE_IDLE,
     STATE_RUNNING,
     STATE_FINISHED,
     STATE_FAILED,
+}
+
+_VALID_LOG_LEVELS = {
+    LOG_LEVEL_INFO,
+    LOG_LEVEL_SUCCESS,
+    LOG_LEVEL_WARNING,
+    LOG_LEVEL_ERROR,
 }
 
 
@@ -45,10 +60,20 @@ class ProgressManagerError(RuntimeError):
 class ProgressManager:
     """Manage the state of one long-running Ford Triplog task."""
 
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        max_log_entries: int = DEFAULT_MAX_LOG_ENTRIES,
+    ) -> None:
         """Initialize an idle progress manager."""
 
+        if max_log_entries < 1:
+            raise ProgressManagerError(
+                "max_log_entries must be at least 1."
+            )
+
         self._lock = RLock()
+        self._max_log_entries = int(max_log_entries)
         self._started_monotonic: float | None = None
         self._finished_monotonic: float | None = None
         self._status = self._new_idle_status()
@@ -84,6 +109,7 @@ class ProgressManager:
             "elapsed_seconds": 0.0,
             "result": None,
             "error": None,
+            "log": [],
         }
 
     @staticmethod
@@ -140,6 +166,70 @@ class ProgressManager:
             1,
         )
 
+    def _append_log_locked(
+        self,
+        message: str,
+        *,
+        level: str,
+        step: int | None,
+        title: str | None,
+    ) -> dict[str, Any]:
+        """Append one log entry while the manager lock is held."""
+
+        normalized_message = str(message).strip()
+        normalized_level = str(level).strip().lower()
+
+        if not normalized_message:
+            raise ProgressManagerError(
+                "Log message must not be empty."
+            )
+
+        if normalized_level not in _VALID_LOG_LEVELS:
+            raise ProgressManagerError(
+                f"Unsupported log level: {normalized_level}."
+            )
+
+        self._update_elapsed_locked()
+
+        resolved_step = (
+            self._status["step"]
+            if step is None
+            else int(step)
+        )
+
+        if self._status["total_steps"] > 0:
+            self._validate_step_values(
+                resolved_step,
+                self._status["total_steps"],
+            )
+        elif resolved_step != 0:
+            raise ProgressManagerError(
+                "step must be 0 while no task is active."
+            )
+
+        entry = {
+            "timestamp_utc": self._utc_now(),
+            "elapsed_seconds": self._status["elapsed_seconds"],
+            "level": normalized_level,
+            "step": resolved_step,
+            "total_steps": self._status["total_steps"],
+            "title": (
+                str(title).strip()
+                if title is not None
+                else self._status["title"]
+            ),
+            "message": normalized_message,
+        }
+
+        self._status["log"].append(entry)
+
+        if len(self._status["log"]) > self._max_log_entries:
+            self._status["log"] = self._status["log"][
+                -self._max_log_entries:
+            ]
+
+        return deepcopy(entry)
+
     def start(
         self,
         *,
@@ -190,6 +280,7 @@ class ProgressManager:
                 "elapsed_seconds": 0.0,
                 "result": None,
                 "error": None,
+                "log": [],
             }
             return deepcopy(self._status)
 
@@ -252,6 +343,36 @@ class ProgressManager:
             self._update_elapsed_locked()
 
             return deepcopy(self._status)
+
+    def append_log(
+        self,
+        message: str,
+        *,
+        level: str = LOG_LEVEL_INFO,
+        step: int | None = None,
+        title: str | None = None,
+    ) -> dict[str, Any]:
+        """Append one structured progress-log entry."""
+
+        with self._lock:
+            return self._append_log_locked(
+                message,
+                level=level,
+                step=step,
+                title=title,
+            )
+
+    def clear_log(self) -> None:
+        """Remove all progress-log entries."""
+
+        with self._lock:
+            self._status["log"] = []
+
+    def get_log(self) -> list[dict[str, Any]]:
+        """Return a thread-safe copy of the progress log."""
+
+        with self._lock:
+            return deepcopy(self._status["log"])
 
     def finish(
         self,

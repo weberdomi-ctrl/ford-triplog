@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.4.1
+Version: 1.4.2
 """
 
 from __future__ import annotations
@@ -42,7 +42,9 @@ MAX_LINK_DISTANCE_METERS = 300
 
 DEFAULT_CHARGING_SITE_RADIUS_METERS = 10
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
-CHARGING_SITE_DATABASE_FILE = "charging_sites_ch.json"
+CHARGING_SITE_GENERATED_DIRECTORY = "generated"
+DEFAULT_CHARGING_SITE_COUNTRY = "CH"
+CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -120,8 +122,28 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.hass, entities, self._state_changed
         )
 
-    def _prepare_charging_site_database(self) -> Path:
-        """Create the persistent database directory and initial database."""
+    def _resolve_charging_site_database(self) -> Path:
+        """Return the configured country's charging-site database path."""
+
+        country_code = str(
+            self.config.get(
+                CONF_CHARGING_SITE_COUNTRY,
+                DEFAULT_CHARGING_SITE_COUNTRY,
+            )
+            or DEFAULT_CHARGING_SITE_COUNTRY
+        ).strip().upper()
+
+        # ISO 3166-1 alpha-2 uses GB. Accept UK as a defensive alias.
+        if country_code == "UK":
+            country_code = "GB"
+
+        if len(country_code) != 2 or not country_code.isalpha():
+            _LOGGER.warning(
+                "Invalid charging-site country '%s'; using %s",
+                country_code,
+                DEFAULT_CHARGING_SITE_COUNTRY,
+            )
+            country_code = DEFAULT_CHARGING_SITE_COUNTRY
 
         database_directory = Path(
             self.hass.config.path(
@@ -130,38 +152,58 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 CHARGING_SITE_DATABASE_DIRECTORY,
             )
         )
-        database_directory.mkdir(parents=True, exist_ok=True)
+        generated_directory = (
+            database_directory / CHARGING_SITE_GENERATED_DIRECTORY
+        )
+        generated_directory.mkdir(parents=True, exist_ok=True)
 
-        database_path = database_directory / CHARGING_SITE_DATABASE_FILE
+        database_filename = (
+            f"charging_sites_{country_code.lower()}.json"
+        )
+        database_path = generated_directory / database_filename
 
-        if database_path.exists():
+        if database_path.is_file():
             return database_path
 
-        bundled_database_path = Path(__file__).with_name(
-            CHARGING_SITE_DATABASE_FILE
-        )
-
-        if not bundled_database_path.is_file():
-            raise ChargingSiteDatabaseError(
-                "Bundled charging-site database is missing: "
-                f"{bundled_database_path}"
+        # Migrate the previous persistent Swiss database into generated/.
+        if country_code == "CH":
+            legacy_database_path = (
+                database_directory / "charging_sites_ch.json"
             )
 
-        shutil.copy2(bundled_database_path, database_path)
+            if legacy_database_path.is_file():
+                shutil.copy2(legacy_database_path, database_path)
+                _LOGGER.info(
+                    "Legacy Swiss charging-site database copied to %s",
+                    database_path,
+                )
+                return database_path
 
-        _LOGGER.info(
-            "Initial charging-site database copied to persistent storage: %s",
-            database_path,
+            bundled_database_path = Path(__file__).with_name(
+                "charging_sites_ch.json"
+            )
+
+            if bundled_database_path.is_file():
+                shutil.copy2(bundled_database_path, database_path)
+                _LOGGER.info(
+                    "Initial Swiss charging-site database copied to %s",
+                    database_path,
+                )
+                return database_path
+
+        raise ChargingSiteDatabaseError(
+            "Charging-site database for country "
+            f"{country_code} is missing: {database_path}. "
+            "Generate or import this country database in the "
+            "Ford Triplog options."
         )
 
-        return database_path
-
     async def _async_setup_charging_site_lookup(self) -> None:
-        """Load the persistent charging-site database."""
+        """Load the configured country charging-site database."""
 
         try:
             database_path = await self.hass.async_add_executor_job(
-                self._prepare_charging_site_database
+                self._resolve_charging_site_database
             )
 
             self.charging_site_lookup = (

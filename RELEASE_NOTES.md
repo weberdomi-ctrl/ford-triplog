@@ -1,51 +1,71 @@
-# Release Notes
+# Ford Triplog v1.4.0
 
-## v1.3.2
+## 🚗 Major Release
 
-### Fixed
+Version 1.4 is the biggest update since the initial release of Ford
+Triplog and introduces charging session tracking, OpenStreetMap
+integration, improved statistics, and many usability improvements.
 
--   Fixed an issue where charging statistics were not always updated immediately after a charging session.
--   Charging-related sensors and dashboard statistics now refresh correctly without requiring an integration reload.
+## ✨ New Features
 
-### Improvements
+### 🔋 Charging Sessions
 
--   Minor internal improvements and stability fixes.
-
-------------------------------------------------------------------------
-
-## v1.3.1
-
-### Added
-
--   Trip ↔ Charge linking
--   Shared statistics cache
--   Improved recovery logic
-
-### Changed
-
--   Faster sensor updates
--   Reduced file access
--   Improved coordinator synchronization
-
-### Fixed
-
--   Duplicate trip protection
--   Duplicate charging protection
--   Statistics refresh reliability
--   Various stability improvements
-
-------------------------------------------------------------------------
-
-## v1.3.0
-
--   Smart Trip
+-   Automatic charging session detection
+-   Charging duration
+-   Start and end state of charge (SOC)
+-   Estimated charged energy
 -   Charging history
--   Home Assistant sensors
--   Config Flow
--   Options Flow
+-   Charging statistics
+
+### 🗺️ Charging Location Database
+
+-   Offline charging location database based on OpenStreetMap
+-   Automatic charging location recognition
+-   Country-specific charging databases
+-   Download charging databases directly from the integration
+-   Fast geohash-based lookup
+-   Support for multiple European countries
+
+### 🔗 Trip & Charging Timeline
+
+-   Automatic linking of charging sessions with nearby trips
+-   Unified travel history
+-   Charging events associated with trips
+
+### 📊 Statistics
+
+-   Extended trip statistics
+-   Charging statistics
+-   Average energy consumption
+-   Additional Home Assistant sensors
+
+## ⚙️ Improvements
+
+-   Configurable battery capacity
+-   Improved Smart Trip handling
+-   Improved entity naming
+-   Complete Home Assistant translations
+-   Improved diagnostics
+-   Faster startup
+-   Better error handling
+-   Performance optimizations
+
+## 🏗️ Internal
+
+-   HACS ready
+-   Improved storage handling
+-   Optimized charging database format
+-   Faster location lookup
+-   General refactoring and cleanup
+
+## 🐞 Fixes
+
+-   Fixed charging database activation
+-   Fixed charging database persistence after restart
+-   Fixed country selection workflow
+-   Fixed configuration flow issues
+-   Multiple stability improvements
 
 ------------------------------------------------------------------------
 
-## v1.2.4
-
--   Documentation improvements
+Thank you to everyone testing Ford Triplog and providing feedback.

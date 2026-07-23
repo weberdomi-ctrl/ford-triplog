@@ -3,7 +3,7 @@ Ford Triplog
 
 Charging-site service actions.
 
-Version: 1.4.2
+Version: 1.4.8
 """
 
 from __future__ import annotations
@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import os
 import shutil
+import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,7 @@ ATTR_FILE = "file"
 ATTR_COUNTRY = "country"
 
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
-CHARGING_SITE_DATABASE_FILE = "charging_sites_ch.json"
+
 
 IMPORT_SCHEMA = vol.Schema(
     {
@@ -63,6 +64,52 @@ DOWNLOAD_SCHEMA = vol.Schema(
 )
 
 
+# ---------------------------------------------------------------------------
+# NEW: Detect country_code from imported JSON file
+# ---------------------------------------------------------------------------
+
+def _detect_country_code(path: Path) -> str:
+    """Extract country_code from imported JSON file."""
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            data = json.load(f)
+    except Exception as error:
+        raise ServiceValidationError(
+            f"Could not read JSON file: {error}"
+        ) from error
+
+    code = str(data.get("country_code", "")).strip().upper()
+
+    if not code:
+        raise ServiceValidationError(
+            "The imported database does not contain a country_code field."
+        )
+
+    if code not in COUNTRIES:
+        raise ServiceValidationError(
+            f"Unsupported country code '{code}' in imported database."
+        )
+
+    return code
+
+
+# ---------------------------------------------------------------------------
+# NEW: Dynamic database path per country
+# ---------------------------------------------------------------------------
+
+def _database_path(hass: HomeAssistant, country_code: str) -> Path:
+    """Return the persistent charging-site database path for one country."""
+    return Path(
+        hass.config.path(
+            ".storage",
+            "ford_triplog",
+            CHARGING_SITE_DATABASE_DIRECTORY,
+            "generated",
+            f"charging_sites_{country_code.lower()}.json",
+        )
+    )
+
+
 def _resolve_import_file(
     hass: HomeAssistant,
     configured_file: str,
@@ -75,7 +122,7 @@ def _resolve_import_file(
     if source_path.is_absolute():
         raise ServiceValidationError(
             "Use a relative path below the Home Assistant configuration "
-            "directory, for example import/charging_sites_ch.json."
+            "directory, for example import/charging_sites_de.json."
         )
 
     source_path = (config_directory / source_path).resolve()
@@ -99,19 +146,6 @@ def _resolve_import_file(
         )
 
     return source_path
-
-
-def _database_path(hass: HomeAssistant) -> Path:
-    """Return the persistent charging-site database path."""
-
-    return Path(
-        hass.config.path(
-            ".storage",
-            "ford_triplog",
-            CHARGING_SITE_DATABASE_DIRECTORY,
-            CHARGING_SITE_DATABASE_FILE,
-        )
-    )
 
 
 def _validate_import_file(source_path: Path) -> ChargingSiteLookup:
@@ -138,16 +172,21 @@ def _import_database(
     target_path.parent.mkdir(parents=True, exist_ok=True)
 
     try:
-        if source_path.samefile(target_path):
-            raise ServiceValidationError(
-                "The selected file is already the active charging-site "
-                "database."
-            )
+        source_is_target = source_path.samefile(target_path)
     except FileNotFoundError:
-        pass
+        source_is_target = False
 
-    # Validate before changing the active database.
     validated_source = _validate_import_file(source_path)
+
+    if source_is_target:
+        _LOGGER.info(
+            "Charging-site database validated and activated in place: "
+            "%s records, %s searchable sites, %s geohash cells",
+            validated_source.site_count,
+            validated_source.searchable_site_count,
+            validated_source.index_cell_count,
+        )
+        return None, validated_source
 
     backup_path: Path | None = None
 
@@ -164,8 +203,6 @@ def _import_database(
         shutil.copy2(source_path, temporary_path)
         os.replace(temporary_path, target_path)
 
-        # Load the copied file so the active in-memory lookup represents
-        # exactly the database stored below .storage.
         active_lookup = ChargingSiteLookup(target_path)
     except Exception:
         temporary_path.unlink(missing_ok=True)
@@ -205,10 +242,15 @@ def _loaded_coordinators(hass: HomeAssistant) -> list[Any]:
     return coordinators
 
 
+# ---------------------------------------------------------------------------
+# UPDATED: Import now detects country_code and stores per-country
+# ---------------------------------------------------------------------------
+
 async def async_import_charging_site_database(
     hass: HomeAssistant,
     source_path: Path,
-) -> tuple[Path | None, ChargingSiteLookup]:
+    country_code: str | None = None,
+) -> tuple[str, Path | None, ChargingSiteLookup]:
     """Import a validated database file and activate it immediately."""
 
     coordinators = _loaded_coordinators(hass)
@@ -218,7 +260,26 @@ async def async_import_charging_site_database(
             "Ford Triplog is not currently loaded."
         )
 
-    target_path = _database_path(hass)
+    if country_code is None:
+        # Manual imports must determine the country from the JSON file.
+        # File access and JSON parsing run outside Home Assistant's event loop.
+        normalized_country_code = await hass.async_add_executor_job(
+            _detect_country_code,
+            source_path,
+        )
+    else:
+        # Downloads already know the selected country and do not need to
+        # reopen the generated JSON file merely to determine it again.
+        normalized_country_code = str(country_code).strip().upper()
+
+        if normalized_country_code not in COUNTRIES:
+            supported = ", ".join(sorted(COUNTRIES))
+            raise ServiceValidationError(
+                f"Unsupported country code '{country_code}'. "
+                f"Supported countries: {supported}."
+            )
+
+    target_path = _database_path(hass, normalized_country_code)
 
     try:
         backup_path, active_lookup = await hass.async_add_executor_job(
@@ -241,15 +302,19 @@ async def async_import_charging_site_database(
         coordinator.charging_site_lookup = active_lookup
 
     _LOGGER.info(
-        "Charging-site import activated from %s; target=%s; backup=%s",
+        "Charging-site import activated for %s; source=%s; target=%s; backup=%s",
+        normalized_country_code,
         source_path,
         target_path,
         backup_path or "none",
     )
 
-    return backup_path, active_lookup
+    return normalized_country_code, backup_path, active_lookup
 
 
+# ---------------------------------------------------------------------------
+# Download remains unchanged (already correct)
+# ---------------------------------------------------------------------------
 
 def _generated_database_path(
     hass: HomeAssistant,
@@ -288,11 +353,14 @@ async def async_download_charging_database(
         normalized_country_code,
     )
 
+    progress_manager = hass.data[DOMAIN]["progress_manager"]
+
     try:
         build_result = await hass.async_add_executor_job(
             build_charging_database,
             normalized_country_code,
             output_path,
+            progress_manager,
         )
     except ChargingDatabaseBuildError as error:
         raise ServiceValidationError(
@@ -303,9 +371,10 @@ async def async_download_charging_database(
             f"Charging-site database could not be generated: {error}"
         ) from error
 
-    backup_path, active_lookup = await async_import_charging_site_database(
+    country_code, backup_path, active_lookup = await async_import_charging_site_database(
         hass,
         build_result.output_file,
+        normalized_country_code,
     )
 
     _LOGGER.info(
@@ -320,6 +389,10 @@ async def async_download_charging_database(
     return build_result, backup_path, active_lookup
 
 
+# ---------------------------------------------------------------------------
+# Service wrappers
+# ---------------------------------------------------------------------------
+
 async def async_import_charging_sites(
     hass: HomeAssistant,
     call: ServiceCall,
@@ -333,7 +406,6 @@ async def async_import_charging_sites(
         hass,
         source_path,
     )
-
 
 
 async def async_download_charging_database_service(
