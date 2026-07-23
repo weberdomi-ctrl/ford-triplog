@@ -4,7 +4,7 @@ Ford Triplog
 Build a charging-site database directly from OpenStreetMap.
 
 File: charging_database_builder.py
-Version: 1.4.2
+Version: 1.4.3
 Date: 2026-07-23
 
 Purpose:
@@ -44,6 +44,7 @@ from .geohash_index import (
 from .normalizer import FILE_VERSION as NORMALIZER_VERSION
 from .normalizer import normalize_data
 from .overpass import download_overpass_data
+from .progress_manager import ProgressManager
 from .validator import (
     FILE_VERSION as VALIDATOR_VERSION,
     coordinates_are_valid,
@@ -51,7 +52,7 @@ from .validator import (
 )
 
 
-FILE_VERSION = "1.4.2"
+FILE_VERSION = "1.4.3"
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -187,6 +188,7 @@ def _build_database_object(
 def build_charging_database(
     country_code: str,
     output_file: Path,
+    progress_manager: ProgressManager | None = None,
 ) -> ChargingDatabaseBuildResult:
     """
     Download, normalize, validate, index, and save one country database.
@@ -201,6 +203,17 @@ def build_charging_database(
 
     total_started = perf_counter()
 
+    if progress_manager is not None:
+        progress_manager.start(
+            task="charging_database",
+            title=f"Charging database: {country_name}",
+            total_steps=6,
+            message=(
+                f"Preparing OpenStreetMap charging-data download "
+                f"for {normalized_country_code}."
+            ),
+        )
+
     _LOGGER.info(
         "Charging database build started for %s (%s)",
         country_name,
@@ -209,6 +222,15 @@ def build_charging_database(
 
     try:
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=1,
+                title="Downloading OpenStreetMap data",
+                message=(
+                    f"Downloading charging stations for "
+                    f"{normalized_country_code}."
+                ),
+            )
         _LOGGER.info(
             "Step 1/6: Downloading OpenStreetMap charging data for %s",
             normalized_country_code,
@@ -228,6 +250,14 @@ def build_charging_database(
         )
 
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=2,
+                title="Normalizing OpenStreetMap data",
+                message=(
+                    f"{len(elements)} OpenStreetMap elements downloaded."
+                ),
+            )
         _LOGGER.info("Step 2/6: Normalizing OpenStreetMap data")
         stations, _source_counter, skipped_elements = normalize_data(raw_data)
         _LOGGER.info(
@@ -239,6 +269,15 @@ def build_charging_database(
         )
 
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=3,
+                title="Validating charging stations",
+                message=(
+                    f"{len(stations)} charging-station records normalized; "
+                    f"{skipped_elements} elements skipped."
+                ),
+            )
         _LOGGER.info("Step 3/6: Validating normalized charging-station records")
         duplicate_count = _validate_normalized_stations(stations)
         _LOGGER.info(
@@ -248,6 +287,14 @@ def build_charging_database(
         )
 
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=4,
+                title="Building geohash index",
+                message=(
+                    f"{len(stations)} charging-station records validated."
+                ),
+            )
         _LOGGER.info(
             "Step 4/6: Building geohash index with precision %s",
             GEOHASH_PRECISION,
@@ -277,6 +324,15 @@ def build_charging_database(
         )
 
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=5,
+                title="Grouping charging sites",
+                message=(
+                    f"{indexed_station_count} records indexed in "
+                    f"{len(buckets)} geohash buckets."
+                ),
+            )
         _LOGGER.info(
             "Step 5/6: Grouping station records into logical charging sites "
             "with a %s m radius",
@@ -299,6 +355,12 @@ def build_charging_database(
         )
 
         stage_started = perf_counter()
+        if progress_manager is not None:
+            progress_manager.update(
+                step=6,
+                title="Saving charging database",
+                message=f"{len(sites)} logical charging sites built.",
+            )
         _LOGGER.info(
             "Step 6/6: Writing charging database to %s",
             output_file,
@@ -327,12 +389,37 @@ def build_charging_database(
             file_size_mib,
             perf_counter() - stage_started,
         )
+        total_duration = perf_counter() - total_started
         _LOGGER.info(
             "Charging database build completed for %s: %s sites in %.1f s",
             normalized_country_code,
             len(sites),
-            perf_counter() - total_started,
+            total_duration,
         )
+
+        if progress_manager is not None:
+            progress_manager.finish(
+                message=(
+                    f"{len(sites)} charging sites saved "
+                    f"({file_size_mib:.2f} MiB)."
+                ),
+                result={
+                    "country_code": normalized_country_code,
+                    "country_name": country_name,
+                    "output_file": str(output_file),
+                    "downloaded_elements": len(elements),
+                    "normalized_stations": len(stations),
+                    "indexed_stations": indexed_station_count,
+                    "skipped_elements": skipped_elements,
+                    "skipped_index_entries": skipped_index_entries,
+                    "duplicate_osm_ids": duplicate_count,
+                    "geohash_precision": GEOHASH_PRECISION,
+                    "geohash_buckets": len(buckets),
+                    "charging_sites": len(sites),
+                    "file_size_mib": round(file_size_mib, 2),
+                    "duration_seconds": round(total_duration, 1),
+                },
+            )
 
         return ChargingDatabaseBuildResult(
             country_code=normalized_country_code,
@@ -348,7 +435,18 @@ def build_charging_database(
             geohash_buckets=len(buckets),
         )
 
-    except ChargingDatabaseBuildError:
+    except ChargingDatabaseBuildError as error:
+        if (
+            progress_manager is not None
+            and progress_manager.is_running
+        ):
+            progress_manager.fail(
+                error,
+                message=(
+                    f"Charging database build failed for "
+                    f"{normalized_country_code}."
+                ),
+            )
         _LOGGER.exception(
             "Charging database build failed for %s after %.1f s",
             normalized_country_code,
@@ -356,6 +454,17 @@ def build_charging_database(
         )
         raise
     except (OSError, RuntimeError, ValueError) as error:
+        if (
+            progress_manager is not None
+            and progress_manager.is_running
+        ):
+            progress_manager.fail(
+                error,
+                message=(
+                    f"Charging database build failed for "
+                    f"{normalized_country_code}."
+                ),
+            )
         _LOGGER.exception(
             "Unexpected charging database build error for %s after %.1f s",
             normalized_country_code,
