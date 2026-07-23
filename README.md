@@ -56,9 +56,17 @@ No cloud services. No external database. Your data always remains under your con
 
 ---
 
+# Architecture
+
+Detailed documentation of the integration architecture, component design, data flow, and internal processing.
+
+➡ **[Architecture](docs/architecture.md)**
+
+---
+
 # Screenshots
 
-Example screenshots can be found in the **docs/images/** folder.
+➡ **[Screenshots](docs/images/overview.png)**
 
 ---
 
