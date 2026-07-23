@@ -5,7 +5,7 @@ Track your Ford.
 
 Home Assistant binary sensor platform.
 
-Version: 1.2.0
+Version: 1.3.2
 """
 
 from __future__ import annotations

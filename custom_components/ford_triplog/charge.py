@@ -3,7 +3,7 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.3.0
+Version: 1.3.2
 """
 
 from __future__ import annotations

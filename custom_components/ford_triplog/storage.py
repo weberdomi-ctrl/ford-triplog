@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.2.2
+Version: 1.3.2
 """
 
 from __future__ import annotations

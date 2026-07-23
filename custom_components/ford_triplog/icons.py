@@ -3,7 +3,7 @@ Ford Triplog
 
 Material Design Icons.
 
-Version: 1.2.0
+Version: 1.3.2
 """
 
 ICON_TRIP_COUNT = "mdi:counter"

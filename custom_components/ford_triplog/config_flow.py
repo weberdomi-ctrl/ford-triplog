@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.2.2
+Version: 1.3.2
 """
 
 from __future__ import annotations
