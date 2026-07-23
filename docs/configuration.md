@@ -17,7 +17,7 @@ Ensure that:
 > [!IMPORTANT]
 > Ford Triplog does not communicate directly with your vehicle.
 >
-> All vehicle information is provided by the official FordPass integration.
+> All vehicle information is provided by the FordPass integration.
 
 ---
 
@@ -161,7 +161,7 @@ Otherwise:
 
 Charging sessions are detected automatically.
 
-No additional configuration is required.
+No additional configuration is required for basic charging detection.
 
 Ford Triplog records:
 
@@ -171,6 +171,132 @@ Ford Triplog records:
 - Charging location
 - Added State of Charge
 - Estimated charged energy
+- Detected charging station, when a matching local database is available
+
+---
+
+# Charging-Site Database
+
+Ford Triplog can identify public charging locations by comparing the vehicle coordinates with a local charging-site database.
+
+The database is optional. Charging sessions are still recorded without it, but the charging location may then contain only the resolved address.
+
+When a matching charging site is found, Ford Triplog can add information such as:
+
+- Station name
+- Brand
+- Operator
+- Charging network
+- Maximum charging power
+- Number of charging points
+- Connector types
+- Distance between the vehicle and the charging site
+
+---
+
+## Downloading Charging Locations
+
+Open:
+
+```text
+Settings
+
+↓
+
+Devices & Services
+
+↓
+
+Ford Triplog
+
+↓
+
+Configure
+
+↓
+
+Charging-Site Database
+```
+
+Select the required country and start the download.
+
+Ford Triplog then:
+
+1. Downloads charging locations from OpenStreetMap through the Overpass service.
+2. Normalizes the downloaded charging-station data.
+3. Groups related charging points into charging sites.
+4. Builds a geohash index for fast local lookup.
+5. Validates the generated database.
+6. Activates the selected country database.
+
+> [!NOTE]
+> The initial download can take several minutes, depending on the country and the response time of the Overpass service.
+
+> [!IMPORTANT]
+> Home Assistant must have internet access while the charging-site database is being downloaded.
+>
+> Normal charging-site recognition is performed locally after the database has been created.
+
+---
+
+## Country Selection
+
+The country selection is initially based on the Home Assistant country setting when available.
+
+You can change the selected country manually in the Ford Triplog options.
+
+The generated files use country-specific names, for example:
+
+```text
+charging_sites_ch.json
+charging_sites_de.json
+charging_sites_at.json
+```
+
+Only the currently selected country database is used for charging-site lookup.
+
+---
+
+## Updating the Database
+
+Open the Ford Triplog options again and start a new download for the selected country.
+
+The existing database is replaced only after the newly generated file has been validated successfully.
+
+This makes it possible to refresh charging locations when OpenStreetMap data changes.
+
+---
+
+## Importing a Charging-Site Database
+
+Instead of downloading a new database, you can import a compatible Ford Triplog charging-site JSON file.
+
+The imported file is validated before it is activated.
+
+Use this option when:
+
+- A database was generated on another Home Assistant system
+- A prepared country file is available
+- The Overpass service is temporarily unavailable
+- A database should be restored from a backup
+
+---
+
+## Charging-Site Storage
+
+Generated charging-site databases are stored locally under:
+
+```text
+/config/.storage/ford_triplog/charging_sites/generated/
+```
+
+Example:
+
+```text
+/config/.storage/ford_triplog/charging_sites/generated/charging_sites_ch.json
+```
+
+No trip or charging-session data is uploaded during charging-site recognition.
 
 ---
 
@@ -214,6 +340,9 @@ Here you can modify:
 - Smart Trip
 - Smart Trip Timeout
 - Battery Capacity
+- Charging-site country
+- Charging-site database download
+- Charging-site database import
 
 The changes take effect immediately.
 
