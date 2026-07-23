@@ -2,13 +2,14 @@
 
 ## v1.4 – Smart Charging
 
-- Smart Charge (Pause / Resume)
+- Country-specific offline charging databases
+- Charging database import through integration options
+- Country selection dropdown
+- Offline nearest charging station lookup
 - Named charging locations
-- Charging provider detection (OpenStreetMap)
-- Charging network detection
+- Charging provider detection based on OpenStreetMap data
+- Smart Charge (Pause / Resume)
 - AC/DC charging detection
-- Charging point metadata (operator, brand, power*)
-- Link charging sessions to trips
 - Dashboard improvements
 
 > *if available via OpenStreetMap
