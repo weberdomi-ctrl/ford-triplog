@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.4.0
+Version: 1.3.4
 """
 
 from __future__ import annotations
@@ -169,10 +169,13 @@ class FordTriplogStorage:
         self,
         path: Path,
     ) -> None:
-        """Delete file."""
+        """Delete file without blocking the event loop."""
 
-        if path.exists():
-            path.unlink()
+        def _delete() -> None:
+            if path.exists():
+                path.unlink()
+
+        await self.hass.async_add_executor_job(_delete)
 
     def _current_trip_file(self) -> Path:
         return self.recovery_path / "current_trip.json"
@@ -311,24 +314,26 @@ class FordTriplogStorage:
 
 
     async def list_trips(self) -> list[Path]:
-        """Return archived trips."""
+        """Return archived trips without blocking the event loop."""
 
-        if not self.trips_path.exists():
-            return []
+        def _list() -> list[Path]:
+            if not self.trips_path.exists():
+                return []
 
-        return sorted(
-            self.trips_path.rglob("*.json")
-        )
+            return sorted(self.trips_path.rglob("*.json"))
+
+        return await self.hass.async_add_executor_job(_list)
     
     async def list_charges(self) -> list[Path]:
-        """Return archived charging sessions."""
+        """Return archived charging sessions without blocking the event loop."""
 
-        if not self.charges_path.exists():
-            return []
+        def _list() -> list[Path]:
+            if not self.charges_path.exists():
+                return []
 
-        return sorted(
-            self.charges_path.rglob("*.json")
-        )
+            return sorted(self.charges_path.rglob("*.json"))
+
+        return await self.hass.async_add_executor_job(_list)
 
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:

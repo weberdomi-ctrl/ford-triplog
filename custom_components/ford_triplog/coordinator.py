@@ -3,7 +3,7 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.4.2
+Version: 1.4.3
 """
 
 from __future__ import annotations
@@ -85,6 +85,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charging = False
 
         self.remove_listener = None
+
+        # Prevent overlapping charge handlers from changing current_charge
+        # while another handler is awaiting Home Assistant or file I/O.
+        self._charge_lock = asyncio.Lock()
 
 
         # Smart Trip
@@ -602,77 +606,85 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def start_charge(self):
         """Start charging session."""
-    
-        if self.current_charge:
-            return
 
-        state = self._read_vehicle_state()
-        address = await self._get_address(state)
+        async with self._charge_lock:
+            if self.current_charge:
+                return
 
-        self.current_charge = Charge()
+            state = self._read_vehicle_state()
+            address = await self._get_address(state)
 
+            self.current_charge = Charge()
 
-        self.current_charge.start(
-            soc=state.get("soc"),
-            latitude=state.get("latitude"),
-            longitude=state.get("longitude"),
-            address=address,
-        )
+            self.current_charge.start(
+                soc=state.get("soc"),
+                latitude=state.get("latitude"),
+                longitude=state.get("longitude"),
+                address=address,
+            )
 
-        charging_site = await self._get_charging_site(state)
-        self._apply_charging_site(charging_site)
+            charging_site = await self._get_charging_site(state)
+            self._apply_charging_site(charging_site)
 
-        await self._try_link_charge_to_trip(state)
+            await self._try_link_charge_to_trip(state)
 
-        await self.storage.save_current_charge(
-            self.current_charge.to_dict()
-        )
+            await self.storage.save_current_charge(
+                self.current_charge.to_dict()
+            )
 
-        _LOGGER.info(
-            "Charging started at %s%%",
-            state.get("soc"),
-        )
+            _LOGGER.info(
+                "Charging started at %s%%",
+                state.get("soc"),
+            )
 
-        self.async_set_updated_data(state)
-
+            self.async_set_updated_data(state)
 
     async def finish_charge(self):
         """Finish charging session."""
 
-        if not self.current_charge:
-            return
+        async with self._charge_lock:
+            if not self.current_charge:
+                return
 
-        state = await self._wait_for_stable_vehicle_state()
-        _LOGGER.info(
-            "Charge end: soc=%s charging=%s lat=%s lon=%s",
-            state.get("soc"),
-            state.get("charging"),
-            state.get("latitude"),
-            state.get("longitude"),
-        )
+            charge = self.current_charge
 
-        address = await self._get_address(state)
+            state = await self._wait_for_stable_vehicle_state()
+            _LOGGER.info(
+                "Charge end: soc=%s charging=%s lat=%s lon=%s",
+                state.get("soc"),
+                state.get("charging"),
+                state.get("latitude"),
+                state.get("longitude"),
+            )
 
-        self.current_charge.finish(
-            soc=state.get("soc"),
-            latitude=state.get("latitude"),
-            longitude=state.get("longitude"),
-            address=address,
-        )
-
-        # Retry charging-site detection at the end of the session if the
-        # start coordinates did not produce a match.
-        if not self.current_charge.charging_site_id:
-            charging_site = await self._get_charging_site(state)
-            self._apply_charging_site(charging_site)
-
-            if charging_site:
-                await self.storage.save_current_charge(
-                    self.current_charge.to_dict()
+            if self.current_charge is not charge:
+                _LOGGER.debug(
+                    "Charging session changed while finishing; "
+                    "aborting stale handler"
                 )
+                return
 
-        await self._finalize_charge(state)
+            address = await self._get_address(state)
 
+            charge.finish(
+                soc=state.get("soc"),
+                latitude=state.get("latitude"),
+                longitude=state.get("longitude"),
+                address=address,
+            )
+
+            # Retry charging-site detection at the end of the session if the
+            # start coordinates did not produce a match.
+            if not charge.charging_site_id:
+                charging_site = await self._get_charging_site(state)
+                self._apply_charging_site(charging_site)
+
+                if charging_site:
+                    await self.storage.save_current_charge(
+                        charge.to_dict()
+                    )
+
+            await self._finalize_charge(state)
 
     async def _finalize_trip(self, state):
         """Finalize and save trip."""
