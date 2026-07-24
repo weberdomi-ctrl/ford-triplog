@@ -60,13 +60,30 @@ This calculation provides a realistic estimate without requiring data from the c
 
 # Charging Location
 
-The charging location is determined from the vehicle position at the beginning of the charging session.
+Ford Triplog stores both the charging position and, when available, the detected charging station.
 
-The location is converted into a readable address, for example:
+Every charging session contains:
+
+- Start and end coordinates
+- Human-readable postal address
+- Detected charging-site information from the local database
+
+When a matching charging site is found, the session can be enriched with:
+
+- Station name
+- Brand
+- Operator
+- Charging network
+- Maximum charging power
+- Connector types
+- Number of charging points
+
+Example:
 
 ```
-IONITY Neuenkirch
-Switzerland
+GOFAST Sihlbrugg
+Operator: GOFAST
+Network: Swisscharge
 ```
 
 or
@@ -76,7 +93,7 @@ Home
 Buttikon SZ
 ```
 
-This makes it easy to browse your charging history without interpreting GPS coordinates.
+Charging-site recognition uses the locally generated OpenStreetMap database and works without an internet connection during normal operation.
 
 ---
 
@@ -172,15 +189,15 @@ These statistics are continuously updated after every completed charging session
 
 Several charging features are planned for future releases.
 
-## Version 1.4
+## Version 1.5
 
-Planned improvements include:
+Possible future improvements include:
 
 - Smart Charge Pause / Resume
-- Named charging locations
-- Charging provider detection
 - AC / DC recognition
-- Improved charging statistics
+- Charging cost calculation
+- Home charging tariff support
+- Extended charging statistics
 
 These additions will further improve the charging history while remaining fully compatible with existing data.
 
