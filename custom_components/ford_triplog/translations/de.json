@@ -10,11 +10,17 @@
           "tracker": "Fahrzeug-Tracker",
           "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
           "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "last_charge": "FordPass Last Charge",
+          "charging_site_country": "Land der Ladestationsdatenbank",
+          "battery_capacity_kwh": "Nutzbare Batteriekapazität (kWh)"
         },
         "data_description": {
           "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
-          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
+          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird.",
+          "last_charge": "Optionaler FordPass-Sensor mit den Daten des letzten abgeschlossenen Ladevorgangs. Empfohlen für eine genauere Erkennung und Auswertung von Ladevorgängen.",
+          "charging_site_country": "Standardmäßig wird das Land deiner Home-Assistant-Installation verwendet. Diese Einstellung kann später jederzeit in den Optionen geändert werden.",
+          "battery_capacity_kwh": "Nutzbare Batteriekapazität (Netto) des Fahrzeugs. Sie wird für Verbrauchs-, Lade- und Reichweitenberechnungen verwendet."
         }
       }
     }
@@ -43,13 +49,17 @@
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus-Sensor",
           "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)"
+          "soh": "Batteriezustand (SOH)",
+          "last_charge": "FordPass Last Charge",
+          "charging_site_country": "Land der Ladestationsdatenbank"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
           "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh."
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "last_charge": "Optionaler FordPass-Sensor mit den Daten des letzten abgeschlossenen Ladevorgangs. Empfohlen für eine genauere Erkennung und Auswertung von Ladevorgängen.",
+          "charging_site_country": "Standardmäßig wird das Land deiner Home-Assistant-Installation verwendet. Diese Einstellung kann später jederzeit in den Optionen geändert werden."
         }
       },
       "import_charging_sites": {
