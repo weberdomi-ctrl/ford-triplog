@@ -26,7 +26,7 @@ Automatic Trip Logging • Charging History • Smart Statistics • Local Stora
 
 ---
 
-Ford Triplog extends the **FordPass** integration (https://github.com/marq24/ha-fordpass) by automatically recording every trip and charging session.
+Ford Triplog extends the **FordPass** integration maintained by the Home Assistant GitHub community (https://github.com/marq24/ha-fordpass) by automatically recording every trip and charging session.
 
 Designed for modern Ford electric vehicles, it creates a permanent driving history with detailed statistics, energy calculations and native Home Assistant sensors while keeping **all data stored locally** inside your Home Assistant installation.
 
@@ -44,7 +44,9 @@ No cloud services. No external database. Your data always remains under your con
 
 ✔ Trip & charging statistics
 
-✔ Charging Location Recognition
+✔ Automatic Charging-Site Recognition
+
+✔ Local OpenStreetMap charging-site database
 
 ✔ Native Home Assistant sensors
 
@@ -93,6 +95,9 @@ Optional settings include:
 - Smart Trip
 - Smart Trip Timeout
 - Battery Capacity
+- Charging-site country
+
+Charging-site databases can be downloaded directly from the integration options.
 
 Full configuration guide:
 
@@ -119,9 +124,11 @@ Charging sessions are detected automatically.
 Ford Triplog records:
 
 - Charging duration
-- Charging location
+- Estimated charged energy
 - Start & End State of Charge
-- Added energy
+- Charging location
+- Charging-site recognition
+- Charging provider information
 - Linked trip (when applicable)
 
 More information:
@@ -223,8 +230,7 @@ Frequently asked questions are available here:
 Upcoming features include:
 
 - Smart Charge (Pause / Resume)
-- Named Charging Locations
-- Charging Provider Lookup
+- Charging Cost Calculation
 - AC/DC Detection
 - Multi Vehicle Support
 
