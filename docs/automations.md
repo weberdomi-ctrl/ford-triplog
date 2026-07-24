@@ -120,6 +120,39 @@ action:
 
 ---
 
+
+---
+
+# Charging Station Notification
+
+Notify when a public charging session has finished.
+
+```yaml
+alias: Charging Station Notification
+trigger:
+  - platform: state
+    entity_id: sensor.ford_triplog_last_charge_end_time
+
+condition:
+  - condition: template
+    value_template: >
+      {{ states('sensor.ford_triplog_last_charging_station')
+         not in ['unknown','unavailable',''] }}
+
+action:
+  - service: notify.mobile_app_phone
+    data:
+      title: Charging Completed
+      message: >
+        {{ states('sensor.ford_triplog_last_charging_station') }}
+
+        Battery:
+        {{ states('sensor.ford_triplog_last_charge_start_soc') }}%
+        →
+        {{ states('sensor.ford_triplog_last_charge_end_soc') }}%
+```
+
+
 # Logbook Entry
 
 Add every completed trip to the Home Assistant Logbook.
