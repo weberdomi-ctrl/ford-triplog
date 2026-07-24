@@ -30,7 +30,7 @@ from .charging_site_lookup import (
     ChargingSiteLookup,
 )
 
-from .const import SMART_TRIP_TIMEOUT
+from .const import CONF_LAST_CHARGE, SMART_TRIP_TIMEOUT
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -84,6 +84,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_ignition = False
         self.last_charging = False
 
+        # FordPass 'Last Charge' sensor (Version 1.5 preparation).
+        self.last_charge_entity: str | None = config.get(CONF_LAST_CHARGE)
+        self.last_charge_state: str | None = None
+
         self.remove_listener = None
 
         # Prevent overlapping charge handlers from changing current_charge
@@ -119,12 +123,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.config.get("tracker"),
                 self.config.get("soc"),
                 self.config.get("charging"),
+                self.last_charge_entity,
             ) if e
         ]
 
         self.remove_listener = async_track_state_change_event(
             self.hass, entities, self._state_changed
         )
+
+        if self.last_charge_entity:
+            last_charge = self.hass.states.get(self.last_charge_entity)
+            self.last_charge_state = (
+                last_charge.state if last_charge else None
+            )
 
     def _resolve_charging_site_database(self) -> Path:
         """Return the configured country's charging-site database path."""
@@ -314,7 +325,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "ignition",
             "odometer",
             "soc",
-            "charging",    
+            "charging",
+            CONF_LAST_CHARGE,
         ):
             entity_id = self.config.get(key)
             st = self.hass.states.get(entity_id) if entity_id else None
@@ -343,6 +355,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         charging = charging_state == "IN_PROGRESS"
 
+        self.last_charge_state = self.vehicle_state.get(
+            CONF_LAST_CHARGE
+        )
 
         # Trip handling
         if not self.last_ignition and ignition:
