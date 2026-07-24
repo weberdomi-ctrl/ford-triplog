@@ -30,7 +30,11 @@ from .charging_site_lookup import (
     ChargingSiteLookup,
 )
 
-from .const import CONF_LAST_CHARGE, SMART_TRIP_TIMEOUT
+from .const import (
+    CONF_LAST_CHARGE,
+    DEFAULT_LAST_CHARGE_STABLE_TIME,
+    SMART_TRIP_TIMEOUT,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -87,6 +91,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # FordPass 'Last Charge' sensor (Version 1.5 preparation).
         self.last_charge_entity: str | None = config.get(CONF_LAST_CHARGE)
         self.last_charge_state: str | None = None
+
+        # Last Charge stabilization infrastructure.
+        # Phase 2 only observes changes; it does not alter charge saving.
+        self.waiting_for_last_charge = False
+        self.last_charge_stable_time = int(
+            config.get(
+                "last_charge_stable_time",
+                DEFAULT_LAST_CHARGE_STABLE_TIME,
+            )
+        )
+        self.last_charge_timer: asyncio.TimerHandle | None = None
 
         self.remove_listener = None
 
@@ -355,8 +370,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         charging = charging_state == "IN_PROGRESS"
 
-        self.last_charge_state = self.vehicle_state.get(
-            CONF_LAST_CHARGE
+        self._handle_last_charge_state_change(
+            self.vehicle_state.get(CONF_LAST_CHARGE)
         )
 
         # Trip handling
@@ -377,6 +392,69 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charging = charging
 
         self.async_set_updated_data(self.vehicle_state)
+
+    def _handle_last_charge_state_change(
+        self,
+        new_state: str | None,
+    ) -> None:
+        """Observe changes of the configured Last Charge sensor."""
+
+        if new_state == self.last_charge_state:
+            return
+
+        previous_state = self.last_charge_state
+        self.last_charge_state = new_state
+
+        _LOGGER.debug(
+            "Last Charge sensor changed: %s -> %s",
+            previous_state,
+            new_state,
+        )
+
+        # Phase 2 prepares stabilization only. The flag remains False until
+        # Phase 3 starts waiting after a charging session has ended.
+        if not self.waiting_for_last_charge:
+            return
+
+        self._restart_last_charge_timer()
+
+    def _restart_last_charge_timer(self) -> None:
+        """Restart the Last Charge stabilization timer."""
+
+        self._cancel_last_charge_timer()
+
+        self.last_charge_timer = self.hass.loop.call_later(
+            self.last_charge_stable_time,
+            self._last_charge_stabilized,
+        )
+
+        _LOGGER.debug(
+            "Last Charge stabilization timer started for %ss",
+            self.last_charge_stable_time,
+        )
+
+    def _cancel_last_charge_timer(self) -> None:
+        """Cancel the Last Charge stabilization timer if active."""
+
+        if self.last_charge_timer is None:
+            return
+
+        self.last_charge_timer.cancel()
+        self.last_charge_timer = None
+
+        _LOGGER.debug("Last Charge stabilization timer cancelled")
+
+    def _last_charge_stabilized(self) -> None:
+        """Handle an unchanged Last Charge sensor after the timeout."""
+
+        self.last_charge_timer = None
+
+        _LOGGER.debug(
+            "Last Charge sensor stable for %ss",
+            self.last_charge_stable_time,
+        )
+
+        # Phase 2 deliberately performs no finalization here.
 
     async def _wait_for_stable_vehicle_state(self):
         last = None
