@@ -96,6 +96,15 @@ This roadmap outlines the planned evolution of Ford Triplog. Features and priori
 - Distinguish measured values from calculated values
 - Additional consistency checks for trip data
 
+### Dashboard Examples
+
+- Provide a ready-to-use charging dashboard card
+- Provide a complete vehicle overview example
+- Use stable Ford Triplog sensors instead of direct FordPass attributes
+- Include copy-and-paste YAML examples in the documentation
+- Offer a standard Home Assistant version without custom cards
+- Optionally provide an enhanced version for popular custom cards
+
 ### Home Charging
 
 - Configurable home charging location
