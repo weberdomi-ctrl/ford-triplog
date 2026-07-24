@@ -233,6 +233,7 @@ Upcoming features include:
 - Charging Cost Calculation
 - AC/DC Detection
 - Multi Vehicle Support
+- Journey timeline (combine trips and charging sessions)
 
 Complete roadmap:
 
