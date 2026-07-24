@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.4.12
+Version: 1.4.13
 """
 
 from __future__ import annotations
@@ -150,7 +150,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="init",
             menu_options=[
                 "settings",
-                "import_charging_sites",
                 "download_charging_sites",
             ],
         )
