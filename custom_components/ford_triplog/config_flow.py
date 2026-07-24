@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.4.13
+Version: 1.5.0
 """
 
 from __future__ import annotations
@@ -89,9 +89,33 @@ class FordTriplogConfigFlow(
             data_schema=self._build_schema(),
         )
 
-    @staticmethod
-    def _build_schema() -> vol.Schema:
+    def _build_schema(self) -> vol.Schema:
         """Return configuration schema."""
+
+        home_assistant_country = (
+            str(self.hass.config.country or "")
+            .strip()
+            .upper()
+        )
+
+        # Home Assistant normally uses ISO 3166-1 alpha-2.
+        # Accept UK as a defensive alias for the official GB code.
+        if home_assistant_country == "UK":
+            home_assistant_country = "GB"
+
+        default_country = (
+            home_assistant_country
+            if home_assistant_country in COUNTRIES
+            else "CH"
+        )
+
+        country_options = [
+            selector.SelectOptionDict(
+                value=country_code,
+                label=f"{country['name']} ({country_code})",
+            )
+            for country_code, country in sorted(COUNTRIES.items())
+        ]
 
         return vol.Schema(
             {
@@ -113,8 +137,35 @@ class FordTriplogConfigFlow(
                 vol.Optional(CONF_LAST_CHARGE): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Required(CONF_SMART_TRIP, default=True): selector.BooleanSelector(),
-                vol.Required(CONF_SMART_TRIP_TIMEOUT, default=300): selector.NumberSelector(
+                vol.Required(
+                    CONF_CHARGING_SITE_COUNTRY,
+                    default=default_country,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=country_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_BATTERY_CAPACITY,
+                    default=77,
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=40,
+                        max=120,
+                        step=1,
+                        unit_of_measurement="kWh",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Required(
+                    CONF_SMART_TRIP,
+                    default=True,
+                ): selector.BooleanSelector(),
+                vol.Required(
+                    CONF_SMART_TRIP_TIMEOUT,
+                    default=300,
+                ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=30,
                         max=900,
