@@ -267,21 +267,6 @@ This makes it possible to refresh charging locations when OpenStreetMap data cha
 
 ---
 
-## Importing a Charging-Site Database
-
-Instead of downloading a new database, you can import a compatible Ford Triplog charging-site JSON file.
-
-The imported file is validated before it is activated.
-
-Use this option when:
-
-- A database was generated on another Home Assistant system
-- A prepared country file is available
-- The Overpass service is temporarily unavailable
-- A database should be restored from a backup
-
----
-
 ## Charging-Site Storage
 
 Generated charging-site databases are stored locally under:
@@ -341,8 +326,7 @@ Here you can modify:
 - Smart Trip Timeout
 - Battery Capacity
 - Charging-site country
-- Charging-site database download
-- Charging-site database import
+- Download or update the charging-site database
 
 The changes take effect immediately.
 
