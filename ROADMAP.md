@@ -85,6 +85,15 @@ This roadmap outlines the planned evolution of Ford Triplog. Features and priori
 - Validate that the FordPass charging record belongs to the current charging session
 - Optionally store the source of imported values
 
+### Trip Validation & Data Quality
+
+- Detect trips with a net SOC gain
+- Prevent negative energy consumption values
+- Prevent negative kWh/100 km values
+- Flag trips with charging or unusual SOC behavior
+- Separate calculated values from measured values
+- Improve plausibility checks for trip statistics
+
 ### Home Charging
 
 - Configurable home charging location
