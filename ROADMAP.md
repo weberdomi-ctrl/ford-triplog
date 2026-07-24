@@ -87,12 +87,14 @@ This roadmap outlines the planned evolution of Ford Triplog. Features and priori
 
 ### Trip Validation & Data Quality
 
-- Detect trips with a net SOC gain
+- Improved trip plausibility validation
+- Detect trips with a net SOC increase
 - Prevent negative energy consumption values
-- Prevent negative kWh/100 km values
-- Flag trips with charging or unusual SOC behavior
-- Separate calculated values from measured values
-- Improve plausibility checks for trip statistics
+- Prevent negative consumption (kWh/100 km)
+- Exclude invalid consumption values from statistics
+- Detect charging events during or immediately before/after a trip
+- Distinguish measured values from calculated values
+- Additional consistency checks for trip data
 
 ### Home Charging
 
