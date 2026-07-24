@@ -10,11 +10,17 @@
           "tracker": "Vehicle tracker",
           "charging": "Charging status sensor (only available for Ford Pass EVs)",
           "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+          "smart_trip_timeout": "Smart Trip timeout (seconds)",
+          "last_charge": "FordPass Last Charge",
+          "charging_site_country": "Charging-site database country",
+          "battery_capacity_kwh": "Usable battery capacity (kWh)"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
-          "smart_trip_timeout": "Time before a paused trip is finalized."
+          "smart_trip_timeout": "Time before a paused trip is finalized.",
+          "last_charge": "Optional FordPass sensor containing the latest completed charging session. Recommended for more accurate charging detection and analysis.",
+          "charging_site_country": "By default, the country of your Home Assistant installation is used. This setting can be changed later in the options.",
+          "battery_capacity_kwh": "Usable (net) battery capacity of the vehicle. Used for consumption, charging and range calculations."
         }
       }
     }
@@ -43,13 +49,17 @@
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)",
           "charging": "Charging status sensor",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)"
+          "battery_capacity_kwh": "Usable battery capacity (kWh)",
+          "last_charge": "FordPass Last Charge",
+          "charging_site_country": "Charging-site database country"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
           "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
           "charging": "Charging status sensor (only available for Ford Pass EVs).",
-          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh."
+          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
+          "last_charge": "Optional FordPass sensor containing the latest completed charging session. Recommended for more accurate charging detection and analysis.",
+          "charging_site_country": "By default, the country of your Home Assistant installation is used. This setting can be changed later in the options."
         }
       },
       "import_charging_sites": {
