@@ -18,7 +18,7 @@ Before installing Ford Triplog, ensure the following requirements are met.
 | Supported Ford EV | ✅ Required |
 
 > [!IMPORTANT]
-> Ford Triplog extends the official FordPass integration.
+> Ford Triplog extends the FordPass integration.
 >
 > It does **not** replace FordPass.
 >
@@ -201,6 +201,25 @@ custom_components/ford_triplog
 > - Recovery data
 
 ---
+
+
+---
+
+# Optional Charging-Site Database
+
+After the initial configuration you can optionally download a local charging-site database from the integration options.
+
+This enables Ford Triplog to recognize public charging stations and enrich charging sessions with:
+
+- Station name
+- Brand
+- Operator
+- Charging network
+- Connector information
+- Charging power
+
+The download is only required once per country and can be refreshed at any time.
+
 
 # Next Step
 
