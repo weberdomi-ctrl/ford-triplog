@@ -1,71 +1,231 @@
-# Ford Triplog v1.4.0
+# RELEASE_NOTES
 
-## 🚗 Major Release
+## Ford Triplog 1.5.0
 
-Version 1.4 is the biggest update since the initial release of Ford
-Triplog and introduces charging session tracking, OpenStreetMap
-integration, improved statistics, and many usability improvements.
+Ford Triplog 1.5.0 is the first public release of the integration.
 
-## ✨ New Features
+This release introduces a complete trip and charging history solution for Home Assistant with a strong focus on local data processing, privacy and seamless integration with the existing FordPass integration.
 
-### 🔋 Charging Sessions
+---
 
--   Automatic charging session detection
--   Charging duration
--   Start and end state of charge (SOC)
--   Estimated charged energy
--   Charging history
--   Charging statistics
+# Highlights
 
-### 🗺️ Charging Location Database
+## Automatic Trip Recording
 
--   Offline charging location database based on OpenStreetMap
--   Automatic charging location recognition
--   Country-specific charging databases
--   Download charging databases directly from the integration
--   Fast geohash-based lookup
--   Support for multiple European countries
+Trips are recorded automatically using vehicle telemetry from the FordPass integration.
 
-### 🔗 Trip & Charging Timeline
+Each completed trip includes:
 
--   Automatic linking of charging sessions with nearby trips
--   Unified travel history
--   Charging events associated with trips
+- Distance
+- Duration
+- Average speed
+- State of Charge (SOC)
+- Estimated energy consumption
+- Start and destination locations
 
-### 📊 Statistics
+---
 
--   Extended trip statistics
--   Charging statistics
--   Average energy consumption
--   Additional Home Assistant sensors
+## Smart Trip
 
-## ⚙️ Improvements
+The new Smart Trip feature prevents short stops from splitting a journey into multiple trips.
 
--   Configurable battery capacity
--   Improved Smart Trip handling
--   Improved entity naming
--   Complete Home Assistant translations
--   Improved diagnostics
--   Faster startup
--   Better error handling
--   Performance optimizations
+Typical use cases include:
 
-## 🏗️ Internal
+- Coffee breaks
+- Shopping stops
+- Picking up passengers
+- Brief charging stops
 
--   HACS ready
--   Improved storage handling
--   Optimized charging database format
--   Faster location lookup
--   General refactoring and cleanup
+The timeout is fully configurable.
 
-## 🐞 Fixes
+---
 
--   Fixed charging database activation
--   Fixed charging database persistence after restart
--   Fixed country selection workflow
--   Fixed configuration flow issues
--   Multiple stability improvements
+## Automatic Charging Sessions
 
-------------------------------------------------------------------------
+Charging sessions are detected automatically without any user interaction.
 
-Thank you to everyone testing Ford Triplog and providing feedback.
+Each charging session records:
+
+- Start and end time
+- Charging duration
+- State of Charge
+- Estimated charged energy
+- Charging location
+- Charging provider (when available)
+
+---
+
+## Charging Location Resolver
+
+Ford Triplog now identifies charging locations using a prioritized resolver.
+
+Priority order:
+
+1. FordPass charging information
+2. User-defined charging locations
+3. OpenStreetMap charging database
+4. Reverse geocoding
+
+This provides reliable charging location recognition while allowing users to override locations whenever necessary.
+
+---
+
+## User Charging Locations
+
+Create your own charging locations for:
+
+- Home
+- Work
+- Public chargers
+
+Each location supports:
+
+- Custom names
+- Configurable matching radius
+- Address information
+- Charging operator
+- Charging network
+- Connector information
+
+User-defined locations always take precedence over the OpenStreetMap database.
+
+---
+
+## OpenStreetMap Charging Database
+
+Version 1.5 introduces optional offline charging databases.
+
+Benefits include:
+
+- Fast local lookups
+- Offline operation
+- Charging provider recognition
+- Network information
+- Connector types
+- Charging power
+- Number of charging points
+
+Country-specific databases can be downloaded directly from the integration.
+
+---
+
+## Trip and Charging Linking
+
+Charging sessions are automatically associated with the corresponding trip whenever possible.
+
+Trips and charging sessions remain separate records while providing a connected driving history.
+
+---
+
+## Local Storage
+
+All data is stored locally inside Home Assistant.
+
+Stored information includes:
+
+- Trips
+- Charging sessions
+- Statistics
+- User charging locations
+- Configuration
+
+No external database server is required.
+
+---
+
+## Home Assistant Integration
+
+Ford Triplog integrates seamlessly into Home Assistant.
+
+Features include:
+
+- Native Config Flow
+- Options Flow
+- Diagnostics support
+- HACS installation
+- Device information
+- Translation support
+- Dashboard compatibility
+
+---
+
+## Documentation
+
+Version 1.5 includes comprehensive documentation covering:
+
+- Installation
+- Configuration
+- Architecture
+- Smart Trip
+- Charging sessions
+- Charging locations
+- Charging database
+- Sensors
+- Dashboard examples
+- Storage
+- Privacy
+- Troubleshooting
+- Automation examples
+- FAQ
+
+---
+
+# Privacy
+
+Ford Triplog follows a local-first architecture.
+
+- No cloud backend
+- Local JSON storage
+- Offline charging database lookups
+- User-controlled backups
+
+Your driving history always remains under your control.
+
+---
+
+# Compatibility
+
+- Home Assistant 2026.6 or newer
+- Python 3.12 or newer
+- Community FordPass integration
+- HACS
+
+---
+
+# Upgrade Notes
+
+This is the initial public release.
+
+No migration steps are required for new installations.
+
+Future releases will automatically migrate stored data whenever necessary.
+
+---
+
+# Known Limitations
+
+Current limitations include:
+
+- One active charging database at a time
+- Charging cost calculation is not yet available
+- JSON is the default storage backend
+- Multi-vehicle support is planned for a future release
+
+---
+
+# Looking Ahead
+
+Development continues with planned improvements including:
+
+- Automatic charging database switching
+- Additional dashboard templates
+- Charging cost calculation
+- Maintenance tools
+- Enhanced statistics
+- Optional database backend for large installations
+
+See `ROADMAP.md` for additional information.
+
+---
+
+Thank you to everyone who tests, reports issues, suggests new ideas and contributes to the Ford Triplog project.
