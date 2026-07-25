@@ -59,6 +59,12 @@ class Charge:
         self.last_charge_baseline_signature: str | None = None
         self.fordpass_pending: bool = False
         self.data_source: str = "local"
+
+        self.energy_added_kwh: float | None = None
+        self.energy_added_kwh_fordpass: float | None = None
+        self.energy_added_kwh_calculated: float | None = None
+        self.energy_source: str = "calculated"
+
         self.include_in_statistics: bool = True
         self.exclusion_reason: str | None = None
 
@@ -135,6 +141,12 @@ class Charge:
             ),
             "fordpass_pending": self.fordpass_pending,
             "data_source": self.data_source,
+            "energy_added_kwh": self.energy_added_kwh,
+            "energy_added_kwh_fordpass": self.energy_added_kwh_fordpass,
+            "energy_added_kwh_calculated": (
+                self.energy_added_kwh_calculated
+            ),
+            "energy_source": self.energy_source,
             "include_in_statistics": self.include_in_statistics,
             "exclusion_reason": self.exclusion_reason,
             "generator": "Ford Triplog",
@@ -190,6 +202,23 @@ class Charge:
             data.get("fordpass_pending", False)
         )
         charge.data_source = data.get("data_source", "local")
+
+        charge.energy_added_kwh = data.get("energy_added_kwh")
+        charge.energy_added_kwh_fordpass = data.get(
+            "energy_added_kwh_fordpass"
+        )
+        charge.energy_added_kwh_calculated = data.get(
+            "energy_added_kwh_calculated"
+        )
+        charge.energy_source = data.get(
+            "energy_source",
+            (
+                "fordpass"
+                if charge.energy_added_kwh_fordpass is not None
+                else "calculated"
+            ),
+        )
+
         charge.include_in_statistics = bool(
             data.get("include_in_statistics", True)
         )

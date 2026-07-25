@@ -13,7 +13,7 @@ import json
 import logging
 import math
 import shutil
-from datetime import timedelta
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -103,8 +103,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charge_stable_time = int(
             config.get(
                 "last_charge_stable_time",
-                DEFAULT_CHARGE_MATCH_TIMEOUT,
-    DEFAULT_LAST_CHARGE_STABLE_TIME,
+                DEFAULT_LAST_CHARGE_STABLE_TIME,
             )
         )
         self.last_charge_timer: asyncio.TimerHandle | None = None
@@ -591,13 +590,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         return value
 
     @staticmethod
-    def _parse_fordpass_datetime(value: Any):
-        """Parse a FordPass ISO timestamp into a timezone-aware datetime."""
+    def _parse_fordpass_datetime(value: Any) -> datetime | None:
+        """Return a timezone-aware datetime from a local or FordPass value."""
 
-        if not isinstance(value, str) or not value:
+        if isinstance(value, datetime):
+            parsed = value
+        elif isinstance(value, str) and value:
+            parsed = dt_util.parse_datetime(value)
+        else:
             return None
 
-        parsed = dt_util.parse_datetime(value)
         if parsed is None:
             return None
 
@@ -626,7 +628,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         local_end = self._parse_fordpass_datetime(charge.end_time)
 
         if local_start is None or local_end is None:
-            return True
+            _LOGGER.warning(
+                "Cannot match Last Charge dataset because local charge "
+                "timestamps are unavailable"
+            )
+            return False
 
         ford_start = self._parse_fordpass_datetime(
             self._snapshot_attribute(
@@ -1159,10 +1165,38 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         end_soc = float(charge.get("end_soc") or 0)
         soc_delta = max(0, end_soc - start_soc)
 
-        charge["energy_added_kwh"] = round(
+        energy_calculated = round(
             (soc_delta / 100) * self.battery_capacity,
             2,
         )
+
+        energy_fordpass = None
+        fordpass_snapshot = charge.get("fordpass_last_charge")
+
+        if isinstance(fordpass_snapshot, dict):
+            attributes = fordpass_snapshot.get("attributes")
+
+            if isinstance(attributes, dict):
+                raw_energy = attributes.get("energyConsumed")
+
+                try:
+                    if raw_energy is not None:
+                        energy_fordpass = round(float(raw_energy), 2)
+                except (TypeError, ValueError):
+                    _LOGGER.debug(
+                        "FordPass energyConsumed is not numeric: %r",
+                        raw_energy,
+                    )
+
+        charge["energy_added_kwh_calculated"] = energy_calculated
+        charge["energy_added_kwh_fordpass"] = energy_fordpass
+
+        if energy_fordpass is not None:
+            charge["energy_added_kwh"] = energy_fordpass
+            charge["energy_source"] = "fordpass"
+        else:
+            charge["energy_added_kwh"] = energy_calculated
+            charge["energy_source"] = "calculated"
 
         await self.storage.save_charge(charge)
         await self.storage.save_last_charge(charge)
