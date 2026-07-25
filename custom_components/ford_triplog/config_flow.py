@@ -7,12 +7,12 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.3
-Build: 04
+Build: 05
 
 Changes:
-- Fixed options-flow startup when Home Assistant has not assigned hass yet.
-- User charging-site storage is now initialized lazily inside the flow step.
-- Keeps the Own charging locations menu and list view from Build 03.
+- Removed the charging-site database import entry from the options menu.
+- Keeps the lazy storage initialization hotfix.
+- Keeps the Own charging locations menu and list view.
 """
 
 from __future__ import annotations
@@ -165,7 +165,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "settings",
                 "user_charging_sites",
                 "download_charging_sites",
-                "import_charging_sites",
             ],
         )
 
