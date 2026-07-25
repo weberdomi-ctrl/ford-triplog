@@ -92,7 +92,7 @@
       },
       "user_charging_sites": {
         "title": "Eigene Ladeorte",
-        "description": "Gespeicherte Ladeorte: {site_count}. Wähle einen Ladeort aus oder lege einen neuen Eintrag an.",
+        "description": "{stored_text}",
         "data": {
           "user_charging_site_selection": "Ladeort"
         }
@@ -103,7 +103,7 @@
       },
       "user_charging_site_edit": {
         "title": "Ladeort erfassen oder bearbeiten",
-        "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
+        "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Anschlüsse können mehrfach ausgewählt werden; bei der Marke sind auch eigene Werte möglich. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
         "data": {
           "name": "Name",
           "street": "Strasse",
@@ -117,10 +117,10 @@
           "type": "Typ",
           "power_kw": "Maximale Ladeleistung",
           "capacity": "Anzahl Ladepunkte",
-          "connectors": "Anschlüsse",
+          "connectors": "Anschlüsse (Mehrfachauswahl)",
           "operator": "Betreiber",
           "network": "Netzwerk",
-          "brand": "Marke",
+          "brand": "Marke / Anbieter",
           "notes": "Notizen",
           "action": "Aktion"
         }
@@ -131,7 +131,7 @@
       },
       "user_charging_sites_pending_notice": {
         "title": "Eigene Ladeorte",
-        "description": "Es wurden {pending_count} unbekannte Ladeorte erkannt. Diese Ladeorte wurden bereits zum Laden verwendet und können jetzt als eigene Ladeorte gespeichert werden. Gespeicherte Ladeorte: {site_count}.",
+        "description": "{pending_text}\n\n{stored_text}",
         "data": {
           "user_charging_site_selection": "Ladeort"
         }

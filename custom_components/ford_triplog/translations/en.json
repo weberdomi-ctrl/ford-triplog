@@ -92,7 +92,7 @@
       },
       "user_charging_sites": {
         "title": "Own charging locations",
-        "description": "Stored charging locations: {site_count}. Select a charging location or create a new entry.",
+        "description": "{stored_text}",
         "data": {
           "user_charging_site_selection": "Charging location"
         }
@@ -103,7 +103,7 @@
       },
       "user_charging_site_edit": {
         "title": "Create or edit charging location",
-        "description": "The fields follow the OSM charging-site database model. Available data is prefilled for detected charging locations.",
+        "description": "The fields follow the OSM charging-site database model. Multiple connectors can be selected, and custom brand values are supported. Available data is prefilled for detected charging locations.",
         "data": {
           "name": "Name",
           "street": "Street",
@@ -117,10 +117,10 @@
           "type": "Type",
           "power_kw": "Maximum charging power",
           "capacity": "Number of charging points",
-          "connectors": "Connectors",
+          "connectors": "Connectors (multiple selection)",
           "operator": "Operator",
           "network": "Network",
-          "brand": "Brand",
+          "brand": "Brand / provider",
           "notes": "Notes",
           "action": "Action"
         }
@@ -131,7 +131,7 @@
       },
       "user_charging_sites_pending_notice": {
         "title": "Own charging locations",
-        "description": "{pending_count} unknown charging locations were detected. These locations have already been used for charging and can now be saved as own charging locations. Stored charging locations: {site_count}.",
+        "description": "{pending_text}\n\n{stored_text}",
         "data": {
           "user_charging_site_selection": "Charging location"
         }

@@ -7,12 +7,15 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.5
-Build: 11
+Build: 13
 
 Changes:
-- Always shows charging power and number of charging points in the GUI.
-- Avoids default=None validation errors for optional number fields.
-- Keeps the OSM-compatible user charging-site model from Build 10.
+- Improves the own charging locations overview with correct singular/plural wording.
+- Shows pending charging locations only when they exist.
+- Uses the label "New detected charging locations (n)" for pending entries.
+- Shows brand/provider and location type on a second line for stored locations.
+- Keeps stored locations alphabetically sorted.
+- Fixes the pending-location default selection to use site_id.
 """
 
 from __future__ import annotations
@@ -279,9 +282,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 selector.SelectOptionDict(
                     value=USER_CHARGING_SITE_PENDING,
                     label=(
-                        "⚠ "
+                        "⚠ Neue erkannte Ladeorte ("
                         + str(len(pending_sites))
-                        + " unbekannte Ladeorte jetzt erfassen"
+                        + ")"
                     ),
                 )
             )
@@ -331,8 +334,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             errors=errors,
             description_placeholders={
-                "site_count": str(len(sites)),
-                "pending_count": str(len(pending_sites)),
+                "stored_text": self._format_stored_site_count(len(sites)),
+                "pending_text": self._format_pending_site_count(
+                    len(pending_sites)
+                ),
             },
         )
 
@@ -398,7 +403,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
-                        default=str(pending_sites[0]["id"]),
+                        default=str(pending_sites[0]["site_id"]),
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
@@ -434,7 +439,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             CONF_USER_CHARGING_SITE_COUNTRY: "",
             CONF_USER_CHARGING_SITE_POWER: 0.0,
             CONF_USER_CHARGING_SITE_CAPACITY: 0.0,
-            CONF_USER_CHARGING_SITE_CONNECTORS: "",
+            CONF_USER_CHARGING_SITE_CONNECTORS: [],
             CONF_USER_CHARGING_SITE_LATITUDE: 0.0,
             CONF_USER_CHARGING_SITE_LONGITUDE: 0.0,
             CONF_USER_CHARGING_SITE_RADIUS: 50.0,
@@ -475,10 +480,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     CONF_USER_CHARGING_SITE_COUNTRY: (
                         source.get("country") or detected_country
                     ),
-                    CONF_USER_CHARGING_SITE_CONNECTORS: ", ".join(
+                    CONF_USER_CHARGING_SITE_CONNECTORS: [
                         str(value)
                         for value in (source.get("connectors") or [])
-                    ),
+                    ],
                     CONF_USER_CHARGING_SITE_LATITUDE: float(
                         source.get("latitude") or 0.0
                     ),
@@ -659,6 +664,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 selector.SelectSelectorConfig(
                     options=[
                         selector.SelectOptionDict(
+                            value="public",
+                            label="Öffentlich",
+                        ),
+                        selector.SelectOptionDict(
+                            value="private",
+                            label="Privat",
+                        ),
+                        selector.SelectOptionDict(
                             value="home",
                             label="Zuhause",
                         ),
@@ -667,12 +680,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             label="Arbeitsplatz",
                         ),
                         selector.SelectOptionDict(
-                            value="public",
-                            label="Öffentlich",
+                            value="dealer",
+                            label="Händler",
                         ),
                         selector.SelectOptionDict(
-                            value="custom",
-                            label="Benutzerdefiniert",
+                            value="hotel",
+                            label="Hotel",
+                        ),
+                        selector.SelectOptionDict(
+                            value="other",
+                            label="Sonstige",
                         ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
@@ -689,7 +706,30 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional(
                 CONF_USER_CHARGING_SITE_BRAND,
                 default=defaults[CONF_USER_CHARGING_SITE_BRAND],
-            ): selector.TextSelector(),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        "Allego",
+                        "Aral pulse",
+                        "BP Pulse",
+                        "ChargePoint",
+                        "Electra",
+                        "EnBW",
+                        "E.ON Drive",
+                        "evpass",
+                        "Fastned",
+                        "GOFAST",
+                        "IONITY",
+                        "MOVE",
+                        "Shell Recharge",
+                        "Swisscharge",
+                        "Tesla",
+                    ],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    sort=True,
+                )
+            ),
             vol.Optional(
                 CONF_USER_CHARGING_SITE_NOTES,
                 default=defaults[CONF_USER_CHARGING_SITE_NOTES],
@@ -734,7 +774,66 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 CONF_USER_CHARGING_SITE_CONNECTORS,
                 default=defaults[CONF_USER_CHARGING_SITE_CONNECTORS],
             )
-        ] = selector.TextSelector()
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value="CCS",
+                        label="CCS (Combo 2)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Type2",
+                        label="Type 2 / Mennekes (AC)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CHAdeMO",
+                        label="CHAdeMO",
+                    ),
+                    selector.SelectOptionDict(
+                        value="NACS",
+                        label="NACS (Tesla)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="TeslaSupercharger",
+                        label="Tesla Supercharger",
+                    ),
+                    selector.SelectOptionDict(
+                        value="TeslaDestination",
+                        label="Tesla Destination",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Type1",
+                        label="Type 1 / J1772 (AC)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CEE_Red",
+                        label="CEE rot",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CEE_Blue",
+                        label="CEE blau",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Schuko",
+                        label="Schuko",
+                    ),
+                    selector.SelectOptionDict(
+                        value="GBT_DC",
+                        label="GB/T DC",
+                    ),
+                    selector.SelectOptionDict(
+                        value="GBT_AC",
+                        label="GB/T AC",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Other",
+                        label="Sonstige",
+                    ),
+                ],
+                multiple=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
 
         if existing is not None:
             schema_fields[
@@ -844,17 +943,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _format_user_charging_site_label(
         site: dict[str, Any],
     ) -> str:
-        """Return a readable label for a stored charging location."""
+        """Return a readable two-line label for a stored charging location."""
 
         site_type = str(site.get("type") or "public")
         type_labels = {
+            "public": "Öffentlich",
+            "private": "Privat",
             "home": "Zuhause",
             "work": "Arbeitsplatz",
-            "public": "Öffentlich",
+            "dealer": "Händler",
+            "hotel": "Hotel",
+            "other": "Sonstige",
             "custom": "Benutzerdefiniert",
         }
         name = str(site.get("name") or site.get("site_id") or "Ladeort")
-        return f"{name} · {type_labels.get(site_type, site_type)}"
+        provider = str(
+            site.get("brand")
+            or site.get("network")
+            or site.get("operator")
+            or ""
+        ).strip()
+        type_label = type_labels.get(site_type, site_type)
+
+        details = (
+            f"{provider} • {type_label}"
+            if provider
+            else type_label
+        )
+        return f"{name}\n{details}"
+
+    @staticmethod
+    def _format_pending_site_count(count: int) -> str:
+        """Return grammatically correct pending-site information."""
+
+        if count == 1:
+            return (
+                "Es wurde 1 unbekannter Ladeort erkannt. "
+                "Dieser kann jetzt als eigener Ladeort gespeichert werden."
+            )
+        if count > 1:
+            return (
+                f"Es wurden {count} unbekannte Ladeorte erkannt. "
+                "Diese können jetzt als eigene Ladeorte gespeichert werden."
+            )
+        return ""
+
+    @staticmethod
+    def _format_stored_site_count(count: int) -> str:
+        """Return grammatically correct stored-site information."""
+
+        if count == 1:
+            return "1 eigener Ladeort gespeichert."
+        return f"{count} eigene Ladeorte gespeichert."
 
     async def async_step_import_charging_sites(
         self,
