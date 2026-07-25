@@ -172,6 +172,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 last_charge
             )
 
+        # Resume a pending completed charging session from recovery. The
+        # timeout is measured from the recorded charge end time, so a Home
+        # Assistant restart cannot restart the full waiting period or leave
+        # current_charge.json pending indefinitely.
+        if (
+            self.current_charge is not None
+            and self.current_charge.fordpass_pending
+            and self.current_charge.end_time
+        ):
+            self._resume_pending_charge_from_recovery()
+
     def _resolve_charging_site_database(self) -> Path:
         """Return the configured country's charging-site database path."""
 
@@ -482,15 +493,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._restart_last_charge_timer()
 
-    def _start_waiting_for_last_charge(self) -> None:
-        """Wait for a new and matching FordPass Last Charge dataset."""
+    def _start_waiting_for_last_charge(
+        self,
+        timeout_seconds: float | None = None,
+    ) -> None:
+        """Wait for a new matching FordPass dataset with a hard timeout."""
 
         self.waiting_for_last_charge = True
         self._cancel_last_charge_timer()
         self._cancel_last_charge_timeout_timer()
 
+        timeout = (
+            float(self.last_charge_match_timeout)
+            if timeout_seconds is None
+            else max(0.0, float(timeout_seconds))
+        )
+
         self.last_charge_timeout_timer = self.hass.loop.call_later(
-            self.last_charge_match_timeout,
+            timeout,
             self._last_charge_match_timed_out,
         )
 
@@ -503,10 +523,45 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         ):
             self._restart_last_charge_timer()
 
-        _LOGGER.debug(
-            "Waiting up to %ss for a new matching Last Charge dataset",
-            self.last_charge_match_timeout,
+        _LOGGER.info(
+            "Waiting up to %.0fs for a new matching FordPass Last Charge dataset",
+            timeout,
         )
+
+    def _resume_pending_charge_from_recovery(self) -> None:
+        """Resume or immediately expire a pending recovered charge."""
+
+        charge = self.current_charge
+        if charge is None or not charge.end_time:
+            return
+
+        end_time = self._parse_fordpass_datetime(charge.end_time)
+        if end_time is None:
+            _LOGGER.warning(
+                "Recovered charge %s has an invalid end time; finalizing locally",
+                charge.charge_id,
+            )
+            self.waiting_for_last_charge = True
+            self.hass.async_create_task(
+                self._async_last_charge_match_timed_out()
+            )
+            return
+
+        now = dt_util.now()
+        elapsed = max(0.0, (now - end_time).total_seconds())
+        remaining = max(
+            0.0,
+            float(self.last_charge_match_timeout) - elapsed,
+        )
+
+        _LOGGER.info(
+            "Recovered pending charge %s: %.0fs elapsed, %.0fs timeout remaining",
+            charge.charge_id,
+            elapsed,
+            remaining,
+        )
+
+        self._start_waiting_for_last_charge(remaining)
 
     def _stop_waiting_for_last_charge(self) -> None:
         """Stop Last Charge matching and cancel all associated timers."""
@@ -731,6 +786,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def _async_last_charge_match_timed_out(self) -> None:
         """Finalize with local data when FordPass provides no matching record."""
+
+        _LOGGER.info(
+            "FordPass Last Charge hard timeout reached; finalizing locally"
+        )
 
         async with self._charge_lock:
             if not self.waiting_for_last_charge:
