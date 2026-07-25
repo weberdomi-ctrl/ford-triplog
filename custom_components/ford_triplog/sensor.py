@@ -275,7 +275,6 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
 class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     """Energy used during the last trip."""
     _attr_translation_key = "last_energy_used"
-    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_last_trip_consumption"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -868,7 +867,6 @@ class FordTriplogAverageTripEnergySensor(FordTriplogSensorBase):
     """Average trip energy used."""
 
     _attr_translation_key = "average_trip_energy"
-    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_average_trip_energy_used"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
