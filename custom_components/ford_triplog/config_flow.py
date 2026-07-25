@@ -7,12 +7,12 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.5
-Build: 10
+Build: 11
 
 Changes:
-- Aligns user charging-location fields with the OSM site model.
-- Adds house number, postcode, country, capacity and connectors.
-- Migrates existing user records through the storage layer.
+- Always shows charging power and number of charging points in the GUI.
+- Avoids default=None validation errors for optional number fields.
+- Keeps the OSM-compatible user charging-site model from Build 10.
 """
 
 from __future__ import annotations
@@ -432,6 +432,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
             CONF_USER_CHARGING_SITE_POSTCODE: "",
             CONF_USER_CHARGING_SITE_CITY: "",
             CONF_USER_CHARGING_SITE_COUNTRY: "",
+            CONF_USER_CHARGING_SITE_POWER: 0.0,
+            CONF_USER_CHARGING_SITE_CAPACITY: 0.0,
             CONF_USER_CHARGING_SITE_CONNECTORS: "",
             CONF_USER_CHARGING_SITE_LATITUDE: 0.0,
             CONF_USER_CHARGING_SITE_LONGITUDE: 0.0,
@@ -698,36 +700,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
         }
 
-        if CONF_USER_CHARGING_SITE_POWER in defaults:
-            schema_fields[
-                vol.Optional(
-                    CONF_USER_CHARGING_SITE_POWER,
-                    default=defaults[CONF_USER_CHARGING_SITE_POWER],
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=1000,
-                    step="any",
-                    unit_of_measurement="kW",
-                    mode=selector.NumberSelectorMode.BOX,
-                )
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_POWER,
+                default=defaults[CONF_USER_CHARGING_SITE_POWER],
             )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step="any",
+                unit_of_measurement="kW",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
 
-        if CONF_USER_CHARGING_SITE_CAPACITY in defaults:
-            schema_fields[
-                vol.Optional(
-                    CONF_USER_CHARGING_SITE_CAPACITY,
-                    default=defaults[CONF_USER_CHARGING_SITE_CAPACITY],
-                )
-            ] = selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=1000,
-                    step="any",
-                    mode=selector.NumberSelectorMode.BOX,
-                )
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CAPACITY,
+                default=defaults[CONF_USER_CHARGING_SITE_CAPACITY],
             )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step=1,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
 
         schema_fields[
             vol.Optional(
