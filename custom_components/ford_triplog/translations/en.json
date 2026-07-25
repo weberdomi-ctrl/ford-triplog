@@ -92,7 +92,7 @@
       },
       "user_charging_sites": {
         "title": "Own charging locations",
-        "description": "Stored charging locations: {site_count}\\nDetected unknown charging locations: {pending_count}\\n\\nSelect a charging location or create a new entry.",
+        "description": "Stored charging locations: {site_count}. Select a charging location or create a new entry.",
         "data": {
           "user_charging_site_selection": "Charging location"
         }
@@ -121,6 +121,20 @@
       "user_charging_site_delete": {
         "title": "Delete charging location",
         "description": "Do you really want to delete “{name}”?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Own charging locations",
+        "description": "{pending_count} unknown charging locations were detected. These locations have already been used for charging and can now be saved as own charging locations. Stored charging locations: {site_count}.",
+        "data": {
+          "user_charging_site_selection": "Charging location"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Add unknown charging locations",
+        "description": "Select one of the {pending_count} detected locations. Coordinates and available station metadata will be prefilled.",
+        "data": {
+          "user_charging_site_selection": "Detected charging location"
+        }
       }
     },
     "error": {

@@ -7,12 +7,12 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.4
-Build: 06
+Build: 07
 
 Changes:
-- Added create, edit and delete for own charging locations.
-- Added detected unknown charging locations to the same menu.
-- Unknown locations can be accepted with prefilled coordinates and metadata.
+- Separated detected unknown charging locations from the normal location list.
+- Shows a dedicated warning action only when unresolved locations exist.
+- Removed escaped newline characters from the GUI description.
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ CONF_USER_CHARGING_SITE_BRAND = "brand"
 CONF_USER_CHARGING_SITE_NOTES = "notes"
 CONF_USER_CHARGING_SITE_ACTION = "action"
 USER_CHARGING_SITE_NEW = "__new__"
-USER_CHARGING_SITE_PENDING_PREFIX = "__pending__:"
+USER_CHARGING_SITE_PENDING = "__pending__"
 
 
 class FordTriplogConfigFlow(
@@ -222,7 +222,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """List user-defined and newly detected charging locations."""
+        """List stored charging locations and show pending-location notice."""
 
         errors: dict[str, str] = {}
 
@@ -242,65 +242,48 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 user_input[CONF_USER_CHARGING_SITE_SELECTION]
             )
 
+            if selected_id == USER_CHARGING_SITE_PENDING:
+                return await self.async_step_pending_charging_sites()
+
             if selected_id == USER_CHARGING_SITE_NEW:
                 self._selected_user_charging_site = None
                 self._selected_pending_charging_site = None
                 return await self.async_step_user_charging_site_edit()
 
-            if selected_id.startswith(USER_CHARGING_SITE_PENDING_PREFIX):
-                pending_id = selected_id.removeprefix(
-                    USER_CHARGING_SITE_PENDING_PREFIX
-                )
-                pending = next(
-                    (
-                        site
-                        for site in pending_sites
-                        if str(site.get("id")) == pending_id
-                    ),
-                    None,
-                )
-                if pending is None:
-                    errors["base"] = "user_charging_site_not_found"
-                else:
-                    self._selected_user_charging_site = None
-                    self._selected_pending_charging_site = pending
-                    return await self.async_step_user_charging_site_edit()
+            selected = next(
+                (
+                    site
+                    for site in sites
+                    if str(site.get("id")) == selected_id
+                ),
+                None,
+            )
+            if selected is None:
+                errors["base"] = "user_charging_site_not_found"
             else:
-                selected = next(
-                    (
-                        site
-                        for site in sites
-                        if str(site.get("id")) == selected_id
-                    ),
-                    None,
-                )
-                if selected is None:
-                    errors["base"] = "user_charging_site_not_found"
-                else:
-                    self._selected_user_charging_site = selected
-                    self._selected_pending_charging_site = None
-                    return await self.async_step_user_charging_site_edit()
+                self._selected_user_charging_site = selected
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_site_edit()
 
-        options = [
+        options: list[selector.SelectOptionDict] = []
+
+        if pending_sites:
+            options.append(
+                selector.SelectOptionDict(
+                    value=USER_CHARGING_SITE_PENDING,
+                    label=(
+                        "⚠ "
+                        + str(len(pending_sites))
+                        + " unbekannte Ladeorte jetzt erfassen"
+                    ),
+                )
+            )
+
+        options.append(
             selector.SelectOptionDict(
                 value=USER_CHARGING_SITE_NEW,
                 label="+ Neuer Ladeort",
             )
-        ]
-
-        options.extend(
-            selector.SelectOptionDict(
-                value=(
-                    USER_CHARGING_SITE_PENDING_PREFIX
-                    + str(site["id"])
-                ),
-                label=(
-                    "⚠ "
-                    + str(site.get("name") or "Unbekannter Ladeort")
-                    + " · jetzt erfassen"
-                ),
-            )
-            for site in pending_sites
         )
 
         options.extend(
@@ -314,15 +297,20 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
+        step_id = (
+            "user_charging_sites_pending_notice"
+            if pending_sites
+            else "user_charging_sites"
+        )
+
         return self.async_show_form(
-            step_id="user_charging_sites",
+            step_id=step_id,
             data_schema=vol.Schema(
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
                         default=(
-                            USER_CHARGING_SITE_PENDING_PREFIX
-                            + str(pending_sites[0]["id"])
+                            USER_CHARGING_SITE_PENDING
                             if pending_sites
                             else USER_CHARGING_SITE_NEW
                         ),
@@ -337,6 +325,83 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors=errors,
             description_placeholders={
                 "site_count": str(len(sites)),
+                "pending_count": str(len(pending_sites)),
+            },
+        )
+
+    async def async_step_user_charging_sites_pending_notice(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle the stored-location page when a pending notice is visible."""
+
+        return await self.async_step_user_charging_sites(user_input)
+
+    async def async_step_pending_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """List detected unknown charging locations separately."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            await self._async_ensure_charging_site_storages()
+            pending_sites = (
+                await self._pending_charging_site_storage.async_load()
+            )
+        except (OSError, ValueError):
+            pending_sites = []
+            errors["base"] = "user_charging_sites_load_failed"
+
+        if not pending_sites and not errors:
+            return await self.async_step_user_charging_sites()
+
+        if user_input is not None and not errors:
+            pending_id = str(
+                user_input[CONF_USER_CHARGING_SITE_SELECTION]
+            )
+            pending = next(
+                (
+                    site
+                    for site in pending_sites
+                    if str(site.get("id")) == pending_id
+                ),
+                None,
+            )
+
+            if pending is None:
+                errors["base"] = "user_charging_site_not_found"
+            else:
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = pending
+                return await self.async_step_user_charging_site_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(site["id"]),
+                label=str(site.get("name") or "Unbekannter Ladeort"),
+            )
+            for site in pending_sites
+        ]
+
+        return self.async_show_form(
+            step_id="pending_charging_sites",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_CHARGING_SITE_SELECTION,
+                        default=str(pending_sites[0]["id"]),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
                 "pending_count": str(len(pending_sites)),
             },
         )

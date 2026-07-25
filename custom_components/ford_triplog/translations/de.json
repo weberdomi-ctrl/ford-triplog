@@ -92,7 +92,7 @@
       },
       "user_charging_sites": {
         "title": "Eigene Ladeorte",
-        "description": "Gespeicherte Ladeorte: {site_count}\\nErkannte unbekannte Ladeorte: {pending_count}\\n\\nWähle einen Ladeort aus oder lege einen neuen Eintrag an.",
+        "description": "Gespeicherte Ladeorte: {site_count}. Wähle einen Ladeort aus oder lege einen neuen Eintrag an.",
         "data": {
           "user_charging_site_selection": "Ladeort"
         }
@@ -121,6 +121,20 @@
       "user_charging_site_delete": {
         "title": "Ladeort löschen",
         "description": "Soll der Ladeort „{name}“ wirklich gelöscht werden?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Eigene Ladeorte",
+        "description": "Es wurden {pending_count} unbekannte Ladeorte erkannt. Diese Ladeorte wurden bereits zum Laden verwendet und können jetzt als eigene Ladeorte gespeichert werden. Gespeicherte Ladeorte: {site_count}.",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Unbekannte Ladeorte erfassen",
+        "description": "Wähle einen der {pending_count} erkannten Ladeorte aus. Koordinaten und verfügbare Stationsdaten werden beim Erfassen vorausgefüllt.",
+        "data": {
+          "user_charging_site_selection": "Erkannter Ladeort"
+        }
       }
     },
     "error": {
