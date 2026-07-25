@@ -6,13 +6,13 @@ Track your Ford.
 Configuration Flow.
 
 Version: 1.5.0
-Phase: 3.4
-Build: 07
+Phase: 3.5
+Build: 10
 
 Changes:
-- Separated detected unknown charging locations from the normal location list.
-- Shows a dedicated warning action only when unresolved locations exist.
-- Removed escaped newline characters from the GUI description.
+- Aligns user charging-location fields with the OSM site model.
+- Adds house number, postcode, country, capacity and connectors.
+- Migrates existing user records through the storage layer.
 """
 
 from __future__ import annotations
@@ -61,11 +61,18 @@ CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
 CONF_USER_CHARGING_SITE_SELECTION = "user_charging_site_selection"
 CONF_USER_CHARGING_SITE_NAME = "name"
+CONF_USER_CHARGING_SITE_STREET = "street"
+CONF_USER_CHARGING_SITE_HOUSE_NUMBER = "house_number"
+CONF_USER_CHARGING_SITE_POSTCODE = "postcode"
+CONF_USER_CHARGING_SITE_CITY = "city"
+CONF_USER_CHARGING_SITE_COUNTRY = "country"
 CONF_USER_CHARGING_SITE_LATITUDE = "latitude"
 CONF_USER_CHARGING_SITE_LONGITUDE = "longitude"
 CONF_USER_CHARGING_SITE_RADIUS = "radius"
 CONF_USER_CHARGING_SITE_TYPE = "type"
 CONF_USER_CHARGING_SITE_POWER = "power_kw"
+CONF_USER_CHARGING_SITE_CAPACITY = "capacity"
+CONF_USER_CHARGING_SITE_CONNECTORS = "connectors"
 CONF_USER_CHARGING_SITE_OPERATOR = "operator"
 CONF_USER_CHARGING_SITE_NETWORK = "network"
 CONF_USER_CHARGING_SITE_BRAND = "brand"
@@ -254,7 +261,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 (
                     site
                     for site in sites
-                    if str(site.get("id")) == selected_id
+                    if str(site.get("site_id")) == selected_id
                 ),
                 None,
             )
@@ -288,7 +295,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         options.extend(
             selector.SelectOptionDict(
-                value=str(site["id"]),
+                value=str(site["site_id"]),
                 label=self._format_user_charging_site_label(site),
             )
             for site in sorted(
@@ -365,7 +372,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 (
                     site
                     for site in pending_sites
-                    if str(site.get("id")) == pending_id
+                    if str(site.get("site_id")) == pending_id
                 ),
                 None,
             )
@@ -379,7 +386,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         options = [
             selector.SelectOptionDict(
-                value=str(site["id"]),
+                value=str(site["site_id"]),
                 label=str(site.get("name") or "Unbekannter Ladeort"),
             )
             for site in pending_sites
@@ -420,6 +427,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         defaults: dict[str, Any] = {
             CONF_USER_CHARGING_SITE_NAME: "",
+            CONF_USER_CHARGING_SITE_STREET: "",
+            CONF_USER_CHARGING_SITE_HOUSE_NUMBER: "",
+            CONF_USER_CHARGING_SITE_POSTCODE: "",
+            CONF_USER_CHARGING_SITE_CITY: "",
+            CONF_USER_CHARGING_SITE_COUNTRY: "",
+            CONF_USER_CHARGING_SITE_CONNECTORS: "",
             CONF_USER_CHARGING_SITE_LATITUDE: 0.0,
             CONF_USER_CHARGING_SITE_LONGITUDE: 0.0,
             CONF_USER_CHARGING_SITE_RADIUS: 50.0,
@@ -432,10 +445,37 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         source = existing or pending
         if source is not None:
+            (
+                detected_street,
+                detected_house_number,
+                detected_postcode,
+                detected_city,
+                detected_country,
+            ) = self._address_parts(source.get("address"))
             defaults.update(
                 {
                     CONF_USER_CHARGING_SITE_NAME: (
                         source.get("name") or ""
+                    ),
+                    CONF_USER_CHARGING_SITE_STREET: (
+                        source.get("street") or detected_street
+                    ),
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER: (
+                        source.get("house_number")
+                        or detected_house_number
+                    ),
+                    CONF_USER_CHARGING_SITE_POSTCODE: (
+                        source.get("postcode") or detected_postcode
+                    ),
+                    CONF_USER_CHARGING_SITE_CITY: (
+                        source.get("city") or detected_city
+                    ),
+                    CONF_USER_CHARGING_SITE_COUNTRY: (
+                        source.get("country") or detected_country
+                    ),
+                    CONF_USER_CHARGING_SITE_CONNECTORS: ", ".join(
+                        str(value)
+                        for value in (source.get("connectors") or [])
                     ),
                     CONF_USER_CHARGING_SITE_LATITUDE: float(
                         source.get("latitude") or 0.0
@@ -463,9 +503,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ),
                 }
             )
-            if source.get("power_kw") is not None:
+            if source.get("power_kw"):
                 defaults[CONF_USER_CHARGING_SITE_POWER] = float(
-                    source["power_kw"]
+                    max(source["power_kw"])
+                )
+            if source.get("capacity"):
+                defaults[CONF_USER_CHARGING_SITE_CAPACITY] = float(
+                    max(source["capacity"])
                 )
 
         if user_input is not None:
@@ -477,6 +521,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
             site_data = {
                 "name": user_input[CONF_USER_CHARGING_SITE_NAME],
+                "street": user_input.get(
+                    CONF_USER_CHARGING_SITE_STREET
+                ),
+                "house_number": user_input.get(
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                ),
+                "postcode": user_input.get(
+                    CONF_USER_CHARGING_SITE_POSTCODE
+                ),
+                "city": user_input.get(
+                    CONF_USER_CHARGING_SITE_CITY
+                ),
+                "country": user_input.get(
+                    CONF_USER_CHARGING_SITE_COUNTRY
+                ),
                 "latitude": user_input[
                     CONF_USER_CHARGING_SITE_LATITUDE
                 ],
@@ -487,6 +546,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "type": user_input[CONF_USER_CHARGING_SITE_TYPE],
                 "power_kw": user_input.get(
                     CONF_USER_CHARGING_SITE_POWER
+                ),
+                "capacity": user_input.get(
+                    CONF_USER_CHARGING_SITE_CAPACITY
+                ),
+                "connectors": user_input.get(
+                    CONF_USER_CHARGING_SITE_CONNECTORS
                 ),
                 "operator": user_input.get(
                     CONF_USER_CHARGING_SITE_OPERATOR
@@ -509,7 +574,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     )
                 else:
                     await self._user_charging_site_storage.async_update(
-                        str(existing["id"]),
+                        str(existing["site_id"]),
                         site_data,
                     )
 
@@ -528,6 +593,28 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required(
                 CONF_USER_CHARGING_SITE_NAME,
                 default=defaults[CONF_USER_CHARGING_SITE_NAME],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_STREET,
+                default=defaults[CONF_USER_CHARGING_SITE_STREET],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_HOUSE_NUMBER,
+                default=defaults[
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                ],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_POSTCODE,
+                default=defaults[CONF_USER_CHARGING_SITE_POSTCODE],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CITY,
+                default=defaults[CONF_USER_CHARGING_SITE_CITY],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_COUNTRY,
+                default=defaults[CONF_USER_CHARGING_SITE_COUNTRY],
             ): selector.TextSelector(),
             vol.Required(
                 CONF_USER_CHARGING_SITE_LATITUDE,
@@ -590,18 +677,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
             ),
             vol.Optional(
-                CONF_USER_CHARGING_SITE_POWER,
-                default=defaults.get(CONF_USER_CHARGING_SITE_POWER),
-            ): selector.NumberSelector(
-                selector.NumberSelectorConfig(
-                    min=0,
-                    max=1000,
-                    step="any",
-                    unit_of_measurement="kW",
-                    mode=selector.NumberSelectorMode.BOX,
-                )
-            ),
-            vol.Optional(
                 CONF_USER_CHARGING_SITE_OPERATOR,
                 default=defaults[CONF_USER_CHARGING_SITE_OPERATOR],
             ): selector.TextSelector(),
@@ -622,6 +697,44 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
             ),
         }
+
+        if CONF_USER_CHARGING_SITE_POWER in defaults:
+            schema_fields[
+                vol.Optional(
+                    CONF_USER_CHARGING_SITE_POWER,
+                    default=defaults[CONF_USER_CHARGING_SITE_POWER],
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1000,
+                    step="any",
+                    unit_of_measurement="kW",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+
+        if CONF_USER_CHARGING_SITE_CAPACITY in defaults:
+            schema_fields[
+                vol.Optional(
+                    CONF_USER_CHARGING_SITE_CAPACITY,
+                    default=defaults[CONF_USER_CHARGING_SITE_CAPACITY],
+                )
+            ] = selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    max=1000,
+                    step="any",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            )
+
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CONNECTORS,
+                default=defaults[CONF_USER_CHARGING_SITE_CONNECTORS],
+            )
+        ] = selector.TextSelector()
 
         if existing is not None:
             schema_fields[
@@ -674,7 +787,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             await self._user_charging_site_storage.async_delete(
-                str(existing["id"])
+                str(existing["site_id"])
             )
             self._selected_user_charging_site = None
             return await self.async_step_user_charging_sites()
@@ -685,6 +798,46 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "name": str(existing.get("name") or ""),
             },
+        )
+
+    @staticmethod
+    def _address_parts(
+        address: Any,
+    ) -> tuple[str, str, str, str, str]:
+        """Extract address fields from reverse-geocoding metadata."""
+
+        if not isinstance(address, dict):
+            return "", "", "", "", ""
+
+        street = (
+            address.get("road")
+            or address.get("street")
+            or address.get("pedestrian")
+            or address.get("footway")
+            or ""
+        )
+        house_number = address.get("house_number") or ""
+        postcode = address.get("postcode") or ""
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or address.get("hamlet")
+            or ""
+        )
+        country = (
+            address.get("country_code")
+            or address.get("country")
+            or ""
+        )
+
+        return (
+            str(street).strip(),
+            str(house_number).strip(),
+            str(postcode).strip(),
+            str(city).strip(),
+            str(country).strip().upper(),
         )
 
     @staticmethod
@@ -700,7 +853,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "public": "Öffentlich",
             "custom": "Benutzerdefiniert",
         }
-        name = str(site.get("name") or site.get("id") or "Ladeort")
+        name = str(site.get("name") or site.get("site_id") or "Ladeort")
         return f"{name} · {type_labels.get(site_type, site_type)}"
 
     async def async_step_import_charging_sites(

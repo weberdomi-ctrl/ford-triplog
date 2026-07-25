@@ -4,13 +4,13 @@ Ford Triplog
 Pending unknown charging-location storage.
 
 Version: 1.5.0
-Phase: 3.4
-Build: 06
+Phase: 3.5
+Build: 10
 
 Changes:
-- Stores charging locations that could not be resolved.
-- Deduplicates nearby unknown locations.
-- Supports load, add and delete operations.
+- Stores pending records with OSM-compatible charging-site fields.
+- Preserves address data for prefilled user-location creation.
+- Keeps nearby-location deduplication.
 """
 
 from __future__ import annotations
@@ -127,6 +127,7 @@ class PendingChargingSiteStorage:
 
         site = {
             "id": uuid.uuid4().hex,
+            "site_id": f"pending:{uuid.uuid4().hex}",
             "charge_id": charge.charge_id,
             "last_charge_id": charge.charge_id,
             "latitude": latitude,
@@ -136,11 +137,12 @@ class PendingChargingSiteStorage:
             "brand": charge.charging_site_brand,
             "operator": charge.charging_site_operator,
             "network": charge.charging_site_network,
-            "power_kw": (
-                max(charge.charging_site_power_kw)
-                if charge.charging_site_power_kw
-                else None
-            ),
+            "power_kw": list(charge.charging_site_power_kw or []),
+            "capacity": list(charge.charging_site_capacity or []),
+            "connectors": list(charge.charging_site_connectors or []),
+            "quality": charge.charging_site_quality or "unknown",
+            "member_count": 1,
+            "osm_ids": [],
         }
         sites.append(site)
         self._write(sites)

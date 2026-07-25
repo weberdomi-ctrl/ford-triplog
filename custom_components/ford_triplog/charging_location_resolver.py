@@ -4,11 +4,12 @@ Ford Triplog
 Charging location resolver.
 
 Version: 1.5.0
-Phase: 3.4
-Build: 06
+Phase: 3.5
+Build: 10
 
 Changes:
-- Stores unresolved charging locations for later user confirmation.
+- Uses the same stable charging-site fields for user and OSM records.
+- Applies power, capacity and connector lists from user locations.
 - Keeps resolver priority FordPass, user database, OSM.
 """
 
@@ -141,20 +142,28 @@ class ChargingLocationResolver:
         if best_site is None or best_distance is None:
             return False
 
-        charge.charging_site_id = f"user:{best_site['id']}"
+        charge.charging_site_id = str(best_site["site_id"])
         charge.charging_site_name = best_site.get("name")
         charge.charging_site_brand = best_site.get("brand")
         charge.charging_site_operator = best_site.get("operator")
         charge.charging_site_network = best_site.get("network")
 
-        power_kw = best_site.get("power_kw")
-        charge.charging_site_power_kw = (
-            [float(power_kw)]
-            if power_kw is not None
-            else []
-        )
+        charge.charging_site_power_kw = [
+            float(value)
+            for value in (best_site.get("power_kw") or [])
+        ]
+        charge.charging_site_capacity = [
+            float(value)
+            for value in (best_site.get("capacity") or [])
+        ]
+        charge.charging_site_connectors = [
+            str(value)
+            for value in (best_site.get("connectors") or [])
+        ]
 
-        charge.charging_site_quality = "user"
+        charge.charging_site_quality = (
+            best_site.get("quality") or "user"
+        )
         charge.charging_site_distance_m = round(best_distance, 1)
 
         _LOGGER.info(
@@ -162,7 +171,7 @@ class ChargingLocationResolver:
             "name=%s id=%s distance=%.1fm",
             charge.charge_id,
             charge.charging_site_name,
-            best_site["id"],
+            best_site["site_id"],
             best_distance,
         )
         return True
