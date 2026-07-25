@@ -95,8 +95,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charge_signature: str | None = None
 
         # Last Charge stabilization infrastructure.
-        # Phase 2 observes the complete entity dataset (state + attributes).
-        # It deliberately does not alter charge finalization yet.
+        # Phase 3 waits for the complete Last Charge dataset to stabilize
+        # before the charging session is finalized.
         self.waiting_for_last_charge = False
         self.last_charge_stable_time = int(
             config.get(
@@ -504,7 +504,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Last Charge stabilization timer cancelled")
 
     def _last_charge_stabilized(self) -> None:
-        """Handle an unchanged Last Charge dataset after the timeout."""
+        """Schedule finalization after the Last Charge dataset is stable."""
 
         self.last_charge_timer = None
 
@@ -513,8 +513,37 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.last_charge_stable_time,
         )
 
-        # Phase 2 deliberately performs no charge finalization here.
-        # Phase 3 will consume self.last_charge_snapshot.
+        self.hass.async_create_task(
+            self._async_last_charge_stabilized()
+        )
+
+    async def _async_last_charge_stabilized(self) -> None:
+        """Apply the stable FordPass dataset and finalize the session."""
+
+        async with self._charge_lock:
+            if not self.waiting_for_last_charge:
+                return
+
+            if self.current_charge is None:
+                self._stop_waiting_for_last_charge()
+                return
+
+            self.current_charge.fordpass_last_charge = (
+                dict(self.last_charge_snapshot)
+                if self.last_charge_snapshot is not None
+                else None
+            )
+            self.current_charge.data_source = "fordpass"
+            self.current_charge.fordpass_pending = False
+
+            state = self._read_vehicle_state()
+
+            await self.storage.save_current_charge(
+                self.current_charge.to_dict()
+            )
+
+            self._stop_waiting_for_last_charge()
+            await self._finalize_charge(state)
 
     async def _wait_for_stable_vehicle_state(self):
         last = None
@@ -761,6 +790,23 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         """Start charging session."""
 
         async with self._charge_lock:
+            # A new IN_PROGRESS event permanently closes a previous session
+            # that was still waiting for delayed FordPass data.
+            if self.waiting_for_last_charge and self.current_charge:
+                previous_charge_id = self.current_charge.charge_id
+                self._stop_waiting_for_last_charge()
+                self.current_charge.fordpass_pending = False
+
+                await self._finalize_charge(
+                    self._read_vehicle_state()
+                )
+
+                _LOGGER.info(
+                    "Previous charging session %s finalized because a new "
+                    "charging session started",
+                    previous_charge_id,
+                )
+
             if self.current_charge:
                 return
 
@@ -793,10 +839,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.async_set_updated_data(state)
 
     async def finish_charge(self):
-        """Finish charging session."""
+        """Finish charging locally and wait for stable FordPass data."""
 
         async with self._charge_lock:
             if not self.current_charge:
+                return
+
+            if self.waiting_for_last_charge:
                 return
 
             charge = self.current_charge
@@ -832,10 +881,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charging_site = await self._get_charging_site(state)
                 self._apply_charging_site(charging_site)
 
-                if charging_site:
-                    await self.storage.save_current_charge(
-                        charge.to_dict()
-                    )
+            if self.last_charge_entity:
+                charge.fordpass_pending = True
+                charge.data_source = "local"
+
+                await self.storage.save_current_charge(
+                    charge.to_dict()
+                )
+
+                self._start_waiting_for_last_charge()
+
+                _LOGGER.info(
+                    "Charging completed; waiting for stable FordPass "
+                    "Last Charge data"
+                )
+                return
 
             await self._finalize_charge(state)
 
