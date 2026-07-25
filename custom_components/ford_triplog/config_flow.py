@@ -7,12 +7,14 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.5
-Build: 14
+Build: 15
 
 Changes:
-- Adds backward-compatible translation placeholders for cached/older translations.
-- Prevents FORMATJS MISSING_VALUE errors for site_count and pending_count.
-- Keeps all Build 13 UI improvements unchanged.
+- Uses compact one-line labels because Home Assistant select labels ignore line breaks.
+- Formats home, work and public charging locations consistently with middle dots.
+- Automatically assigns Zuhause or Arbeit when the name is left empty.
+- Falls back to the address when no explicit name is available.
+- Keeps Build 14 translation-placeholder compatibility.
 """
 
 from __future__ import annotations
@@ -527,8 +529,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ):
                 return await self.async_step_user_charging_site_delete()
 
+            site_type = str(
+                user_input[CONF_USER_CHARGING_SITE_TYPE]
+            )
+            site_name = str(
+                user_input.get(CONF_USER_CHARGING_SITE_NAME) or ""
+            ).strip()
+
+            if not site_name:
+                if site_type == "home":
+                    site_name = "Zuhause"
+                elif site_type == "work":
+                    site_name = "Arbeit"
+                else:
+                    street = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_STREET
+                        ) or ""
+                    ).strip()
+                    house_number = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                        ) or ""
+                    ).strip()
+                    postcode = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_POSTCODE
+                        ) or ""
+                    ).strip()
+                    city = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_CITY
+                        ) or ""
+                    ).strip()
+
+                    street_line = " ".join(
+                        value
+                        for value in (street, house_number)
+                        if value
+                    )
+                    city_line = " ".join(
+                        value
+                        for value in (postcode, city)
+                        if value
+                    )
+                    site_name = ", ".join(
+                        value
+                        for value in (street_line, city_line)
+                        if value
+                    ) or "Ladeort"
+
             site_data = {
-                "name": user_input[CONF_USER_CHARGING_SITE_NAME],
+                "name": site_name,
                 "street": user_input.get(
                     CONF_USER_CHARGING_SITE_STREET
                 ),
@@ -551,7 +603,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     CONF_USER_CHARGING_SITE_LONGITUDE
                 ],
                 "radius": user_input[CONF_USER_CHARGING_SITE_RADIUS],
-                "type": user_input[CONF_USER_CHARGING_SITE_TYPE],
+                "type": site_type,
                 "power_kw": user_input.get(
                     CONF_USER_CHARGING_SITE_POWER
                 ),
@@ -598,7 +650,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_user_charging_sites()
 
         schema_fields: dict[Any, Any] = {
-            vol.Required(
+            vol.Optional(
                 CONF_USER_CHARGING_SITE_NAME,
                 default=defaults[CONF_USER_CHARGING_SITE_NAME],
             ): selector.TextSelector(),
@@ -944,34 +996,84 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _format_user_charging_site_label(
         site: dict[str, Any],
     ) -> str:
-        """Return a readable two-line label for a stored charging location."""
+        """Return a compact one-line label for a stored charging location."""
 
         site_type = str(site.get("type") or "public")
         type_labels = {
             "public": "Öffentlich",
             "private": "Privat",
             "home": "Zuhause",
-            "work": "Arbeitsplatz",
+            "work": "Arbeit",
             "dealer": "Händler",
             "hotel": "Hotel",
             "other": "Sonstige",
             "custom": "Benutzerdefiniert",
         }
-        name = str(site.get("name") or site.get("site_id") or "Ladeort")
+        type_label = type_labels.get(site_type, site_type)
+
+        name = str(site.get("name") or "").strip()
         provider = str(
             site.get("brand")
             or site.get("network")
             or site.get("operator")
             or ""
         ).strip()
-        type_label = type_labels.get(site_type, site_type)
+        street = str(site.get("street") or "").strip()
+        house_number = str(site.get("house_number") or "").strip()
+        postcode = str(site.get("postcode") or "").strip()
+        city = str(site.get("city") or "").strip()
 
-        details = (
-            f"{provider} • {type_label}"
-            if provider
-            else type_label
+        street_line = " ".join(
+            value
+            for value in (street, house_number)
+            if value
         )
-        return f"{name}\n{details}"
+        city_line = city or postcode
+        address_fallback = ", ".join(
+            value
+            for value in (
+                street_line,
+                " ".join(
+                    value
+                    for value in (postcode, city)
+                    if value
+                ),
+            )
+            if value
+        )
+
+        parts: list[str]
+        if site_type == "home":
+            parts = [type_label, street_line, city_line]
+        elif site_type == "work":
+            work_name = (
+                name
+                if name.casefold() not in {"arbeit", "arbeitsplatz"}
+                else ""
+            )
+            parts = [
+                type_label,
+                work_name or street_line,
+                city_line,
+            ]
+        else:
+            parts = [
+                name or address_fallback or "Ladeort",
+                provider,
+                type_label,
+            ]
+
+        # Remove empty and duplicate values while preserving display order.
+        result: list[str] = []
+        seen: set[str] = set()
+        for part in parts:
+            value = str(part or "").strip()
+            key = value.casefold()
+            if value and key not in seen:
+                result.append(value)
+                seen.add(key)
+
+        return " · ".join(result) or "Ladeort"
 
     @staticmethod
     def _format_pending_site_count(count: int) -> str:
