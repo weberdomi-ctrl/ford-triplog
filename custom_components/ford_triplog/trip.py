@@ -3,7 +3,9 @@ Ford Triplog
 
 Trip model.
 
-Version: 1.3.2
+Version: 1.5.0
+Build: 01
+Changes: Central GENERATOR/VERSION constants
 """
 
 from __future__ import annotations
@@ -12,11 +14,13 @@ from datetime import datetime
 from homeassistant.util import dt as dt_util
 from typing import Any
 
+from .const import GENERATOR, VERSION, TRIP_SCHEMA_VERSION
+
 BATTERY_CAPACITY_KWH = 77.0
 
 class Trip:
     def __init__(self, **data):
-        self.schema=data.get("schema",1)
+        self.schema=data.get("schema",TRIP_SCHEMA_VERSION)
         self.trip_id=data.get("trip_id")
         self.created=data.get("created")
         self.start_time=data.get("start_time")
@@ -109,8 +113,8 @@ class Trip:
             "consumption_kwh_100km":self.consumption_kwh_100km,
             "notes":self.notes,
             "tags":self.tags,
-            "generator":"Ford Triplog",
-            "version":"1.2.3"
+            "generator": GENERATOR,
+            "version": VERSION
         }
 
     @classmethod

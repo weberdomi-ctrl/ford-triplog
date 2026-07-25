@@ -3,7 +3,6 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.5.0
 """
 
 from __future__ import annotations
@@ -12,12 +11,14 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .const import CHARGE_SCHEMA_VERSION, GENERATOR, VERSION
+
 
 class Charge:
     """Represents one charging session."""
 
     def __init__(self) -> None:
-        self.schema: int = 3
+        self.schema: int = CHARGE_SCHEMA_VERSION
         self.charge_id: str | None = None
         self.created: str | None = None
 
@@ -149,8 +150,8 @@ class Charge:
             "energy_source": self.energy_source,
             "include_in_statistics": self.include_in_statistics,
             "exclusion_reason": self.exclusion_reason,
-            "generator": "Ford Triplog",
-            "version": "1.5.0",
+            "generator": GENERATOR,
+            "version": VERSION,
         }
 
     @classmethod
@@ -158,7 +159,7 @@ class Charge:
         """Create a charging session from stored data."""
         charge = cls()
 
-        charge.schema = data.get("schema", 1)
+        charge.schema = data.get("schema", CHARGE_SCHEMA_VERSION)
         charge.charge_id = data.get("charge_id")
         charge.created = data.get("created")
 
