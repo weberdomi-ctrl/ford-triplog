@@ -1,112 +1,28 @@
 # Smart Trip
 
-One of the key features of Ford Triplog is **Smart Trip**.
+Smart Trip is one of the core features of Ford Triplog.
 
-Instead of creating a new trip every time the vehicle briefly stops, Smart Trip intelligently merges short stops into a single journey.
+It intelligently combines short vehicle stops into a single journey, creating a driving history that better reflects how people actually travel.
 
-The result is a much cleaner and more realistic driving history.
+Without Smart Trip, every short stop would create a new trip. With Smart Trip enabled, brief interruptions are merged into one continuous journey.
 
 ---
 
 # Why Smart Trip?
 
-Many real-world journeys include short stops.
+Many everyday journeys include short stops.
 
-For example:
+Typical examples include:
 
-- Buying bread
-- Picking up a parcel
-- Dropping someone off
-- Brief shopping
-- Waiting at a charging station
-- Waiting in the vehicle
+- Picking up groceries
+- Collecting a parcel
+- Dropping off passengers
+- Buying coffee
+- Brief charging stops
 
-Without Smart Trip, every stop would create a separate trip.
+These are usually part of one journey rather than several independent trips.
 
-Example:
-
-```
-Home → Bakery
-2 km
-
-Bakery → Work
-18 km
-```
-
-This would produce two trips even though it was actually one journey.
-
-Smart Trip combines both into:
-
-```
-Home → Work
-20 km
-```
-
----
-
-# How It Works
-
-When the vehicle stops, Ford Triplog does **not** immediately finish the trip.
-
-Instead, it starts a configurable timer.
-
-```
-Vehicle stops
-
-↓
-
-Start timeout
-
-↓
-
-Vehicle moves again?
-
-        YES
-         │
-Continue current trip
-
-        NO
-         │
-Finish trip
-```
-
----
-
-# Smart Trip Timeout
-
-The timeout determines how long Ford Triplog waits before closing a trip.
-
-Example:
-
-```
-120 seconds
-```
-
-If the vehicle starts moving again within those 120 seconds:
-
-✅ Continue the existing trip
-
-Otherwise:
-
-✅ Finish the trip
-
-The timeout can be changed in the integration options.
-
----
-
-# Benefits
-
-Smart Trip provides several advantages.
-
-✔ Cleaner trip history
-
-✔ More realistic journeys
-
-✔ Better consumption calculations
-
-✔ Reduced trip fragmentation
-
-✔ Improved long-term statistics
+Smart Trip automatically handles these situations.
 
 ---
 
@@ -115,30 +31,7 @@ Smart Trip provides several advantages.
 Without Smart Trip:
 
 ```
-08:00 Home → Bakery
-
-2 km
-```
-
-```
-08:07 Bakery → Work
-
-18 km
-```
-
-Result:
-
-```
-2 trips
-20 km total
-```
-
----
-
-With Smart Trip:
-
-```
-08:00 Home
+Home
 
 ↓
 
@@ -146,45 +39,181 @@ Bakery
 
 ↓
 
-Work
+Supermarket
+
+↓
+
+Office
+```
+
+Recorded as:
+
+- Trip 1
+- Trip 2
+- Trip 3
+
+---
+
+With Smart Trip enabled:
+
+```
+Home
+
+↓
+
+Bakery
+
+↓
+
+Supermarket
+
+↓
+
+Office
+```
+
+Recorded as:
+
+- One single trip
+
+---
+
+# How It Works
+
+A trip starts when:
+
+- the ignition is switched on, and
+- the vehicle begins moving.
+
+The trip remains active while the vehicle is driving.
+
+If the vehicle stops, Ford Triplog starts a configurable timeout.
+
+If the vehicle starts moving again before the timeout expires, the journey continues as the same trip.
+
+If the timeout expires, the trip is finalized and stored.
+
+---
+
+# Smart Trip Timeout
+
+The timeout determines how long a stop may last before a trip is considered complete.
+
+The default value is:
+
+```
+180 seconds
+```
+
+Typical values:
+
+| Timeout | Behaviour |
+|----------|-----------|
+| 60 seconds | Only very short stops are merged |
+| 180 seconds | Recommended |
+| 300 seconds | Longer stops remain part of the same trip |
+
+---
+
+# Timeline Example
+
+```
+08:00  Leave Home
+
+↓
+
+08:18  Coffee Stop
+
+↓
+
+08:20  Continue Driving
+
+↓
+
+08:45  Arrive at Work
+```
+
+Coffee stop duration:
+
+```
+2 minutes
 ```
 
 Result:
 
 ```
-1 trip
-20 km
+One Trip
 ```
 
-The short stop is automatically merged into the existing journey.
+---
+
+Second example:
+
+```
+17:00 Leave Work
+
+↓
+
+17:08 Shopping
+
+↓
+
+17:45 Continue Driving
+
+↓
+
+18:00 Arrive Home
+```
+
+Shopping duration:
+
+```
+37 minutes
+```
+
+With a timeout of 180 seconds:
+
+```
+Trip 1
+
++
+
+Trip 2
+```
+
+The stop exceeds the Smart Trip timeout and therefore starts a new journey.
 
 ---
 
-# Charging Stops
+# Benefits
 
-Smart Trip also works well together with charging sessions.
+Smart Trip provides:
 
-A charging session is always stored as its own event.
-
-However, if charging only interrupts a journey briefly, the trip itself can continue after charging depending on the configured timeout.
-
-This keeps driving history and charging history logically separated while preserving the complete travel timeline.
+- Cleaner trip history
+- More realistic driving statistics
+- Better average speed calculations
+- Reduced fragmentation
+- Improved charging and trip association
 
 ---
 
-# Recovery
+# Charging Sessions
 
-If Home Assistant restarts during an active trip, Ford Triplog restores the trip automatically after startup.
+Charging sessions are handled independently.
 
-No completed trip is lost because of a restart.
+A charging session may occur:
+
+- during a Smart Trip stop
+- after a completed trip
+- before the next trip
+
+Whenever possible, Ford Triplog automatically links charging sessions with the corresponding trip while keeping both records separate.
 
 ---
 
 # Configuration
 
-Smart Trip can be enabled or disabled at any time.
-
-Open:
+Navigate to:
 
 ```
 Settings
@@ -209,21 +238,58 @@ Available options:
 
 Changes take effect immediately.
 
----
-
-# Tips
-
-> [!TIP]
-> A timeout between **60 and 180 seconds** works well for most drivers.
-
-Shorter values create more individual trips.
-
-Longer values merge more short stops into a single journey.
+Existing trip history remains unchanged.
 
 ---
 
-# Next Step
+# Best Practices
 
-Learn how Ford Triplog records charging sessions.
+Recommended timeout values:
 
-➡ **[Charging](charging.md)**
+| Usage | Timeout |
+|--------|----------|
+| City driving | 120–180 seconds |
+| Mixed driving | 180 seconds |
+| Frequent short stops | 240–300 seconds |
+
+For most users, the default value of **180 seconds** provides the best balance between accurate trip separation and realistic journey tracking.
+
+---
+
+# Frequently Asked Questions
+
+## Does Smart Trip modify completed trips?
+
+No.
+
+Only the currently active trip can be extended.
+
+Completed trips are never changed.
+
+---
+
+## Can Smart Trip be disabled?
+
+Yes.
+
+When disabled, every completed drive is stored as an individual trip.
+
+---
+
+## Does Smart Trip affect charging history?
+
+No.
+
+Charging sessions are recorded independently of Smart Trip.
+
+They may be linked to trips for timeline purposes, but each charging session remains a separate record.
+
+---
+
+## Is Smart Trip required?
+
+No.
+
+The integration works normally without Smart Trip.
+
+Enabling it simply produces a cleaner and more natural trip history for most driving patterns.
