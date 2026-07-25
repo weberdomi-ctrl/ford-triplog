@@ -4,6 +4,12 @@ Ford Triplog
 Coordinator
 
 Version: 1.5.0
+Phase: 3.2
+Build: 02
+
+Changes:
+- Initializes the user charging-site storage.
+- Passes user charging sites to the charging-location resolver.
 """
 
 from __future__ import annotations
@@ -28,6 +34,7 @@ from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
 from .charging_location_resolver import ChargingLocationResolver
+from .user_charging_site_storage import UserChargingSiteStorage
 from .charging_site_lookup import (
     ChargingSiteDatabaseError,
     ChargingSiteLookup,
@@ -67,9 +74,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.config = config
         self.geo = geo
 
+        self.user_charging_site_storage = UserChargingSiteStorage(hass)
+
         self.charging_location_resolver = ChargingLocationResolver(
             hass,
             config,
+            self.user_charging_site_storage,
         )
 
         self.charging_site_radius = int(
@@ -142,6 +152,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def async_setup(self):
         await self.storage.async_setup()
+        await self.user_charging_site_storage.async_setup()
         await self._async_setup_charging_site_lookup()
 
         data = await self.storage.load_current_trip()
