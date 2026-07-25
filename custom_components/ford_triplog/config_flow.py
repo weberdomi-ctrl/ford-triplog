@@ -7,12 +7,12 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.3
-Build: 03
+Build: 04
 
 Changes:
-- Added the Own charging locations options menu.
-- Added a list view for stored user charging locations.
-- Restored the charging-site database import entry in the main menu.
+- Fixed options-flow startup when Home Assistant has not assigned hass yet.
+- User charging-site storage is now initialized lazily inside the flow step.
+- Keeps the Own charging locations menu and list view from Build 03.
 """
 
 from __future__ import annotations
@@ -150,9 +150,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._download_error: str | None = None
         self._download_country_code: str | None = None
         self._download_started: float | None = None
-        self._user_charging_site_storage = UserChargingSiteStorage(
-            self.hass
-        )
+        self._user_charging_site_storage: UserChargingSiteStorage | None = None
         self._selected_user_charging_site: dict[str, Any] | None = None
 
     async def async_step_init(
@@ -198,6 +196,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """List user-defined charging locations."""
 
         errors: dict[str, str] = {}
+
+        if self._user_charging_site_storage is None:
+            self._user_charging_site_storage = UserChargingSiteStorage(
+                self.hass
+            )
 
         try:
             await self._user_charging_site_storage.async_setup()
