@@ -3,7 +3,7 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.4.0
+Version: 1.5.0
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ class Charge:
     """Represents one charging session."""
 
     def __init__(self) -> None:
-        self.schema: int = 2
+        self.schema: int = 3
         self.charge_id: str | None = None
         self.created: str | None = None
 
@@ -52,6 +52,14 @@ class Charge:
         self.charging_site_connectors: list[str] = []
         self.charging_site_quality: str | None = None
         self.charging_site_distance_m: float | None = None
+
+        # FordPass Last Charge data is initially retained as a complete raw
+        # snapshot. Field-by-field normalization follows in the next phase.
+        self.fordpass_last_charge: dict[str, Any] | None = None
+        self.fordpass_pending: bool = False
+        self.data_source: str = "local"
+        self.include_in_statistics: bool = True
+        self.exclusion_reason: str | None = None
 
 
     def start(
@@ -120,8 +128,13 @@ class Charge:
             "charging_site_connectors": self.charging_site_connectors,
             "charging_site_quality": self.charging_site_quality,
             "charging_site_distance_m": self.charging_site_distance_m,
+            "fordpass_last_charge": self.fordpass_last_charge,
+            "fordpass_pending": self.fordpass_pending,
+            "data_source": self.data_source,
+            "include_in_statistics": self.include_in_statistics,
+            "exclusion_reason": self.exclusion_reason,
             "generator": "Ford Triplog",
-            "version": "1.3.0",
+            "version": "1.5.0",
         }
 
     @classmethod
@@ -164,5 +177,15 @@ class Charge:
         charge.charging_site_connectors = data.get("charging_site_connectors", [])
         charge.charging_site_quality = data.get("charging_site_quality")
         charge.charging_site_distance_m = data.get("charging_site_distance_m")
+
+        charge.fordpass_last_charge = data.get("fordpass_last_charge")
+        charge.fordpass_pending = bool(
+            data.get("fordpass_pending", False)
+        )
+        charge.data_source = data.get("data_source", "local")
+        charge.include_in_statistics = bool(
+            data.get("include_in_statistics", True)
+        )
+        charge.exclusion_reason = data.get("exclusion_reason")
 
         return charge
