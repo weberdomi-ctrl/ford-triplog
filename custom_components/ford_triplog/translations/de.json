@@ -10,17 +10,11 @@
           "tracker": "Fahrzeug-Tracker",
           "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
           "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
-          "last_charge": "FordPass Last Charge",
-          "charging_site_country": "Land der Ladestationsdatenbank",
-          "battery_capacity_kwh": "Nutzbare Batteriekapazität (kWh)"
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
         },
         "data_description": {
           "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
-          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird.",
-          "last_charge": "Optionaler FordPass-Sensor mit den Daten des letzten abgeschlossenen Ladevorgangs. Empfohlen für eine genauere Erkennung und Auswertung von Ladevorgängen.",
-          "charging_site_country": "Standardmäßig wird das Land deiner Home-Assistant-Installation verwendet. Diese Einstellung kann später jederzeit in den Optionen geändert werden.",
-          "battery_capacity_kwh": "Nutzbare Batteriekapazität (Netto) des Fahrzeugs. Sie wird für Verbrauchs-, Lade- und Reichweitenberechnungen verwendet."
+          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
         }
       }
     }
@@ -33,12 +27,14 @@
         "menu_options": {
           "settings": "Einstellungen",
           "import_charging_sites": "Ladeort-Datenbank importieren",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen"
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
+          "user_charging_sites": "Eigene Ladeorte"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren."
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten."
         }
       },
       "settings": {
@@ -49,17 +45,13 @@
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus-Sensor",
           "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)",
-          "last_charge": "FordPass Letzter Ladevorgang",
-          "charging_site_country": "Land der Ladestationsdatenbank"
+          "soh": "Batteriezustand (SOH)"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
           "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
-          "last_charge": "Optionaler Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar).",
-          "charging_site_country": "Standardmäßig wird das Land deiner Home-Assistant-Installation verwendet. Diese Einstellung kann später jederzeit in den Optionen geändert werden."
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh."
         }
       },
       "import_charging_sites": {
@@ -97,12 +89,28 @@
       "download_charging_sites_result": {
         "title": "Ladeort-Datenbank abgeschlossen",
         "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
+      },
+      "user_charging_sites": {
+        "title": "Eigene Ladeorte",
+        "description": "Gespeicherte Ladeorte: {site_count}\n\nWähle einen Ladeort aus oder lege einen neuen Eintrag an.",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        },
+        "data_description": {
+          "user_charging_site_selection": "Die vollständige Verwaltung wird im nächsten Build ergänzt."
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}\n\nDas Anlegen, Bearbeiten und Löschen folgt in Build 04."
       }
     },
     "error": {
       "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
       "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll auf weitere Details.",
-      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank."
+      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
+      "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
+      "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden."
     }
   },
   "entity": {
