@@ -831,33 +831,58 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self,
         state: dict[str, Any],
     ) -> None:
-        """Link the current charge to the last completed trip when plausible."""
-        if self.current_charge is None:
+        """Link the current charge to a plausible preceding trip."""
+
+        charge = self.current_charge
+        if charge is None:
             return
 
-        trip = self.last_completed_trip
+        trip: Trip | None = None
+        trip_end_time = None
+        trip_end_latitude = None
+        trip_end_longitude = None
+        trip_source = None
+
+        # A charge commonly starts before the Smart Trip timeout has expired.
+        # In that case the preceding trip is paused and its real end values are
+        # held in trip_end_state rather than in the Trip object itself.
+        if self.trip_pause_data is not None and self.trip_end_state is not None:
+            trip = self.trip_pause_data
+            trip_end_time = self.trip_end_state.get("end_time")
+            trip_end_latitude = self.trip_end_state.get("latitude")
+            trip_end_longitude = self.trip_end_state.get("longitude")
+            trip_source = "paused"
+        elif self.last_completed_trip is not None:
+            trip = self.last_completed_trip
+            trip_end_time = trip.end_time
+            trip_end_latitude = trip.end_latitude
+            trip_end_longitude = trip.end_longitude
+            trip_source = "completed"
+
         if trip is None:
-            _LOGGER.debug("No completed trip available for charge linking")
+            _LOGGER.debug("No preceding trip available for charge linking")
             return
 
-        if not trip.trip_id or not trip.end_time:
+        if not trip.trip_id or not trip_end_time:
             _LOGGER.debug(
-                "Last completed trip has no ID or end time; charge not linked"
+                "Preceding trip has no ID or end time; charge not linked"
             )
             return
 
-        trip_end = dt_util.parse_datetime(trip.end_time)
-        charge_start = dt_util.parse_datetime(
-            self.current_charge.start_time or ""
-        )
+        if isinstance(trip_end_time, datetime):
+            parsed_trip_end = trip_end_time
+        else:
+            parsed_trip_end = dt_util.parse_datetime(str(trip_end_time))
 
-        if trip_end is None or charge_start is None:
+        charge_start = dt_util.parse_datetime(charge.start_time or "")
+
+        if parsed_trip_end is None or charge_start is None:
             _LOGGER.debug(
                 "Trip or charge timestamp could not be parsed; charge not linked"
             )
             return
 
-        time_difference = (charge_start - trip_end).total_seconds()
+        time_difference = (charge_start - parsed_trip_end).total_seconds()
 
         if time_difference < 0:
             _LOGGER.debug(
@@ -875,8 +900,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         coordinates = (
-            trip.end_latitude,
-            trip.end_longitude,
+            trip_end_latitude,
+            trip_end_longitude,
             state.get("latitude"),
             state.get("longitude"),
         )
@@ -889,8 +914,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         try:
             distance = self._distance_meters(
-                float(trip.end_latitude),
-                float(trip.end_longitude),
+                float(trip_end_latitude),
+                float(trip_end_longitude),
                 float(state["latitude"]),
                 float(state["longitude"]),
             )
@@ -908,12 +933,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             return
 
-        self.current_charge.trip_id = trip.trip_id
-        self.current_charge.previous_trip_id = trip.trip_id
+        charge.trip_id = trip.trip_id
+        charge.previous_trip_id = trip.trip_id
+
+        trip.next_charge_id = charge.charge_id
+        trip.next_charge_start = charge.start_time
+
+        # Keep recovery data synchronized while the Smart Trip timer is still
+        # running. The final archived trip will retain the same references.
+        if trip_source == "paused":
+            await self.storage.save_current_trip(trip.to_dict())
 
         _LOGGER.info(
-            "Linked charge %s to trip %s (%.0fs, %.0fm)",
-            self.current_charge.charge_id,
+            "Linked charge %s to %s trip %s (%.0fs, %.0fm)",
+            charge.charge_id,
+            trip_source,
             trip.trip_id,
             time_difference,
             distance,
