@@ -1,173 +1,345 @@
-# Dashboard
+# Dashboard Examples
 
-Ford Triplog exposes native Home Assistant entities that can be used with any standard Lovelace card.
+Ford Triplog is designed to work seamlessly with native Home Assistant dashboards.
 
-No custom dashboard or frontend components are required.
+All entities can be used with standard Lovelace cards without requiring custom frontend components.
+
+This document presents several dashboard ideas that can be adapted to your own installation.
 
 ---
 
-# Typical Dashboard
+# Vehicle Overview
 
-A common dashboard consists of three sections:
+A simple dashboard showing the current vehicle status.
 
-- Last Trip
+Recommended cards:
+
+- Tile Card
+- Entity Card
+- Gauge Card
+
+Suggested entities:
+
+- Current State of Charge
+- Vehicle Location
+- Odometer
+- Last Trip Distance
 - Last Charging Session
-- Lifetime Statistics
+- Charging Database Status
 
 Example:
 
 ```
-┌─────────────────────────────────────┐
-│ Ford Explorer EV                    │
-├─────────────────────────────────────┤
-│ Last Trip                           │
-│ 42.8 km                             │
-│ 15.7 kWh/100 km                     │
-│ 58 min                              │
-├─────────────────────────────────────┤
-│ Last Charging Session               │
-│ 28 % → 80 %                         │
-│ 41 min                              │
-│ Home                                │
-├─────────────────────────────────────┤
-│ Statistics                          │
-│ 18,452 km                           │
-│ 486 Trips                           │
-│ 132 Charges                         │
-│ 16.1 kWh/100 km                     │
-└─────────────────────────────────────┘
++----------------------------------+
+| Ford Explorer EV                 |
+|                                  |
+| SOC                74 %          |
+| Odometer       24,618 km         |
+| Last Trip         43.7 km        |
+| Last Charge       Yesterday      |
++----------------------------------+
 ```
 
 ---
 
-# Last Trip Card
+# Last Trip
 
-Recommended entities:
+Display detailed information about the most recently completed trip.
 
-- Last Distance
-- Last Consumption
-- Last Energy Used
-- Last Average Speed
-- Last Driving Time
-- Last Destination
+Suggested entities:
 
-This card gives an immediate overview of your latest journey.
+- Last Trip Distance
+- Last Trip Duration
+- Average Speed
+- Energy Consumption
+- Consumption (kWh/100 km)
+- Start SOC
+- End SOC
+
+Example:
+
+```
+Last Trip
+
+Distance            42.8 km
+
+Duration            00:38
+
+Average Speed       67 km/h
+
+SOC
+
+82 %
+
+↓
+
+64 %
+
+Consumption
+
+17.1 kWh/100 km
+```
 
 ---
 
-# Charging Card
+# Last Charging Session
 
-Recommended entities:
+Display information about the most recent charging session.
 
-- Last Charging Location
-- Last Charge Start SOC
-- Last Charge End SOC
-- Last Charge Duration
-- Last Charge SOC Added
+Suggested entities:
 
-Perfect for monitoring your latest charging session.
+- Charging Duration
+- Charged Energy
+- Start SOC
+- End SOC
+- Charging Location
+- Charging Provider
+
+Example:
+
+```
+Last Charging
+
+Location
+
+IONITY Neuenkirch
+
+Start SOC
+
+18 %
+
+End SOC
+
+82 %
+
+Charged Energy
+
+51.4 kWh
+
+Duration
+
+00:29
+```
 
 ---
 
-# Statistics Card
+# Lifetime Statistics
 
-Recommended entities:
+A dashboard showing accumulated statistics.
 
+Recommended cards:
+
+- Statistics Card
+- Tile Card
+- Entity Card
+
+Typical entities:
+
+- Total Trips
 - Total Distance
-- Trip Count
-- Charge Count
+- Total Driving Time
 - Average Consumption
-- Average Trip Distance
-- Average Trip Energy
+- Total Charging Sessions
+- Total Charged Energy
 
-These values continuously grow with your driving history.
+Example:
+
+```
+Statistics
+
+Trips
+
+248
+
+Distance
+
+18,642 km
+
+Charging Sessions
+
+92
+
+Average Consumption
+
+17.4 kWh/100 km
+```
 
 ---
 
-# Battery Card
+# Charging Overview
 
-Useful entities:
+Create a dedicated charging dashboard.
 
-- Last Trip SOC Used
-- Average Trip SOC Used
-- Average Charge Start SOC
-- Average Charge End SOC
+Suggested entities:
 
-These sensors provide a good overview of battery usage over time.
-
----
-
-# Maps
-
-The following entities work well together with the standard Home Assistant Map Card:
-
-- Last Start Address
-- Last Destination
 - Last Charging Location
+- Charging Provider
+- Charging Network
+- Charged Energy
+- Charging Duration
+- Charging Database Status
 
-Future releases may include interactive trip maps.
-
----
-
-# Graphs
-
-The History Graph and Statistics Graph cards are ideal for visualising:
-
-- Average Consumption
-- Average Trip Distance
-- Average Trip Energy
-- Average Charge Duration
-
-Because all sensors are native Home Assistant entities, they integrate directly with the built-in statistics engine.
+This dashboard is particularly useful for users who frequently use public charging infrastructure.
 
 ---
 
-# Dashboard Tips
+# Energy Dashboard
 
-> [!TIP]
-> Create separate dashboard sections for:
->
-> - Recent Activity
-> - Charging
-> - Statistics
-> - Battery
-> - Vehicle Information
+Ford Triplog integrates well with the Home Assistant Energy Dashboard.
 
-This keeps the dashboard easy to read.
+Recommended entities include:
+
+- Estimated charged energy
+- Estimated trip energy consumption
+
+Future versions will expand support for charging cost calculations.
 
 ---
 
-# Example Layout
+# Mobile Dashboard
+
+For phones and tablets, a compact dashboard is recommended.
 
 Suggested layout:
 
 ```
-Vehicle
+SOC
 
-├── Last Trip
-├── Last Charging Session
-├── Lifetime Statistics
-├── Battery Information
-└── Consumption History
+↓
+
+Last Trip
+
+↓
+
+Last Charge
+
+↓
+
+Statistics
+```
+
+Only the most important entities should be displayed to keep the interface clean.
+
+---
+
+# Tablet Dashboard
+
+Larger displays allow additional information.
+
+Example layout:
+
+```
++----------------+----------------+
+
+Vehicle Status   Last Trip
+
++----------------+----------------+
+
+Charging         Statistics
+
++----------------+----------------+
+
+Map              History
+
++---------------------------------+
 ```
 
 ---
 
-# Future Dashboard Features
+# History Dashboard
 
-The following features are planned:
+Combine Home Assistant history cards with Ford Triplog sensors.
 
-- Ready-made dashboard cards
-- Interactive trip timeline
-- Charging timeline
-- Monthly statistics
-- Annual summaries
-- Map visualisations
+Useful examples include:
+
+- State of Charge history
+- Odometer history
+- Trip distance history
+- Charging energy history
+
+This provides a visual overview of long-term vehicle usage.
 
 ---
 
-# Next Step
+# Map Dashboard
 
-Ford Triplog sensors can also be used in automations.
+Combine the Home Assistant Map Card with:
 
-➡ **[Automations](automations.md)**
+- Vehicle Tracker
+- Charging Locations
+
+This allows the current vehicle position to be viewed together with known charging locations.
+
+---
+
+# Automation Dashboard
+
+A dedicated dashboard can display automation status.
+
+Examples:
+
+- Charging Finished Notification
+- Vehicle Arrived Home
+- Vehicle Left Home
+- Smart Trip Active
+
+This is useful for debugging automations.
+
+---
+
+# Recommended Layout
+
+A good overall dashboard might look like this:
+
+```
+Vehicle
+
+↓
+
+Current Status
+
+↓
+
+Last Trip
+
+↓
+
+Last Charging Session
+
+↓
+
+Lifetime Statistics
+
+↓
+
+History Graphs
+```
+
+This layout provides quick access to the most frequently used information while keeping the dashboard easy to read.
+
+---
+
+# Native Home Assistant
+
+All examples in this documentation use only standard Home Assistant cards.
+
+No custom Lovelace cards are required.
+
+Users are free to enhance their dashboards using community cards such as Mushroom or Bubble Card, but Ford Triplog does not depend on them.
+
+---
+
+# Future Dashboard Templates
+
+Future releases will include ready-to-import dashboard templates.
+
+Planned examples include:
+
+- Vehicle Overview
+- Last Trip
+- Last Charging Session
+- Lifetime Statistics
+- Charging History
+- Complete Vehicle Dashboard
+
+These templates will use stable Ford Triplog entities to ensure compatibility across future releases.
