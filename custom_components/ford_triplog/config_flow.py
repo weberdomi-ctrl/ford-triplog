@@ -6,6 +6,13 @@ Track your Ford.
 Configuration Flow.
 
 Version: 1.5.0
+Phase: 3.3
+Build: 03
+
+Changes:
+- Added the Own charging locations options menu.
+- Added a list view for stored user charging locations.
+- Restored the charging-site database import entry in the main menu.
 """
 
 from __future__ import annotations
@@ -28,6 +35,8 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .countries import COUNTRIES
+from .user_charging_site_storage import UserChargingSiteStorage
+
 from .services import (
     async_download_charging_database,
     async_import_charging_site_database,
@@ -35,7 +44,6 @@ from .services import (
 
 from .const import (
     CONF_CHARGING,
-    CONF_LAST_CHARGE,
     CONF_IGNITION,
     CONF_ODOMETER,
     CONF_SMART_TRIP,
@@ -50,6 +58,8 @@ from .const import (
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
+CONF_USER_CHARGING_SITE_SELECTION = "user_charging_site_selection"
+USER_CHARGING_SITE_NEW = "__new__"
 
 
 class FordTriplogConfigFlow(
@@ -89,33 +99,9 @@ class FordTriplogConfigFlow(
             data_schema=self._build_schema(),
         )
 
-    def _build_schema(self) -> vol.Schema:
+    @staticmethod
+    def _build_schema() -> vol.Schema:
         """Return configuration schema."""
-
-        home_assistant_country = (
-            str(self.hass.config.country or "")
-            .strip()
-            .upper()
-        )
-
-        # Home Assistant normally uses ISO 3166-1 alpha-2.
-        # Accept UK as a defensive alias for the official GB code.
-        if home_assistant_country == "UK":
-            home_assistant_country = "GB"
-
-        default_country = (
-            home_assistant_country
-            if home_assistant_country in COUNTRIES
-            else "CH"
-        )
-
-        country_options = [
-            selector.SelectOptionDict(
-                value=country_code,
-                label=f"{country['name']} ({country_code})",
-            )
-            for country_code, country in sorted(COUNTRIES.items())
-        ]
 
         return vol.Schema(
             {
@@ -134,38 +120,8 @@ class FordTriplogConfigFlow(
                 vol.Optional(CONF_CHARGING): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
-                vol.Optional(CONF_LAST_CHARGE): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required(
-                    CONF_CHARGING_SITE_COUNTRY,
-                    default=default_country,
-                ): selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=country_options,
-                        mode=selector.SelectSelectorMode.DROPDOWN,
-                    )
-                ),
-                vol.Required(
-                    CONF_BATTERY_CAPACITY,
-                    default=77,
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=40,
-                        max=120,
-                        step=1,
-                        unit_of_measurement="kWh",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-                vol.Required(
-                    CONF_SMART_TRIP,
-                    default=True,
-                ): selector.BooleanSelector(),
-                vol.Required(
-                    CONF_SMART_TRIP_TIMEOUT,
-                    default=300,
-                ): selector.NumberSelector(
+                vol.Required(CONF_SMART_TRIP, default=True): selector.BooleanSelector(),
+                vol.Required(CONF_SMART_TRIP_TIMEOUT, default=300): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=30,
                         max=900,
@@ -194,6 +150,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._download_error: str | None = None
         self._download_country_code: str | None = None
         self._download_started: float | None = None
+        self._user_charging_site_storage = UserChargingSiteStorage(
+            self.hass
+        )
+        self._selected_user_charging_site: dict[str, Any] | None = None
 
     async def async_step_init(
         self,
@@ -205,7 +165,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="init",
             menu_options=[
                 "settings",
+                "user_charging_sites",
                 "download_charging_sites",
+                "import_charging_sites",
             ],
         )
 
@@ -228,6 +190,148 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._options,
             ),
         )
+
+    async def async_step_user_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """List user-defined charging locations."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            await self._user_charging_site_storage.async_setup()
+            sites = await self._user_charging_site_storage.async_load()
+        except (OSError, ValueError):
+            sites = []
+            errors["base"] = "user_charging_sites_load_failed"
+
+        if user_input is not None and not errors:
+            selected_id = str(
+                user_input[CONF_USER_CHARGING_SITE_SELECTION]
+            )
+
+            if selected_id == USER_CHARGING_SITE_NEW:
+                self._selected_user_charging_site = None
+                return await self.async_step_user_charging_site_details()
+
+            selected_site = next(
+                (
+                    site
+                    for site in sites
+                    if str(site.get("id")) == selected_id
+                ),
+                None,
+            )
+
+            if selected_site is None:
+                errors["base"] = "user_charging_site_not_found"
+            else:
+                self._selected_user_charging_site = selected_site
+                return await self.async_step_user_charging_site_details()
+
+        options = [
+            selector.SelectOptionDict(
+                value=USER_CHARGING_SITE_NEW,
+                label="+ Neuer Ladeort",
+            )
+        ]
+
+        options.extend(
+            selector.SelectOptionDict(
+                value=str(site["id"]),
+                label=self._format_user_charging_site_label(site),
+            )
+            for site in sorted(
+                sites,
+                key=lambda item: str(item.get("name") or "").casefold(),
+            )
+        )
+
+        return self.async_show_form(
+            step_id="user_charging_sites",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_CHARGING_SITE_SELECTION,
+                        default=USER_CHARGING_SITE_NEW,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "site_count": str(len(sites)),
+            },
+        )
+
+    async def async_step_user_charging_site_details(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the selected charging-location entry point."""
+
+        if user_input is not None:
+            return await self.async_step_user_charging_sites()
+
+        site = self._selected_user_charging_site
+
+        if site is None:
+            placeholders = {
+                "name": "Neuer Ladeort",
+                "type": "-",
+                "coordinates": "-",
+                "radius": "-",
+                "operator": "-",
+                "network": "-",
+                "power": "-",
+            }
+        else:
+            power_kw = site.get("power_kw")
+            placeholders = {
+                "name": str(site.get("name") or "-"),
+                "type": str(site.get("type") or "public"),
+                "coordinates": (
+                    f"{float(site['latitude']):.6f}, "
+                    f"{float(site['longitude']):.6f}"
+                ),
+                "radius": f"{float(site.get('radius', 50)):.0f} m",
+                "operator": str(site.get("operator") or "-"),
+                "network": str(site.get("network") or "-"),
+                "power": (
+                    f"{float(power_kw):g} kW"
+                    if power_kw is not None
+                    else "-"
+                ),
+            }
+
+        return self.async_show_form(
+            step_id="user_charging_site_details",
+            data_schema=vol.Schema({}),
+            description_placeholders=placeholders,
+        )
+
+    @staticmethod
+    def _format_user_charging_site_label(
+        site: dict[str, Any],
+    ) -> str:
+        """Return a readable label for a stored charging location."""
+
+        site_type = str(site.get("type") or "public")
+        type_labels = {
+            "home": "Zuhause",
+            "work": "Arbeitsplatz",
+            "public": "Öffentlich",
+            "custom": "Benutzerdefiniert",
+        }
+
+        name = str(site.get("name") or site.get("id") or "Ladeort")
+        type_label = type_labels.get(site_type, site_type)
+        return f"{name} · {type_label}"
 
     async def async_step_import_charging_sites(
         self,
@@ -625,10 +729,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return vol.Schema(
             {
                 vol.Optional(CONF_CHARGING): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-
-                vol.Optional(CONF_LAST_CHARGE): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor")
                 ),
 
