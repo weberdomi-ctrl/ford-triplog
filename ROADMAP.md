@@ -1,194 +1,266 @@
-# Ford Triplog Roadmap
+# ROADMAP
 
-This roadmap outlines the planned evolution of Ford Triplog. Features and priorities may change based on user feedback, Home Assistant developments and FordPass capabilities.
+This roadmap provides an overview of planned features for future Ford Triplog releases.
 
----
-
-# Version 1.0 – Initial Release
-
-- Automatic trip detection
-- GPS-based trip recording
-- Address lookup
-- Odometer-based distance calculation
-- State of Charge (SOC) tracking
-- Trip history
-- Native Home Assistant integration
-
-# Version 1.1 – Smart Trip
-
-- Smart Trip support
-- Merge short stops into a single trip
-- Configurable Smart Trip timeout
-- Improved trip detection
-- Better recovery after Home Assistant restart
-
-# Version 1.2 – Statistics
-
-- Energy consumption calculation
-- kWh/100 km
-- Average speed
-- Last trip sensors
-- Vehicle statistics
-- Improved recovery and stability
-
-# Version 1.3 – Charging Sessions
-
-- Dedicated charging model
-- Charge IDs
-- Schema versioning
-- Extended metadata
-- Trip ↔ charging session linking
-- Shared history model
-- Improved recovery
-- Optimized history and cache handling
-
-# Version 1.4 – Smart Charging Sites
-
-- Automatic charging-site recognition
-- OpenStreetMap Overpass integration
-- Country-specific charging-site databases
-- Charging-site database download
-- Charging-site database import
-- Local geohash index
-- Charging station name
-- Operator and network
-- Charging power
-- Connector information
-- Charging point count
-- Charging-site sensors and attributes
-- Complete Home Assistant translations
-- Extended documentation
+The roadmap reflects the current development direction and may change as the project evolves.
 
 ---
 
-# Planned Features
+# Version 1.5
 
-## Version 1.5 – Enhanced Charging Intelligence
+## Highlights
 
-### FordPass Integration
+- Smart Trip
+- Charging session detection
+- Trip and charging session linking
+- User-defined charging locations
+- OpenStreetMap charging database
+- Charging location resolver
+- Improved charging recognition
+- Enhanced Home Assistant entities
+- Improved configuration flow
+- Dashboard examples
+- Complete documentation
 
-- Use the FordPass "Last Charging Session" sensor as the primary source for completed charging sessions
-- Import charging start and end SOC
-- Import charged energy
-- Import charging duration
-- Import added driving range
-- Import charger type
-- Import additional FordPass charging attributes where available
+Status:
 
-### Charging Site Intelligence
+**Released**
 
-- Use the FordPass charging location as the primary source
-- Import station name, network, address and coordinates
-- Use the local OpenStreetMap database as a fallback
-- Enrich FordPass data with OSM metadata
-- Never overwrite valid FordPass data with empty OSM values
-- Validate that the FordPass charging record belongs to the current charging session
-- Optionally store the source of imported values
+---
 
-### Trip Validation & Data Quality
+# Version 1.6
 
-- Improved trip plausibility validation
-- Detect trips with a net SOC increase
-- Prevent negative energy consumption values
-- Prevent negative consumption (kWh/100 km)
-- Exclude invalid consumption values from statistics
-- Detect charging events during or immediately before/after a trip
-- Distinguish measured values from calculated values
-- Additional consistency checks for trip data
+## Planned Features
 
-### Dashboard Examples
+### Automatic Charging Database Switching
 
-- Provide a ready-to-use charging dashboard card
-- Provide a complete vehicle overview example
-- Use stable Ford Triplog sensors instead of direct FordPass attributes
-- Include copy-and-paste YAML examples in the documentation
-- Offer a standard Home Assistant version without custom cards
-- Optionally provide an enhanced version for popular custom cards
+Automatically select the appropriate OpenStreetMap charging database based on the vehicle's current country.
 
-### Home Charging
+Benefits:
 
-- Configurable home charging location
-- Custom home location name (for example "Home")
-- Address or coordinate configuration
-- Automatic coordinate generation
-- Configurable detection radius
-- Automatically identify home charging sessions
-- Display the custom home location instead of only the postal address
+- No manual switching
+- Better support for cross-border travel
+- Improved charging location recognition
 
-### Charging Analytics
+---
 
-- Improved AC/DC detection
-- Better average charging power calculation
-- Compare FordPass and Triplog values
-- Use calculated values only when FordPass data is unavailable
-- Additional sensors and attributes
-- General charging improvements
+### Generic Task Status Sensor
 
-## Version 1.6 – Statistics Center
+Introduce a reusable task status sensor for background operations.
 
-- Monthly and yearly statistics
-- AC/DC charging statistics
-- Home vs. public charging
-- Average charging power
-- Average charging energy
-- Most-used charging provider
-- Additional Home Assistant sensors
-- Dashboard cards
-- CSV export
-- GPX export
+Examples:
 
-## Version 1.7 – Charging Costs & Maintenance
+- Charging database download
+- Database updates
+- Long-running maintenance tasks
 
-### Charging Costs
+---
 
-- Manual public charging costs
-- Home charging cost calculation
-- Configurable electricity tariffs
-- Seasonal tariffs
-- High/low tariff support
-- Cost per charging session
+### Improved Dashboard Templates
+
+Additional ready-to-use Home Assistant dashboards.
+
+Examples:
+
+- Compact dashboard
+- Tablet dashboard
+- Mobile dashboard
+- Charging overview
+- Statistics dashboard
+
+---
+
+### User Experience Improvements
+
+- Improved configuration dialogs
+- Additional diagnostics
+- Enhanced translations
+- UI refinements
+
+---
+
+# Version 1.7
+
+## Planned Features
+
+### Charging Cost Calculation
+
+Automatic charging cost calculations.
+
+Features include:
+
+- Public charging costs
+- Home charging costs
+- Seasonal electricity tariffs
+- Configurable electricity prices
 - Cost statistics
-- Cost per 100 km
-
-### Maintenance
-
-- Maintenance section in the integration options
-- Rebuild all statistics
-- Cache verification
-- Repair history cache
-- Rebuild latest trip and charging snapshots
-
-## Version 1.8 – Long-Term Storage
-
-- Optional SQLite backend
-- JSON remains the default storage
-- Better performance for large histories
-- Advanced filtering
-- Extended long-term statistics
-- Foundation for future analytics
-
-## Future
-
-- Multi-vehicle support
-- Vehicle comparison
-- Fleet overview
-- Timeline view
-- Backup and export tools
+- Cost history
 
 ---
 
-# Long-Term Vision
+### Maintenance Tools
 
-Ford Triplog aims to become a complete local EV driving and charging companion for Home Assistant.
+A new maintenance section in the integration options.
 
-The long-term goal is to provide:
+Planned actions:
 
-- Trip history
-- Charging history
-- Charging-site intelligence
-- Consumption analysis
-- Cost tracking
-- Statistics
-- Unified trip and charging timeline
+- Recalculate statistics
+- Rebuild indexes
+- Validate stored data
+- Maintenance utilities
 
-All data remains local and under the user's control.
+---
+
+### Additional Statistics
+
+Examples:
+
+- Monthly energy
+- Monthly distance
+- Average charging energy
+- Average charging duration
+- Charging frequency
+- Cost statistics
+
+---
+
+# Version 1.8
+
+## Planned Features
+
+### Optional Database Backend
+
+Evaluate an optional database backend for large installations.
+
+Potential benefits:
+
+- Faster searches
+- Better scalability
+- Advanced statistics
+- Improved performance for very large histories
+
+JSON storage will remain the default storage method.
+
+---
+
+### Advanced Reporting
+
+Potential reports include:
+
+- Monthly reports
+- Annual reports
+- Charging summaries
+- Driving summaries
+- Export functions
+
+---
+
+# Future Ideas
+
+The following ideas are under evaluation.
+
+## Multiple Vehicle Support
+
+Support multiple Ford vehicles within a single Home Assistant installation.
+
+---
+
+## Vehicle Comparison
+
+Compare statistics between multiple vehicles.
+
+Examples:
+
+- Consumption
+- Distance
+- Charging costs
+
+---
+
+## Additional Export Formats
+
+Possible export formats:
+
+- CSV
+- JSON
+- Excel
+
+---
+
+## Interactive History
+
+Improved history browsing.
+
+Potential features:
+
+- Search
+- Filters
+- Timeline
+- Map view
+
+---
+
+## Maintenance Tracking
+
+Vehicle maintenance reminders.
+
+Possible examples:
+
+- Tire changes
+- Brake inspections
+- Cabin filter replacement
+- Vehicle inspection
+
+---
+
+## Advanced Energy Integration
+
+Closer integration with Home Assistant Energy.
+
+Potential additions:
+
+- Charging cost analysis
+- Energy dashboard enhancements
+- Household energy comparison
+
+---
+
+## Community Contributions
+
+Community feedback plays an important role in shaping future releases.
+
+Feature requests and suggestions are welcome through GitHub Issues.
+
+---
+
+# Development Principles
+
+Future development follows these principles:
+
+- Local-first architecture
+- Privacy by design
+- Native Home Assistant integration
+- Stable entity names
+- Backward compatibility whenever possible
+- Human-readable storage
+- Comprehensive documentation
+
+---
+
+# Version Overview
+
+| Version | Status | Focus |
+|---------|--------|-------|
+| 1.5 | Released | Charging locations, Smart Trip, documentation |
+| 1.6 | Planned | Automation, charging database improvements, dashboards |
+| 1.7 | Planned | Charging costs, maintenance, advanced statistics |
+| 1.8 | Planned | Optional database backend, reporting |
+| Future | Research | Multi-vehicle support, exports, maintenance tracking |
+
+---
+
+# Disclaimer
+
+The roadmap represents the current development direction of Ford Triplog.
+
+Features, priorities and release versions may change based on community feedback, Home Assistant changes and available development time.
