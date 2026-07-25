@@ -30,6 +30,8 @@ class Trip:
         self.start_longitude=data.get("start_longitude")
         self.end_latitude=data.get("end_latitude")
         self.end_longitude=data.get("end_longitude")
+        self.next_charge_id=data.get("next_charge_id")
+        self.next_charge_start=data.get("next_charge_start")
         self.start_address=data.get("start_address")
         self.end_address=data.get("end_address")
         self.distance_km=data.get("distance_km")
@@ -96,6 +98,8 @@ class Trip:
             "start_longitude":self.start_longitude,
             "end_latitude":self.end_latitude,
             "end_longitude":self.end_longitude,
+            "next_charge_id":self.next_charge_id,
+            "next_charge_start":self.next_charge_start,
             "start_address":self.start_address,
             "end_address":self.end_address,
             "distance_km":self.distance_km,
