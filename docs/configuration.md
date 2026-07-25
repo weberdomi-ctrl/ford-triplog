@@ -1,38 +1,34 @@
 # Configuration
 
-After installing Ford Triplog, a configuration wizard guides you through the initial setup.
+After installing Ford Triplog, the integration must be configured once.
 
-The integration uses entities provided by the official FordPass integration to detect trips, charging sessions and calculate statistics.
+The configuration process only requires selecting the existing entities provided by the FordPass integration.
+
+Additional options can be changed at any time without losing recorded trips or charging history.
 
 ---
 
-# Before You Start
+# Initial Configuration
 
-Ensure that:
+Navigate to:
 
-- FordPass is working correctly.
-- Your vehicle is updating normally.
-- The required FordPass entities exist.
+```
+Settings
+→ Devices & Services
+→ Ford Triplog
+```
 
-> [!IMPORTANT]
-> Ford Triplog does not communicate directly with your vehicle.
->
-> All vehicle information is provided by the FordPass integration.
+Select **Configure**.
 
 ---
 
 # Required Entities
 
-During setup you will be asked to select the required entities.
+Four entities are required.
 
 ## Vehicle Tracker
 
-Used to determine:
-
-- Vehicle location
-- Trip start position
-- Trip destination
-- Address lookup
+The vehicle tracker is used to determine the current vehicle location.
 
 Example:
 
@@ -40,312 +36,327 @@ Example:
 device_tracker.ford_explorer
 ```
 
+The tracker is also used for:
+
+- Trip start detection
+- Trip end detection
+- Charging location recognition
+- Reverse geocoding
+
 ---
 
-## Ignition Sensor
+## Ignition
 
-Used to detect when a trip starts and ends.
+The ignition entity determines when the vehicle starts and stops.
+
+Typical entity:
+
+```
+binary_sensor.explorer_ignition
+```
+
+Ford Triplog uses this together with the tracker to avoid false trip detection.
+
+---
+
+## Odometer
+
+The odometer is used to calculate the travelled distance.
 
 Example:
 
 ```
-binary_sensor.ford_ignition
+sensor.explorer_odometer
 ```
+
+The value should increase continuously while driving.
 
 ---
 
-## Odometer Sensor
+## State of Charge (SOC)
 
-The odometer is used to calculate the driven distance.
-
-Example:
-
-```
-sensor.ford_odometer
-```
-
-> [!NOTE]
-> Ford Triplog always uses the vehicle's odometer.
->
-> GPS distance is **not** used.
-
----
-
-## State of Charge Sensor
-
-The battery State of Charge (SOC) is used for:
+The battery state of charge is required for:
 
 - Energy calculations
-- Charging history
-- Efficiency statistics
+- Charging session detection
+- Charging statistics
 
 Example:
 
 ```
-sensor.ford_state_of_charge
+sensor.explorer_soc
 ```
 
 ---
 
-# Optional Configuration
+# Smart Trip
 
-Depending on your vehicle and FordPass entities, additional options may be available.
+Smart Trip prevents unnecessary trip fragmentation.
 
----
+Without Smart Trip:
 
-## Battery Capacity
+```
+Home
+↓
 
-Specify the usable battery capacity of your vehicle.
+Bakery
 
-This value is used to estimate:
+↓
 
-- Energy used
-- Energy charged
-- Consumption (kWh/100 km)
+Fuel Station
 
-Example:
+↓
 
-| Vehicle | Usable Capacity |
-| :------ | --------------: |
-| Explorer Extended Range | 79 kWh |
-| Capri Extended Range | 79 kWh |
+Office
+```
 
-> [!TIP]
-> Use the **usable** battery capacity rather than the gross battery capacity.
+would create three individual trips.
 
----
+With Smart Trip enabled:
 
-## Smart Trip
+```
+Home
+↓
 
-Smart Trip combines short stops into a single journey.
+Bakery
 
-Instead of creating multiple short trips, Ford Triplog waits before finalizing a trip.
+↓
 
-Typical examples include:
+Fuel Station
 
-- Bakery
-- Parcel station
-- Short shopping stop
-- Picking someone up
-- Traffic interruption
+↓
 
-This results in:
+Office
+```
 
-- Cleaner history
-- Better statistics
-- More realistic consumption values
+becomes one continuous journey.
 
 ---
 
 ## Smart Trip Timeout
 
-The timeout defines how long Ford Triplog waits before completing a trip.
+Defines how long a stop may last before a trip is finalized.
+
+Recommended value:
+
+```
+180 seconds
+```
+
+Typical settings:
+
+| Value | Description |
+|--------|-------------|
+| 60 s | Aggressive merging |
+| 180 s | Recommended |
+| 300 s | Longer stops remain part of the trip |
+
+---
+
+# Battery Capacity
+
+The usable battery capacity is used to estimate energy consumption.
 
 Example:
 
 ```
-120 seconds
+79 kWh
 ```
 
-If the vehicle starts moving again before the timeout expires:
+Providing the correct value improves:
 
-✅ Continue the existing trip
-
-Otherwise:
-
-✅ Complete the trip
+- Energy calculations
+- Consumption statistics
+- Charging efficiency estimates
 
 ---
 
-# Charging Detection
+# Charging Location Database
 
-Charging sessions are detected automatically.
+Ford Triplog can use an offline OpenStreetMap charging database.
 
-No additional configuration is required for basic charging detection.
+Benefits:
 
-Ford Triplog records:
-
-- Charging start
-- Charging end
-- Charging duration
-- Charging location
-- Added State of Charge
-- Estimated charged energy
-- Detected charging station, when a matching local database is available
-
----
-
-# Charging-Site Database
-
-Ford Triplog can identify public charging locations by comparing the vehicle coordinates with a local charging-site database.
-
-The database is optional. Charging sessions are still recorded without it, but the charging location may then contain only the resolved address.
-
-When a matching charging site is found, Ford Triplog can add information such as:
-
-- Station name
-- Brand
-- Operator
-- Charging network
-- Maximum charging power
-- Number of charging points
-- Connector types
-- Distance between the vehicle and the charging site
-
----
-
-## Downloading Charging Locations
-
-Open:
-
-```text
-Settings
-
-↓
-
-Devices & Services
-
-↓
-
-Ford Triplog
-
-↓
-
-Configure
-
-↓
-
-Charging-Site Database
-```
-
-Select the required country and start the download.
-
-Ford Triplog then:
-
-1. Downloads charging locations from OpenStreetMap through the Overpass service.
-2. Normalizes the downloaded charging-station data.
-3. Groups related charging points into charging sites.
-4. Builds a geohash index for fast local lookup.
-5. Validates the generated database.
-6. Activates the selected country database.
-
-> [!NOTE]
-> The initial download can take several minutes, depending on the country and the response time of the Overpass service.
-
-> [!IMPORTANT]
-> Home Assistant must have internet access while the charging-site database is being downloaded.
->
-> Normal charging-site recognition is performed locally after the database has been created.
+- Faster charging location recognition
+- Charging provider detection
+- Charger information
+- Offline operation
 
 ---
 
 ## Country Selection
 
-The country selection is initially based on the Home Assistant country setting when available.
+Select the country that matches where the vehicle is normally charged.
 
-You can change the selected country manually in the Ford Triplog options.
+The country can be changed later at any time.
 
-The generated files use country-specific names, for example:
-
-```text
-charging_sites_ch.json
-charging_sites_de.json
-charging_sites_at.json
-```
-
-Only the currently selected country database is used for charging-site lookup.
+Future versions will support automatic country switching.
 
 ---
 
-## Updating the Database
+## Download Database
 
-Open the Ford Triplog options again and start a new download for the selected country.
+Open the options menu and select:
 
-The existing database is replaced only after the newly generated file has been validated successfully.
+```
+Download Charging Database
+```
 
-This makes it possible to refresh charging locations when OpenStreetMap data changes.
+Choose the desired country.
+
+The integration downloads and installs the database automatically.
 
 ---
 
-## Charging-Site Storage
+# User Charging Locations
 
-Generated charging-site databases are stored locally under:
+Ford Triplog allows creating custom charging locations.
 
-```text
-/config/.storage/ford_triplog/charging_sites/generated/
-```
+Typical examples:
 
-Example:
+- Home
+- Workplace
+- Company parking
+- Dealer
+- Hotel
+- Favourite public charger
 
-```text
-/config/.storage/ford_triplog/charging_sites/generated/charging_sites_ch.json
-```
-
-No trip or charging-session data is uploaded during charging-site recognition.
+User-defined locations always have priority over the OpenStreetMap database.
 
 ---
 
-# After Setup
+## Creating a Charging Location
 
-Once configuration is complete, Ford Triplog immediately starts monitoring your vehicle.
+Open:
 
-The integration automatically creates:
+```
+Settings
+→ Devices & Services
+→ Ford Triplog
+→ Configure
+```
+
+Select:
+
+```
+Manage Charging Locations
+```
+
+Then choose:
+
+```
+Add Charging Location
+```
+
+Enter the available information.
+
+Typical fields include:
+
+- Name
+- Type
+- Brand
+- Operator
+- Network
+- Connectors
+- Maximum charging power
+- Number of charging points
+- Matching radius
+- Notes
+
+Only the relevant information needs to be entered.
+
+---
+
+## Charging Location Types
+
+Supported types include:
+
+- Public
+- Home
+- Work
+- Private
+- Hotel
+- Dealer
+- Other
+
+Home and Work locations automatically receive suitable default names, which can be changed if desired.
+
+---
+
+# Charging Location Recognition
+
+Ford Triplog resolves charging locations using the following priority:
+
+1. FordPass charging information
+2. User-defined charging locations
+3. OpenStreetMap charging database
+4. Reverse geocoding
+
+This combination provides reliable recognition while allowing complete user customization.
+
+---
+
+# Diagnostics
+
+Diagnostic information can be downloaded directly from Home Assistant.
+
+Navigate to:
+
+```
+Settings
+→ Devices & Services
+→ Ford Triplog
+```
+
+Select:
+
+```
+Download Diagnostics
+```
+
+The diagnostics file helps identify configuration problems without exposing personal trip history.
+
+---
+
+# Local Storage
+
+All data is stored locally inside Home Assistant.
+
+This includes:
 
 - Trips
 - Charging sessions
 - Statistics
-- Home Assistant sensors
+- Charging locations
+- Charging databases
 
-No further configuration is required.
-
----
-
-# Changing the Configuration
-
-Open
-
-```
-Settings
-
-↓
-
-Devices & Services
-
-↓
-
-Ford Triplog
-
-↓
-
-Configure
-```
-
-Here you can modify:
-
-- Smart Trip
-- Smart Trip Timeout
-- Battery Capacity
-- Charging-site country
-- Download or update the charging-site database
-
-The changes take effect immediately.
+No trip or charging history is uploaded to external services.
 
 ---
 
-# Storage Location
+# Updating Configuration
 
-Configuration data and trip history are stored locally.
+All settings can be modified later.
 
-```
-/config/.storage/ford_triplog/
-```
+Changing configuration options does **not** delete:
 
-No cloud storage is used.
+- Trip history
+- Charging history
+- Statistics
+- Charging locations
+
+Only the selected option is updated.
 
 ---
 
-# Next Step
+# Best Practices
 
-Learn how Smart Trip works.
+For the best experience:
 
-➡ **[Smart Trip](smart_trip.md)**
+- Use accurate FordPass entities.
+- Enter the correct usable battery capacity.
+- Download the charging database for your country.
+- Add frequently used charging locations such as Home and Work.
+- Keep Home Assistant and FordPass up to date.
+
+These recommendations provide the most accurate trip statistics and charging location recognition.
