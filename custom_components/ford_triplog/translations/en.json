@@ -10,17 +10,11 @@
           "tracker": "Vehicle tracker",
           "charging": "Charging status sensor (only available for Ford Pass EVs)",
           "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)",
-          "last_charge": "FordPass Last Charge",
-          "charging_site_country": "Charging-site database country",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)"
+          "smart_trip_timeout": "Smart Trip timeout (seconds)"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
-          "smart_trip_timeout": "Time before a paused trip is finalized.",
-          "last_charge": "Optional FordPass sensor containing the latest completed charging session. Recommended for more accurate charging detection and analysis.",
-          "charging_site_country": "By default, the country of your Home Assistant installation is used. This setting can be changed later in the options.",
-          "battery_capacity_kwh": "Usable (net) battery capacity of the vehicle. Used for consumption, charging and range calculations."
+          "smart_trip_timeout": "Time before a paused trip is finalized."
         }
       }
     }
@@ -33,12 +27,14 @@
         "menu_options": {
           "settings": "Settings",
           "import_charging_sites": "Import charging-site database",
-          "download_charging_sites": "Download charging-site database from OpenStreetMap"
+          "download_charging_sites": "Download charging-site database from OpenStreetMap",
+          "user_charging_sites": "Own charging locations"
         },
         "menu_option_descriptions": {
           "settings": "Manage trip, charging, and vehicle settings.",
           "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately.",
-          "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately."
+          "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately.",
+          "user_charging_sites": "View and manage your own charging locations."
         }
       },
       "settings": {
@@ -49,17 +45,13 @@
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)",
           "charging": "Charging status sensor",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)",
-          "last_charge": "FordPass Last Charge",
-          "charging_site_country": "Charging-site database country"
+          "battery_capacity_kwh": "Usable battery capacity (kWh)"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
           "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
           "charging": "Charging status sensor (only available for Ford Pass EVs).",
-          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
-          "last_charge": "Optional FordPass sensor containing the latest completed charging session. Recommended for more accurate charging detection and analysis.",
-          "charging_site_country": "By default, the country of your Home Assistant installation is used. This setting can be changed later in the options."
+          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh."
         }
       },
       "import_charging_sites": {
@@ -97,12 +89,28 @@
       "download_charging_sites_result": {
         "title": "Charging-site database completed",
         "description": "The charging-site database has been generated and activated successfully."
+      },
+      "user_charging_sites": {
+        "title": "Own charging locations",
+        "description": "Stored charging locations: {site_count}\n\nSelect a charging location or create a new entry.",
+        "data": {
+          "user_charging_site_selection": "Charging location"
+        },
+        "data_description": {
+          "user_charging_site_selection": "Full management will be added in the next build."
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Type:** {type}\n**Coordinates:** {coordinates}\n**Radius:** {radius}\n**Operator:** {operator}\n**Network:** {network}\n**Power:** {power}\n\nCreating, editing and deleting entries will be added in Build 04."
       }
     },
     "error": {
       "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database.",
       "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details.",
-      "charging_site_download_in_progress": "A charging-site database download is already running."
+      "charging_site_download_in_progress": "A charging-site database download is already running.",
+      "user_charging_sites_load_failed": "The own charging-location database could not be loaded.",
+      "user_charging_site_not_found": "The selected charging location could not be found."
     }
   },
   "entity": {
