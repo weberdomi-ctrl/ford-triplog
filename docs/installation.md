@@ -1,8 +1,8 @@
 # Installation
 
-Ford Triplog is designed to integrate seamlessly with Home Assistant and the official FordPass integration.
+Ford Triplog is distributed through the Home Assistant Community Store (HACS).
 
-This guide explains both the recommended HACS installation and the manual installation process.
+Installation only takes a few minutes and does not require any manual file copying.
 
 ---
 
@@ -10,35 +10,92 @@ This guide explains both the recommended HACS installation and the manual instal
 
 Before installing Ford Triplog, ensure the following requirements are met.
 
-| Requirement | Status |
-| :---------- | :----: |
-| Home Assistant 2026.6 or newer | ✅ Required |
-| HACS | ✅ Recommended |
-| FordPass Integration | ✅ Required |
-| Supported Ford EV | ✅ Required |
+## Home Assistant
 
-> [!IMPORTANT]
-> Ford Triplog extends the FordPass integration.
->
-> It does **not** replace FordPass.
->
-> Install and configure the FordPass integration before adding Ford Triplog.
+- Home Assistant 2026.6 or newer
+
+Earlier versions may work but are not officially supported.
 
 ---
 
-# Install using HACS (Recommended)
+## HACS
 
-Installing through HACS ensures you always receive future updates easily.
+Ford Triplog is installed and updated using HACS.
+
+If HACS is not installed yet, follow the official installation guide:
+
+https://hacs.xyz/
+
+---
+
+## FordPass Integration
+
+Ford Triplog extends the community-maintained FordPass integration.
+
+The FordPass integration must already be installed and configured.
+
+Make sure your vehicle is correctly connected and the following entities are available:
+
+- Vehicle Tracker
+- Odometer
+- State of Charge (SOC)
+- Ignition
+
+---
+
+# Installation
 
 ## Step 1
 
-Open **HACS**
+Open **HACS**.
 
-↓
+Navigate to:
 
 **Integrations**
 
-↓
+---
+
+## Step 2
+
+Search for:
+
+```
+Ford Triplog
+```
+
+Open the integration page.
+
+---
+
+## Step 3
+
+Click
+
+```
+Download
+```
+
+Wait until HACS has finished installing the integration.
+
+---
+
+## Step 4
+
+Restart Home Assistant.
+
+This step is required after the first installation.
+
+---
+
+## Step 5
+
+Open
+
+```
+Settings
+→ Devices & Services
+→ Add Integration
+```
 
 Search for
 
@@ -46,183 +103,215 @@ Search for
 Ford Triplog
 ```
 
+Select the integration.
+
 ---
 
-## Step 2
+# Initial Configuration
 
-Select
+During setup you will be asked to select four entities.
+
+## Vehicle Tracker
+
+The tracker entity representing your vehicle.
+
+Example:
 
 ```
-Download
+device_tracker.ford_explorer
 ```
 
 ---
 
-## Step 3
+## Ignition Sensor
 
-Restart Home Assistant.
+Entity indicating whether the vehicle ignition is on.
+
+Example:
+
+```
+binary_sensor.explorer_ignition
+```
 
 ---
 
-## Step 4
+## Odometer
+
+Current vehicle mileage.
+
+Example:
+
+```
+sensor.explorer_odometer
+```
+
+---
+
+## State of Charge
+
+Battery charge level.
+
+Example:
+
+```
+sensor.explorer_soc
+```
+
+---
+
+# Optional Settings
+
+After installation, additional options are available.
+
+## Smart Trip
+
+Combines short stops into one continuous journey.
+
+Useful for:
+
+- Shopping
+- Charging stops
+- Picking up passengers
+- Short breaks
+
+---
+
+## Smart Trip Timeout
+
+Defines how long a stop may last before a trip is considered finished.
+
+Typical values:
+
+| Timeout | Result |
+|----------|--------|
+| 60 seconds | Very aggressive merging |
+| 180 seconds | Recommended |
+| 300 seconds | Conservative |
+
+---
+
+## Battery Capacity
+
+Allows entering the usable battery capacity.
+
+This improves energy calculations.
+
+Example:
+
+```
+79 kWh
+```
+
+---
+
+## Charging Database Country
+
+Select the OpenStreetMap charging database to use.
+
+Supported countries depend on the available downloadable databases.
+
+The selected country can be changed later at any time.
+
+---
+
+# Download Charging Database
 
 Open
 
 ```
 Settings
-
-↓
-
-Devices & Services
-```
-
-Click
-
-```
-Add Integration
-```
-
-and select
-
-```
-Ford Triplog
-```
-
----
-
-# Manual Installation
-
-If you prefer not to use HACS, Ford Triplog can also be installed manually.
-
-Download the latest release from GitHub.
-
-Copy
-
-```
-custom_components/ford_triplog
-```
-
-to
-
-```
-config/custom_components/
-```
-
-The resulting directory structure should look like:
-
-```
-config/
-
-└── custom_components/
-
-    └── ford_triplog/
-
-        __init__.py
-        manifest.json
-        config_flow.py
-        coordinator.py
-        sensor.py
-        ...
-```
-
-Restart Home Assistant.
-
-Open
-
-```
-Settings
-
-↓
-
-Devices & Services
-
-↓
-
-Add Integration
+→ Devices & Services
+→ Ford Triplog
+→ Configure
 ```
 
 Select
 
 ```
-Ford Triplog
+Download Charging Database
 ```
+
+Choose the desired country.
+
+The database is downloaded automatically and stored locally.
 
 ---
 
 # Updating
 
-## HACS
+Updates are installed through HACS.
 
-Updates are handled automatically through HACS.
+Steps:
 
-Simply install the available update and restart Home Assistant.
+1. Open HACS
+2. Update Ford Triplog
+3. Restart Home Assistant
 
----
-
-## Manual Installation
-
-Replace the
-
-```
-custom_components/ford_triplog
-```
-
-directory with the new release files.
-
-Restart Home Assistant afterwards.
+Existing trips, charging sessions and statistics are preserved automatically.
 
 ---
 
-# Uninstalling
+# Migration
 
-Removing Ford Triplog does **not** automatically delete your stored trip history.
+Ford Triplog automatically migrates stored data when upgrading to newer versions.
 
-To completely remove all data:
+No manual migration is required.
 
-1. Remove the integration.
-2. Delete
-
-```
-custom_components/ford_triplog
-```
-
-3. Delete
-
-```
-/config/.storage/ford_triplog/
-```
-
-> [!WARNING]
-> Deleting the storage folder permanently removes:
->
-> - Trip history
-> - Charging history
-> - Statistics
-> - Recovery data
+If a migration cannot be completed safely, the integration preserves the existing data and reports the problem in the Home Assistant log.
 
 ---
 
+# Verifying the Installation
+
+After setup you should see:
+
+- Ford Triplog device
+- Trip sensors
+- Charging sensors
+- Statistics sensors
+
+The integration will automatically start recording new trips and charging sessions.
+
+No further configuration is required.
 
 ---
 
-# Optional Charging-Site Database
+# Troubleshooting
 
-After the initial configuration you can optionally download a local charging-site database from the integration options.
+## Integration not found
 
-This enables Ford Triplog to recognize public charging stations and enrich charging sessions with:
+Verify:
 
-- Station name
-- Brand
-- Operator
-- Charging network
-- Connector information
-- Charging power
+- HACS is installed.
+- Home Assistant has been restarted after installation.
 
-The download is only required once per country and can be refreshed at any time.
+---
 
+## No trips are recorded
 
-# Next Step
+Verify that:
 
-After the installation has finished, continue with the configuration guide.
+- the tracker updates correctly
+- the ignition entity changes state
+- the odometer increases while driving
+- the SOC sensor reports valid values
 
-➡ **[Configuration](configuration.md)**
+---
+
+## Charging sessions are not detected
+
+Verify:
+
+- SOC updates while charging
+- the charging database has been downloaded (optional)
+- charging locations are configured correctly if using custom locations
+
+---
+
+## Need More Help?
+
+See:
+
+- [Configuration](configuration.md)
+- [Troubleshooting](troubleshooting.md)
+- [FAQ](../FAQ.md)

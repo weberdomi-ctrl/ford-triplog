@@ -1,193 +1,300 @@
-# Data Storage
+# Storage
 
-Ford Triplog stores all trip and charging information locally inside your Home Assistant configuration directory.
+Ford Triplog stores all data locally inside your Home Assistant installation.
 
-No external database or cloud service is required.
+No external database server is required.
+
+No trip history, charging history or statistics are uploaded to cloud services.
+
+---
+
+# Storage Philosophy
+
+Ford Triplog follows a simple design philosophy:
+
+- Local-first
+- Human-readable data
+- Reliable recovery
+- Fast startup
+- Easy backup
+- Automatic migration
+
+All persistent data is stored as JSON files.
 
 ---
 
 # Storage Location
 
-All files are stored under:
+All files are stored in the Home Assistant storage directory.
 
 ```
 /config/.storage/ford_triplog/
 ```
 
-The integration automatically creates the required folders during setup.
+The directory is created automatically during the first startup.
 
 ---
 
-# Directory Structure
+# Stored Data
 
-A typical installation looks like this:
+Ford Triplog maintains several independent storage files.
 
-```
-ford_triplog/
+Typical data includes:
 
-├── trips/
-│   ├── trip_20260722T081523.json
-│   ├── trip_20260722T164518.json
-│   └── ...
-│
-├── charges/
-│   ├── charge_20260722T184212.json
-│   ├── charge_20260724T093105.json
-│   └── ...
-│
-├── statistics.json
-├── last_trip.json
-└── last_charge.json
-```
+- Trips
+- Charging Sessions
+- Statistics
+- User Charging Locations
+- OpenStreetMap Charging Database
+- Runtime Information
+
+Keeping these components separate simplifies updates and future migrations.
 
 ---
 
 # Trips
 
-Each completed trip is stored as an individual JSON file.
+The trip history contains every completed journey.
 
-A trip contains information such as:
+Each trip typically stores:
 
 - Start time
 - End time
-- Start location
-- Destination
 - Distance
-- Driving duration
+- Duration
 - Average speed
-- Battery usage
+- Start SOC
+- End SOC
 - Estimated energy consumption
+- Start location
+- End location
+- Linked charging session (if available)
 
-Keeping trips in separate files makes backups and future exports straightforward.
+Trips are never modified after completion.
 
 ---
 
 # Charging Sessions
 
-Each completed charging session is also stored as a separate JSON file.
+Charging history contains every completed charging session.
 
 Typical information includes:
 
-- Charging start
-- Charging end
+- Start time
+- End time
 - Charging duration
+- Start SOC
+- End SOC
+- Charged energy
 - Charging location
-- Battery level before charging
-- Battery level after charging
-- Added State of Charge
-- Estimated charged energy
+- Charging provider
+- Charging network
+- Linked trip (if available)
 
-Trips and charging sessions are intentionally stored independently.
+Charging sessions are stored independently from trips.
 
 ---
 
 # Statistics
 
-The integration maintains a central statistics file.
+Statistics are stored separately from individual trips.
 
-```
-statistics.json
-```
+Examples include:
 
-It contains aggregated values such as:
-
-- Trip count
-- Charge count
+- Total trips
 - Total distance
-- Total energy used
+- Total charging sessions
+- Total charged energy
 - Average consumption
-- Average trip duration
-- Average charging duration
 
-The statistics file allows Home Assistant sensors to update quickly without reading every archived trip.
+This allows Home Assistant sensors to update quickly without recalculating the complete history.
 
 ---
 
-# Latest Activity
+# User Charging Locations
 
-Two helper files provide quick access to the latest completed records.
+Custom charging locations are stored independently.
 
-```
-last_trip.json
-```
+Each location may contain:
 
-Contains the most recently completed trip.
+- Name
+- Type
+- Coordinates
+- Address
+- Brand
+- Operator
+- Network
+- Connectors
+- Charging power
+- Charging points
+- Matching radius
+- Notes
 
-```
-last_charge.json
-```
-
-Contains the most recently completed charging session.
-
-Most dashboard sensors use these files directly.
-
----
-
-# Performance
-
-Ford Triplog is designed for long-term operation.
-
-To minimize disk access:
-
-- Cached statistics are used whenever possible.
-- Individual trip files are only read when necessary.
-- Sensors share a common statistics cache.
-- JSON files remain small and efficient.
-
-This allows the integration to scale to thousands of trips while maintaining good performance.
+These locations have priority over the OpenStreetMap charging database.
 
 ---
 
-# Home Assistant Restart
+# OpenStreetMap Database
 
-If Home Assistant restarts while:
+Downloaded charging databases are stored locally.
 
-- a trip is active, or
-- a charging session is active,
+They are optimized for:
 
-Ford Triplog restores the active state after startup and continues recording.
+- Fast lookup
+- Low memory usage
+- Offline operation
 
-Completed trips and charging sessions remain unaffected.
+The database only needs to be downloaded once for each country.
+
+---
+
+# Automatic Saving
+
+Ford Triplog automatically saves data whenever necessary.
+
+Examples include:
+
+- Trip completed
+- Charging session completed
+- Statistics updated
+- Charging location changed
+- Configuration modified
+
+No manual save operation is required.
+
+---
+
+# Recovery
+
+Ford Triplog is designed to recover automatically after unexpected interruptions.
+
+Examples:
+
+- Home Assistant restart
+- Power outage
+- System reboot
+- Integration restart
+
+After startup, the integration restores its previous state and continues operating normally.
+
+---
+
+# Migration
+
+Storage migrations are performed automatically.
+
+When upgrading to a newer version:
+
+- Existing files are preserved.
+- Required migrations are executed automatically.
+- Unsupported data is never deleted without migration.
+
+No manual intervention is normally required.
 
 ---
 
 # Backup
 
-Because all data is stored as JSON files, backup is simple.
+All Ford Triplog data is included in normal Home Assistant backups.
 
-You only need to include:
+Recommended backup methods:
 
-```
-/config/.storage/ford_triplog/
-```
+- Home Assistant Backup
+- Home Assistant Google Drive Backup
+- NAS Backup
+- Manual backup of the configuration directory
 
-Home Assistant's built-in backup feature automatically includes this directory.
-
----
-
-# Manual Editing
-
-The JSON files are human-readable.
-
-However:
-
-> [!WARNING]
-> Manual editing is not recommended unless you know exactly what you are doing.
-
-Incorrect modifications may lead to inconsistent statistics or missing history.
+No additional backup procedure is necessary.
 
 ---
 
-# Future Compatibility
+# Restoring
 
-The storage format is designed to remain compatible across future versions whenever possible.
+After restoring a Home Assistant backup:
 
-New information may be added to existing JSON files, but existing data should continue to work after upgrading.
+- Trips are restored.
+- Charging sessions are restored.
+- Statistics are restored.
+- Charging locations are restored.
+- Configuration is restored.
+
+Ford Triplog resumes operation automatically.
 
 ---
 
-# Next Step
+# File Size
 
-Learn how Ford Triplog protects your privacy.
+Trip and charging history grow over time.
 
-➡ **[Privacy](privacy.md)**
+Typical installations remain relatively small because data is stored efficiently as JSON.
+
+Even several years of driving history usually require only a few megabytes of storage.
+
+---
+
+# Performance
+
+The storage system has been optimized for:
+
+- Fast startup
+- Fast writing
+- Low memory usage
+- Reliable recovery
+
+Statistics are maintained incrementally, avoiding expensive recalculations during normal operation.
+
+---
+
+# Privacy
+
+All stored information remains inside your Home Assistant installation.
+
+Ford Triplog never uploads:
+
+- Trips
+- Charging sessions
+- Statistics
+- Charging locations
+- User-defined locations
+
+Only the communication already performed by the FordPass integration is required.
+
+---
+
+# Frequently Asked Questions
+
+## Can I edit the storage files?
+
+Yes.
+
+The files are standard JSON files.
+
+However, manual editing is only recommended for advanced users and should always be performed while Home Assistant is stopped.
+
+---
+
+## Will updates delete my history?
+
+No.
+
+Storage migrations preserve existing data whenever possible.
+
+---
+
+## Can I move the storage directory?
+
+Not directly.
+
+Ford Triplog uses Home Assistant's configuration directory.
+
+If the Home Assistant configuration is moved, the storage directory moves with it.
+
+---
+
+## Is a database server required?
+
+No.
+
+Ford Triplog uses lightweight local JSON storage and does not require SQLite, MariaDB or PostgreSQL.
+
+Future versions may optionally support a database backend for very large installations, while JSON storage will remain the default.

@@ -3,7 +3,9 @@ Ford Triplog
 
 Trip model.
 
-Version: 1.3.2
+Version: 1.5.0
+Build: 01
+Changes: Central GENERATOR/VERSION constants
 """
 
 from __future__ import annotations
@@ -12,11 +14,13 @@ from datetime import datetime
 from homeassistant.util import dt as dt_util
 from typing import Any
 
+from .const import GENERATOR, VERSION, TRIP_SCHEMA_VERSION
+
 BATTERY_CAPACITY_KWH = 77.0
 
 class Trip:
     def __init__(self, **data):
-        self.schema=data.get("schema",1)
+        self.schema=data.get("schema",TRIP_SCHEMA_VERSION)
         self.trip_id=data.get("trip_id")
         self.created=data.get("created")
         self.start_time=data.get("start_time")
@@ -30,6 +34,8 @@ class Trip:
         self.start_longitude=data.get("start_longitude")
         self.end_latitude=data.get("end_latitude")
         self.end_longitude=data.get("end_longitude")
+        self.next_charge_id=data.get("next_charge_id")
+        self.next_charge_start=data.get("next_charge_start")
         self.start_address=data.get("start_address")
         self.end_address=data.get("end_address")
         self.distance_km=data.get("distance_km")
@@ -96,6 +102,8 @@ class Trip:
             "start_longitude":self.start_longitude,
             "end_latitude":self.end_latitude,
             "end_longitude":self.end_longitude,
+            "next_charge_id":self.next_charge_id,
+            "next_charge_start":self.next_charge_start,
             "start_address":self.start_address,
             "end_address":self.end_address,
             "distance_km":self.distance_km,
@@ -105,8 +113,8 @@ class Trip:
             "consumption_kwh_100km":self.consumption_kwh_100km,
             "notes":self.notes,
             "tags":self.tags,
-            "generator":"Ford Triplog",
-            "version":"1.2.3"
+            "generator": GENERATOR,
+            "version": VERSION
         }
 
     @classmethod

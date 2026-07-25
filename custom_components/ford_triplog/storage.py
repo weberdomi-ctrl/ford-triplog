@@ -172,8 +172,9 @@ class FordTriplogStorage:
         """Delete file without blocking the event loop."""
 
         def _delete() -> None:
-            if path.exists():
-                path.unlink()
+            # Idempotent deletion: another task may already have removed
+            # the recovery file between scheduling and execution.
+            path.unlink(missing_ok=True)
 
         await self.hass.async_add_executor_job(_delete)
 

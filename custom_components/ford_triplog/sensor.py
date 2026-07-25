@@ -11,6 +11,7 @@ from __future__ import annotations
 from typing import Any
 
 from datetime import datetime
+import math
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -77,6 +78,10 @@ async def async_setup_entry(
             FordTriplogLastChargeEndSocSensor(coordinator,history,),
             FordTriplogLastChargeSocAddedSensor(coordinator,history,),
             FordTriplogLastChargeDurationSensor(coordinator,history,),
+            FordTriplogLastChargeEnergySensor(coordinator, history),
+            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history),
+            FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history),
+            FordTriplogLastChargeEnergySourceSensor(coordinator, history),
             FordTriplogLastChargeStartAddressSensor(coordinator,history,),
             FordTriplogLastChargingSiteSensor(coordinator, history),
             FordTriplogLastTripStartSocSensor(coordinator,history,),
@@ -275,7 +280,6 @@ class FordTriplogLastDistanceSensor(FordTriplogSensorBase):
 class FordTriplogLastConsumptionSensor(FordTriplogSensorBase):
     """Energy used during the last trip."""
     _attr_translation_key = "last_energy_used"
-    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_last_trip_consumption"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -548,6 +552,101 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
         self._value = int(
             (end_dt - start_dt).total_seconds()
         )
+class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
+    """Primary energy value of the last charging session."""
+
+    _attr_name = "Letzte Ladung Energie"
+    _attr_unique_id = "ford_triplog_last_charge_energy"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:lightning-bolt"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_added_kwh")
+            if last_charge
+            else None
+        )
+
+
+class FordTriplogLastChargeEnergyFordPassSensor(
+    FordTriplogSensorBase
+):
+    """FordPass energy value of the last charging session."""
+
+    _attr_name = "Letzte Ladung Energie FordPass"
+    _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:car-connected"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_added_kwh_fordpass")
+            if last_charge
+            else None
+        )
+
+
+class FordTriplogLastChargeEnergyCalculatedSensor(
+    FordTriplogSensorBase
+):
+    """Calculated energy value of the last charging session."""
+
+    _attr_name = "Letzte Ladung Energie berechnet"
+    _attr_unique_id = "ford_triplog_last_charge_energy_calculated"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:calculator"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_added_kwh_calculated")
+            if last_charge
+            else None
+        )
+
+
+class FordTriplogLastChargeEnergySourceSensor(
+    FordTriplogSensorBase
+):
+    """Source used for the primary charging energy value."""
+
+    _attr_name = "Letzte Ladung Energiequelle"
+    _attr_unique_id = "ford_triplog_last_charge_energy_source"
+    _attr_icon = "mdi:source-branch"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_source")
+            if last_charge
+            else None
+        )
+
+
 class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
     """Address of the last charging session."""
 
@@ -568,20 +667,27 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
         address = last_charge.get("start_address")
 
         if isinstance(address, dict):
-            road = address.get("road", "")
-            house = address.get("house_number", "")
-            postcode = address.get("postcode", "")
-            city = address.get("city", "")
+            self._value = address.get("display_name")
 
-            street = f"{road} {house}".strip()
+            if not self._value:
+                road = address.get("road", "")
+                house = address.get("house_number", "")
+                postcode = address.get("postcode", "")
+                city = address.get("city", "")
 
-            if postcode or city:
-                self._value = f"{street}, {postcode} {city}".strip(", ")
+                street = f"{road} {house}".strip()
+                locality = f"{postcode} {city}".strip()
+
+                self._value = (
+                    f"{street}, {locality}".strip(", ")
+                    if street or locality
+                    else "Keine GPS-Daten verfügbar"
+                )
         else:
-            self._value = address
+            self._value = address or "Keine GPS-Daten verfügbar"
     
 class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
-    """Detected charging site of the last charging session."""
+    """Resolved charging location of the last charging session."""
 
     _attr_translation_key = "last_charging_site"
     _attr_unique_id = "ford_triplog_last_charging_site"
@@ -590,6 +696,151 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
     def __init__(self, coordinator, history) -> None:
         super().__init__(coordinator, history)
         self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _distance_m(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Calculate distance between two coordinates in metres."""
+
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        a = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(a),
+            math.sqrt(1 - a),
+        )
+
+    def _resolve_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Resolve coordinates against configured Home Assistant zones."""
+
+        try:
+            charge_latitude = float(latitude)
+            charge_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone: tuple[float, str] | None = None
+
+        for zone_state in self.hass.states.async_all("zone"):
+            zone_latitude = zone_state.attributes.get("latitude")
+            zone_longitude = zone_state.attributes.get("longitude")
+            zone_radius = zone_state.attributes.get("radius", 100)
+
+            try:
+                distance = self._distance_m(
+                    charge_latitude,
+                    charge_longitude,
+                    float(zone_latitude),
+                    float(zone_longitude),
+                )
+                radius = float(zone_radius)
+            except (TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            zone_name = zone_state.attributes.get(
+                "friendly_name",
+                zone_state.name,
+            )
+
+            # Prefer the closest matching zone when zones overlap.
+            if (
+                matching_zone is None
+                or distance < matching_zone[0]
+            ):
+                matching_zone = (distance, zone_name)
+
+        return matching_zone[1] if matching_zone else None
+
+    @staticmethod
+    def _fordpass_location(
+        last_charge: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return the FordPass location dictionary when available."""
+
+        snapshot = last_charge.get("fordpass_last_charge")
+
+        if not isinstance(snapshot, dict):
+            return {}
+
+        attributes = snapshot.get("attributes")
+
+        if not isinstance(attributes, dict):
+            return {}
+
+        location = attributes.get("location")
+        return location if isinstance(location, dict) else {}
+
+    @staticmethod
+    def _address_fallback(
+        last_charge: dict[str, Any],
+        fordpass_location: dict[str, Any],
+    ) -> str | None:
+        """Build a readable address fallback."""
+
+        fordpass_address = fordpass_location.get("address")
+
+        if isinstance(fordpass_address, dict):
+            address_1 = fordpass_address.get("address1")
+            postcode = fordpass_address.get("postalCode")
+            city = fordpass_address.get("city")
+
+            locality = " ".join(
+                part for part in (postcode, city) if part
+            )
+
+            if address_1 and locality:
+                return f"{address_1}, {locality}"
+            if address_1:
+                return address_1
+            if locality:
+                return locality
+
+        start_address = last_charge.get("start_address")
+
+        if isinstance(start_address, dict):
+            road = start_address.get("road")
+            house_number = start_address.get("house_number")
+            postcode = start_address.get("postcode")
+            city = start_address.get("city")
+
+            street = " ".join(
+                str(part)
+                for part in (road, house_number)
+                if part
+            )
+            locality = " ".join(
+                str(part)
+                for part in (postcode, city)
+                if part
+            )
+
+            if street and locality:
+                return f"{street}, {locality}"
+            return street or locality or start_address.get("display")
+
+        return start_address if isinstance(start_address, str) else None
 
     def update_values(
         self,
@@ -602,21 +853,75 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
             self._attributes = {}
             return
 
-        name = last_charge.get("charging_site_name")
+        fordpass_location = self._fordpass_location(last_charge)
+
+        latitude = (
+            fordpass_location.get("latitude")
+            or last_charge.get("start_latitude")
+        )
+        longitude = (
+            fordpass_location.get("longitude")
+            or last_charge.get("start_longitude")
+        )
+
+        zone_name = self._resolve_zone_name(latitude, longitude)
+        fordpass_name = fordpass_location.get("name")
+
+        site_name = last_charge.get("charging_site_name")
         brand = last_charge.get("charging_site_brand")
         operator = last_charge.get("charging_site_operator")
-        network = last_charge.get("charging_site_network")
+        network = (
+            last_charge.get("charging_site_network")
+            or fordpass_location.get("network")
+        )
+        address = self._address_fallback(
+            last_charge,
+            fordpass_location,
+        )
+
+        stored_location = last_charge.get("start_address")
+        stored_display_name = (
+            stored_location.get("display_name")
+            if isinstance(stored_location, dict)
+            else None
+        )
 
         self._value = (
-            name
+            stored_display_name
+            or zone_name
+            or fordpass_name
+            or site_name
             or brand
             or operator
             or network
+            or address
+            or "Keine GPS-Daten verfügbar"
         )
 
         self._attributes = {
+            "resolved_from": (
+                stored_location.get("source")
+                if isinstance(stored_location, dict)
+                and stored_location.get("source")
+                else "zone"
+                if zone_name
+                else "fordpass_name"
+                if fordpass_name
+                else "osm"
+                if any((site_name, brand, operator))
+                else "fordpass_network"
+                if network and network != "UNKNOWN"
+                else "address"
+                if address
+                else None
+            ),
+            "zone": zone_name,
+            "fordpass_name": fordpass_name,
+            "address": address,
+            "latitude": latitude,
+            "longitude": longitude,
             "site_id": last_charge.get("charging_site_id"),
-            "name": name,
+            "name": site_name,
             "brand": brand,
             "operator": operator,
             "network": network,
@@ -868,7 +1173,6 @@ class FordTriplogAverageTripEnergySensor(FordTriplogSensorBase):
     """Average trip energy used."""
 
     _attr_translation_key = "average_trip_energy"
-    _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_average_trip_energy_used"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT

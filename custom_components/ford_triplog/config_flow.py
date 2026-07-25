@@ -5,7 +5,16 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.4.13
+Version: 1.5.0
+Phase: 3.5
+Build: 15
+
+Changes:
+- Uses compact one-line labels because Home Assistant select labels ignore line breaks.
+- Formats home, work and public charging locations consistently with middle dots.
+- Automatically assigns Zuhause or Arbeit when the name is left empty.
+- Falls back to the address when no explicit name is available.
+- Keeps Build 14 translation-placeholder compatibility.
 """
 
 from __future__ import annotations
@@ -28,6 +37,9 @@ from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 
 from .countries import COUNTRIES
+from .pending_charging_site_storage import PendingChargingSiteStorage
+from .user_charging_site_storage import UserChargingSiteStorage
+
 from .services import (
     async_download_charging_database,
     async_import_charging_site_database,
@@ -49,6 +61,27 @@ from .const import (
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
+CONF_USER_CHARGING_SITE_SELECTION = "user_charging_site_selection"
+CONF_USER_CHARGING_SITE_NAME = "name"
+CONF_USER_CHARGING_SITE_STREET = "street"
+CONF_USER_CHARGING_SITE_HOUSE_NUMBER = "house_number"
+CONF_USER_CHARGING_SITE_POSTCODE = "postcode"
+CONF_USER_CHARGING_SITE_CITY = "city"
+CONF_USER_CHARGING_SITE_COUNTRY = "country"
+CONF_USER_CHARGING_SITE_LATITUDE = "latitude"
+CONF_USER_CHARGING_SITE_LONGITUDE = "longitude"
+CONF_USER_CHARGING_SITE_RADIUS = "radius"
+CONF_USER_CHARGING_SITE_TYPE = "type"
+CONF_USER_CHARGING_SITE_POWER = "power_kw"
+CONF_USER_CHARGING_SITE_CAPACITY = "capacity"
+CONF_USER_CHARGING_SITE_CONNECTORS = "connectors"
+CONF_USER_CHARGING_SITE_OPERATOR = "operator"
+CONF_USER_CHARGING_SITE_NETWORK = "network"
+CONF_USER_CHARGING_SITE_BRAND = "brand"
+CONF_USER_CHARGING_SITE_NOTES = "notes"
+CONF_USER_CHARGING_SITE_ACTION = "action"
+USER_CHARGING_SITE_NEW = "__new__"
+USER_CHARGING_SITE_PENDING = "__pending__"
 
 
 class FordTriplogConfigFlow(
@@ -139,6 +172,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._download_error: str | None = None
         self._download_country_code: str | None = None
         self._download_started: float | None = None
+        self._user_charging_site_storage: UserChargingSiteStorage | None = None
+        self._pending_charging_site_storage: PendingChargingSiteStorage | None = None
+        self._selected_user_charging_site: dict[str, Any] | None = None
+        self._selected_pending_charging_site: dict[str, Any] | None = None
 
     async def async_step_init(
         self,
@@ -150,6 +187,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="init",
             menu_options=[
                 "settings",
+                "user_charging_sites",
                 "download_charging_sites",
             ],
         )
@@ -173,6 +211,893 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._options,
             ),
         )
+
+    async def _async_ensure_charging_site_storages(self) -> None:
+        """Initialize user and pending charging-site storages lazily."""
+
+        if self._user_charging_site_storage is None:
+            self._user_charging_site_storage = UserChargingSiteStorage(
+                self.hass
+            )
+        if self._pending_charging_site_storage is None:
+            self._pending_charging_site_storage = PendingChargingSiteStorage(
+                self.hass
+            )
+
+        await self._user_charging_site_storage.async_setup()
+        await self._pending_charging_site_storage.async_setup()
+
+    async def async_step_user_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """List stored charging locations and show pending-location notice."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            await self._async_ensure_charging_site_storages()
+            sites = await self._user_charging_site_storage.async_load()
+            pending_sites = (
+                await self._pending_charging_site_storage.async_load()
+            )
+        except (OSError, ValueError):
+            sites = []
+            pending_sites = []
+            errors["base"] = "user_charging_sites_load_failed"
+
+        if user_input is not None and not errors:
+            selected_id = str(
+                user_input[CONF_USER_CHARGING_SITE_SELECTION]
+            )
+
+            if selected_id == USER_CHARGING_SITE_PENDING:
+                return await self.async_step_pending_charging_sites()
+
+            if selected_id == USER_CHARGING_SITE_NEW:
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_site_edit()
+
+            selected = next(
+                (
+                    site
+                    for site in sites
+                    if str(site.get("site_id")) == selected_id
+                ),
+                None,
+            )
+            if selected is None:
+                errors["base"] = "user_charging_site_not_found"
+            else:
+                self._selected_user_charging_site = selected
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_site_edit()
+
+        options: list[selector.SelectOptionDict] = []
+
+        if pending_sites:
+            options.append(
+                selector.SelectOptionDict(
+                    value=USER_CHARGING_SITE_PENDING,
+                    label=(
+                        "⚠ Neue erkannte Ladeorte ("
+                        + str(len(pending_sites))
+                        + ")"
+                    ),
+                )
+            )
+
+        options.append(
+            selector.SelectOptionDict(
+                value=USER_CHARGING_SITE_NEW,
+                label="+ Neuer Ladeort",
+            )
+        )
+
+        options.extend(
+            selector.SelectOptionDict(
+                value=str(site["site_id"]),
+                label=self._format_user_charging_site_label(site),
+            )
+            for site in sorted(
+                sites,
+                key=lambda item: str(item.get("name") or "").casefold(),
+            )
+        )
+
+        step_id = (
+            "user_charging_sites_pending_notice"
+            if pending_sites
+            else "user_charging_sites"
+        )
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_CHARGING_SITE_SELECTION,
+                        default=(
+                            USER_CHARGING_SITE_PENDING
+                            if pending_sites
+                            else USER_CHARGING_SITE_NEW
+                        ),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                # Current Build 13+ placeholders.
+                "stored_text": self._format_stored_site_count(len(sites)),
+                "pending_text": self._format_pending_site_count(
+                    len(pending_sites)
+                ),
+                # Backward compatibility for cached/older translations.
+                "site_count": str(len(sites)),
+                "pending_count": str(len(pending_sites)),
+            },
+        )
+
+    async def async_step_user_charging_sites_pending_notice(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle the stored-location page when a pending notice is visible."""
+
+        return await self.async_step_user_charging_sites(user_input)
+
+    async def async_step_pending_charging_sites(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """List detected unknown charging locations separately."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            await self._async_ensure_charging_site_storages()
+            pending_sites = (
+                await self._pending_charging_site_storage.async_load()
+            )
+        except (OSError, ValueError):
+            pending_sites = []
+            errors["base"] = "user_charging_sites_load_failed"
+
+        if not pending_sites and not errors:
+            return await self.async_step_user_charging_sites()
+
+        if user_input is not None and not errors:
+            pending_id = str(
+                user_input[CONF_USER_CHARGING_SITE_SELECTION]
+            )
+            pending = next(
+                (
+                    site
+                    for site in pending_sites
+                    if str(site.get("site_id")) == pending_id
+                ),
+                None,
+            )
+
+            if pending is None:
+                errors["base"] = "user_charging_site_not_found"
+            else:
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = pending
+                return await self.async_step_user_charging_site_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(site["site_id"]),
+                label=str(site.get("name") or "Unbekannter Ladeort"),
+            )
+            for site in pending_sites
+        ]
+
+        return self.async_show_form(
+            step_id="pending_charging_sites",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_CHARGING_SITE_SELECTION,
+                        default=str(pending_sites[0]["site_id"]),
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "pending_count": str(len(pending_sites)),
+            },
+        )
+
+    async def async_step_user_charging_site_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create or update a user-defined charging location."""
+
+        await self._async_ensure_charging_site_storages()
+        errors: dict[str, str] = {}
+
+        existing = self._selected_user_charging_site
+        pending = self._selected_pending_charging_site
+
+        defaults: dict[str, Any] = {
+            CONF_USER_CHARGING_SITE_NAME: "",
+            CONF_USER_CHARGING_SITE_STREET: "",
+            CONF_USER_CHARGING_SITE_HOUSE_NUMBER: "",
+            CONF_USER_CHARGING_SITE_POSTCODE: "",
+            CONF_USER_CHARGING_SITE_CITY: "",
+            CONF_USER_CHARGING_SITE_COUNTRY: "",
+            CONF_USER_CHARGING_SITE_POWER: 0.0,
+            CONF_USER_CHARGING_SITE_CAPACITY: 0.0,
+            CONF_USER_CHARGING_SITE_CONNECTORS: [],
+            CONF_USER_CHARGING_SITE_LATITUDE: 0.0,
+            CONF_USER_CHARGING_SITE_LONGITUDE: 0.0,
+            CONF_USER_CHARGING_SITE_RADIUS: 50.0,
+            CONF_USER_CHARGING_SITE_TYPE: "public",
+            CONF_USER_CHARGING_SITE_OPERATOR: "",
+            CONF_USER_CHARGING_SITE_NETWORK: "",
+            CONF_USER_CHARGING_SITE_BRAND: "",
+            CONF_USER_CHARGING_SITE_NOTES: "",
+        }
+
+        source = existing or pending
+        if source is not None:
+            (
+                detected_street,
+                detected_house_number,
+                detected_postcode,
+                detected_city,
+                detected_country,
+            ) = self._address_parts(source.get("address"))
+            defaults.update(
+                {
+                    CONF_USER_CHARGING_SITE_NAME: (
+                        source.get("name") or ""
+                    ),
+                    CONF_USER_CHARGING_SITE_STREET: (
+                        source.get("street") or detected_street
+                    ),
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER: (
+                        source.get("house_number")
+                        or detected_house_number
+                    ),
+                    CONF_USER_CHARGING_SITE_POSTCODE: (
+                        source.get("postcode") or detected_postcode
+                    ),
+                    CONF_USER_CHARGING_SITE_CITY: (
+                        source.get("city") or detected_city
+                    ),
+                    CONF_USER_CHARGING_SITE_COUNTRY: (
+                        source.get("country") or detected_country
+                    ),
+                    CONF_USER_CHARGING_SITE_CONNECTORS: [
+                        str(value)
+                        for value in (source.get("connectors") or [])
+                    ],
+                    CONF_USER_CHARGING_SITE_LATITUDE: float(
+                        source.get("latitude") or 0.0
+                    ),
+                    CONF_USER_CHARGING_SITE_LONGITUDE: float(
+                        source.get("longitude") or 0.0
+                    ),
+                    CONF_USER_CHARGING_SITE_RADIUS: float(
+                        source.get("radius") or 50.0
+                    ),
+                    CONF_USER_CHARGING_SITE_TYPE: (
+                        source.get("type") or "public"
+                    ),
+                    CONF_USER_CHARGING_SITE_OPERATOR: (
+                        source.get("operator") or ""
+                    ),
+                    CONF_USER_CHARGING_SITE_NETWORK: (
+                        source.get("network") or ""
+                    ),
+                    CONF_USER_CHARGING_SITE_BRAND: (
+                        source.get("brand") or ""
+                    ),
+                    CONF_USER_CHARGING_SITE_NOTES: (
+                        source.get("notes") or ""
+                    ),
+                }
+            )
+            if source.get("power_kw"):
+                defaults[CONF_USER_CHARGING_SITE_POWER] = float(
+                    max(source["power_kw"])
+                )
+            if source.get("capacity"):
+                defaults[CONF_USER_CHARGING_SITE_CAPACITY] = float(
+                    max(source["capacity"])
+                )
+
+        if user_input is not None:
+            if (
+                existing is not None
+                and user_input.get(CONF_USER_CHARGING_SITE_ACTION) == "delete"
+            ):
+                return await self.async_step_user_charging_site_delete()
+
+            site_type = str(
+                user_input[CONF_USER_CHARGING_SITE_TYPE]
+            )
+            site_name = str(
+                user_input.get(CONF_USER_CHARGING_SITE_NAME) or ""
+            ).strip()
+
+            if not site_name:
+                if site_type == "home":
+                    site_name = "Zuhause"
+                elif site_type == "work":
+                    site_name = "Arbeit"
+                else:
+                    street = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_STREET
+                        ) or ""
+                    ).strip()
+                    house_number = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                        ) or ""
+                    ).strip()
+                    postcode = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_POSTCODE
+                        ) or ""
+                    ).strip()
+                    city = str(
+                        user_input.get(
+                            CONF_USER_CHARGING_SITE_CITY
+                        ) or ""
+                    ).strip()
+
+                    street_line = " ".join(
+                        value
+                        for value in (street, house_number)
+                        if value
+                    )
+                    city_line = " ".join(
+                        value
+                        for value in (postcode, city)
+                        if value
+                    )
+                    site_name = ", ".join(
+                        value
+                        for value in (street_line, city_line)
+                        if value
+                    ) or "Ladeort"
+
+            site_data = {
+                "name": site_name,
+                "street": user_input.get(
+                    CONF_USER_CHARGING_SITE_STREET
+                ),
+                "house_number": user_input.get(
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                ),
+                "postcode": user_input.get(
+                    CONF_USER_CHARGING_SITE_POSTCODE
+                ),
+                "city": user_input.get(
+                    CONF_USER_CHARGING_SITE_CITY
+                ),
+                "country": user_input.get(
+                    CONF_USER_CHARGING_SITE_COUNTRY
+                ),
+                "latitude": user_input[
+                    CONF_USER_CHARGING_SITE_LATITUDE
+                ],
+                "longitude": user_input[
+                    CONF_USER_CHARGING_SITE_LONGITUDE
+                ],
+                "radius": user_input[CONF_USER_CHARGING_SITE_RADIUS],
+                "type": site_type,
+                "power_kw": user_input.get(
+                    CONF_USER_CHARGING_SITE_POWER
+                ),
+                "capacity": user_input.get(
+                    CONF_USER_CHARGING_SITE_CAPACITY
+                ),
+                "connectors": user_input.get(
+                    CONF_USER_CHARGING_SITE_CONNECTORS
+                ),
+                "operator": user_input.get(
+                    CONF_USER_CHARGING_SITE_OPERATOR
+                ),
+                "network": user_input.get(
+                    CONF_USER_CHARGING_SITE_NETWORK
+                ),
+                "brand": user_input.get(
+                    CONF_USER_CHARGING_SITE_BRAND
+                ),
+                "notes": user_input.get(
+                    CONF_USER_CHARGING_SITE_NOTES
+                ),
+            }
+
+            try:
+                if existing is None:
+                    await self._user_charging_site_storage.async_add(
+                        site_data
+                    )
+                else:
+                    await self._user_charging_site_storage.async_update(
+                        str(existing["site_id"]),
+                        site_data,
+                    )
+
+                if pending is not None:
+                    await self._pending_charging_site_storage.async_delete(
+                        str(pending["id"])
+                    )
+            except (OSError, ValueError):
+                errors["base"] = "user_charging_site_save_failed"
+            else:
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_sites()
+
+        schema_fields: dict[Any, Any] = {
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_NAME,
+                default=defaults[CONF_USER_CHARGING_SITE_NAME],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_STREET,
+                default=defaults[CONF_USER_CHARGING_SITE_STREET],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_HOUSE_NUMBER,
+                default=defaults[
+                    CONF_USER_CHARGING_SITE_HOUSE_NUMBER
+                ],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_POSTCODE,
+                default=defaults[CONF_USER_CHARGING_SITE_POSTCODE],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CITY,
+                default=defaults[CONF_USER_CHARGING_SITE_CITY],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_COUNTRY,
+                default=defaults[CONF_USER_CHARGING_SITE_COUNTRY],
+            ): selector.TextSelector(),
+            vol.Required(
+                CONF_USER_CHARGING_SITE_LATITUDE,
+                default=defaults[CONF_USER_CHARGING_SITE_LATITUDE],
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-90,
+                    max=90,
+                    step="any",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(
+                CONF_USER_CHARGING_SITE_LONGITUDE,
+                default=defaults[CONF_USER_CHARGING_SITE_LONGITUDE],
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=-180,
+                    max=180,
+                    step="any",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(
+                CONF_USER_CHARGING_SITE_RADIUS,
+                default=defaults[CONF_USER_CHARGING_SITE_RADIUS],
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=5,
+                    max=5000,
+                    step=5,
+                    unit_of_measurement="m",
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Required(
+                CONF_USER_CHARGING_SITE_TYPE,
+                default=defaults[CONF_USER_CHARGING_SITE_TYPE],
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value="public",
+                            label="Öffentlich",
+                        ),
+                        selector.SelectOptionDict(
+                            value="private",
+                            label="Privat",
+                        ),
+                        selector.SelectOptionDict(
+                            value="home",
+                            label="Zuhause",
+                        ),
+                        selector.SelectOptionDict(
+                            value="work",
+                            label="Arbeitsplatz",
+                        ),
+                        selector.SelectOptionDict(
+                            value="dealer",
+                            label="Händler",
+                        ),
+                        selector.SelectOptionDict(
+                            value="hotel",
+                            label="Hotel",
+                        ),
+                        selector.SelectOptionDict(
+                            value="other",
+                            label="Sonstige",
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_OPERATOR,
+                default=defaults[CONF_USER_CHARGING_SITE_OPERATOR],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_NETWORK,
+                default=defaults[CONF_USER_CHARGING_SITE_NETWORK],
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_BRAND,
+                default=defaults[CONF_USER_CHARGING_SITE_BRAND],
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        "Allego",
+                        "Aral pulse",
+                        "BP Pulse",
+                        "ChargePoint",
+                        "Electra",
+                        "EnBW",
+                        "E.ON Drive",
+                        "evpass",
+                        "Fastned",
+                        "GOFAST",
+                        "IONITY",
+                        "MOVE",
+                        "Shell Recharge",
+                        "Swisscharge",
+                        "Tesla",
+                    ],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                    sort=True,
+                )
+            ),
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_NOTES,
+                default=defaults[CONF_USER_CHARGING_SITE_NOTES],
+            ): selector.TextSelector(
+                selector.TextSelectorConfig(
+                    multiline=True,
+                )
+            ),
+        }
+
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_POWER,
+                default=defaults[CONF_USER_CHARGING_SITE_POWER],
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step="any",
+                unit_of_measurement="kW",
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CAPACITY,
+                default=defaults[CONF_USER_CHARGING_SITE_CAPACITY],
+            )
+        ] = selector.NumberSelector(
+            selector.NumberSelectorConfig(
+                min=0,
+                max=1000,
+                step=1,
+                mode=selector.NumberSelectorMode.BOX,
+            )
+        )
+
+        schema_fields[
+            vol.Optional(
+                CONF_USER_CHARGING_SITE_CONNECTORS,
+                default=defaults[CONF_USER_CHARGING_SITE_CONNECTORS],
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=[
+                    selector.SelectOptionDict(
+                        value="CCS",
+                        label="CCS (Combo 2)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Type2",
+                        label="Type 2 / Mennekes (AC)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CHAdeMO",
+                        label="CHAdeMO",
+                    ),
+                    selector.SelectOptionDict(
+                        value="NACS",
+                        label="NACS (Tesla)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="TeslaSupercharger",
+                        label="Tesla Supercharger",
+                    ),
+                    selector.SelectOptionDict(
+                        value="TeslaDestination",
+                        label="Tesla Destination",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Type1",
+                        label="Type 1 / J1772 (AC)",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CEE_Red",
+                        label="CEE rot",
+                    ),
+                    selector.SelectOptionDict(
+                        value="CEE_Blue",
+                        label="CEE blau",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Schuko",
+                        label="Schuko",
+                    ),
+                    selector.SelectOptionDict(
+                        value="GBT_DC",
+                        label="GB/T DC",
+                    ),
+                    selector.SelectOptionDict(
+                        value="GBT_AC",
+                        label="GB/T AC",
+                    ),
+                    selector.SelectOptionDict(
+                        value="Other",
+                        label="Sonstige",
+                    ),
+                ],
+                multiple=True,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
+
+        if existing is not None:
+            schema_fields[
+                vol.Required(
+                    CONF_USER_CHARGING_SITE_ACTION,
+                    default="save",
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value="save",
+                            label="Speichern",
+                        ),
+                        selector.SelectOptionDict(
+                            value="delete",
+                            label="Löschen",
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="user_charging_site_edit",
+            data_schema=vol.Schema(schema_fields),
+            errors=errors,
+            description_placeholders={
+                "mode": (
+                    "detected"
+                    if pending is not None
+                    else "edit"
+                    if existing is not None
+                    else "new"
+                ),
+            },
+        )
+
+    async def async_step_user_charging_site_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Delete the selected user-defined charging location."""
+
+        await self._async_ensure_charging_site_storages()
+        existing = self._selected_user_charging_site
+
+        if existing is None:
+            return await self.async_step_user_charging_sites()
+
+        if user_input is not None:
+            await self._user_charging_site_storage.async_delete(
+                str(existing["site_id"])
+            )
+            self._selected_user_charging_site = None
+            return await self.async_step_user_charging_sites()
+
+        return self.async_show_form(
+            step_id="user_charging_site_delete",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "name": str(existing.get("name") or ""),
+            },
+        )
+
+    @staticmethod
+    def _address_parts(
+        address: Any,
+    ) -> tuple[str, str, str, str, str]:
+        """Extract address fields from reverse-geocoding metadata."""
+
+        if not isinstance(address, dict):
+            return "", "", "", "", ""
+
+        street = (
+            address.get("road")
+            or address.get("street")
+            or address.get("pedestrian")
+            or address.get("footway")
+            or ""
+        )
+        house_number = address.get("house_number") or ""
+        postcode = address.get("postcode") or ""
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("village")
+            or address.get("municipality")
+            or address.get("hamlet")
+            or ""
+        )
+        country = (
+            address.get("country_code")
+            or address.get("country")
+            or ""
+        )
+
+        return (
+            str(street).strip(),
+            str(house_number).strip(),
+            str(postcode).strip(),
+            str(city).strip(),
+            str(country).strip().upper(),
+        )
+
+    @staticmethod
+    def _format_user_charging_site_label(
+        site: dict[str, Any],
+    ) -> str:
+        """Return a compact one-line label for a stored charging location."""
+
+        site_type = str(site.get("type") or "public")
+        type_labels = {
+            "public": "Öffentlich",
+            "private": "Privat",
+            "home": "Zuhause",
+            "work": "Arbeit",
+            "dealer": "Händler",
+            "hotel": "Hotel",
+            "other": "Sonstige",
+            "custom": "Benutzerdefiniert",
+        }
+        type_label = type_labels.get(site_type, site_type)
+
+        name = str(site.get("name") or "").strip()
+        provider = str(
+            site.get("brand")
+            or site.get("network")
+            or site.get("operator")
+            or ""
+        ).strip()
+        street = str(site.get("street") or "").strip()
+        house_number = str(site.get("house_number") or "").strip()
+        postcode = str(site.get("postcode") or "").strip()
+        city = str(site.get("city") or "").strip()
+
+        street_line = " ".join(
+            value
+            for value in (street, house_number)
+            if value
+        )
+        city_line = city or postcode
+        address_fallback = ", ".join(
+            value
+            for value in (
+                street_line,
+                " ".join(
+                    value
+                    for value in (postcode, city)
+                    if value
+                ),
+            )
+            if value
+        )
+
+        parts: list[str]
+        if site_type == "home":
+            parts = [type_label, street_line, city_line]
+        elif site_type == "work":
+            work_name = (
+                name
+                if name.casefold() not in {"arbeit", "arbeitsplatz"}
+                else ""
+            )
+            parts = [
+                type_label,
+                work_name or street_line,
+                city_line,
+            ]
+        else:
+            parts = [
+                name or address_fallback or "Ladeort",
+                provider,
+                type_label,
+            ]
+
+        # Remove empty and duplicate values while preserving display order.
+        result: list[str] = []
+        seen: set[str] = set()
+        for part in parts:
+            value = str(part or "").strip()
+            key = value.casefold()
+            if value and key not in seen:
+                result.append(value)
+                seen.add(key)
+
+        return " · ".join(result) or "Ladeort"
+
+    @staticmethod
+    def _format_pending_site_count(count: int) -> str:
+        """Return grammatically correct pending-site information."""
+
+        if count == 1:
+            return (
+                "Es wurde 1 unbekannter Ladeort erkannt. "
+                "Dieser kann jetzt als eigener Ladeort gespeichert werden."
+            )
+        if count > 1:
+            return (
+                f"Es wurden {count} unbekannte Ladeorte erkannt. "
+                "Diese können jetzt als eigene Ladeorte gespeichert werden."
+            )
+        return ""
+
+    @staticmethod
+    def _format_stored_site_count(count: int) -> str:
+        """Return grammatically correct stored-site information."""
+
+        if count == 1:
+            return "1 eigener Ladeort gespeichert."
+        return f"{count} eigene Ladeorte gespeichert."
 
     async def async_step_import_charging_sites(
         self,

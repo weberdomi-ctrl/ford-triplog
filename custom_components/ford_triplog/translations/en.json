@@ -27,12 +27,14 @@
         "menu_options": {
           "settings": "Settings",
           "import_charging_sites": "Import charging-site database",
-          "download_charging_sites": "Download charging-site database from OpenStreetMap"
+          "download_charging_sites": "Download charging-site database from OpenStreetMap",
+          "user_charging_sites": "Own charging locations"
         },
         "menu_option_descriptions": {
           "settings": "Manage trip, charging, and vehicle settings.",
           "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately.",
-          "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately."
+          "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately.",
+          "user_charging_sites": "View and manage your own charging locations."
         }
       },
       "settings": {
@@ -87,12 +89,68 @@
       "download_charging_sites_result": {
         "title": "Charging-site database completed",
         "description": "The charging-site database has been generated and activated successfully."
+      },
+      "user_charging_sites": {
+        "title": "Own charging locations",
+        "description": "{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Charging location"
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Type:** {type}\n**Coordinates:** {coordinates}\n**Radius:** {radius}\n**Operator:** {operator}\n**Network:** {network}\n**Power:** {power}\n\nCreating, editing and deleting entries will be added in Build 04."
+      },
+      "user_charging_site_edit": {
+        "title": "Create or edit charging location",
+        "description": "The fields follow the OSM charging-site database model. Multiple connectors can be selected, and custom brand values are supported. Available data is prefilled for detected charging locations.",
+        "data": {
+          "name": "Name",
+          "street": "Street",
+          "house_number": "House number",
+          "postcode": "Postcode",
+          "city": "City",
+          "country": "Country",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius": "Detection radius",
+          "type": "Type",
+          "power_kw": "Maximum charging power",
+          "capacity": "Number of charging points",
+          "connectors": "Connectors (multiple selection)",
+          "operator": "Operator",
+          "network": "Network",
+          "brand": "Brand / provider",
+          "notes": "Notes",
+          "action": "Action"
+        }
+      },
+      "user_charging_site_delete": {
+        "title": "Delete charging location",
+        "description": "Do you really want to delete “{name}”?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Own charging locations",
+        "description": "{pending_text}\n\n{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Charging location"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Add unknown charging locations",
+        "description": "Select one of the {pending_count} detected locations. Coordinates and available station metadata will be prefilled.",
+        "data": {
+          "user_charging_site_selection": "Detected charging location"
+        }
       }
     },
     "error": {
       "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-site database.",
       "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details.",
-      "charging_site_download_in_progress": "A charging-site database download is already running."
+      "charging_site_download_in_progress": "A charging-site database download is already running.",
+      "user_charging_sites_load_failed": "The own charging-location database could not be loaded.",
+      "user_charging_site_not_found": "The selected charging location could not be found.",
+      "user_charging_site_save_failed": "The charging location could not be saved."
     }
   },
   "entity": {

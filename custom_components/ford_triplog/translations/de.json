@@ -27,12 +27,14 @@
         "menu_options": {
           "settings": "Einstellungen",
           "import_charging_sites": "Ladeort-Datenbank importieren",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen"
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
+          "user_charging_sites": "Eigene Ladeorte"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren."
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten."
         }
       },
       "settings": {
@@ -87,12 +89,68 @@
       "download_charging_sites_result": {
         "title": "Ladeort-Datenbank abgeschlossen",
         "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
+      },
+      "user_charging_sites": {
+        "title": "Eigene Ladeorte",
+        "description": "{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}\n\nDas Anlegen, Bearbeiten und Löschen folgt in Build 04."
+      },
+      "user_charging_site_edit": {
+        "title": "Ladeort erfassen oder bearbeiten",
+        "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Anschlüsse können mehrfach ausgewählt werden; bei der Marke sind auch eigene Werte möglich. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
+        "data": {
+          "name": "Name",
+          "street": "Strasse",
+          "house_number": "Hausnummer",
+          "postcode": "Postleitzahl",
+          "city": "Ort",
+          "country": "Land",
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "radius": "Erkennungsradius",
+          "type": "Typ",
+          "power_kw": "Maximale Ladeleistung",
+          "capacity": "Anzahl Ladepunkte",
+          "connectors": "Anschlüsse (Mehrfachauswahl)",
+          "operator": "Betreiber",
+          "network": "Netzwerk",
+          "brand": "Marke / Anbieter",
+          "notes": "Notizen",
+          "action": "Aktion"
+        }
+      },
+      "user_charging_site_delete": {
+        "title": "Ladeort löschen",
+        "description": "Soll der Ladeort „{name}“ wirklich gelöscht werden?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Eigene Ladeorte",
+        "description": "{pending_text}\n\n{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Unbekannte Ladeorte erfassen",
+        "description": "Wähle einen der {pending_count} erkannten Ladeorte aus. Koordinaten und verfügbare Stationsdaten werden beim Erfassen vorausgefüllt.",
+        "data": {
+          "user_charging_site_selection": "Erkannter Ladeort"
+        }
       }
     },
     "error": {
       "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
       "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll auf weitere Details.",
-      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank."
+      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
+      "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
+      "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
+      "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden."
     }
   },
   "entity": {

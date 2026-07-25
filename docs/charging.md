@@ -1,219 +1,257 @@
 # Charging Sessions
 
-Ford Triplog automatically records every completed charging session.
+Ford Triplog automatically detects and records charging sessions without requiring any manual interaction.
 
-Each charging session is stored independently from trips, creating a complete charging history alongside your driving history.
-
-No manual interaction is required.
+Each charging session becomes a permanent part of your local vehicle history and can be linked to the surrounding trips whenever possible.
 
 ---
 
 # Automatic Detection
 
-Charging starts automatically when the configured charging entities indicate that the vehicle is charging.
+Charging sessions are detected automatically by monitoring the vehicle's charging state and battery State of Charge (SOC).
 
-Ford Triplog monitors the charging process and records all relevant information until charging is complete.
+No user interaction is required.
 
-Each charging session includes:
+Once charging starts, Ford Triplog creates a new charging session and continuously updates it until charging has finished.
 
+---
+
+# Recorded Information
+
+Each charging session contains the following information.
+
+## Time
+
+- Start date
 - Start time
+- End date
 - End time
 - Charging duration
-- Charging location
-- Battery level at start
-- Battery level at end
-- State of Charge added
-- Estimated charged energy
 
 ---
 
-# Estimated Charged Energy
+## Battery
 
-Ford Triplog estimates the charged energy using:
-
-- Configured usable battery capacity
-- State of Charge difference
-
-Example:
-
-Battery capacity
-
-```
-79 kWh
-```
-
-Charging
-
-```
-20 % → 80 %
-```
-
-Estimated charged energy
-
-```
-47.4 kWh
-```
-
-This calculation provides a realistic estimate without requiring data from the charging station.
+- Start State of Charge (SOC)
+- End State of Charge (SOC)
+- SOC gained
 
 ---
 
-# Charging Location
+## Energy
 
-Ford Triplog stores both the charging position and, when available, the detected charging station.
+Ford Triplog estimates the charged energy using the configured usable battery capacity.
 
-Every charging session contains:
+Recorded values include:
 
-- Start and end coordinates
-- Human-readable postal address
-- Detected charging-site information from the local database
+- Estimated charged energy (kWh)
+- Average charging rate
+- Charging efficiency (future)
 
-When a matching charging site is found, the session can be enriched with:
+---
 
-- Station name
-- Brand
-- Operator
+## Location
+
+Whenever possible, the charging location is identified automatically.
+
+Depending on the available information, the session may include:
+
+- Charging location name
+- Address
+- Charging provider
 - Charging network
+- Operator
 - Maximum charging power
-- Connector types
+- Available connectors
 - Number of charging points
 
-Example:
+---
+
+# Charging Location Recognition
+
+Charging locations are resolved using the following priority.
 
 ```
-GOFAST Sihlbrugg
-Operator: GOFAST
-Network: Swisscharge
+FordPass
+
+↓
+
+User Charging Locations
+
+↓
+
+OpenStreetMap Database
+
+↓
+
+Reverse Geocoding
 ```
 
-or
+This approach combines the strengths of all available data sources while allowing complete user customization.
 
-```
-Home
-Buttikon SZ
-```
+---
 
-Charging-site recognition uses the locally generated OpenStreetMap database and works without an internet connection during normal operation.
+# Linking Trips and Charging Sessions
+
+Trips and charging sessions are stored independently.
+
+However, Ford Triplog automatically links them whenever appropriate.
+
+A charging session is typically associated with the previous trip when:
+
+- the charging location is close to the trip destination
+- charging starts shortly after the trip ends
+
+This allows future dashboard views and timelines to present a complete travel history without merging the underlying records.
 
 ---
 
 # Charging History
 
-Every completed charging session is permanently stored.
+Every completed charging session is stored locally.
 
-Example:
+Historical data remains available after:
 
-```
-Home
+- Home Assistant restart
+- Integration update
+- Vehicle restart
+- System reboot
 
-↓
-
-Fastned Oftringen
-
-↓
-
-IONITY Neuenkirch
-
-↓
-
-Tesla Supercharger Pratteln
-```
-
-Your complete charging history remains available even after Home Assistant restarts.
+No manual backup is required beyond your normal Home Assistant backup strategy.
 
 ---
 
-# Relation to Trips
+# Home Charging
 
-Trips and charging sessions are stored as separate records.
+Home charging locations can be created manually.
 
-This provides several advantages:
+Benefits include:
 
-- Independent trip history
-- Independent charging history
-- Better statistics
-- Easier future expansion
+- Consistent location names
+- Reliable recognition
+- Independent of OpenStreetMap
+- Higher priority than public charging databases
 
-Although stored separately, charging sessions can be linked to trips when appropriate.
+Typical example:
 
-This enables a complete travel timeline while keeping the underlying data clean and flexible.
+```
+Zuhause
+```
 
 ---
 
-# Local Storage
+# Workplace Charging
 
-Charging sessions are stored as JSON files.
+Workplace chargers can also be configured manually.
+
+Typical example:
 
 ```
-/config/.storage/ford_triplog/charges/
+Arbeit
 ```
 
-Each charging session is written as an individual file.
-
-This allows:
-
-- Simple backups
-- Human-readable data
-- Easy future export
-- Fast recovery
+These locations are handled the same way as home charging locations and always take priority over the OpenStreetMap database.
 
 ---
 
-# Recovery
+# Public Charging
 
-If Home Assistant restarts during an active charging session, Ford Triplog restores the unfinished charging session automatically.
+Public charging stations can be recognized automatically using:
 
-Once charging ends, the session is completed normally.
+- FordPass charging information
+- User-defined locations
+- OpenStreetMap charging database
 
-No charging information is lost because of a restart.
+If available, additional information such as provider, charging network and connectors is stored together with the charging session.
+
+---
+
+# Unknown Charging Locations
+
+If Ford Triplog cannot identify a charging location, reverse geocoding is used as a fallback.
+
+The charging session will still be recorded, typically including:
+
+- Street
+- City
+- Country
+
+You can later convert this location into a permanent user-defined charging location through the integration options.
+
+Future charging sessions at the same place will then be recognized automatically.
 
 ---
 
 # Statistics
 
-Charging sessions automatically update lifetime statistics.
+Charging sessions contribute to the lifetime charging statistics.
 
-Available statistics include:
+Examples include:
 
-- Charge Count
-- Average Charge Duration
-- Average Charge Start SOC
-- Average Charge End SOC
-- Average Charge SOC Added
+- Total charging sessions
+- Total charged energy
+- Average charged energy
+- Total charging time
 
-These statistics are continuously updated after every completed charging session.
-
----
-
-# Future Improvements
-
-Several charging features are planned for future releases.
-
-## Version 1.5
-
-Possible future improvements include:
-
-- Smart Charge Pause / Resume
-- AC / DC recognition
-- Charging cost calculation
-- Home charging tariff support
-- Extended charging statistics
-
-These additions will further improve the charging history while remaining fully compatible with existing data.
+Additional statistics will be introduced in future releases.
 
 ---
 
-# Tips
+# Local Storage
 
-> [!TIP]
-> Ford Triplog estimates charged energy using the configured usable battery capacity.
->
-> Keeping this value accurate results in more precise charging statistics.
+Charging sessions are stored locally in the Ford Triplog storage directory.
+
+No charging history is uploaded to external services.
+
+This ensures:
+
+- Full privacy
+- Fast access
+- Complete ownership of your data
 
 ---
 
-# Next Step
+# Frequently Asked Questions
 
-Learn about all available entities.
+## Can I edit a charging session?
 
-➡ **[Sensors](sensors.md)**
+No.
+
+Charging sessions are automatically generated and represent the recorded vehicle data.
+
+---
+
+## Are charging sessions deleted after updates?
+
+No.
+
+Existing charging history is preserved during updates and storage migrations.
+
+---
+
+## Does Ford Triplog support AC and DC charging?
+
+Yes.
+
+Both AC and DC charging sessions are recorded automatically.
+
+At present, the charging type is not explicitly distinguished in the recorded data.
+
+---
+
+## What happens if Home Assistant restarts during charging?
+
+Ford Triplog includes recovery mechanisms designed to resume normal operation after a restart.
+
+Depending on the timing of the restart and the available vehicle data, the current charging session is restored or completed automatically whenever possible.
+
+---
+
+## Is an internet connection required?
+
+Only for:
+
+- FordPass communication
+- Downloading OpenStreetMap charging databases
+
+Normal charging detection and charging history operate entirely locally.

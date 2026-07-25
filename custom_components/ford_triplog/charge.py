@@ -3,7 +3,6 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.4.0
 """
 
 from __future__ import annotations
@@ -12,12 +11,14 @@ from typing import Any
 
 from homeassistant.util import dt as dt_util
 
+from .const import CHARGE_SCHEMA_VERSION, GENERATOR, VERSION
+
 
 class Charge:
     """Represents one charging session."""
 
     def __init__(self) -> None:
-        self.schema: int = 2
+        self.schema: int = CHARGE_SCHEMA_VERSION
         self.charge_id: str | None = None
         self.created: str | None = None
 
@@ -52,6 +53,21 @@ class Charge:
         self.charging_site_connectors: list[str] = []
         self.charging_site_quality: str | None = None
         self.charging_site_distance_m: float | None = None
+
+        # FordPass Last Charge data is initially retained as a complete raw
+        # snapshot. Field-by-field normalization follows in the next phase.
+        self.fordpass_last_charge: dict[str, Any] | None = None
+        self.last_charge_baseline_signature: str | None = None
+        self.fordpass_pending: bool = False
+        self.data_source: str = "local"
+
+        self.energy_added_kwh: float | None = None
+        self.energy_added_kwh_fordpass: float | None = None
+        self.energy_added_kwh_calculated: float | None = None
+        self.energy_source: str = "calculated"
+
+        self.include_in_statistics: bool = True
+        self.exclusion_reason: str | None = None
 
 
     def start(
@@ -120,8 +136,22 @@ class Charge:
             "charging_site_connectors": self.charging_site_connectors,
             "charging_site_quality": self.charging_site_quality,
             "charging_site_distance_m": self.charging_site_distance_m,
-            "generator": "Ford Triplog",
-            "version": "1.3.0",
+            "fordpass_last_charge": self.fordpass_last_charge,
+            "last_charge_baseline_signature": (
+                self.last_charge_baseline_signature
+            ),
+            "fordpass_pending": self.fordpass_pending,
+            "data_source": self.data_source,
+            "energy_added_kwh": self.energy_added_kwh,
+            "energy_added_kwh_fordpass": self.energy_added_kwh_fordpass,
+            "energy_added_kwh_calculated": (
+                self.energy_added_kwh_calculated
+            ),
+            "energy_source": self.energy_source,
+            "include_in_statistics": self.include_in_statistics,
+            "exclusion_reason": self.exclusion_reason,
+            "generator": GENERATOR,
+            "version": VERSION,
         }
 
     @classmethod
@@ -129,7 +159,7 @@ class Charge:
         """Create a charging session from stored data."""
         charge = cls()
 
-        charge.schema = data.get("schema", 1)
+        charge.schema = data.get("schema", CHARGE_SCHEMA_VERSION)
         charge.charge_id = data.get("charge_id")
         charge.created = data.get("created")
 
@@ -164,5 +194,35 @@ class Charge:
         charge.charging_site_connectors = data.get("charging_site_connectors", [])
         charge.charging_site_quality = data.get("charging_site_quality")
         charge.charging_site_distance_m = data.get("charging_site_distance_m")
+
+        charge.fordpass_last_charge = data.get("fordpass_last_charge")
+        charge.last_charge_baseline_signature = data.get(
+            "last_charge_baseline_signature"
+        )
+        charge.fordpass_pending = bool(
+            data.get("fordpass_pending", False)
+        )
+        charge.data_source = data.get("data_source", "local")
+
+        charge.energy_added_kwh = data.get("energy_added_kwh")
+        charge.energy_added_kwh_fordpass = data.get(
+            "energy_added_kwh_fordpass"
+        )
+        charge.energy_added_kwh_calculated = data.get(
+            "energy_added_kwh_calculated"
+        )
+        charge.energy_source = data.get(
+            "energy_source",
+            (
+                "fordpass"
+                if charge.energy_added_kwh_fordpass is not None
+                else "calculated"
+            ),
+        )
+
+        charge.include_in_statistics = bool(
+            data.get("include_in_statistics", True)
+        )
+        charge.exclusion_reason = data.get("exclusion_reason")
 
         return charge

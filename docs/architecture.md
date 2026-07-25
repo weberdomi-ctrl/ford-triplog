@@ -1,290 +1,375 @@
 # Architecture
 
-Ford Triplog is built around Home Assistant's recommended integration architecture.
+Ford Triplog is designed as a lightweight extension for the Home Assistant FordPass integration.
 
-The integration follows an event-driven design and uses a central coordinator to manage trip detection, charging detection, charging-site recognition, statistics, storage and sensor updates.
+The integration continuously monitors vehicle state changes and automatically creates a permanent local history of trips and charging sessions.
 
-<p align="center">
-  <img src="images/architecture.svg" width="1100" alt="Ford Triplog architecture">
-</p>
+All processing is performed locally inside Home Assistant.
 
-## Overview
+---
 
-FordPass provides the live vehicle entities used by Ford Triplog. The `FordTriplogCoordinator` monitors those entities and controls trip and charging-session processing.
+# Design Goals
 
-Ford Triplog 1.4 adds a local charging-site pipeline. Charging locations can be downloaded from OpenStreetMap or imported as a compatible JSON database. The selected country database is loaded into a geohash-based lookup index and used to enrich charging sessions with station details.
+Ford Triplog was designed with the following principles:
 
-The coordinator delegates work to these main areas:
+- Local-first
+- Privacy-first
+- Reliable recovery
+- Minimal configuration
+- Native Home Assistant integration
+- Low resource usage
+- Easy future expansion
 
-- trip detection and Smart Trip
-- charging-session detection
-- charging-site lookup and enrichment
-- reverse geocoding
-- statistics processing
-- local JSON storage
-- Home Assistant sensor updates
+---
 
-Completed records are written to local JSON storage. Active trips and charging sessions can be restored after a Home Assistant restart. Home Assistant sensors expose the prepared values to dashboards, automations and history.
+# High-Level Architecture
 
-## Core components
-
-### FordTriplogCoordinator
-
-The `FordTriplogCoordinator` is the central runtime component.
-
-It is responsible for:
-
-- monitoring FordPass entities
-- detecting trips
-- detecting charging sessions
-- waiting for stable vehicle data before finalization
-- resolving addresses through reverse geocoding
-- looking up nearby charging sites
-- enriching charging records with station metadata
-- linking charging sessions to preceding trips when plausible
-- updating statistics
-- writing recovery, history and cache files
-- refreshing Home Assistant sensors
-
-### FordPass vehicle data
-
-Ford Triplog uses configured Home Assistant entities for:
-
-- ignition
-- odometer
-- vehicle position
-- state of charge
-- charging status
-- optional state of health
-
-These entities remain the live source. Ford Triplog converts their state changes into persistent trip and charging history.
-
-### Trip detection
-
-Trip detection uses vehicle state changes and data from:
-
-- ignition
-- odometer
-- vehicle position
-- state of charge
-
-Smart Trip pauses a trip after ignition-off and waits for a configurable timeout. If driving resumes within that period, the same trip is continued instead of creating a new record.
-
-### Charging detection
-
-Charging sessions are recorded independently from trips.
-
-The coordinator records:
-
-- charging start and end
-- charging duration
-- start and end SOC
-- start and end coordinates
-- start and end address
-- estimated charged energy
-- linked trip ID when a preceding trip is close enough in time and distance
-- detected charging-site information
-
-### Charging-site database pipeline
-
-Charging-site databases are managed through the Home Assistant options flow.
-
-A database can be created or activated in two ways:
-
-1. Download charging locations for a selected country from OpenStreetMap.
-2. Import an existing compatible Ford Triplog charging-site JSON file.
-
-The OpenStreetMap pipeline performs these stages:
-
-```text
-OpenStreetMap / Overpass
-        ↓
-Raw charging-station elements
-        ↓
-Normalization
-        ↓
-Charging-site grouping
-        ↓
-Geohash index generation
-        ↓
-Country database
-        ↓
-Validation and activation
+```
+                     FordPass Integration
+                             │
+                             │
+        ┌────────────────────┴────────────────────┐
+        │                                         │
+        ▼                                         ▼
+ Vehicle Sensors                         Device Tracker
+        │                                         │
+        └────────────────────┬────────────────────┘
+                             │
+                             ▼
+                    ExplorerCoordinator
+                             │
+         ┌───────────────────┼───────────────────┐
+         │                   │                   │
+         ▼                   ▼                   ▼
+    Trip Manager      Charging Manager      Location Resolver
+         │                   │                   │
+         └───────────────┬───┴───────────────────┘
+                         ▼
+                   Storage Manager
+                         │
+             ┌───────────┴───────────┐
+             ▼                       ▼
+      JSON Storage            Home Assistant
+                                  Sensors
 ```
 
-The active database is stored locally under:
+---
 
-```text
-/config/.storage/ford_triplog/charging_sites/generated/
+# Main Components
+
+## ExplorerCoordinator
+
+The coordinator is responsible for collecting all required vehicle data.
+
+It monitors:
+
+- Vehicle position
+- Ignition
+- Odometer
+- State of Charge
+
+Whenever one of these values changes, the coordinator evaluates whether a trip or charging session has started, changed or finished.
+
+---
+
+## Trip Manager
+
+The Trip Manager controls the complete trip lifecycle.
+
+Responsibilities include:
+
+- Detect trip start
+- Detect trip end
+- Smart Trip handling
+- Distance calculation
+- Duration calculation
+- Average speed calculation
+- Energy estimation
+- Statistics update
+
+Each completed trip is written immediately to local storage.
+
+---
+
+## Charging Manager
+
+The Charging Manager detects charging sessions independently from trips.
+
+It records:
+
+- Start time
+- End time
+- Start SOC
+- End SOC
+- Charged energy
+- Charging duration
+
+Whenever possible, charging sessions are linked to the previous trip.
+
+---
+
+## Charging Location Resolver
+
+The Charging Location Resolver determines where a charging session occurred.
+
+The resolver uses the following priority:
+
+```
+FordPass
+
+↓
+
+User Charging Locations
+
+↓
+
+OpenStreetMap Database
+
+↓
+
+Reverse Geocoding
 ```
 
-Country files use names such as:
+This priority allows FordPass information to be used whenever available while still providing reliable fallback methods.
 
-```text
-charging_sites_ch.json
-charging_sites_de.json
-charging_sites_at.json
+---
+
+## Storage Manager
+
+The Storage Manager provides persistent local storage.
+
+Responsibilities:
+
+- Save trips
+- Save charging sessions
+- Save statistics
+- Save charging locations
+- Save configuration
+- Data migration
+- Recovery
+
+Storage is optimized for reliability and fast startup.
+
+---
+
+# Data Flow
+
+## Trip Recording
+
+```
+Ignition ON
+
+↓
+
+Vehicle starts moving
+
+↓
+
+Trip starts
+
+↓
+
+Vehicle position updates
+
+↓
+
+Distance calculated
+
+↓
+
+Statistics updated
+
+↓
+
+Trip finished
+
+↓
+
+Trip stored
 ```
 
-The configured country is selected in the integration options. The default selection can be derived from `hass.config.country`, while the user can change it manually.
+---
 
-### ChargingSiteLookup
+## Charging Recording
 
-`ChargingSiteLookup` loads the selected country database when the coordinator starts.
+```
+Charging detected
 
-For a charging session, the coordinator passes the current vehicle coordinates to the lookup component. The geohash index limits the search to nearby database cells. Candidate locations are then checked against the configured lookup radius.
+↓
 
-When a matching site is found, the charging record can be enriched with:
+Charging starts
 
-- site ID
-- name
-- brand
-- operator
-- network
-- charging power
-- capacity
-- connector types
-- data quality
-- distance from the vehicle position
+↓
 
-Charging-site lookup remains entirely local during normal operation. OpenStreetMap access is required only when creating a new country database.
+SOC monitored
 
-### Reverse geocoding
+↓
 
-Reverse geocoding converts vehicle coordinates into address data.
+Charging ends
 
-Address information and charging-site information are separate:
+↓
 
-- reverse geocoding provides the postal address
-- charging-site lookup provides station identity and technical metadata
+Energy calculated
 
-A charging session may therefore contain both a complete address and a named charging site such as an operator, network or station name.
+↓
 
-### History and statistics
+Charging location resolved
 
-`FordTriplogHistory` provides:
+↓
 
-- complete trip history access
-- complete charging-history access
-- recalculation of aggregate statistics
-- a compact shared snapshot for Home Assistant sensors
-
-The sensor snapshot reads only:
-
-- statistics
-- last trip
-- last charging session
-
-A short cache prevents all sensor entities from reading the same files repeatedly during a coordinated update.
-
-### Storage layer
-
-`FordTriplogStorage` stores data as local JSON files and uses atomic replacement for writes.
-
-Current structure:
-
-```text
-/config/.storage/ford_triplog/
-├── recovery/
-│   ├── current_trip.json
-│   └── current_charge.json
-├── trips/
-│   └── YYYY/MM/*.json
-├── charges/
-│   └── YYYY/MM/*.json
-├── cache/
-│   ├── last_trip.json
-│   ├── last_charge.json
-│   ├── statistics.json
-│   └── diagnostics.json
-└── charging_sites/
-    └── generated/
-        ├── charging_sites_ch.json
-        ├── charging_sites_de.json
-        └── ...
+Charging stored
 ```
 
-### Active session recovery
+---
 
-Active trips and charging sessions are saved in the recovery directory.
+# Charging Location Resolution
 
-After a Home Assistant restart, the coordinator restores:
+```
+FordPass Location
+        │
+        ▼
+Available?
 
-- the active trip
-- the active charging session
-- charging-site metadata already detected for the active session
+Yes ─────────► Use FordPass
 
-Completed history remains unaffected.
+No
 
-### Home Assistant sensors
+↓
 
-Sensors receive prepared data from the coordinator and history layer.
+User Charging Locations
 
-They expose:
+↓
 
-- latest trip information
-- latest charging information
-- detected charging-site name
-- charging-site details as attributes
-- driving and charging statistics
-- translated entity names
-- native Home Assistant units and device classes
+Match?
 
-The charging-site sensor uses the first available value in this order:
+Yes ─────────► Use User Location
 
-1. site name
-2. brand
-3. operator
-4. network
+No
 
-Additional station details remain available as entity attributes.
+↓
 
-## Runtime data flow
+OSM Database
 
-```text
-FordPass entities
-        ↓
-FordTriplogCoordinator
-        ├── Trip / Smart Trip
-        ├── Charging session
-        ├── Reverse geocoding
-        └── ChargingSiteLookup
-                  ↑
-        Local country database
-                  ↑
-        Import or OSM download pipeline
-        ↓
-Charge / Trip objects
-        ↓
-Storage + History + Statistics
-        ↓
-Home Assistant sensors
-        ↓
-Dashboard, automations and history
+↓
+
+Match?
+
+Yes ─────────► Use OSM
+
+No
+
+↓
+
+Reverse Geocoding
 ```
 
-## Design goals
+---
 
-Ford Triplog is designed around:
+# Local Storage
 
-- reliability
-- local data ownership
-- transparent JSON storage
-- low disk activity
-- non-blocking Home Assistant operation
-- native Home Assistant integration
-- country-specific charging-site databases
-- fast local geohash lookup
-- future extensibility
+Ford Triplog stores all information inside Home Assistant.
 
-## Privacy
+Typical data includes:
 
-Trip history, charging history, statistics and the active charging-site database remain inside Home Assistant.
+- Trips
+- Charging sessions
+- Statistics
+- Charging locations
+- OpenStreetMap databases
+- Configuration
 
-Ford Triplog does not upload recorded trips or charging sessions. OpenStreetMap is contacted only when the user explicitly downloads a new charging-site database.
+No external database is required.
 
-## Next step
+---
 
-See the troubleshooting guide:
+# Recovery
 
-[ Troubleshooting](troubleshooting.md)
+Recovery has been designed to survive unexpected situations such as:
+
+- Home Assistant restart
+- System reboot
+- Power failure
+- FordPass temporary outage
+
+When Home Assistant starts again, Ford Triplog restores its previous state and continues recording without losing historical data.
+
+---
+
+# Smart Trip
+
+Smart Trip prevents unnecessary fragmentation of journeys.
+
+Example:
+
+```
+Home
+
+↓
+
+Coffee Stop (2 min)
+
+↓
+
+Supermarket (4 min)
+
+↓
+
+Office
+```
+
+Instead of creating three trips, Smart Trip combines them into one continuous journey.
+
+The timeout is fully configurable.
+
+---
+
+# Performance
+
+Ford Triplog has been designed for minimal system load.
+
+Characteristics:
+
+- Event-driven architecture
+- No continuous polling
+- Lightweight JSON storage
+- Fast geohash-based charging lookup
+- Minimal memory usage
+- Native Home Assistant coordinator pattern
+
+Under normal operation, CPU and memory usage remain very low.
+
+---
+
+# Privacy
+
+All processing happens locally.
+
+Nothing is uploaded except the communication already performed by the FordPass integration itself.
+
+Ford Triplog never transmits:
+
+- Trip history
+- Charging history
+- Statistics
+- Charging locations
+- User-defined charging locations
+
+This makes the integration suitable for users who prefer complete local control over their driving history.
+
+---
+
+# Extensibility
+
+The architecture has been designed to support future features without major structural changes.
+
+Planned extensions include:
+
+- Automatic charging database switching
+- Charging cost calculation
+- Home electricity tariffs
+- Dashboard templates
+- Multi-vehicle support
+- Optional database backend
+- Extended statistics
+
+Because the core components are separated into dedicated managers, future functionality can be added with minimal impact on the existing architecture.
