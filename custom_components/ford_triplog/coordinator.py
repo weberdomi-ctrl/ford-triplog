@@ -27,6 +27,7 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .charging_location_resolver import ChargingLocationResolver
 from .charging_site_lookup import (
     ChargingSiteDatabaseError,
     ChargingSiteLookup,
@@ -65,6 +66,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.history = FordTriplogHistory(storage)
         self.config = config
         self.geo = geo
+
+        self.charging_location_resolver = ChargingLocationResolver(
+            hass,
+            config,
+        )
 
         self.charging_site_radius = int(
             config.get(
@@ -1294,6 +1300,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         charge_obj = self.current_charge
 
         try:
+            charge_obj = await self.charging_location_resolver.async_resolve(
+                charge_obj
+            )
             charge = charge_obj.to_dict()
 
             start_soc = float(charge.get("start_soc") or 0)
