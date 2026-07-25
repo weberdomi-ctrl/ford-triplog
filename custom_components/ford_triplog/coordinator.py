@@ -3,19 +3,20 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.4.3
+Version: 1.5.0
 """
 
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import math
 import shutil
 from pathlib import Path
 from typing import Any
 
-from homeassistant.core import Event, HomeAssistant
+from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -90,10 +91,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         # FordPass 'Last Charge' sensor (Version 1.5 preparation).
         self.last_charge_entity: str | None = config.get(CONF_LAST_CHARGE)
-        self.last_charge_state: str | None = None
+        self.last_charge_snapshot: dict[str, Any] | None = None
+        self.last_charge_signature: str | None = None
 
         # Last Charge stabilization infrastructure.
-        # Phase 2 only observes changes; it does not alter charge saving.
+        # Phase 2 observes the complete entity dataset (state + attributes).
+        # It deliberately does not alter charge finalization yet.
         self.waiting_for_last_charge = False
         self.last_charge_stable_time = int(
             config.get(
@@ -148,8 +151,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         if self.last_charge_entity:
             last_charge = self.hass.states.get(self.last_charge_entity)
-            self.last_charge_state = (
-                last_charge.state if last_charge else None
+            self.last_charge_snapshot = self._last_charge_to_snapshot(
+                last_charge
+            )
+            self.last_charge_signature = self._last_charge_to_signature(
+                last_charge
             )
 
     def _resolve_charging_site_database(self) -> Path:
@@ -370,9 +376,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         charging = charging_state == "IN_PROGRESS"
 
-        self._handle_last_charge_state_change(
-            self.vehicle_state.get(CONF_LAST_CHARGE)
-        )
+        if (
+            self.last_charge_entity
+            and event.data.get("entity_id") == self.last_charge_entity
+        ):
+            self._handle_last_charge_state_change(
+                event.data.get("new_state")
+            )
 
         # Trip handling
         if not self.last_ignition and ignition:
@@ -393,30 +403,79 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.async_set_updated_data(self.vehicle_state)
 
-    def _handle_last_charge_state_change(
-        self,
-        new_state: str | None,
-    ) -> None:
-        """Observe changes of the configured Last Charge sensor."""
+    @staticmethod
+    def _last_charge_to_snapshot(
+        state: State | None,
+    ) -> dict[str, Any] | None:
+        """Return the complete Last Charge dataset."""
 
-        if new_state == self.last_charge_state:
-            return
+        if state is None:
+            return None
 
-        previous_state = self.last_charge_state
-        self.last_charge_state = new_state
+        return {
+            "state": state.state,
+            "attributes": dict(state.attributes),
+        }
 
-        _LOGGER.debug(
-            "Last Charge sensor changed: %s -> %s",
-            previous_state,
-            new_state,
+    @classmethod
+    def _last_charge_to_signature(
+        cls,
+        state: State | None,
+    ) -> str:
+        """Return a stable comparison value for state and all attributes."""
+
+        snapshot = cls._last_charge_to_snapshot(state)
+
+        return json.dumps(
+            snapshot,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
         )
 
-        # Phase 2 prepares stabilization only. The flag remains False until
-        # Phase 3 starts waiting after a charging session has ended.
+    def _handle_last_charge_state_change(
+        self,
+        new_state: State | None,
+    ) -> None:
+        """Observe changes of the complete configured Last Charge entity."""
+
+        new_signature = self._last_charge_to_signature(new_state)
+
+        if new_signature == self.last_charge_signature:
+            return
+
+        previous_snapshot = self.last_charge_snapshot
+        self.last_charge_snapshot = self._last_charge_to_snapshot(new_state)
+        self.last_charge_signature = new_signature
+
+        _LOGGER.debug(
+            "Last Charge dataset changed: previous=%s current=%s",
+            previous_snapshot,
+            self.last_charge_snapshot,
+        )
+
         if not self.waiting_for_last_charge:
             return
 
         self._restart_last_charge_timer()
+
+    def _start_waiting_for_last_charge(self) -> None:
+        """Prepare stabilization after a charging session has ended."""
+
+        self.waiting_for_last_charge = True
+        self._restart_last_charge_timer()
+
+        _LOGGER.debug(
+            "Waiting for Last Charge dataset to remain stable"
+        )
+
+    def _stop_waiting_for_last_charge(self) -> None:
+        """Stop Last Charge stabilization and cancel its timer."""
+
+        self.waiting_for_last_charge = False
+        self._cancel_last_charge_timer()
+
+        _LOGGER.debug("Stopped waiting for Last Charge dataset")
 
     def _restart_last_charge_timer(self) -> None:
         """Restart the Last Charge stabilization timer."""
@@ -445,16 +504,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         _LOGGER.debug("Last Charge stabilization timer cancelled")
 
     def _last_charge_stabilized(self) -> None:
-        """Handle an unchanged Last Charge sensor after the timeout."""
+        """Handle an unchanged Last Charge dataset after the timeout."""
 
         self.last_charge_timer = None
 
         _LOGGER.debug(
-            "Last Charge sensor stable for %ss",
+            "Last Charge dataset stable for %ss",
             self.last_charge_stable_time,
         )
 
-        # Phase 2 deliberately performs no finalization here.
+        # Phase 2 deliberately performs no charge finalization here.
+        # Phase 3 will consume self.last_charge_snapshot.
 
     async def _wait_for_stable_vehicle_state(self):
         last = None
