@@ -1,167 +1,470 @@
 # Sensors
 
-Ford Triplog creates a comprehensive set of native Home Assistant sensors.
+Ford Triplog provides a comprehensive set of native Home Assistant sensors.
 
-All sensors are automatically updated whenever a trip or charging session is completed.
+The available entities are automatically created after the integration has been configured.
 
-The sensors can be used in:
+They provide real-time information, the latest recorded trip and charging session, as well as lifetime statistics.
 
-- Dashboards
-- Automations
+---
+
+# Overview
+
+Ford Triplog sensors are grouped into four categories:
+
+- Last Trip
+- Last Charging Session
 - Statistics
-- Energy dashboards
-- Notifications
-- Custom Lovelace cards
+- Status
+
+All sensors update automatically.
 
 ---
 
 # Last Trip
 
-These sensors always represent the **most recently completed trip**.
+The Last Trip sensors provide information about the most recently completed journey.
 
-| Sensor | Unit | Description |
-| :------ | :--: | :---------- |
-| Last Start Address | — | Human readable start location |
-| Last Destination | — | Human readable destination |
-| Last Start Time | — | Trip start timestamp |
-| Last End Time | — | Trip end timestamp |
-| Last Distance | km | Distance travelled |
-| Last Energy Used | kWh | Estimated energy consumption |
-| Last Consumption | kWh/100 km | Average consumption |
-| Last Average Speed | km/h | Average speed |
-| Last Driving Time | — | Formatted driving time |
-| Last Duration | s | Driving time in seconds |
-| Last Trip Start SOC | % | Battery level at departure |
-| Last Trip End SOC | % | Battery level at arrival |
-| Last Trip SOC Used | % | Battery percentage used |
+## Distance
+
+```
+Last Trip Distance
+```
+
+Displays the travelled distance.
+
+Example:
+
+```
+42.6 km
+```
+
+---
+
+## Duration
+
+```
+Last Trip Duration
+```
+
+Displays the total driving time.
+
+Example:
+
+```
+00:37:15
+```
+
+---
+
+## Average Speed
+
+```
+Last Trip Average Speed
+```
+
+Calculated from:
+
+```
+Distance / Driving Time
+```
+
+Example:
+
+```
+68 km/h
+```
+
+---
+
+## Start State of Charge
+
+```
+Last Trip Start SOC
+```
+
+Example:
+
+```
+82 %
+```
+
+---
+
+## End State of Charge
+
+```
+Last Trip End SOC
+```
+
+Example:
+
+```
+64 %
+```
+
+---
+
+## SOC Used
+
+```
+Last Trip SOC Used
+```
+
+Example:
+
+```
+18 %
+```
+
+---
+
+## Estimated Energy Consumption
+
+```
+Last Trip Energy
+```
+
+Estimated using the configured usable battery capacity.
+
+Example:
+
+```
+14.2 kWh
+```
+
+---
+
+## Average Consumption
+
+```
+Last Trip Consumption
+```
+
+Example:
+
+```
+16.8 kWh/100 km
+```
+
+---
+
+## Start Time
+
+```
+Last Trip Started
+```
+
+Timestamp of the trip start.
+
+---
+
+## End Time
+
+```
+Last Trip Finished
+```
+
+Timestamp of the completed trip.
 
 ---
 
 # Last Charging Session
 
-These sensors describe the most recently completed charging session.
+These sensors describe the latest completed charging session.
 
-| Sensor | Unit | Description |
-| :------ | :--: | :---------- |
-| Last Charging Location | — | Human readable charging location |
-| Last Charge Start Time | — | Charging start |
-| Last Charge End Time | — | Charging end |
-| Last Charge Duration | — | Formatted charging duration |
-| Last Charge Duration (Raw) | s | Charging time in seconds |
-| Last Charge Start SOC | % | Battery level before charging |
-| Last Charge End SOC | % | Battery level after charging |
-| Last Charge SOC Added | % | Added battery percentage |
-| Last Energy Added | kWh | Estimated charged energy |
+---
+
+## Charging Duration
+
+```
+Last Charging Duration
+```
+
+Example:
+
+```
+01:14:32
+```
+
+---
+
+## Start State of Charge
+
+```
+Last Charging Start SOC
+```
+
+---
+
+## End State of Charge
+
+```
+Last Charging End SOC
+```
+
+---
+
+## SOC Gained
+
+```
+Last Charging SOC Gained
+```
+
+Example:
+
+```
+42 %
+```
+
+---
+
+## Charged Energy
+
+```
+Last Charged Energy
+```
+
+Estimated using the configured usable battery capacity.
+
+Example:
+
+```
+33.2 kWh
+```
+
+---
+
+## Charging Location
+
+```
+Last Charging Location
+```
+
+Example:
+
+```
+IONITY Neuenkirch
+```
+
+---
+
+## Charging Provider
+
+```
+Last Charging Provider
+```
+
+Example:
+
+```
+IONITY
+```
+
+---
+
+## Charging Network
+
+```
+Last Charging Network
+```
+
+Example:
+
+```
+IONITY
+```
 
 ---
 
 # Lifetime Statistics
 
-These sensors summarize all recorded trips and charging sessions.
-
-| Sensor | Unit | Description |
-| :------ | :--: | :---------- |
-| Trip Count | trips | Total recorded trips |
-| Charge Count | charges | Total charging sessions |
-| Total Distance | km | Overall driven distance |
-| Total Energy Used | kWh | Total estimated energy consumption |
-| Total Driving Time | — | Formatted driving time |
-| Total Duration | s | Total driving time in seconds |
-| Average Consumption | kWh/100 km | Overall average consumption |
-| Average Trip Distance | km | Average distance per trip |
-| Average Trip Duration | — | Average formatted trip duration |
-| Average Trip Energy | kWh | Average energy per trip |
-| Average Trip Consumption | kWh/100 km | Average trip consumption |
-| Average Trip SOC Used | % | Average battery usage |
-| Average Charge Duration | — | Average formatted charging duration |
-| Average Charge Start SOC | % | Average SOC before charging |
-| Average Charge End SOC | % | Average SOC after charging |
-| Average Charge SOC Added | % | Average added battery percentage |
+Ford Triplog continuously updates lifetime statistics.
 
 ---
 
-# Using Sensors
+## Total Trips
 
-Every sensor behaves like a standard Home Assistant entity.
+```
+Total Trips
+```
 
-Examples:
-
-- Dashboard cards
-- Gauge cards
-- History graphs
-- Statistics cards
-- Tile cards
-
-No custom cards are required.
+Displays the total number of completed trips.
 
 ---
 
-# Typical Automations
+## Total Distance
 
-Ford Triplog sensors are ideal for automations.
+```
+Total Distance
+```
+
+Displays the cumulative distance.
+
+---
+
+## Total Driving Time
+
+```
+Total Driving Time
+```
+
+Displays the accumulated driving time.
+
+---
+
+## Total Energy Consumption
+
+```
+Total Energy Consumption
+```
+
+Estimated total energy used for driving.
+
+---
+
+## Average Consumption
+
+```
+Average Consumption
+```
+
+Average lifetime efficiency.
+
+Example:
+
+```
+17.4 kWh/100 km
+```
+
+---
+
+## Total Charging Sessions
+
+Displays the number of recorded charging sessions.
+
+---
+
+## Total Charged Energy
+
+Estimated total charged energy.
+
+---
+
+## Total Charging Time
+
+Accumulated charging duration.
+
+---
+
+# Status Sensors
+
+Additional sensors provide information about the integration itself.
 
 Examples include:
 
-- Notify after every completed trip
-- Notify when charging finishes
-- Weekly driving summary
-- Monthly charging report
-- Battery efficiency monitoring
+- Current Trip Active
+- Current Charging Active
+- Smart Trip Active
+- Charging Database Status
+- Charging Database Country
+
+The available sensors may vary depending on the configured options.
 
 ---
 
-# Estimated Values
+# Entity Naming
 
-Some values are calculated rather than measured directly.
+Ford Triplog follows Home Assistant naming conventions.
 
-These include:
+Example:
 
-- Energy Used
-- Energy Added
-- Consumption
+```
+sensor.ford_triplog_last_trip_distance
+```
 
-Calculations are based on:
-
-- Vehicle battery capacity
-- State of Charge difference
-- Driven distance
-
-This provides realistic estimates without requiring charger data.
+This makes entities easy to identify in dashboards, automations and templates.
 
 ---
 
-# Translation
+# Updating
 
-All sensors use Home Assistant's native translation system.
+All sensors update automatically.
 
-Sensor names automatically appear in the selected Home Assistant language.
+Typical update events include:
 
-Currently available translations include:
+- Vehicle movement
+- Trip completion
+- Charging completion
+- Configuration changes
+- Home Assistant restart
 
-- English
-- German
-
-Additional translations can easily be added in future releases.
-
----
-
-# Performance
-
-Ford Triplog is optimized for long-term operation.
-
-Sensor updates use:
-
-- Shared statistics cache
-- Optimized JSON access
-- Reduced disk I/O
-- Native Coordinator updates
-
-Even installations containing thousands of trips remain responsive.
+No manual refresh is required.
 
 ---
 
-# Next Step
+# Dashboard Usage
 
-Learn how to build dashboards using Ford Triplog sensors.
+The sensors are designed to work directly with native Home Assistant dashboard cards.
 
-➡ **[Dashboard Examples](dashboard.md)**
+Typical cards include:
+
+- Entity Card
+- Tile Card
+- Statistics Card
+- History Graph
+- Gauge
+- Markdown Card
+
+Example dashboards are available in:
+
+```
+docs/dashboard.md
+```
+
+---
+
+# Automations
+
+Every sensor can be used in Home Assistant automations.
+
+Examples:
+
+- Notify when charging has finished.
+- Notify when arriving home.
+- Display the last trip on a dashboard.
+- Track monthly driving distance.
+- Calculate energy costs (future versions).
+
+Example automations are provided in:
+
+```
+docs/automation_examples.md
+```
+
+---
+
+# Availability
+
+Sensors remain available after:
+
+- Home Assistant restart
+- Integration restart
+- HACS update
+
+Previously recorded trips and charging sessions remain accessible because all data is stored locally.
+
+---
+
+# Future Sensors
+
+Future releases will introduce additional entities, including:
+
+- Charging costs
+- Home charging costs
+- Monthly statistics
+- Yearly statistics
+- Charging efficiency
+- Vehicle usage summaries
+
+The existing entity names will remain stable whenever possible to avoid breaking dashboards and automations.
