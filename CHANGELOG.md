@@ -1,164 +1,206 @@
-# Changelog
+# CHANGELOG
 
-## 1.2.3
+All notable changes to Ford Triplog are documented in this file.
 
+The project follows the principles of [Semantic Versioning](https://semver.org/).
 
+---
 
-### Fixed
+# [1.5.0] - Initial Public Release
 
+## Added
 
+### Smart Trip
 
-\- Fixed timezone handling for trip and charging timestamps.
+- Added Smart Trip functionality.
+- Automatically merges short stops into a single journey.
+- Configurable timeout.
+- Prevents unnecessary trip splitting.
 
-\- All timestamps now use Home Assistant's timezone-aware datetime handling.
+### Trip Recording
 
-\- Improved consistency of trip and charge data.
+- Automatic trip detection.
+- Improved trip start detection based on actual vehicle movement.
+- Automatic trip completion.
+- Trip duration calculation.
+- Distance calculation.
+- Average speed calculation.
+- Energy consumption estimation.
+- Lifetime trip statistics.
 
-\- Fixed incorrect UTC display for "Last Charge" timestamps.
+### Charging Sessions
 
-\- Fixed timezone handling for trips and charging sessions.
+- Automatic charging session detection.
+- Charging history.
+- Estimated charged energy.
+- Charging duration.
+- Charging statistics.
+- Trip and charging session linking.
 
-\- Improved timestamp consistency using Home Assistant timezone-aware datetimes.
+### Charging Location Resolver
 
-\- Fixed Smart Trip end time calculation to prevent the configured timeout from being added to trip duration.
+Implemented a prioritized charging location resolver.
 
-\- Improved consistency of trip and charging history records.
+Priority:
 
+1. FordPass charging location
+2. User charging locations
+3. OpenStreetMap charging database
+4. Reverse geocoding
 
+### User Charging Locations
 
-### New
+Added support for manually managed charging locations.
 
+Features:
 
+- Home charging locations
+- Work charging locations
+- Public charging locations
+- Custom names
+- Configurable matching radius
+- Manual editing
+- Manual deletion
 
-#### Charging
+### OpenStreetMap Charging Database
 
-* Added complete charging session recording
-* Automatic charging start detection
-* Automatic charging end detection
-* Charging recovery after Home Assistant restart
-* Local charging history
-* Last charging Cache
-* HACS Integration
+Added local charging database support.
 
-#### 
+Features:
 
-#### Charging Sensors
+- Country-specific databases
+- Offline operation
+- Fast local lookup
+- Brand recognition
+- Operator recognition
+- Network recognition
+- Connector information
+- Charging power
+- Charging point count
 
-* Last Charge Time
-* Last Charge End Time
-* Last Charge Duration
-* Last Charge Address
-* Last Charge Start SOC
-* Last Charge End SOC
-* Last Charge SOC Added
+### Statistics
 
-#### 
+Added cumulative statistics including:
 
-#### Trip Sensors
+- Total trips
+- Total distance
+- Total charged energy
+- Total charging sessions
+- Average consumption
+- Lifetime statistics
 
-* Last Trip Start SOC
-* Last Trip End SOC
-* Last Trip SOC Used
+### Sensors
 
-#### 
+Added Home Assistant entities for:
 
-#### Statistics
+- Last trip
+- Last charging session
+- Charging statistics
+- Trip statistics
+- Energy statistics
+- Charging locations
+- Runtime status
 
-Added charging statistics:
+### Storage
 
-* Charge Count
-* Average Charge Duration
-* Average Charge Start SOC
-* Average Charge End SOC
-* Average Charge SOC Added
+Implemented persistent local storage.
 
-Added trip statistics:
+Features:
 
-* Average Trip Distance
-* Average Trip Duration
-* Average Trip Energy Used
-* Average Trip Consumption
-* Average Trip SOC Used
+- JSON storage
+- Automatic migration
+- Automatic recovery
+- Backup compatible
+- Human-readable files
 
-### 
+### Configuration
 
-### Changed
+Added complete configuration flow including:
 
-* Improved history handling
-* Improved statistics engine
-* Improved recovery handling
-* Improved local storage
-* Cleaner sensor naming
-* Improved address formatting
+- Vehicle Tracker selection
+- Ignition entity selection
+- Odometer selection
+- State of Charge selection
+- Smart Trip configuration
+- Battery capacity configuration
+- Charging database selection
 
-### 
+### Documentation
 
-### Fixed
+Added comprehensive project documentation.
 
-* Various recovery issues
-* Storage consistency improvements
-* Sensor update improvements
-* Statistics calculation improvements
+Included:
 
-## 
+- Installation Guide
+- Configuration Guide
+- Architecture
+- Smart Trip
+- Charging Sessions
+- Charging Locations
+- Charging Database
+- Sensors
+- Dashboard Examples
+- Storage
+- Privacy
+- Troubleshooting
+- Automation Examples
+- FAQ
+- Roadmap
 
-## Version 1.2.0 beta
+### Home Assistant
 
-### 
+- Native Home Assistant integration
+- HACS support
+- Config Flow
+- Options Flow
+- Diagnostics support
+- Translations
+- Device information
 
-### Added
+---
 
-* New sensors:
-* Last Trip Start Time
-* Last Trip End Time
-* Last Trip Date
-* Average Trip Distance
-* Average Trip Duration
-* Longest Trip
-* Shortest Trip
-* Human-readable trip timestamps ("Heute", "Gestern", Datum/Uhrzeit).
+## Changed
 
-### 
+- Improved trip detection accuracy.
+- Improved charging detection.
+- Improved charging location matching.
+- Improved configuration interface.
+- Improved storage reliability.
+- Improved startup recovery.
+- Improved Home Assistant entity naming.
+- Improved translation coverage.
 
-### Changed
+---
 
-* Improved local time handling using Home Assistant's timezone utilities.
-* Trip timestamps are now correctly converted from UTC to the configured Home Assistant timezone.
-* Internal date/time formatting moved to a shared utility function.
+## Performance
 
-### 
+- Optimized startup time.
+- Optimized storage access.
+- Optimized charging database lookup.
+- Reduced unnecessary recalculations.
+- Improved memory usage.
 
-### Fixed
+---
 
-* Fixed incorrect UTC display for trip start and end times.
-* Improved consistency of date and time formatting across all trip sensors.
+## Privacy
 
-## 
+- Local-first architecture.
+- No cloud backend.
+- Local JSON storage.
+- Offline charging database lookup.
+- User-controlled backups.
 
-## 1.1.0
+---
 
-### Added
+## Known Limitations
 
-* Config Flow
-* Options Flow
-* Smart Trip
-* Smart Trip timeout
-* Home Assistant Brands Proxy API
-* German and English translations
+- One active OpenStreetMap charging database at a time.
+- Charging costs are not yet calculated.
+- JSON storage is used as the default backend.
+- Multi-vehicle support is not yet available.
 
-### 
+---
 
-### Improved
+## Future
 
-* Modernized integration architecture
-* Automatic reload after option changes
-* Improved configuration handling
-
-### 
-
-### Fixed
-
-* Config Flow issues
-* Options handling
-* Home Assistant 2026.6 compatibility
-
+See `ROADMAP.md` for planned features and future development.
