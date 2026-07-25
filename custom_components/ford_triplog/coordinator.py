@@ -121,6 +121,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # while another handler is awaiting Home Assistant or file I/O.
         self._charge_lock = asyncio.Lock()
 
+        # Defensive guard against finalizing the same charging session twice.
+        self._charge_finalizing = False
+
 
         # Smart Trip
         self.trip_pause_time: float | None = None
@@ -347,6 +350,210 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_charge.charging_site_id,
             self.current_charge.charging_site_distance_m or 0.0,
         )
+
+    def _resolve_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Resolve coordinates against configured Home Assistant zones."""
+
+        try:
+            location_latitude = float(latitude)
+            location_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone: tuple[float, str] | None = None
+
+        for zone_state in self.hass.states.async_all("zone"):
+            zone_latitude = zone_state.attributes.get("latitude")
+            zone_longitude = zone_state.attributes.get("longitude")
+            zone_radius = zone_state.attributes.get("radius", 100)
+
+            try:
+                distance = self._distance_meters(
+                    location_latitude,
+                    location_longitude,
+                    float(zone_latitude),
+                    float(zone_longitude),
+                )
+                radius = float(zone_radius)
+            except (TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            zone_name = zone_state.attributes.get(
+                "friendly_name",
+                zone_state.name,
+            )
+
+            if matching_zone is None or distance < matching_zone[0]:
+                matching_zone = (distance, str(zone_name))
+
+        return matching_zone[1] if matching_zone else None
+
+    @staticmethod
+    def _fordpass_location_from_snapshot(
+        snapshot: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Return the FordPass location dictionary when available."""
+
+        if not isinstance(snapshot, dict):
+            return {}
+
+        attributes = snapshot.get("attributes")
+        if not isinstance(attributes, dict):
+            return {}
+
+        location = attributes.get("location")
+        return location if isinstance(location, dict) else {}
+
+    @staticmethod
+    def _charging_site_display_name(
+        charging_site: dict[str, Any] | None,
+    ) -> str | None:
+        """Return the best readable name from an OSM charging-site record."""
+
+        if not isinstance(charging_site, dict):
+            return None
+
+        return (
+            charging_site.get("name")
+            or charging_site.get("brand")
+            or charging_site.get("operator")
+            or charging_site.get("network")
+        )
+
+    def _current_charge_site_data(self) -> dict[str, Any] | None:
+        """Return charging-site fields from the active charging session."""
+
+        if self.current_charge is None:
+            return None
+
+        return {
+            "site_id": self.current_charge.charging_site_id,
+            "name": self.current_charge.charging_site_name,
+            "brand": self.current_charge.charging_site_brand,
+            "operator": self.current_charge.charging_site_operator,
+            "network": self.current_charge.charging_site_network,
+            "power_kw": list(self.current_charge.charging_site_power_kw),
+            "capacity": list(self.current_charge.charging_site_capacity),
+            "connectors": list(self.current_charge.charging_site_connectors),
+            "quality": self.current_charge.charging_site_quality,
+            "distance_m": self.current_charge.charging_site_distance_m,
+        }
+
+    async def _resolve_location(
+        self,
+        state: dict[str, Any],
+        *,
+        charging_site: dict[str, Any] | None = None,
+        fordpass_snapshot: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """Resolve a location using one shared priority order.
+
+        Priority:
+        1. Home Assistant zone
+        2. FordPass location name
+        3. OSM charging-site name
+        4. Reverse-geocoded address
+        5. Explicit missing-GPS fallback
+        """
+
+        fordpass_location = self._fordpass_location_from_snapshot(
+            fordpass_snapshot
+        )
+
+        latitude = (
+            fordpass_location.get("latitude")
+            if fordpass_location.get("latitude") is not None
+            else state.get("latitude")
+        )
+        longitude = (
+            fordpass_location.get("longitude")
+            if fordpass_location.get("longitude") is not None
+            else state.get("longitude")
+        )
+
+        zone_name = self._resolve_zone_name(latitude, longitude)
+        fordpass_name = fordpass_location.get("name")
+        site_name = self._charging_site_display_name(charging_site)
+
+        address: dict[str, Any] = {}
+
+        if latitude is not None and longitude is not None:
+            reverse_address = await self.geo.reverse_geocode(
+                latitude,
+                longitude,
+            )
+            if isinstance(reverse_address, dict):
+                address.update(reverse_address)
+            elif isinstance(reverse_address, str) and reverse_address:
+                address["display"] = reverse_address
+
+        address_text = (
+            address.get("display_name")
+            or address.get("display")
+        )
+
+        if not address_text:
+            road = address.get("road")
+            house_number = address.get("house_number")
+            postcode = address.get("postcode")
+            city = address.get("city")
+
+            street = " ".join(
+                str(part)
+                for part in (road, house_number)
+                if part
+            )
+            locality = " ".join(
+                str(part)
+                for part in (postcode, city)
+                if part
+            )
+
+            if street and locality:
+                address_text = f"{street}, {locality}"
+            else:
+                address_text = street or locality or None
+
+        display_name = (
+            zone_name
+            or fordpass_name
+            or site_name
+            or address_text
+            or "Keine GPS-Daten verfügbar"
+        )
+
+        source = (
+            "zone"
+            if zone_name
+            else "fordpass_name"
+            if fordpass_name
+            else "osm"
+            if site_name
+            else "address"
+            if address_text
+            else "unavailable"
+        )
+
+        address.update(
+            {
+                "display_name": display_name,
+                "source": source,
+                "zone": zone_name,
+                "fordpass_name": fordpass_name,
+                "charging_site": site_name,
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+        )
+
+        return address
 
     def _read_vehicle_state(self):
         data = {}
@@ -716,6 +923,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_charge.fordpass_pending = False
 
             state = self._read_vehicle_state()
+            resolved_location = await self._resolve_location(
+                state,
+                charging_site=self._current_charge_site_data(),
+                fordpass_snapshot=self.current_charge.fordpass_last_charge,
+            )
+
+            # FordPass can provide a useful charging location only after the
+            # session has ended. Apply the final resolved value consistently.
+            self.current_charge.start_address = resolved_location
+            self.current_charge.end_address = resolved_location
 
             await self.storage.save_current_charge(
                 self.current_charge.to_dict()
@@ -943,7 +1160,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
 
         state = self._read_vehicle_state()
-        addr = await self._get_address(state)
+        addr = await self._resolve_location(state)
 
         self.current_trip = Trip()
         self.current_trip.start(
@@ -1022,11 +1239,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
 
             state = self._read_vehicle_state()
-            address = await self._get_address(state)
 
             self.current_charge = Charge()
             self.current_charge.last_charge_baseline_signature = (
                 self.last_charge_signature
+            )
+
+            charging_site = await self._get_charging_site(state)
+            self._apply_charging_site(charging_site)
+
+            address = await self._resolve_location(
+                state,
+                charging_site=charging_site,
             )
 
             self.current_charge.start(
@@ -1035,9 +1259,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 longitude=state.get("longitude"),
                 address=address,
             )
-
-            charging_site = await self._get_charging_site(state)
-            self._apply_charging_site(charging_site)
 
             await self._try_link_charge_to_trip(state)
 
@@ -1080,7 +1301,22 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 )
                 return
 
-            address = await self._get_address(state)
+            # Retry charging-site detection at the end of the session if the
+            # start coordinates did not produce a match.
+            charging_site = self._current_charge_site_data()
+
+            if not charge.charging_site_id:
+                detected_site = await self._get_charging_site(state)
+                self._apply_charging_site(detected_site)
+                charging_site = (
+                    detected_site
+                    or self._current_charge_site_data()
+                )
+
+            address = await self._resolve_location(
+                state,
+                charging_site=charging_site,
+            )
 
             charge.finish(
                 soc=state.get("soc"),
@@ -1088,12 +1324,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 longitude=state.get("longitude"),
                 address=address,
             )
-
-            # Retry charging-site detection at the end of the session if the
-            # start coordinates did not produce a match.
-            if not charge.charging_site_id:
-                charging_site = await self._get_charging_site(state)
-                self._apply_charging_site(charging_site)
 
             if self.last_charge_entity:
                 charge.fordpass_pending = True
@@ -1154,61 +1384,81 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
 
     async def _finalize_charge(self, state):
-        """Finalize and save charging session."""
+        """Finalize and save charging session exactly once."""
 
-        if not self.current_charge:
+        if self.current_charge is None:
             return
 
-        charge = self.current_charge.to_dict()
+        if self._charge_finalizing:
+            _LOGGER.debug(
+                "Charging finalization already in progress; duplicate request ignored"
+            )
+            return
 
-        start_soc = float(charge.get("start_soc") or 0)
-        end_soc = float(charge.get("end_soc") or 0)
-        soc_delta = max(0, end_soc - start_soc)
+        self._charge_finalizing = True
+        charge_obj = self.current_charge
 
-        energy_calculated = round(
-            (soc_delta / 100) * self.battery_capacity,
-            2,
-        )
+        try:
+            charge = charge_obj.to_dict()
 
-        energy_fordpass = None
-        fordpass_snapshot = charge.get("fordpass_last_charge")
+            start_soc = float(charge.get("start_soc") or 0)
+            end_soc = float(charge.get("end_soc") or 0)
+            soc_delta = max(0, end_soc - start_soc)
 
-        if isinstance(fordpass_snapshot, dict):
-            attributes = fordpass_snapshot.get("attributes")
+            energy_calculated = round(
+                (soc_delta / 100) * self.battery_capacity,
+                2,
+            )
 
-            if isinstance(attributes, dict):
-                raw_energy = attributes.get("energyConsumed")
+            energy_fordpass = None
+            fordpass_snapshot = charge.get("fordpass_last_charge")
 
-                try:
-                    if raw_energy is not None:
-                        energy_fordpass = round(float(raw_energy), 2)
-                except (TypeError, ValueError):
-                    _LOGGER.debug(
-                        "FordPass energyConsumed is not numeric: %r",
-                        raw_energy,
-                    )
+            if isinstance(fordpass_snapshot, dict):
+                attributes = fordpass_snapshot.get("attributes")
 
-        charge["energy_added_kwh_calculated"] = energy_calculated
-        charge["energy_added_kwh_fordpass"] = energy_fordpass
+                if isinstance(attributes, dict):
+                    raw_energy = attributes.get("energyConsumed")
 
-        if energy_fordpass is not None:
-            charge["energy_added_kwh"] = energy_fordpass
-            charge["energy_source"] = "fordpass"
-        else:
+                    try:
+                        if raw_energy is not None:
+                            energy_fordpass = round(float(raw_energy), 2)
+                    except (TypeError, ValueError):
+                        _LOGGER.debug(
+                            "FordPass energyConsumed is not numeric: %r",
+                            raw_energy,
+                        )
+
+            charge["energy_added_kwh_calculated"] = energy_calculated
+            charge["energy_added_kwh_fordpass"] = energy_fordpass
+
+            # FordPass energyConsumed is strongly rounded and may differ
+            # from the value shown in the FordPass app.
             charge["energy_added_kwh"] = energy_calculated
             charge["energy_source"] = "calculated"
 
-        await self.storage.save_charge(charge)
-        await self.storage.save_last_charge(charge)
-        await self.history.refresh_statistics()
+            archive_saved = await self.storage.save_charge(charge)
+            cache_saved = await self.storage.save_last_charge(charge)
 
-        await self.storage.delete_current_charge()
+            if not archive_saved or not cache_saved:
+                _LOGGER.error(
+                    "Charging session %s could not be saved completely; "
+                    "recovery data retained",
+                    charge.get("charge_id"),
+                )
+                return
 
-        self.current_charge = None
+            await self.history.refresh_statistics()
 
-        self.async_set_updated_data(state)
+            if self.current_charge is charge_obj:
+                await self.storage.delete_current_charge()
+                self.current_charge = None
 
-        _LOGGER.info("Charging session saved successfully")
+            self.async_set_updated_data(state)
+
+            _LOGGER.info("Charging session saved successfully")
+
+        finally:
+            self._charge_finalizing = False
 
 
     async def _smart_trip_timeout(self):
@@ -1236,7 +1486,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             soc=state.get("soc"),
             latitude=state.get("latitude"),
             longitude=state.get("longitude"),
-            address=await self._get_address(state),
+            address=await self._resolve_location(state),
             end_time=self.trip_end_time,
         )
 

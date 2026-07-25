@@ -667,17 +667,24 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
         address = last_charge.get("start_address")
 
         if isinstance(address, dict):
-            road = address.get("road", "")
-            house = address.get("house_number", "")
-            postcode = address.get("postcode", "")
-            city = address.get("city", "")
+            self._value = address.get("display_name")
 
-            street = f"{road} {house}".strip()
+            if not self._value:
+                road = address.get("road", "")
+                house = address.get("house_number", "")
+                postcode = address.get("postcode", "")
+                city = address.get("city", "")
 
-            if postcode or city:
-                self._value = f"{street}, {postcode} {city}".strip(", ")
+                street = f"{road} {house}".strip()
+                locality = f"{postcode} {city}".strip()
+
+                self._value = (
+                    f"{street}, {locality}".strip(", ")
+                    if street or locality
+                    else "Keine GPS-Daten verfügbar"
+                )
         else:
-            self._value = address
+            self._value = address or "Keine GPS-Daten verfügbar"
     
 class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
     """Resolved charging location of the last charging session."""
@@ -872,19 +879,31 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
             fordpass_location,
         )
 
+        stored_location = last_charge.get("start_address")
+        stored_display_name = (
+            stored_location.get("display_name")
+            if isinstance(stored_location, dict)
+            else None
+        )
+
         self._value = (
-            zone_name
+            stored_display_name
+            or zone_name
             or fordpass_name
             or site_name
             or brand
             or operator
             or network
             or address
+            or "Keine GPS-Daten verfügbar"
         )
 
         self._attributes = {
             "resolved_from": (
-                "zone"
+                stored_location.get("source")
+                if isinstance(stored_location, dict)
+                and stored_location.get("source")
+                else "zone"
                 if zone_name
                 else "fordpass_name"
                 if fordpass_name
