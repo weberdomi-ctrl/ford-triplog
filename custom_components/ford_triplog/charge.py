@@ -56,6 +56,7 @@ class Charge:
         # FordPass Last Charge data is initially retained as a complete raw
         # snapshot. Field-by-field normalization follows in the next phase.
         self.fordpass_last_charge: dict[str, Any] | None = None
+        self.last_charge_baseline_signature: str | None = None
         self.fordpass_pending: bool = False
         self.data_source: str = "local"
         self.include_in_statistics: bool = True
@@ -129,6 +130,9 @@ class Charge:
             "charging_site_quality": self.charging_site_quality,
             "charging_site_distance_m": self.charging_site_distance_m,
             "fordpass_last_charge": self.fordpass_last_charge,
+            "last_charge_baseline_signature": (
+                self.last_charge_baseline_signature
+            ),
             "fordpass_pending": self.fordpass_pending,
             "data_source": self.data_source,
             "include_in_statistics": self.include_in_statistics,
@@ -179,6 +183,9 @@ class Charge:
         charge.charging_site_distance_m = data.get("charging_site_distance_m")
 
         charge.fordpass_last_charge = data.get("fordpass_last_charge")
+        charge.last_charge_baseline_signature = data.get(
+            "last_charge_baseline_signature"
+        )
         charge.fordpass_pending = bool(
             data.get("fordpass_pending", False)
         )

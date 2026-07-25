@@ -13,6 +13,7 @@ import json
 import logging
 import math
 import shutil
+from datetime import timedelta
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +34,7 @@ from .charging_site_lookup import (
 
 from .const import (
     CONF_LAST_CHARGE,
+    DEFAULT_CHARGE_MATCH_TIMEOUT,
     DEFAULT_LAST_CHARGE_STABLE_TIME,
     SMART_TRIP_TIMEOUT,
 )
@@ -101,10 +103,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charge_stable_time = int(
             config.get(
                 "last_charge_stable_time",
-                DEFAULT_LAST_CHARGE_STABLE_TIME,
+                DEFAULT_CHARGE_MATCH_TIMEOUT,
+    DEFAULT_LAST_CHARGE_STABLE_TIME,
             )
         )
         self.last_charge_timer: asyncio.TimerHandle | None = None
+        self.last_charge_match_timeout = int(
+            config.get(
+                "charge_match_timeout",
+                DEFAULT_CHARGE_MATCH_TIMEOUT,
+            )
+        )
+        self.last_charge_timeout_timer: asyncio.TimerHandle | None = None
 
         self.remove_listener = None
 
@@ -457,23 +467,49 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not self.waiting_for_last_charge:
             return
 
+        if self.current_charge is None:
+            return
+
+        if (
+            new_signature
+            == self.current_charge.last_charge_baseline_signature
+        ):
+            return
+
         self._restart_last_charge_timer()
 
     def _start_waiting_for_last_charge(self) -> None:
-        """Prepare stabilization after a charging session has ended."""
+        """Wait for a new and matching FordPass Last Charge dataset."""
 
         self.waiting_for_last_charge = True
-        self._restart_last_charge_timer()
+        self._cancel_last_charge_timer()
+        self._cancel_last_charge_timeout_timer()
+
+        self.last_charge_timeout_timer = self.hass.loop.call_later(
+            self.last_charge_match_timeout,
+            self._last_charge_match_timed_out,
+        )
+
+        # A dataset that was already present when charging started is stale.
+        # Only start stabilization if FordPass has produced a new signature.
+        if (
+            self.current_charge is not None
+            and self.last_charge_signature
+            != self.current_charge.last_charge_baseline_signature
+        ):
+            self._restart_last_charge_timer()
 
         _LOGGER.debug(
-            "Waiting for Last Charge dataset to remain stable"
+            "Waiting up to %ss for a new matching Last Charge dataset",
+            self.last_charge_match_timeout,
         )
 
     def _stop_waiting_for_last_charge(self) -> None:
-        """Stop Last Charge stabilization and cancel its timer."""
+        """Stop Last Charge matching and cancel all associated timers."""
 
         self.waiting_for_last_charge = False
         self._cancel_last_charge_timer()
+        self._cancel_last_charge_timeout_timer()
 
         _LOGGER.debug("Stopped waiting for Last Charge dataset")
 
@@ -503,8 +539,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         _LOGGER.debug("Last Charge stabilization timer cancelled")
 
+    def _cancel_last_charge_timeout_timer(self) -> None:
+        """Cancel the overall FordPass matching timeout."""
+
+        if self.last_charge_timeout_timer is None:
+            return
+
+        self.last_charge_timeout_timer.cancel()
+        self.last_charge_timeout_timer = None
+
     def _last_charge_stabilized(self) -> None:
-        """Schedule finalization after the Last Charge dataset is stable."""
+        """Schedule validation after the Last Charge dataset is stable."""
 
         self.last_charge_timer = None
 
@@ -517,8 +562,130 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self._async_last_charge_stabilized()
         )
 
+    def _last_charge_match_timed_out(self) -> None:
+        """Schedule local finalization after the overall timeout."""
+
+        self.last_charge_timeout_timer = None
+        self.hass.async_create_task(
+            self._async_last_charge_match_timed_out()
+        )
+
+    @staticmethod
+    def _snapshot_attribute(
+        snapshot: dict[str, Any] | None,
+        *path: str,
+    ) -> Any:
+        """Read a nested attribute from a Last Charge snapshot."""
+
+        value: Any = (
+            snapshot.get("attributes", {})
+            if snapshot is not None
+            else {}
+        )
+
+        for key in path:
+            if not isinstance(value, dict):
+                return None
+            value = value.get(key)
+
+        return value
+
+    @staticmethod
+    def _parse_fordpass_datetime(value: Any):
+        """Parse a FordPass ISO timestamp into a timezone-aware datetime."""
+
+        if not isinstance(value, str) or not value:
+            return None
+
+        parsed = dt_util.parse_datetime(value)
+        if parsed is None:
+            return None
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
+
+        return parsed
+
+    def _last_charge_matches_current_charge(
+        self,
+        snapshot: dict[str, Any] | None,
+    ) -> bool:
+        """Return whether the FordPass dataset belongs to the local charge."""
+
+        charge = self.current_charge
+        if charge is None or snapshot is None:
+            return False
+
+        if (
+            self.last_charge_signature
+            == charge.last_charge_baseline_signature
+        ):
+            return False
+
+        local_start = self._parse_fordpass_datetime(charge.start_time)
+        local_end = self._parse_fordpass_datetime(charge.end_time)
+
+        if local_start is None or local_end is None:
+            return True
+
+        ford_start = self._parse_fordpass_datetime(
+            self._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "begin",
+            )
+            or self._snapshot_attribute(
+                snapshot,
+                "plugDetails",
+                "plugInTime",
+            )
+        )
+        ford_end = self._parse_fordpass_datetime(
+            self._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "end",
+            )
+            or self._snapshot_attribute(
+                snapshot,
+                "plugDetails",
+                "plugOutTime",
+            )
+            or self._snapshot_attribute(snapshot, "timeStamp")
+        )
+
+        # If FordPass does not expose usable times, the new signature remains
+        # the fallback freshness check.
+        if ford_start is None and ford_end is None:
+            return True
+
+        tolerance_seconds = 900
+        tolerance = timedelta(seconds=tolerance_seconds)
+
+        if ford_start is None:
+            ford_start = ford_end
+        if ford_end is None:
+            ford_end = ford_start
+
+        matches = (
+            ford_start <= local_end + tolerance
+            and ford_end >= local_start - tolerance
+        )
+
+        if not matches:
+            _LOGGER.debug(
+                "Ignoring non-matching Last Charge dataset: "
+                "local=%s..%s fordpass=%s..%s",
+                local_start,
+                local_end,
+                ford_start,
+                ford_end,
+            )
+
+        return matches
+
     async def _async_last_charge_stabilized(self) -> None:
-        """Apply the stable FordPass dataset and finalize the session."""
+        """Validate and apply a stable FordPass Last Charge dataset."""
 
         async with self._charge_lock:
             if not self.waiting_for_last_charge:
@@ -526,6 +693,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             if self.current_charge is None:
                 self._stop_waiting_for_last_charge()
+                return
+
+            if not self._last_charge_matches_current_charge(
+                self.last_charge_snapshot
+            ):
+                # Keep waiting. A later FordPass update can still match.
                 return
 
             self.current_charge.fordpass_last_charge = (
@@ -544,6 +717,38 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             self._stop_waiting_for_last_charge()
             await self._finalize_charge(state)
+
+    async def _async_last_charge_match_timed_out(self) -> None:
+        """Finalize with local data when FordPass provides no matching record."""
+
+        async with self._charge_lock:
+            if not self.waiting_for_last_charge:
+                return
+
+            if self.current_charge is None:
+                self._stop_waiting_for_last_charge()
+                return
+
+            charge_id = self.current_charge.charge_id
+            self.current_charge.fordpass_last_charge = None
+            self.current_charge.fordpass_pending = False
+            self.current_charge.data_source = "local"
+
+            state = self._read_vehicle_state()
+
+            await self.storage.save_current_charge(
+                self.current_charge.to_dict()
+            )
+
+            self._stop_waiting_for_last_charge()
+            await self._finalize_charge(state)
+
+            _LOGGER.info(
+                "No matching FordPass Last Charge data received within %ss; "
+                "charging session %s saved with local data",
+                self.last_charge_match_timeout,
+                charge_id,
+            )
 
     async def _wait_for_stable_vehicle_state(self):
         last = None
@@ -814,6 +1019,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address = await self._get_address(state)
 
             self.current_charge = Charge()
+            self.current_charge.last_charge_baseline_signature = (
+                self.last_charge_signature
+            )
 
             self.current_charge.start(
                 soc=state.get("soc"),
