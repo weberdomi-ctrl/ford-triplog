@@ -4,12 +4,12 @@ Ford Triplog
 Charging location resolver.
 
 Version: 1.5.0
-Phase: 3.2
-Build: 02
+Phase: 3.4
+Build: 06
 
 Changes:
-- Added user-defined charging-site matching.
-- Resolver priority is FordPass, user database, then existing OSM data.
+- Stores unresolved charging locations for later user confirmation.
+- Keeps resolver priority FordPass, user database, OSM.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .charge import Charge
+from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -44,10 +45,12 @@ class ChargingLocationResolver:
         hass: HomeAssistant,
         config: dict[str, Any],
         user_storage: UserChargingSiteStorage,
+        pending_storage: PendingChargingSiteStorage,
     ) -> None:
         self.hass = hass
         self.config = config
         self.user_storage = user_storage
+        self.pending_storage = pending_storage
 
     async def async_resolve(self, charge: Charge) -> Charge:
         """Resolve charging-location data according to source priority."""
@@ -76,6 +79,13 @@ class ChargingLocationResolver:
                 "charge %s",
                 charge.charge_id,
             )
+            try:
+                await self.pending_storage.async_add_from_charge(charge)
+            except (OSError, ValueError) as error:
+                _LOGGER.warning(
+                    "Could not store unresolved charging location: %s",
+                    error,
+                )
 
         return charge
 

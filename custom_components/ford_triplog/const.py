@@ -6,10 +6,11 @@ Track your Ford.
 Central constants used throughout the integration.
 
 Version: 1.5.0
-Phase: 3.1
-Build: 01
+Phase: 3.4
+Build: 06
 Changes:
-- Added constants for the user-defined charging-site database.
+- Added constants for pending unknown charging locations.
+- Keeps the user-defined charging-site database constants.
 """
 
 from __future__ import annotations
@@ -40,6 +41,9 @@ CACHE_DIR: Final = "cache"
 # User-defined charging sites (Phase 3)
 USER_CHARGING_SITES_FILE: Final = "user_charging_sites.json"
 USER_CHARGING_SITES_SCHEMA_VERSION: Final = 1
+PENDING_CHARGING_SITES_FILE: Final = "pending_charging_sites.json"
+PENDING_CHARGING_SITES_SCHEMA_VERSION: Final = 1
+PENDING_CHARGING_SITE_DEDUP_RADIUS: Final = 100.0
 DEFAULT_USER_CHARGING_SITE_RADIUS: Final = 50.0
 
 CURRENT_TRIP_FILE: Final = "current_trip.json"

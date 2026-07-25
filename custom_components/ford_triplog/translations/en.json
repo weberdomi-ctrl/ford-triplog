@@ -92,17 +92,35 @@
       },
       "user_charging_sites": {
         "title": "Own charging locations",
-        "description": "Stored charging locations: {site_count}\n\nSelect a charging location or create a new entry.",
+        "description": "Stored charging locations: {site_count}\\nDetected unknown charging locations: {pending_count}\\n\\nSelect a charging location or create a new entry.",
         "data": {
           "user_charging_site_selection": "Charging location"
-        },
-        "data_description": {
-          "user_charging_site_selection": "Full management will be added in the next build."
         }
       },
       "user_charging_site_details": {
         "title": "{name}",
         "description": "**Type:** {type}\n**Coordinates:** {coordinates}\n**Radius:** {radius}\n**Operator:** {operator}\n**Network:** {network}\n**Power:** {power}\n\nCreating, editing and deleting entries will be added in Build 04."
+      },
+      "user_charging_site_edit": {
+        "title": "Create or edit charging location",
+        "description": "For a detected charging location, coordinates and available station metadata are already prefilled.",
+        "data": {
+          "name": "Name",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius": "Detection radius",
+          "type": "Type",
+          "power_kw": "Maximum charging power",
+          "operator": "Operator",
+          "network": "Network",
+          "brand": "Brand",
+          "notes": "Notes",
+          "action": "Action"
+        }
+      },
+      "user_charging_site_delete": {
+        "title": "Delete charging location",
+        "description": "Do you really want to delete “{name}”?"
       }
     },
     "error": {
@@ -110,7 +128,8 @@
       "charging_site_download_failed": "The charging-site database could not be downloaded or processed. Check the Home Assistant log for additional details.",
       "charging_site_download_in_progress": "A charging-site database download is already running.",
       "user_charging_sites_load_failed": "The own charging-location database could not be loaded.",
-      "user_charging_site_not_found": "The selected charging location could not be found."
+      "user_charging_site_not_found": "The selected charging location could not be found.",
+      "user_charging_site_save_failed": "The charging location could not be saved."
     }
   },
   "entity": {
