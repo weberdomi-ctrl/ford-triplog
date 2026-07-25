@@ -4,6 +4,12 @@ Ford Triplog
 Track your Ford.
 
 Central constants used throughout the integration.
+
+Version: 1.5.0
+Phase: 3.1
+Build: 01
+Changes:
+- Added constants for the user-defined charging-site database.
 """
 
 from __future__ import annotations
@@ -30,6 +36,11 @@ CHARGE_SCHEMA_VERSION: Final = 3
 STORAGE_DIR: Final = "ford_triplog"
 TRIPS_DIR: Final = "trips"
 CACHE_DIR: Final = "cache"
+
+# User-defined charging sites (Phase 3)
+USER_CHARGING_SITES_FILE: Final = "user_charging_sites.json"
+USER_CHARGING_SITES_SCHEMA_VERSION: Final = 1
+DEFAULT_USER_CHARGING_SITE_RADIUS: Final = 50.0
 
 CURRENT_TRIP_FILE: Final = "current_trip.json"
 LAST_TRIP_FILE: Final = "last_trip.json"
