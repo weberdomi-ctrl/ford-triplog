@@ -7,15 +7,12 @@ Configuration Flow.
 
 Version: 1.5.0
 Phase: 3.5
-Build: 13
+Build: 14
 
 Changes:
-- Improves the own charging locations overview with correct singular/plural wording.
-- Shows pending charging locations only when they exist.
-- Uses the label "New detected charging locations (n)" for pending entries.
-- Shows brand/provider and location type on a second line for stored locations.
-- Keeps stored locations alphabetically sorted.
-- Fixes the pending-location default selection to use site_id.
+- Adds backward-compatible translation placeholders for cached/older translations.
+- Prevents FORMATJS MISSING_VALUE errors for site_count and pending_count.
+- Keeps all Build 13 UI improvements unchanged.
 """
 
 from __future__ import annotations
@@ -334,10 +331,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             errors=errors,
             description_placeholders={
+                # Current Build 13+ placeholders.
                 "stored_text": self._format_stored_site_count(len(sites)),
                 "pending_text": self._format_pending_site_count(
                     len(pending_sites)
                 ),
+                # Backward compatibility for cached/older translations.
+                "site_count": str(len(sites)),
+                "pending_count": str(len(pending_sites)),
             },
         )
 
