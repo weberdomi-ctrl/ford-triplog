@@ -4,7 +4,6 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 1.6.0
-Release: 1.6d
 """
 
 from __future__ import annotations
@@ -29,7 +28,6 @@ from homeassistant.const import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
-from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .utils import (
     format_address,
     format_address_short,
@@ -48,8 +46,7 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
-from .journey_storage import FordTriplogJourneyStorage
+from .const import DOMAIN, VERSION
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -62,7 +59,6 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
-    journey_storage = data.get("journey_storage")
 
     translations = await async_get_translations(
         hass,
@@ -92,12 +88,6 @@ async def async_setup_entry(
 
     async_add_entities(
         [
-            # Last journey
-            FordTriplogLastJourneySensor(
-                journey_storage,
-                common_translations,
-            ),
-
             # Last trip
             FordTriplogLastStartAddressSensor(coordinator, history, common_translations),
             FordTriplogLastEndAddressSensor(coordinator, history, common_translations),
@@ -109,6 +99,7 @@ async def async_setup_entry(
             FordTriplogLastAverageSpeedSensor(coordinator, history, common_translations),
             FordTriplogLastDurationFormattedSensor(coordinator, history, common_translations),
             FordTriplogLastDurationSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeSensor(coordinator, history, common_translations),
             FordTriplogLastChargeStartTimeSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEndTimeSensor(coordinator, history, common_translations),
             FordTriplogLastChargeStartSocSensor(coordinator, history, common_translations),
@@ -146,133 +137,6 @@ async def async_setup_entry(
 
 
     )
-
-
-
-class FordTriplogLastJourneySensor(SensorEntity):
-    """Expose the last completed Journey."""
-
-    _attr_has_entity_name = True
-    _attr_translation_key = "last_journey"
-    _attr_unique_id = "ford_triplog_last_journey"
-    _attr_device_class = SensorDeviceClass.TIMESTAMP
-    _attr_icon = "mdi:map-marker-path"
-    _attr_should_poll = True
-
-    def __init__(
-        self,
-        storage: FordTriplogJourneyStorage | None,
-        translations: dict[str, str],
-    ) -> None:
-        self.storage = storage
-        self.translations = translations
-        self._journey = None
-        self._attr_native_value = None
-
-    async def async_added_to_hass(self) -> None:
-        """Load state and subscribe to Journey updates."""
-
-        await super().async_added_to_hass()
-
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                SIGNAL_LAST_JOURNEY_UPDATED,
-                self._handle_journey_update,
-            )
-        )
-        await self._async_refresh()
-
-    async def async_update(self) -> None:
-        """Refresh the Journey during normal entity polling."""
-
-        await self._async_refresh()
-
-    def _handle_journey_update(self, *_args: object) -> None:
-        """Schedule a refresh after a Journey maintenance operation."""
-
-        # Dispatcher signals may include the updated Journey as payload and
-        # may be emitted from a worker thread during maintenance. Schedule the
-        # coroutine creation itself on Home Assistant's event loop.
-        self.hass.loop.call_soon_threadsafe(
-            lambda: self.hass.async_create_task(
-                self._async_refresh_and_write()
-            )
-        )
-
-    async def _async_refresh_and_write(self) -> None:
-        await self._async_refresh()
-        self.async_write_ha_state()
-
-    async def _async_refresh(self) -> None:
-        if self.storage is None:
-            self._journey = None
-            self._attr_native_value = None
-            return
-
-        self._journey = await self.storage.load_last_journey()
-
-        if self._journey is None or not self._journey.end_time:
-            self._attr_native_value = None
-            return
-
-        try:
-            self._attr_native_value = datetime.fromisoformat(
-                self._journey.end_time
-            )
-        except (TypeError, ValueError):
-            self._attr_native_value = None
-
-    @property
-    def available(self) -> bool:
-        return self._journey is not None
-
-    @property
-    def extra_state_attributes(self) -> dict[str, Any]:
-        if self._journey is None:
-            return {}
-
-        journey = self._journey
-
-        return {
-            "journey_id": journey.journey_id,
-            "date": journey.date,
-            "start_time": journey.start_time,
-            "end_time": journey.end_time,
-            "start_address": journey.start_address,
-            "end_address": journey.end_address,
-            "start_latitude": journey.start_latitude,
-            "start_longitude": journey.start_longitude,
-            "end_latitude": journey.end_latitude,
-            "end_longitude": journey.end_longitude,
-            "trip_count": journey.trip_count,
-            "charge_count": journey.charge_count,
-            "trip_ids": list(journey.trip_ids),
-            "charge_ids": list(journey.charge_ids),
-            "distance_km": journey.distance_km,
-            "driving_duration_seconds": journey.driving_duration_seconds,
-            "charging_duration_seconds": journey.charging_duration_seconds,
-            "total_duration_seconds": journey.total_duration_seconds,
-            "energy_used_kwh": journey.energy_used_kwh,
-            "energy_charged_kwh": journey.energy_charged_kwh,
-            "average_consumption_kwh_100km": (
-                journey.average_consumption_kwh_100km
-            ),
-            "items": [
-                item.to_dict()
-                for item in journey.items
-            ],
-        }
-
-    @property
-    def device_info(self):
-        return {
-            "identifiers": {(DOMAIN, "ford_triplog")},
-            "name": "Ford Triplog",
-            "manufacturer": "Ford",
-            "model": "Triplog",
-            "sw_version": VERSION,
-        }
 
 
 class FordTriplogSensorBase(SensorEntity):
@@ -576,6 +440,165 @@ class FordTriplogLastEndTimeSensor(FordTriplogSensorBase):
             self.translations["yesterday"],
         )
         
+class FordTriplogLastChargeSensor(FordTriplogSensorBase):
+    """Compact summary of the last completed charging session."""
+
+    _attr_translation_key = "last_charge"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_unique_id = "ford_triplog_last_charge"
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> datetime | None:
+        """Parse a stored ISO timestamp for a timestamp sensor."""
+
+        if not value:
+            return None
+
+        try:
+            timestamp = datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+
+        if timestamp.tzinfo is None:
+            return timestamp.astimezone()
+
+        return timestamp
+
+    @staticmethod
+    def _duration_seconds(last_charge: dict[str, Any]) -> int | None:
+        """Return stored or calculated charging duration."""
+
+        duration = last_charge.get("duration_seconds")
+        if duration is not None:
+            try:
+                return int(duration)
+            except (TypeError, ValueError):
+                pass
+
+        start = FordTriplogLastChargeSensor._parse_timestamp(
+            last_charge.get("start_time")
+        )
+        end = FordTriplogLastChargeSensor._parse_timestamp(
+            last_charge.get("end_time")
+        )
+
+        if not start or not end:
+            return None
+
+        return max(0, int((end - start).total_seconds()))
+
+    @staticmethod
+    def _soc_added(last_charge: dict[str, Any]) -> float | None:
+        """Return stored or calculated SOC increase."""
+
+        value = last_charge.get("soc_added")
+        if value is not None:
+            try:
+                return round(float(value), 1)
+            except (TypeError, ValueError):
+                pass
+
+        start_soc = last_charge.get("start_soc")
+        end_soc = last_charge.get("end_soc")
+
+        try:
+            return round(float(end_soc) - float(start_soc), 1)
+        except (TypeError, ValueError):
+            return None
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        if not last_charge:
+            self._value = None
+            self._attributes = {}
+            return
+
+        self._value = self._parse_timestamp(
+            last_charge.get("end_time")
+            or last_charge.get("start_time")
+        )
+
+        duration_seconds = self._duration_seconds(last_charge)
+        soc_added = self._soc_added(last_charge)
+
+        address = format_address_short(last_charge.get("start_address"))
+        charging_location = (
+            last_charge.get("charging_site_name")
+            or last_charge.get("charging_site_brand")
+            or last_charge.get("charging_site_operator")
+            or last_charge.get("charging_site_network")
+            or address
+        )
+
+        attributes = {
+            "start_time": last_charge.get("start_time"),
+            "end_time": last_charge.get("end_time"),
+            "duration_seconds": duration_seconds,
+            "duration": (
+                format_duration(duration_seconds)
+                if duration_seconds is not None
+                else None
+            ),
+            "start_soc": last_charge.get("start_soc"),
+            "end_soc": last_charge.get("end_soc"),
+            "soc_added": soc_added,
+            "energy_added_kwh": last_charge.get("energy_added_kwh"),
+            "energy_added_kwh_fordpass": last_charge.get(
+                "energy_added_kwh_fordpass"
+            ),
+            "energy_added_kwh_calculated": last_charge.get(
+                "energy_added_kwh_calculated"
+            ),
+            "energy_source": last_charge.get("energy_source"),
+            "charging_location": charging_location,
+            "address": address,
+            "latitude": last_charge.get("start_latitude"),
+            "longitude": last_charge.get("start_longitude"),
+            "charging_site_id": last_charge.get("charging_site_id"),
+            "charging_site_name": last_charge.get("charging_site_name"),
+            "charging_site_brand": last_charge.get("charging_site_brand"),
+            "charging_site_operator": last_charge.get(
+                "charging_site_operator"
+            ),
+            "charging_site_network": last_charge.get(
+                "charging_site_network"
+            ),
+            "charging_site_power_kw": last_charge.get(
+                "charging_site_power_kw"
+            ),
+            "charging_site_connectors": last_charge.get(
+                "charging_site_connectors"
+            ),
+            "charging_site_quality": last_charge.get(
+                "charging_site_quality"
+            ),
+            "charging_site_distance_m": last_charge.get(
+                "charging_site_distance_m"
+            ),
+            "trip_id": last_charge.get("trip_id"),
+            "journey_id": last_charge.get("journey_id"),
+        }
+
+        self._attributes = {
+            key: value
+            for key, value in attributes.items()
+            if value is not None
+        }
+
+    @property
+    def extra_state_attributes(self):
+        return self._attributes
+
+
 class FordTriplogLastChargeStartTimeSensor(FordTriplogSensorBase):
     """Formatted start time of the last charging session."""
 
