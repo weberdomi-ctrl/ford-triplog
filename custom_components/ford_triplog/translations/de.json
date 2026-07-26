@@ -29,14 +29,14 @@
           "import_charging_sites": "Ladeort-Datenbank importieren",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
-          "journey_management": "Journey-Verwaltung"
+          "journey_management": "Tour-Verwaltung"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "journey_management": "Journeys aktualisieren, neu berechnen oder löschen."
+          "journey_management": "Touren aktualisieren, neu berechnen oder löschen."
         }
       },
       "settings": {
@@ -146,25 +146,25 @@
         }
       },
       "journey_management": {
-        "title": "Journey-Verwaltung",
+        "title": "Tour-Verwaltung",
         "description": "Wähle die gewünschte Wartungsaktion.",
         "menu_options": {
-          "journey_update": "Journeys aktualisieren",
-          "journey_rebuild": "Journeys neu berechnen",
-          "journey_delete": "Journeys löschen"
+          "journey_update": "Touren aktualisieren",
+          "journey_rebuild": "Touren neu berechnen",
+          "journey_delete": "Touren löschen"
         }
       },
       "journey_update": {
-        "title": "Journeys aktualisieren",
-        "description": "Erstellt nur fehlende Journeys im optionalen Zeitraum.",
+        "title": "Touren aktualisieren",
+        "description": "Erstellt nur fehlende Touren im optionalen Zeitraum.",
         "data": {
           "start_date": "Startdatum",
           "end_date": "Enddatum"
         }
       },
       "journey_rebuild": {
-        "title": "Journeys neu berechnen",
-        "description": "Löscht bestehende Journeys im Zeitraum und berechnet sie neu.",
+        "title": "Touren neu berechnen",
+        "description": "Löscht bestehende Touren im Zeitraum und berechnet sie neu.",
         "data": {
           "start_date": "Startdatum",
           "end_date": "Enddatum",
@@ -172,8 +172,8 @@
         }
       },
       "journey_delete": {
-        "title": "Journeys löschen",
-        "description": "Löscht Journeys. Trips und Ladevorgänge bleiben erhalten.",
+        "title": "Touren löschen",
+        "description": "Löscht Touren. Trips und Ladevorgänge bleiben erhalten.",
         "data": {
           "start_date": "Startdatum",
           "end_date": "Enddatum",
@@ -181,7 +181,7 @@
         }
       },
       "journey_result": {
-        "title": "Journey-Aktion abgeschlossen",
+        "title": "Tour-Aktion abgeschlossen",
         "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nErstellt: {journeys_created} · Gelöscht: {journeys_deleted} · Übersprungen: {skipped_records}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
       }
     },
@@ -192,7 +192,7 @@
       "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
       "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
       "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden.",
-      "journey_operation_failed": "Die Journey-Aktion konnte nicht ausgeführt werden.",
+      "journey_operation_failed": "Die Tour-Aktion konnte nicht ausgeführt werden.",
       "journey_confirmation_required": "Die Aktion muss bestätigt werden."
     }
   },
@@ -322,7 +322,7 @@
         "name": "Energiequelle der letzten Ladung"
       },
       "last_journey": {
-        "name": "Letzte Journey"
+        "name": "Letzte Tour"
       }
     }
   },
