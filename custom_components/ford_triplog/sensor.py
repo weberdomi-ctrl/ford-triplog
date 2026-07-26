@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.6.0
+Version: 1.6.3
 """
 
 from __future__ import annotations
@@ -93,6 +93,10 @@ async def async_setup_entry(
         [
             # Last journey
             FordTriplogLastJourneySensor(
+                journey_storage,
+                common_translations,
+            ),
+            FordTriplogLastJourneyOverviewSensor(
                 journey_storage,
                 common_translations,
             ),
@@ -270,6 +274,296 @@ class FordTriplogLastJourneySensor(SensorEntity):
                 for item in journey.items
             ],
         }
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogLastJourneyOverviewSensor(SensorEntity):
+    """Expose a dashboard-ready overview of the last completed Journey."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Letzte Tour Übersicht"
+    _attr_unique_id = "ford_triplog_last_journey_overview"
+    _attr_icon = "mdi:map-clock-outline"
+
+    def __init__(
+        self,
+        storage: FordTriplogJourneyStorage | None,
+        translations: dict[str, str],
+    ) -> None:
+        self.storage = storage
+        self.translations = translations
+        self._journey = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        """Load state and subscribe to Journey updates."""
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+        await self._async_refresh()
+
+    def _handle_journey_update(self) -> None:
+        """Schedule a refresh after a Journey update."""
+
+        self.hass.async_create_task(
+            self._async_refresh_and_write()
+        )
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh the sensor and write the new state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime | None:
+        """Parse one stored ISO timestamp."""
+
+        if not value:
+            return None
+
+        try:
+            return datetime.fromisoformat(str(value))
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _seconds_between(start: Any, end: Any) -> int:
+        """Return the non-negative duration between two timestamps."""
+
+        start_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(
+            start
+        )
+        end_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(
+            end
+        )
+
+        if start_dt is None or end_dt is None:
+            return 0
+
+        return max(0, int((end_dt - start_dt).total_seconds()))
+
+    @staticmethod
+    def _format_clock(value: Any) -> str | None:
+        """Return a compact local clock time."""
+
+        timestamp = (
+            FordTriplogLastJourneyOverviewSensor._parse_datetime(value)
+        )
+        if timestamp is None:
+            return None
+
+        return timestamp.astimezone().strftime("%H:%M")
+
+    @staticmethod
+    def _short_address(value: Any) -> str | None:
+        """Return a compact address for dashboard output."""
+
+        if value is None:
+            return None
+
+        formatted = format_address_short(value)
+        return formatted or None
+
+    def _build_timeline(self, journey) -> tuple[list[dict[str, Any]], int]:
+        """Build start, trip, pause, charge and end timeline entries."""
+
+        timeline: list[dict[str, Any]] = []
+        total_pause_seconds = 0
+
+        start_address = self._short_address(journey.start_address)
+        end_address = self._short_address(journey.end_address)
+
+        timeline.append(
+            {
+                "type": "start",
+                "time": journey.start_time,
+                "time_formatted": self._format_clock(journey.start_time),
+                "location": start_address,
+            }
+        )
+
+        items = list(journey.items)
+
+        for index, item in enumerate(items):
+            duration_seconds = self._seconds_between(
+                item.start_time,
+                item.end_time,
+            )
+
+            if item.item_type == "trip":
+                entry = {
+                    "type": "trip",
+                    "id": item.item_id,
+                    "start_time": item.start_time,
+                    "end_time": item.end_time,
+                    "start_time_formatted": self._format_clock(
+                        item.start_time
+                    ),
+                    "end_time_formatted": self._format_clock(
+                        item.end_time
+                    ),
+                    "duration_seconds": duration_seconds,
+                    "duration": format_duration(duration_seconds),
+                }
+            else:
+                entry = {
+                    "type": "charge",
+                    "id": item.item_id,
+                    "start_time": item.start_time,
+                    "end_time": item.end_time,
+                    "start_time_formatted": self._format_clock(
+                        item.start_time
+                    ),
+                    "end_time_formatted": self._format_clock(
+                        item.end_time
+                    ),
+                    "duration_seconds": duration_seconds,
+                    "duration": format_duration(duration_seconds),
+                }
+
+            timeline.append(entry)
+
+            if index >= len(items) - 1:
+                continue
+
+            next_item = items[index + 1]
+            pause_seconds = self._seconds_between(
+                item.end_time,
+                next_item.start_time,
+            )
+
+            if pause_seconds <= 0:
+                continue
+
+            total_pause_seconds += pause_seconds
+            timeline.append(
+                {
+                    "type": "pause",
+                    "start_time": item.end_time,
+                    "end_time": next_item.start_time,
+                    "start_time_formatted": self._format_clock(
+                        item.end_time
+                    ),
+                    "end_time_formatted": self._format_clock(
+                        next_item.start_time
+                    ),
+                    "duration_seconds": pause_seconds,
+                    "duration": format_duration(pause_seconds),
+                    "after": item.item_type,
+                    "before": next_item.item_type,
+                }
+            )
+
+        timeline.append(
+            {
+                "type": "end",
+                "time": journey.end_time,
+                "time_formatted": self._format_clock(journey.end_time),
+                "location": end_address,
+            }
+        )
+
+        return timeline, total_pause_seconds
+
+    async def _async_refresh(self) -> None:
+        """Load and prepare the last completed Journey."""
+
+        if self.storage is None:
+            self._journey = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        self._journey = await self.storage.load_last_journey()
+
+        if self._journey is None:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        journey = self._journey
+        timeline, pause_seconds = self._build_timeline(journey)
+
+        distance = round(float(journey.distance_km or 0), 1)
+        total_duration = int(journey.total_duration_seconds or 0)
+
+        self._attr_native_value = (
+            f"{distance:g} km · {format_duration(total_duration)}"
+        )
+
+        self._attributes = {
+            "journey_id": journey.journey_id,
+            "date": journey.date,
+            "start": {
+                "time": journey.start_time,
+                "time_formatted": self._format_clock(journey.start_time),
+                "address": self._short_address(journey.start_address),
+                "latitude": journey.start_latitude,
+                "longitude": journey.start_longitude,
+            },
+            "end": {
+                "time": journey.end_time,
+                "time_formatted": self._format_clock(journey.end_time),
+                "address": self._short_address(journey.end_address),
+                "latitude": journey.end_latitude,
+                "longitude": journey.end_longitude,
+            },
+            "distance_km": distance,
+            "total_duration_seconds": total_duration,
+            "total_duration": format_duration(total_duration),
+            "driving_duration_seconds": (
+                journey.driving_duration_seconds
+            ),
+            "driving_duration": format_duration(
+                journey.driving_duration_seconds
+            ),
+            "pause_duration_seconds": pause_seconds,
+            "pause_duration": format_duration(pause_seconds),
+            "charging_duration_seconds": (
+                journey.charging_duration_seconds
+            ),
+            "charging_duration": format_duration(
+                journey.charging_duration_seconds
+            ),
+            "trip_count": journey.trip_count,
+            "charge_count": journey.charge_count,
+            "energy_used_kwh": journey.energy_used_kwh,
+            "energy_charged_kwh": journey.energy_charged_kwh,
+            "average_consumption_kwh_100km": (
+                journey.average_consumption_kwh_100km
+            ),
+            "timeline": timeline,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether Journey data is available."""
+
+        return self._journey is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return dashboard-ready Journey attributes."""
+
+        return self._attributes
 
     @property
     def device_info(self):
