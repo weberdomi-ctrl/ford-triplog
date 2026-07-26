@@ -430,7 +430,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         translations = await async_get_translations(
             self.hass,
             self.hass.config.language,
-            "charging_site",
+            "common",
             {DOMAIN},
         )
 
@@ -465,7 +465,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         self._charging_site_translations = {
             key: translations.get(
-                f"component.{DOMAIN}.charging_site.{key}",
+                f"component.{DOMAIN}.common.charging_site_{key}",
                 default,
             )
             for key, default in defaults.items()
