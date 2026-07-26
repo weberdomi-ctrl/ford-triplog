@@ -292,7 +292,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
     """Expose a dashboard-ready overview of the last completed Journey."""
 
     _attr_has_entity_name = True
-    _attr_name = "Letzte Tour Übersicht"
+    _attr_translation_key = "last_journey_overview"
     _attr_unique_id = "ford_triplog_last_journey_overview"
     _attr_icon = "mdi:map-clock-outline"
 
