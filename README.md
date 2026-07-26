@@ -2,36 +2,24 @@
 
 ![Ford Triplog Banner](docs/images/banner.png)
 
-```{=html}
 <p align="center">
-```
-`<b>`{=html}Automatic Trip & Charging History for Ford EVs in Home
-Assistant`</b>`{=html}
-```{=html}
+<b>Automatic Trip & Charging History for Ford EVs in Home Assistant</b>
 </p>
-```
-```{=html}
+
 <p align="center">
-```
-![Home
-Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6+-41BDF5?logo=homeassistant)
+
+![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2026.6+-41BDF5?logo=homeassistant)
 ![HACS Default](https://img.shields.io/badge/HACS-Default-41BDF5)
 ![Python](https://img.shields.io/badge/Python-3.12+-3776AB?logo=python)
 ![License](https://img.shields.io/badge/License-MIT-green)
 ![Version](https://img.shields.io/github/v/release/weberdomi-ctrl/ford-triplog)
 
-```{=html}
 </p>
-```
-```{=html}
-<p align="center">
-```
-**Automatic Trip Logging • Charging History • Smart Statistics •
-Intelligent Charging Location Recognition**
 
-```{=html}
-</p>
-```
+<p align="center">
+
+**Automatic Trip Logging • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
+
 
 ------------------------------------------------------------------------
 
