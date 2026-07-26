@@ -285,5 +285,27 @@
     "yesterday": "Yesterday",
     "unknown": "Unknown",
     "no_gps_data": "No GPS data available"
+  },
+  "charging_site": {
+    "home": "Home",
+    "work": "Work",
+    "public": "Public",
+    "private": "Private",
+    "dealer": "Dealer",
+    "hotel": "Hotel",
+    "other": "Other",
+    "custom": "Custom",
+    "location": "Charging location",
+    "unknown_location": "Unknown charging location",
+    "new_location": "+ New charging location",
+    "pending_locations": "⚠ Newly detected charging locations ({count})",
+    "save": "Save",
+    "delete": "Delete",
+    "step": "Step",
+    "no_progress": "No progress messages yet.",
+    "stored_one": "1 custom charging location saved.",
+    "stored_many": "{count} custom charging locations saved.",
+    "pending_one": "1 unknown charging location was detected. It can now be saved as a custom charging location.",
+    "pending_many": "{count} unknown charging locations were detected. They can now be saved as custom charging locations."
   }
 }

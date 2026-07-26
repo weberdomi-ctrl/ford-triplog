@@ -285,5 +285,27 @@
     "yesterday": "Gestern",
     "unknown": "Unbekannt",
     "no_gps_data": "Keine GPS-Daten verfügbar"
+  },
+  "charging_site": {
+    "home": "Zuhause",
+    "work": "Arbeit",
+    "public": "Öffentlich",
+    "private": "Privat",
+    "dealer": "Händler",
+    "hotel": "Hotel",
+    "other": "Sonstige",
+    "custom": "Benutzerdefiniert",
+    "location": "Ladeort",
+    "unknown_location": "Unbekannter Ladeort",
+    "new_location": "+ Neuer Ladeort",
+    "pending_locations": "⚠ Neue erkannte Ladeorte ({count})",
+    "save": "Speichern",
+    "delete": "Löschen",
+    "step": "Schritt",
+    "no_progress": "Noch keine Fortschrittsmeldungen.",
+    "stored_one": "1 eigener Ladeort gespeichert.",
+    "stored_many": "{count} eigene Ladeorte gespeichert.",
+    "pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
+    "pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden."
   }
 }

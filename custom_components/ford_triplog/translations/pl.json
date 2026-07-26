@@ -285,5 +285,27 @@
     "yesterday": "Wczoraj",
     "unknown": "Nieznane",
     "no_gps_data": "Brak danych GPS"
+  },
+  "charging_site": {
+    "home": "Dom",
+    "work": "Praca",
+    "public": "Publiczna",
+    "private": "Prywatna",
+    "dealer": "Dealer",
+    "hotel": "Hotel",
+    "other": "Inna",
+    "custom": "Niestandardowa",
+    "location": "Miejsce ładowania",
+    "unknown_location": "Nieznane miejsce ładowania",
+    "new_location": "+ Nowe miejsce ładowania",
+    "pending_locations": "⚠ Nowo wykryte miejsca ładowania ({count})",
+    "save": "Zapisz",
+    "delete": "Usuń",
+    "step": "Krok",
+    "no_progress": "Brak komunikatów o postępie.",
+    "stored_one": "Zapisano 1 własne miejsce ładowania.",
+    "stored_many": "Liczba zapisanych własnych miejsc ładowania: {count}.",
+    "pending_one": "Wykryto 1 nieznane miejsce ładowania. Można je teraz zapisać jako własne miejsce ładowania.",
+    "pending_many": "Liczba wykrytych nieznanych miejsc ładowania: {count}. Można je teraz zapisać jako własne miejsca ładowania."
   }
 }
