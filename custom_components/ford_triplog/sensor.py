@@ -3,7 +3,8 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.4.0
+Version: 1.6.0
+Release: 1.6d
 """
 
 from __future__ import annotations
@@ -27,6 +28,8 @@ from homeassistant.const import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .utils import (
     format_address,
     format_address_short,
@@ -45,7 +48,8 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
+from .journey_storage import FordTriplogJourneyStorage
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -58,57 +62,217 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
+    journey_storage = data.get("journey_storage")
+
+    translations = await async_get_translations(
+        hass,
+        hass.config.language,
+        "common",
+        {DOMAIN},
+    )
+
+    common_translations = {
+        "today": translations.get(
+            f"component.{DOMAIN}.common.today",
+            "Today",
+        ),
+        "yesterday": translations.get(
+            f"component.{DOMAIN}.common.yesterday",
+            "Yesterday",
+        ),
+        "unknown": translations.get(
+            f"component.{DOMAIN}.common.unknown",
+            "Unknown",
+        ),
+        "no_gps_data": translations.get(
+            f"component.{DOMAIN}.common.no_gps_data",
+            "No GPS data available",
+        ),
+    }
 
     async_add_entities(
         [
+            # Last journey
+            FordTriplogLastJourneySensor(
+                journey_storage,
+                common_translations,
+            ),
+
             # Last trip
-            FordTriplogLastStartAddressSensor(coordinator, history),
-            FordTriplogLastEndAddressSensor(coordinator, history),
-            FordTriplogLastStartTimeSensor(coordinator, history),
-            FordTriplogLastEndTimeSensor(coordinator, history),
-            FordTriplogLastDistanceSensor(coordinator, history),
-            FordTriplogLastConsumptionSensor(coordinator, history),
-            FordTriplogLastEfficiencySensor(coordinator, history),
-            FordTriplogLastAverageSpeedSensor(coordinator, history),
-            FordTriplogLastDurationFormattedSensor(coordinator, history),
-            FordTriplogLastDurationSensor(coordinator, history),
-            FordTriplogLastChargeStartTimeSensor(coordinator,history,),
-            FordTriplogLastChargeEndTimeSensor(coordinator,history,),
-            FordTriplogLastChargeStartSocSensor(coordinator,history,),
-            FordTriplogLastChargeEndSocSensor(coordinator,history,),
-            FordTriplogLastChargeSocAddedSensor(coordinator,history,),
-            FordTriplogLastChargeDurationSensor(coordinator,history,),
-            FordTriplogLastChargeEnergySensor(coordinator, history),
-            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history),
-            FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history),
-            FordTriplogLastChargeEnergySourceSensor(coordinator, history),
-            FordTriplogLastChargeStartAddressSensor(coordinator,history,),
-            FordTriplogLastChargingSiteSensor(coordinator, history),
-            FordTriplogLastTripStartSocSensor(coordinator,history,),
-            FordTriplogLastTripEndSocSensor(coordinator,history,),
-            FordTriplogLastTripSocUsedSensor(coordinator,history,),
+            FordTriplogLastStartAddressSensor(coordinator, history, common_translations),
+            FordTriplogLastEndAddressSensor(coordinator, history, common_translations),
+            FordTriplogLastStartTimeSensor(coordinator, history, common_translations),
+            FordTriplogLastEndTimeSensor(coordinator, history, common_translations),
+            FordTriplogLastDistanceSensor(coordinator, history, common_translations),
+            FordTriplogLastConsumptionSensor(coordinator, history, common_translations),
+            FordTriplogLastEfficiencySensor(coordinator, history, common_translations),
+            FordTriplogLastAverageSpeedSensor(coordinator, history, common_translations),
+            FordTriplogLastDurationFormattedSensor(coordinator, history, common_translations),
+            FordTriplogLastDurationSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeStartTimeSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEndTimeSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeStartSocSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEndSocSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeSocAddedSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeDurationSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergySensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergySourceSensor(coordinator, history, common_translations),
+            FordTriplogLastChargeStartAddressSensor(coordinator, history, common_translations),
+            FordTriplogLastChargingSiteSensor(coordinator, history, common_translations),
+            FordTriplogLastTripStartSocSensor(coordinator, history, common_translations),
+            FordTriplogLastTripEndSocSensor(coordinator, history, common_translations),
+            FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
 
             # Statistics
-            FordTriplogDistanceSensor(coordinator, history),
-            FordTriplogTotalEnergySensor(coordinator, history),
-            FordTriplogAverageConsumptionSensor(coordinator, history),
-            FordTriplogDurationFormattedSensor(coordinator, history),
-            FordTriplogDurationSensor(coordinator, history),
-            FordTriplogTripCountSensor(coordinator, history),         
-            FordTriplogChargeCountSensor(coordinator,history,),
-            FordTriplogAverageChargeSocAddedSensor(coordinator,history,),
-            FordTriplogAverageChargeDurationSensor(coordinator,history,),
-            FordTriplogAverageChargeStartSocSensor(coordinator,history,),
-            FordTriplogAverageChargeEndSocSensor(coordinator,history,),
-            FordTriplogAverageTripDistanceSensor(coordinator,history,),
-            FordTriplogAverageTripDurationSensor(coordinator,history,),
-            FordTriplogAverageTripEnergySensor(coordinator,history,),
-            FordTriplogAverageTripSocUsedSensor(coordinator,history,),
-            FordTriplogAverageTripConsumptionSensor(coordinator,history,),
+            FordTriplogDistanceSensor(coordinator, history, common_translations),
+            FordTriplogTotalEnergySensor(coordinator, history, common_translations),
+            FordTriplogAverageConsumptionSensor(coordinator, history, common_translations),
+            FordTriplogDurationFormattedSensor(coordinator, history, common_translations),
+            FordTriplogDurationSensor(coordinator, history, common_translations),
+            FordTriplogTripCountSensor(coordinator, history, common_translations),         
+            FordTriplogChargeCountSensor(coordinator, history, common_translations),
+            FordTriplogAverageChargeSocAddedSensor(coordinator, history, common_translations),
+            FordTriplogAverageChargeDurationSensor(coordinator, history, common_translations),
+            FordTriplogAverageChargeStartSocSensor(coordinator, history, common_translations),
+            FordTriplogAverageChargeEndSocSensor(coordinator, history, common_translations),
+            FordTriplogAverageTripDistanceSensor(coordinator, history, common_translations),
+            FordTriplogAverageTripDurationSensor(coordinator, history, common_translations),
+            FordTriplogAverageTripEnergySensor(coordinator, history, common_translations),
+            FordTriplogAverageTripSocUsedSensor(coordinator, history, common_translations),
+            FordTriplogAverageTripConsumptionSensor(coordinator, history, common_translations),
         ]
 
 
     )
+
+
+
+class FordTriplogLastJourneySensor(SensorEntity):
+    """Expose the last completed Journey."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "last_journey"
+    _attr_unique_id = "ford_triplog_last_journey"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:map-marker-path"
+    _attr_should_poll = True
+
+    def __init__(
+        self,
+        storage: FordTriplogJourneyStorage | None,
+        translations: dict[str, str],
+    ) -> None:
+        self.storage = storage
+        self.translations = translations
+        self._journey = None
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        """Load state and subscribe to Journey updates."""
+
+        await super().async_added_to_hass()
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+        await self._async_refresh()
+
+    async def async_update(self) -> None:
+        """Refresh the Journey during normal entity polling."""
+
+        await self._async_refresh()
+
+    def _handle_journey_update(self, *_args: object) -> None:
+        """Schedule a refresh after a Journey maintenance operation."""
+
+        # Dispatcher signals may include the updated Journey as payload and
+        # may be emitted from a worker thread during maintenance. Schedule the
+        # coroutine creation itself on Home Assistant's event loop.
+        self.hass.loop.call_soon_threadsafe(
+            lambda: self.hass.async_create_task(
+                self._async_refresh_and_write()
+            )
+        )
+
+    async def _async_refresh_and_write(self) -> None:
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        if self.storage is None:
+            self._journey = None
+            self._attr_native_value = None
+            return
+
+        self._journey = await self.storage.load_last_journey()
+
+        if self._journey is None or not self._journey.end_time:
+            self._attr_native_value = None
+            return
+
+        try:
+            self._attr_native_value = datetime.fromisoformat(
+                self._journey.end_time
+            )
+        except (TypeError, ValueError):
+            self._attr_native_value = None
+
+    @property
+    def available(self) -> bool:
+        return self._journey is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        if self._journey is None:
+            return {}
+
+        journey = self._journey
+
+        return {
+            "journey_id": journey.journey_id,
+            "date": journey.date,
+            "start_time": journey.start_time,
+            "end_time": journey.end_time,
+            "start_address": journey.start_address,
+            "end_address": journey.end_address,
+            "start_latitude": journey.start_latitude,
+            "start_longitude": journey.start_longitude,
+            "end_latitude": journey.end_latitude,
+            "end_longitude": journey.end_longitude,
+            "trip_count": journey.trip_count,
+            "charge_count": journey.charge_count,
+            "trip_ids": list(journey.trip_ids),
+            "charge_ids": list(journey.charge_ids),
+            "distance_km": journey.distance_km,
+            "driving_duration_seconds": journey.driving_duration_seconds,
+            "charging_duration_seconds": journey.charging_duration_seconds,
+            "total_duration_seconds": journey.total_duration_seconds,
+            "energy_used_kwh": journey.energy_used_kwh,
+            "energy_charged_kwh": journey.energy_charged_kwh,
+            "average_consumption_kwh_100km": (
+                journey.average_consumption_kwh_100km
+            ),
+            "items": [
+                item.to_dict()
+                for item in journey.items
+            ],
+        }
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
 
 
 class FordTriplogSensorBase(SensorEntity):
@@ -116,9 +280,10 @@ class FordTriplogSensorBase(SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, history) -> None:
+    def __init__(self, coordinator, history, translations) -> None:
         self.coordinator = coordinator
         self.history = history
+        self.translations = translations
         self._value = None
 
 
@@ -180,6 +345,7 @@ class FordTriplogSensorBase(SensorEntity):
             "name": "Ford Triplog",
             "manufacturer": "Ford",
             "model": "Triplog",
+            "sw_version": VERSION,
         }
 
 
@@ -388,7 +554,9 @@ class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
         self._value = format_datetime(
             last_trip.get("start_time")
             if last_trip
-            else None
+            else None,
+            self.translations["today"],
+            self.translations["yesterday"],
         )
 
 
@@ -403,7 +571,9 @@ class FordTriplogLastEndTimeSensor(FordTriplogSensorBase):
         self._value = format_datetime(
             last_trip.get("end_time")
             if last_trip
-            else None
+            else None,
+            self.translations["today"],
+            self.translations["yesterday"],
         )
         
 class FordTriplogLastChargeStartTimeSensor(FordTriplogSensorBase):
@@ -422,7 +592,9 @@ class FordTriplogLastChargeStartTimeSensor(FordTriplogSensorBase):
         self._value = format_datetime(
             last_charge.get("start_time")
             if last_charge
-            else None
+            else None,
+            self.translations["today"],
+            self.translations["yesterday"],
         )
 
 class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
@@ -441,7 +613,9 @@ class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
         self._value = format_datetime(
             last_charge.get("end_time")
             if last_charge
-            else None
+            else None,
+            self.translations["today"],
+            self.translations["yesterday"],
         )        
 class FordTriplogLastChargeStartSocSensor(FordTriplogSensorBase):
     """SOC at the start of the last charging session."""
@@ -555,7 +729,7 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     """Primary energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie"
+    _attr_translation_key = "last_charge_energy"
     _attr_unique_id = "ford_triplog_last_charge_energy"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -580,7 +754,7 @@ class FordTriplogLastChargeEnergyFordPassSensor(
 ):
     """FordPass energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie FordPass"
+    _attr_translation_key = "last_charge_energy_fordpass"
     _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -605,7 +779,7 @@ class FordTriplogLastChargeEnergyCalculatedSensor(
 ):
     """Calculated energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie berechnet"
+    _attr_translation_key = "last_charge_energy_calculated"
     _attr_unique_id = "ford_triplog_last_charge_energy_calculated"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -630,7 +804,7 @@ class FordTriplogLastChargeEnergySourceSensor(
 ):
     """Source used for the primary charging energy value."""
 
-    _attr_name = "Letzte Ladung Energiequelle"
+    _attr_translation_key = "last_charge_energy_source"
     _attr_unique_id = "ford_triplog_last_charge_energy_source"
     _attr_icon = "mdi:source-branch"
 
@@ -681,10 +855,10 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
                 self._value = (
                     f"{street}, {locality}".strip(", ")
                     if street or locality
-                    else "Keine GPS-Daten verfügbar"
+                    else self.translations["no_gps_data"]
                 )
         else:
-            self._value = address or "Keine GPS-Daten verfügbar"
+            self._value = address or self.translations["no_gps_data"]
     
 class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
     """Resolved charging location of the last charging session."""
@@ -693,8 +867,8 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_last_charging_site"
     _attr_icon = "mdi:ev-station"
 
-    def __init__(self, coordinator, history) -> None:
-        super().__init__(coordinator, history)
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -895,7 +1069,7 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
             or operator
             or network
             or address
-            or "Keine GPS-Daten verfügbar"
+            or self.translations["no_gps_data"]
         )
 
         self._attributes = {

@@ -3,7 +3,7 @@ Ford Triplog
 
 History and statistics.
 
-Version: 1.3.2
+Version: 1.6.0
 """
 
 from __future__ import annotations
@@ -117,8 +117,12 @@ class FordTriplogHistory:
         total_soc_added = 0.0
         total_start_soc = 0.0
         total_end_soc = 0.0
+        trip_count = 0
 
         for charge in charges:
+            if not charge.get("include_in_statistics", True):
+                continue
+
             charge_count += 1
 
             start_soc = charge.get("start_soc")
@@ -144,6 +148,11 @@ class FordTriplogHistory:
                 ).total_seconds()
 
         for trip in trips:
+            if not trip.get("include_in_statistics", True):
+                continue
+
+            trip_count += 1
+
             total_distance += float(trip.get("distance_km") or 0)
             total_duration += int(trip.get("duration_seconds") or 0)
             total_energy += float(trip.get("energy_used_kwh") or 0)
@@ -175,23 +184,23 @@ class FordTriplogHistory:
             else 0
         )
         average_trip_distance = (
-            total_distance / len(trips)
-            if trips
+            total_distance / trip_count
+            if trip_count
             else 0
         )
         average_trip_duration = (
-            total_duration / len(trips)
-            if trips
+            total_duration / trip_count
+            if trip_count
             else 0
         )
         average_trip_energy = (
-            total_energy / len(trips)
-            if trips
+            total_energy / trip_count
+            if trip_count
             else 0
         )
         average_trip_soc_used = (
-            total_trip_soc_used / len(trips)
-            if trips
+            total_trip_soc_used / trip_count
+            if trip_count
             else 0
         )
         average_trip_consumption = (
@@ -201,7 +210,7 @@ class FordTriplogHistory:
         )
 
         return {
-            "trip_count": len(trips),
+            "trip_count": trip_count,
             "total_distance_km": round(total_distance, 1),
             "total_duration_seconds": total_duration,
             "total_energy_used_kwh": round(total_energy, 2),

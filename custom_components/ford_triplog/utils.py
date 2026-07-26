@@ -3,7 +3,7 @@ Ford Triplog
 
 Utility functions.
 
-Version: 1.3.2
+Version: 1.6.0
 """
 from __future__ import annotations
 
@@ -100,7 +100,11 @@ def format_duration(seconds: int | float | None) -> str | None:
 
     return f"{hours:02}:{minutes:02}:{secs:02}"
 
-def format_datetime(value: str | None) -> str | None:
+def format_datetime(
+    value: str | None,
+    today_text: str,
+    yesterday_text: str,
+) -> str | None:
     """Format ISO datetime for display."""
 
     if not value:
@@ -115,14 +119,14 @@ def format_datetime(value: str | None) -> str | None:
         now = dt_util.now()
 
         if dt.date() == now.date():
-            return f"Heute {dt:%H:%M}"
+            return f"{today_text} {dt:%H:%M}"
 
         if (now.date() - dt.date()).days == 1:
-            return f"Gestern {dt:%H:%M}"
+            return f"{yesterday_text} {dt:%H:%M}"
 
         return dt.strftime("%d.%m.%Y %H:%M")
 
-    except Exception:
+    except (TypeError, ValueError):
         return value
 
 

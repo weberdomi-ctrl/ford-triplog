@@ -5,9 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.5.0
-Phase: 3.5
-Build: 15
+Version: 1.6.1
+Phase: 4.0
+Build: 01
+Release: 1.6.1c
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -15,6 +16,7 @@ Changes:
 - Automatically assigns Zuhause or Arbeit when the name is left empty.
 - Falls back to the address when no explicit name is available.
 - Keeps Build 14 translation-placeholder compatibility.
+- Adds configurable Journey base zone, home timeout and maximum gap options.
 """
 
 from __future__ import annotations
@@ -35,6 +37,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.translation import async_get_translations
 
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
@@ -54,8 +57,15 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    CONF_JOURNEY_HOME_ZONE,
+    CONF_JOURNEY_HOME_TIMEOUT,
+    CONF_JOURNEY_MAX_GAP_HOURS,
+    DEFAULT_JOURNEY_HOME_ZONE,
+    DEFAULT_JOURNEY_HOME_TIMEOUT,
+    DEFAULT_JOURNEY_MAX_GAP_HOURS,
     DOMAIN,
     NAME,
+    VERSION as FORD_TRIPLOG_VERSION,
 )
 
 
@@ -91,6 +101,7 @@ class FordTriplogConfigFlow(
     """Handle Ford Triplog configuration."""
 
     VERSION = 1
+    INTEGRATION_VERSION = FORD_TRIPLOG_VERSION
 
     @staticmethod
     @callback
@@ -176,6 +187,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._pending_charging_site_storage: PendingChargingSiteStorage | None = None
         self._selected_user_charging_site: dict[str, Any] | None = None
         self._selected_pending_charging_site: dict[str, Any] | None = None
+        self._charging_site_translations: dict[str, str] | None = None
+        self._journey_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -189,8 +202,203 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "settings",
                 "user_charging_sites",
                 "download_charging_sites",
+                "journey_management",
             ],
         )
+
+
+    def _get_journey_rebuilder(self):
+        """Return the Journey rebuilder for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        rebuilder = runtime_data.get("journey_rebuilder")
+
+        if rebuilder is None:
+            raise HomeAssistantError(
+                "Journey rebuilder is not initialized"
+            )
+
+        return rebuilder
+
+    @staticmethod
+    def _journey_date_schema(
+        *,
+        include_confirmation: bool = False,
+    ) -> vol.Schema:
+        """Build the optional Journey date-range schema."""
+
+        fields: dict[Any, Any] = {
+            vol.Optional("start_date"): selector.DateSelector(),
+            vol.Optional("end_date"): selector.DateSelector(),
+        }
+
+        if include_confirmation:
+            fields[
+                vol.Required(
+                    "confirm",
+                    default=False,
+                )
+            ] = selector.BooleanSelector()
+
+        return vol.Schema(fields)
+
+    async def async_step_journey_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show Journey maintenance actions."""
+
+        return self.async_show_menu(
+            step_id="journey_management",
+            menu_options=[
+                "journey_update",
+                "journey_rebuild",
+                "journey_delete",
+            ],
+        )
+
+    async def async_step_journey_update(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create missing Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                result = await self._get_journey_rebuilder().async_update_journeys(
+                    start_date=user_input.get("start_date"),
+                    end_date=user_input.get("end_date"),
+                )
+            except (HomeAssistantError, ValueError):
+                errors["base"] = "journey_operation_failed"
+            else:
+                self._journey_result = self._format_journey_result(
+                    result.to_dict()
+                )
+                return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_update",
+            data_schema=self._journey_date_schema(),
+            errors=errors,
+        )
+
+    async def async_step_journey_rebuild(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Rebuild Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                errors["base"] = "journey_confirmation_required"
+            else:
+                try:
+                    result = await self._get_journey_rebuilder().async_rebuild_journeys(
+                        start_date=user_input.get("start_date"),
+                        end_date=user_input.get("end_date"),
+                    )
+                except (HomeAssistantError, ValueError):
+                    errors["base"] = "journey_operation_failed"
+                else:
+                    self._journey_result = self._format_journey_result(
+                        result.to_dict()
+                    )
+                    return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_rebuild",
+            data_schema=self._journey_date_schema(
+                include_confirmation=True
+            ),
+            errors=errors,
+        )
+
+    async def async_step_journey_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Delete Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                errors["base"] = "journey_confirmation_required"
+            else:
+                try:
+                    result = await self._get_journey_rebuilder().async_delete_journeys(
+                        start_date=user_input.get("start_date"),
+                        end_date=user_input.get("end_date"),
+                    )
+                except (HomeAssistantError, ValueError):
+                    errors["base"] = "journey_operation_failed"
+                else:
+                    self._journey_result = self._format_journey_result(
+                        result.to_dict()
+                    )
+                    return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_delete",
+            data_schema=self._journey_date_schema(
+                include_confirmation=True
+            ),
+            errors=errors,
+        )
+
+    async def async_step_journey_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show a Journey maintenance result."""
+
+        if user_input is not None:
+            return await self.async_step_journey_management()
+
+        return self.async_show_form(
+            step_id="journey_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._journey_result,
+        )
+
+    @staticmethod
+    def _format_journey_result(
+        result: dict[str, Any],
+    ) -> dict[str, str]:
+        """Format result values for translation placeholders."""
+
+        affected_dates = result.get("affected_dates") or []
+
+        return {
+            "mode": str(result.get("mode") or ""),
+            "start_date": str(result.get("start_date") or "—"),
+            "end_date": str(result.get("end_date") or "—"),
+            "source_trips": str(result.get("source_trips", 0)),
+            "source_charges": str(result.get("source_charges", 0)),
+            "processed_records": str(result.get("processed_records", 0)),
+            "journeys_created": str(result.get("journeys_created", 0)),
+            "journeys_deleted": str(result.get("journeys_deleted", 0)),
+            "source_files_skipped": str(
+                result.get(
+                    "source_files_skipped",
+                    result.get("skipped_records", 0),
+                )
+            ),
+            "affected_dates": ", ".join(affected_dates) or "—",
+        }
+
 
     async def async_step_settings(
         self,
@@ -211,6 +419,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._options,
             ),
         )
+
+
+    async def _async_get_charging_site_translations(self) -> dict[str, str]:
+        """Load charging-site translations once for this options flow."""
+
+        if self._charging_site_translations is not None:
+            return self._charging_site_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+
+        defaults = {
+            "home": "Home",
+            "work": "Work",
+            "public": "Public",
+            "private": "Private",
+            "dealer": "Dealer",
+            "hotel": "Hotel",
+            "other": "Other",
+            "custom": "Custom",
+            "location": "Charging location",
+            "unknown_location": "Unknown charging location",
+            "new_location": "+ New charging location",
+            "pending_locations": "⚠ Newly detected charging locations ({count})",
+            "save": "Save",
+            "delete": "Delete",
+            "step": "Step",
+            "no_progress": "No progress messages yet.",
+            "stored_one": "1 custom charging location saved.",
+            "stored_many": "{count} custom charging locations saved.",
+            "pending_one": (
+                "1 unknown charging location was detected. "
+                "It can now be saved as a custom charging location."
+            ),
+            "pending_many": (
+                "{count} unknown charging locations were detected. "
+                "They can now be saved as custom charging locations."
+            ),
+        }
+
+        self._charging_site_translations = {
+            key: translations.get(
+                f"component.{DOMAIN}.common.charging_site_{key}",
+                default,
+            )
+            for key, default in defaults.items()
+        }
+        return self._charging_site_translations
 
     async def _async_ensure_charging_site_storages(self) -> None:
         """Initialize user and pending charging-site storages lazily."""
@@ -234,6 +494,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """List stored charging locations and show pending-location notice."""
 
         errors: dict[str, str] = {}
+        charging_site_text = await self._async_get_charging_site_translations()
 
         try:
             await self._async_ensure_charging_site_storages()
@@ -280,10 +541,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
             options.append(
                 selector.SelectOptionDict(
                     value=USER_CHARGING_SITE_PENDING,
-                    label=(
-                        "⚠ Neue erkannte Ladeorte ("
-                        + str(len(pending_sites))
-                        + ")"
+                    label=charging_site_text["pending_locations"].format(
+                        count=len(pending_sites)
                     ),
                 )
             )
@@ -291,14 +550,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options.append(
             selector.SelectOptionDict(
                 value=USER_CHARGING_SITE_NEW,
-                label="+ Neuer Ladeort",
+                label=charging_site_text["new_location"],
             )
         )
 
         options.extend(
             selector.SelectOptionDict(
                 value=str(site["site_id"]),
-                label=self._format_user_charging_site_label(site),
+                label=self._format_user_charging_site_label(
+                    site,
+                    charging_site_text,
+                ),
             )
             for site in sorted(
                 sites,
@@ -334,9 +596,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors=errors,
             description_placeholders={
                 # Current Build 13+ placeholders.
-                "stored_text": self._format_stored_site_count(len(sites)),
+                "stored_text": self._format_stored_site_count(
+                    len(sites),
+                    charging_site_text,
+                ),
                 "pending_text": self._format_pending_site_count(
-                    len(pending_sites)
+                    len(pending_sites),
+                    charging_site_text,
                 ),
                 # Backward compatibility for cached/older translations.
                 "site_count": str(len(sites)),
@@ -359,6 +625,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """List detected unknown charging locations separately."""
 
         errors: dict[str, str] = {}
+        charging_site_text = await self._async_get_charging_site_translations()
 
         try:
             await self._async_ensure_charging_site_storages()
@@ -395,7 +662,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=str(site["site_id"]),
-                label=str(site.get("name") or "Unbekannter Ladeort"),
+                label=str(
+                    site.get("name")
+                    or charging_site_text["unknown_location"]
+                ),
             )
             for site in pending_sites
         ]
@@ -428,6 +698,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Create or update a user-defined charging location."""
 
         await self._async_ensure_charging_site_storages()
+        charging_site_text = await self._async_get_charging_site_translations()
         errors: dict[str, str] = {}
 
         existing = self._selected_user_charging_site
@@ -538,9 +809,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
             if not site_name:
                 if site_type == "home":
-                    site_name = "Zuhause"
+                    site_name = charging_site_text["home"]
                 elif site_type == "work":
-                    site_name = "Arbeit"
+                    site_name = charging_site_text["work"]
                 else:
                     street = str(
                         user_input.get(
@@ -577,7 +848,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         value
                         for value in (street_line, city_line)
                         if value
-                    ) or "Ladeort"
+                    ) or charging_site_text["location"]
 
             site_data = {
                 "name": site_name,
@@ -718,31 +989,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     options=[
                         selector.SelectOptionDict(
                             value="public",
-                            label="Öffentlich",
+                            label=charging_site_text["public"],
                         ),
                         selector.SelectOptionDict(
                             value="private",
-                            label="Privat",
+                            label=charging_site_text["private"],
                         ),
                         selector.SelectOptionDict(
                             value="home",
-                            label="Zuhause",
+                            label=charging_site_text["home"],
                         ),
                         selector.SelectOptionDict(
                             value="work",
-                            label="Arbeitsplatz",
+                            label=charging_site_text["work"],
                         ),
                         selector.SelectOptionDict(
                             value="dealer",
-                            label="Händler",
+                            label=charging_site_text["dealer"],
                         ),
                         selector.SelectOptionDict(
                             value="hotel",
-                            label="Hotel",
+                            label=charging_site_text["hotel"],
                         ),
                         selector.SelectOptionDict(
                             value="other",
-                            label="Sonstige",
+                            label=charging_site_text["other"],
                         ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
@@ -880,7 +1151,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ),
                     selector.SelectOptionDict(
                         value="Other",
-                        label="Sonstige",
+                        label=charging_site_text["other"],
                     ),
                 ],
                 multiple=True,
@@ -899,11 +1170,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     options=[
                         selector.SelectOptionDict(
                             value="save",
-                            label="Speichern",
+                            label=charging_site_text["save"],
                         ),
                         selector.SelectOptionDict(
                             value="delete",
-                            label="Löschen",
+                            label=charging_site_text["delete"],
                         ),
                     ],
                     mode=selector.SelectSelectorMode.DROPDOWN,
@@ -995,19 +1266,20 @@ class FordTriplogOptionsFlow(OptionsFlow):
     @staticmethod
     def _format_user_charging_site_label(
         site: dict[str, Any],
+        translations: dict[str, str],
     ) -> str:
         """Return a compact one-line label for a stored charging location."""
 
         site_type = str(site.get("type") or "public")
         type_labels = {
-            "public": "Öffentlich",
-            "private": "Privat",
-            "home": "Zuhause",
-            "work": "Arbeit",
-            "dealer": "Händler",
-            "hotel": "Hotel",
-            "other": "Sonstige",
-            "custom": "Benutzerdefiniert",
+            "public": translations["public"],
+            "private": translations["private"],
+            "home": translations["home"],
+            "work": translations["work"],
+            "dealer": translations["dealer"],
+            "hotel": translations["hotel"],
+            "other": translations["other"],
+            "custom": translations["custom"],
         }
         type_label = type_labels.get(site_type, site_type)
 
@@ -1046,11 +1318,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if site_type == "home":
             parts = [type_label, street_line, city_line]
         elif site_type == "work":
-            work_name = (
-                name
-                if name.casefold() not in {"arbeit", "arbeitsplatz"}
-                else ""
-            )
+            work_names = {
+                translations["work"].casefold(),
+                "work",
+                "arbeitsplatz",
+                "arbeit",
+            }
+            work_name = name if name.casefold() not in work_names else ""
             parts = [
                 type_label,
                 work_name or street_line,
@@ -1058,12 +1332,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ]
         else:
             parts = [
-                name or address_fallback or "Ladeort",
+                name or address_fallback or translations["location"],
                 provider,
                 type_label,
             ]
 
-        # Remove empty and duplicate values while preserving display order.
         result: list[str] = []
         seen: set[str] = set()
         for part in parts:
@@ -1073,31 +1346,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 result.append(value)
                 seen.add(key)
 
-        return " · ".join(result) or "Ladeort"
+        return " · ".join(result) or translations["location"]
 
     @staticmethod
-    def _format_pending_site_count(count: int) -> str:
-        """Return grammatically correct pending-site information."""
+    def _format_pending_site_count(
+        count: int,
+        translations: dict[str, str],
+    ) -> str:
+        """Return translated pending-site information."""
 
         if count == 1:
-            return (
-                "Es wurde 1 unbekannter Ladeort erkannt. "
-                "Dieser kann jetzt als eigener Ladeort gespeichert werden."
-            )
+            return translations["pending_one"]
         if count > 1:
-            return (
-                f"Es wurden {count} unbekannte Ladeorte erkannt. "
-                "Diese können jetzt als eigene Ladeorte gespeichert werden."
-            )
+            return translations["pending_many"].format(count=count)
         return ""
 
     @staticmethod
-    def _format_stored_site_count(count: int) -> str:
-        """Return grammatically correct stored-site information."""
+    def _format_stored_site_count(
+        count: int,
+        translations: dict[str, str],
+    ) -> str:
+        """Return translated stored-site information."""
 
         if count == 1:
-            return "1 eigener Ladeort gespeichert."
-        return f"{count} eigene Ladeorte gespeichert."
+            return translations["stored_one"]
+        return translations["stored_many"].format(count=count)
 
     async def async_step_import_charging_sites(
         self,
@@ -1360,7 +1633,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "progress": str(status.get("progress", 0)),
                 "elapsed": f"{float(status.get('elapsed_seconds', 0.0)):.1f}",
                 "progress_log": self._format_progress_log(
-                    status.get("log", [])
+                    status.get("log", []),
+                    await self._async_get_charging_site_translations(),
                 ),
             },
         )
@@ -1441,11 +1715,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
     @staticmethod
     def _format_progress_log(
         entries: list[dict[str, Any]] | Any,
+        translations: dict[str, str],
     ) -> str:
         """Format structured progress entries for the options dialog."""
 
         if not isinstance(entries, list) or not entries:
-            return "Noch keine Fortschrittsmeldungen."
+            return translations["no_progress"]
 
         lines: list[str] = []
 
@@ -1469,7 +1744,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_text = ""
             if isinstance(step, int) and isinstance(total_steps, int):
                 if total_steps > 0:
-                    step_text = f"Schritt {step}/{total_steps}: "
+                    step_text = (
+                        f"{translations['step']} {step}/{total_steps}: "
+                    )
 
             text = message or title
             if title and message and title != message:
@@ -1486,7 +1763,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 f"{prefix} {step_text}{text}{elapsed_text}"
             )
 
-        return "\n".join(lines) or "Noch keine Fortschrittsmeldungen."
+        return "\n".join(lines) or translations["no_progress"]
 
 
     def _build_options_schema(self) -> vol.Schema:
@@ -1532,6 +1809,50 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         min=40,
                         max=120,
                         step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_HOME_ZONE,
+                    default=self._options.get(
+                        CONF_JOURNEY_HOME_ZONE,
+                        DEFAULT_JOURNEY_HOME_ZONE,
+                    ),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="zone",
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_HOME_TIMEOUT,
+                    default=self._options.get(
+                        CONF_JOURNEY_HOME_TIMEOUT,
+                        DEFAULT_JOURNEY_HOME_TIMEOUT,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=120,
+                        step=1,
+                        unit_of_measurement="min",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_MAX_GAP_HOURS,
+                    default=self._options.get(
+                        CONF_JOURNEY_MAX_GAP_HOURS,
+                        DEFAULT_JOURNEY_MAX_GAP_HOURS,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=72,
+                        step=1,
+                        unit_of_measurement="h",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),

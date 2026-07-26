@@ -28,13 +28,15 @@
           "settings": "Einstellungen",
           "import_charging_sites": "Ladeort-Datenbank importieren",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "user_charging_sites": "Eigene Ladeorte"
+          "user_charging_sites": "Eigene Ladeorte",
+          "journey_management": "Tour-Verwaltung"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten."
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
+          "journey_management": "Touren aktualisieren, neu berechnen oder löschen."
         }
       },
       "settings": {
@@ -45,13 +47,19 @@
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus-Sensor",
           "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)"
+          "soh": "Batteriezustand (SOH)",
+          "journey_home_zone": "Tour-Basis",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
+          "journey_max_gap_hours": "Maximale Tour-Pause"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
           "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh."
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann."
         }
       },
       "import_charging_sites": {
@@ -142,6 +150,45 @@
         "data": {
           "user_charging_site_selection": "Erkannter Ladeort"
         }
+      },
+      "journey_management": {
+        "title": "Tour-Verwaltung",
+        "description": "Wähle die gewünschte Wartungsaktion.",
+        "menu_options": {
+          "journey_update": "Touren aktualisieren",
+          "journey_rebuild": "Touren neu berechnen",
+          "journey_delete": "Touren löschen"
+        }
+      },
+      "journey_update": {
+        "title": "Touren aktualisieren",
+        "description": "Erstellt nur fehlende Touren im optionalen Zeitraum.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "journey_rebuild": {
+        "title": "Touren neu berechnen",
+        "description": "Löscht bestehende Touren im Zeitraum und berechnet sie neu.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "journey_delete": {
+        "title": "Touren löschen",
+        "description": "Löscht Touren. Trips und Ladevorgänge bleiben erhalten.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "journey_result": {
+        "title": "Tour-Aktion abgeschlossen",
+        "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
       }
     },
     "error": {
@@ -150,7 +197,9 @@
       "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
       "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
       "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
-      "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden."
+      "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden.",
+      "journey_operation_failed": "Die Tour-Aktion konnte nicht ausgeführt werden.",
+      "journey_confirmation_required": "Die Aktion muss bestätigt werden."
     }
   },
   "entity": {
@@ -265,7 +314,117 @@
       },
       "average_trip_consumption": {
         "name": "Durchschnittlicher Verbrauch pro Fahrt"
+      },
+      "last_charge_energy": {
+        "name": "Energie der letzten Ladung"
+      },
+      "last_charge_energy_fordpass": {
+        "name": "FordPass-Energie der letzten Ladung"
+      },
+      "last_charge_energy_calculated": {
+        "name": "Berechnete Energie der letzten Ladung"
+      },
+      "last_charge_energy_source": {
+        "name": "Energiequelle der letzten Ladung"
+      },
+      "last_journey": {
+        "name": "Letzte Tour"
       }
+    }
+  },
+  "common": {
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "unknown": "Unbekannt",
+    "no_gps_data": "Keine GPS-Daten verfügbar",
+    "charging_site_home": "Zuhause",
+    "charging_site_work": "Arbeit",
+    "charging_site_public": "Öffentlich",
+    "charging_site_private": "Privat",
+    "charging_site_dealer": "Händler",
+    "charging_site_hotel": "Hotel",
+    "charging_site_other": "Sonstige",
+    "charging_site_custom": "Benutzerdefiniert",
+    "charging_site_location": "Ladeort",
+    "charging_site_unknown_location": "Unbekannter Ladeort",
+    "charging_site_new_location": "+ Neuer Ladeort",
+    "charging_site_pending_locations": "⚠ Neue erkannte Ladeorte ({count})",
+    "charging_site_save": "Speichern",
+    "charging_site_delete": "Löschen",
+    "charging_site_step": "Schritt",
+    "charging_site_no_progress": "Noch keine Fortschrittsmeldungen.",
+    "charging_site_stored_one": "1 eigener Ladeort gespeichert.",
+    "charging_site_stored_many": "{count} eigene Ladeorte gespeichert.",
+    "charging_site_pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
+    "charging_site_pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden."
+  },
+  "services": {
+    "import_charging_sites": {
+      "name": "Ladestationen importieren",
+      "description": "Importiert eine Ladestationsdatenbank aus einer JSON-Datei im Home-Assistant-Konfigurationsverzeichnis.",
+      "fields": {
+        "file": {
+          "name": "Datei",
+          "description": "Relativer Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_ch.json."
+        }
+      }
+    },
+    "download_charging_database": {
+      "name": "Ladestationsdatenbank herunterladen",
+      "description": "Lädt die Ladestationsdatenbank für ein Land herunter, erstellt sie, importiert sie und aktiviert sie.",
+      "fields": {
+        "country": {
+          "name": "Land",
+          "description": "ISO-3166-1-Alpha-2-Ländercode, zum Beispiel CH, DE oder AT."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "json_read_failed": {
+      "message": "Die JSON-Datei konnte nicht gelesen werden: {error}"
+    },
+    "missing_country_code": {
+      "message": "Die importierte Datenbank enthält kein Feld country_code."
+    },
+    "unsupported_import_country": {
+      "message": "Die importierte Datenbank enthält den nicht unterstützten Ländercode „{country_code}“."
+    },
+    "absolute_import_path": {
+      "message": "Verwende einen relativen Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_de.json."
+    },
+    "import_path_outside_config": {
+      "message": "Die Importdatei muss sich unterhalb des Home-Assistant-Konfigurationsverzeichnisses befinden."
+    },
+    "import_file_not_json": {
+      "message": "Die Importdatei der Ladestationsdatenbank muss eine JSON-Datei sein."
+    },
+    "import_file_not_found": {
+      "message": "Die Importdatei der Ladestationsdatenbank wurde nicht gefunden: {path}"
+    },
+    "database_invalid": {
+      "message": "Die Ladestationsdatenbank ist ungültig: {error}"
+    },
+    "database_validation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht geprüft werden: {error}"
+    },
+    "integration_not_loaded": {
+      "message": "Ford Triplog ist derzeit nicht geladen."
+    },
+    "unsupported_country": {
+      "message": "Der Ländercode „{country_code}“ wird nicht unterstützt. Unterstützte Länder: {supported}."
+    },
+    "imported_database_load_failed": {
+      "message": "Die importierte Ladestationsdatenbank konnte nicht geladen werden: {error}"
+    },
+    "database_import_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht importiert werden: {error}"
+    },
+    "database_download_failed": {
+      "message": "Das Herunterladen der Ladestationsdatenbank ist fehlgeschlagen: {error}"
+    },
+    "database_generation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
     }
   }
 }

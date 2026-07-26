@@ -4,7 +4,7 @@ Ford Triplog
 Build a charging-site database directly from OpenStreetMap.
 
 File: charging_database_builder.py
-Version: 1.4.3
+Version: 1.6.0
 Date: 2026-07-23
 
 Purpose:
@@ -52,7 +52,7 @@ from .validator import (
 )
 
 
-FILE_VERSION = "1.4.3"
+FILE_VERSION = "1.6.0"
 
 _LOGGER = logging.getLogger(__name__)
 
