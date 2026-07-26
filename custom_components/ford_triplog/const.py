@@ -26,7 +26,7 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "1.6.2a"
+VERSION: Final = "1.6.2"
 
 #
 # Storage
