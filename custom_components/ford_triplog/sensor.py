@@ -361,6 +361,23 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         return max(0, int((end_dt - start_dt).total_seconds()))
 
     @staticmethod
+    def _format_duration_compact(seconds: Any) -> str:
+        """Return a compact human-readable duration for the sensor state."""
+
+        try:
+            total_seconds = max(0, int(seconds or 0))
+        except (TypeError, ValueError):
+            total_seconds = 0
+
+        hours, remainder = divmod(total_seconds, 3600)
+        minutes = remainder // 60
+
+        if hours:
+            return f"{hours} h {minutes} min"
+
+        return f"{minutes} min"
+
+    @staticmethod
     def _format_clock(value: Any) -> str | None:
         """Return a compact local clock time."""
 
@@ -519,7 +536,8 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         total_duration = int(journey.total_duration_seconds or 0)
 
         self._attr_native_value = (
-            f"{distance:g} km · {format_duration(total_duration)}"
+            f"{distance:g} km · "
+            f"{self._format_duration_compact(total_duration)}"
         )
 
         self._attributes = {
