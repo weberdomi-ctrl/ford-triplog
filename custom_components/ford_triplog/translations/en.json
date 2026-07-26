@@ -332,6 +332,9 @@
       },
       "last_charge": {
         "name": "Last charge"
+      },
+      "last_journey_overview": {
+        "name": "Last Journey Overview"
       }
     }
   },
