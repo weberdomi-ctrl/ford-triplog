@@ -18,7 +18,7 @@
 
 <p align="center">
 
-**Automatic Trip Logging • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
+**Automatic Trip Logging • Journey Management • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
 
 
 ------------------------------------------------------------------------
@@ -53,6 +53,20 @@ Your data always remains under your control.
 -   State of Charge (SOC) consumption
 -   Estimated energy consumption
 -   Smart Trip support
+
+## 🛣️ Journey Management
+
+Ford Triplog automatically combines related trips and charging sessions into a single Journey.
+
+Features include:
+
+- Automatic Journey creation
+- Multiple trips per Journey
+- Multiple charging sessions per Journey
+- Home-zone based Journey completion
+- Configurable timeout and maximum gap
+- Native Journey sensor
+
 
 ------------------------------------------------------------------------
 
