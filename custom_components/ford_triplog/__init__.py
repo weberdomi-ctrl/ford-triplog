@@ -6,6 +6,7 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 1.6.0
+Release: 1.6c
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from typing import Any
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.const import Platform
+
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
@@ -27,6 +29,9 @@ from .geo import FordTriplogGeo
 from .storage import FordTriplogStorage
 from .services import async_register_services
 from .progress_manager import ProgressManager
+from .journey_storage import FordTriplogJourneyStorage
+from .journey_manager import FordTriplogJourneyManager
+from .journey_rebuilder import FordTriplogJourneyRebuilder
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -60,7 +65,7 @@ async def async_setup_entry(
         hass,
     )
 
-    config = _build_config(entry,)
+    config = _build_config(entry)
 
 
     coordinator = FordTriplogCoordinator(
@@ -71,6 +76,24 @@ async def async_setup_entry(
     )
 
     await coordinator.async_setup()
+
+    journey_storage = FordTriplogJourneyStorage(
+        hass,
+    )
+
+    await journey_storage.async_setup()
+
+    journey_manager = FordTriplogJourneyManager(
+        hass=hass,
+        storage=journey_storage,
+    )
+
+    await journey_manager.async_setup()
+
+    journey_rebuilder = FordTriplogJourneyRebuilder(
+        source_storage=storage,
+        journey_storage=journey_storage,
+    )
 
     await async_register_services(hass)
 
@@ -89,6 +112,9 @@ async def async_setup_entry(
         "geo": geo,
         "coordinator": coordinator,
         "config": config,
+        "journey_storage": journey_storage,
+        "journey_manager": journey_manager,
+        "journey_rebuilder": journey_rebuilder,
     }
 
     entry.async_on_unload(
@@ -107,6 +133,8 @@ async def async_setup_entry(
     )
 
     return True
+
+
 async def async_unload_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -129,6 +157,8 @@ async def async_unload_entry(
         )
 
     return unload_ok
+
+
 async def entry_update_listener(
     hass: HomeAssistant,
     entry: ConfigEntry,
