@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.1
-Release: 1.6.1b
+Release: 1.6.1c
 """
 
 from __future__ import annotations
@@ -661,6 +661,10 @@ class FordTriplogJourneyManager:
             return None
 
         if self.home_timeout_seconds <= 0:
+            _LOGGER.info(
+                "Journey home zone reached: journey=%s, completing immediately",
+                journey.journey_id,
+            )
             return await self._finish_or_discard_current(
                 reason="returned_to_home_zone"
             )
