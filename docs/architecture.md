@@ -45,6 +45,9 @@ Ford Triplog was designed with the following principles:
          │                   │                   │
          └───────────────┬───┴───────────────────┘
                          ▼
+                   Journey Manager
+                         │
+                         ▼
                    Storage Manager
                          │
              ┌───────────┴───────────┐
@@ -105,6 +108,26 @@ It records:
 - Charging duration
 
 Whenever possible, charging sessions are linked to the previous trip.
+
+---
+
+
+## Journey Manager
+
+The Journey Manager groups related trips and charging sessions into a single Journey.
+
+Responsibilities include:
+
+- Automatic Journey creation
+- Assignment of trips and charging sessions
+- Journey completion detection
+- Home-zone recognition
+- Journey timeout handling
+- Maximum Journey Gap handling
+- Journey statistics
+- Journey rebuild and recovery
+
+A Journey may contain multiple trips and charging sessions, providing a complete view of a driving session.
 
 ---
 
@@ -222,6 +245,40 @@ Charging stored
 
 ---
 
+
+## Journey Recording
+
+```
+Trip starts
+
+↓
+
+Journey created
+
+↓
+
+Trips added
+
+↓
+
+Charging sessions added
+
+↓
+
+Vehicle returns home
+or timeout expires
+
+↓
+
+Journey completed
+
+↓
+
+Journey stored
+```
+
+---
+
 # Charging Location Resolution
 
 ```
@@ -271,6 +328,7 @@ Ford Triplog stores all information inside Home Assistant.
 
 Typical data includes:
 
+- Journeys
 - Trips
 - Charging sessions
 - Statistics
@@ -292,6 +350,11 @@ Recovery has been designed to survive unexpected situations such as:
 - FordPass temporary outage
 
 When Home Assistant starts again, Ford Triplog restores its previous state and continues recording without losing historical data.
+
+Recovery also includes:
+
+- Active Journey restoration
+- Journey reconstruction after restart
 
 ---
 
@@ -317,7 +380,9 @@ Supermarket (4 min)
 Office
 ```
 
-Instead of creating three trips, Smart Trip combines them into one continuous journey.
+Instead of creating multiple short trips, Smart Trip merges short stops into a single trip.
+
+That trip is then automatically assigned to a Journey together with any subsequent trips and charging sessions.
 
 The timeout is fully configurable.
 
