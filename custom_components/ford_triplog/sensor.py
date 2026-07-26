@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.4.0
+Version: 1.6.0
 """
 
 from __future__ import annotations
@@ -46,7 +46,7 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN
+from .const import DOMAIN, VERSION
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -208,6 +208,7 @@ class FordTriplogSensorBase(SensorEntity):
             "name": "Ford Triplog",
             "manufacturer": "Ford",
             "model": "Triplog",
+            "sw_version": VERSION,
         }
 
 

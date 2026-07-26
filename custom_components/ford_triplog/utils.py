@@ -3,7 +3,7 @@ Ford Triplog
 
 Utility functions.
 
-Version: 1.3.2
+Version: 1.6.0
 """
 from __future__ import annotations
 
