@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Ford Triplog",
+        "description": "Konfiguracja Ford Triplog.",
+        "data": {
+          "ignition": "Zapłon.",
+          "odometer": "Licznik kilometrów.",
+          "tracker": "Śledzenie samochodu.",
+          "charging": "Sensor statusu ładowania (opcja dostępna dla samochodów elektrycznych).",
+          "smart_trip": "Włącz inteligentną podróż.",
+          "smart_trip_timeout": "Limit czasu inteligentnej podróży (sekundy)."
+        },
+        "data_description": {
+          "smart_trip": "Połącz któtkie postoje w jendą podróż.",
+          "smart_trip_timeout": "Czas przerwy kończącej podróż."
+        }
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "description": "Ford Triplog - opcje.",
+        "data": {
+          "soh": "Zdrowie baterii (SOH).",
+          "smart_trip": "Włącz inteligentną podróż.",
+          "smart_trip_timeout": "Limit czasu inteligentnej podróży (sekundy).",
+          "charging": "Sensor statusu ładowania.",
+          "battery_capacity_kwh": "Pojemność baterii netto (kWh)."   
+        },
+        "data_description": {
+          "smart_trip": "Połącz któtkie postoje w jendą podróż.",
+          "smart_trip_timeout": "Wartość minimalna: 30 sekund.",
+          "charging": "Sensor statusu ładowania (opcja dostępna dla samochodów elektrycznych).",
+          "battery_capacity_kwh": "Pojemność baterii netto. Domyślnie: 77 kWh."   
+        }
+      }
+    }
+  }
+}
