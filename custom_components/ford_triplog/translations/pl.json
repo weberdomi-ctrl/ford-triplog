@@ -265,6 +265,18 @@
       },
       "average_trip_consumption": {
         "name": "Średnie zużycie na podróż"
+      },
+      "last_charge_energy": {
+        "name": "Energia ostatniego ładowania"
+      },
+      "last_charge_energy_fordpass": {
+        "name": "Energia ostatniego ładowania z FordPass"
+      },
+      "last_charge_energy_calculated": {
+        "name": "Obliczona energia ostatniego ładowania"
+      },
+      "last_charge_energy_source": {
+        "name": "Źródło energii ostatniego ładowania"
       }
     }
   },

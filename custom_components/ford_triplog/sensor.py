@@ -76,6 +76,14 @@ async def async_setup_entry(
             f"component.{DOMAIN}.common.yesterday",
             "Yesterday",
         ),
+        "unknown": translations.get(
+            f"component.{DOMAIN}.common.unknown",
+            "Unknown",
+        ),
+        "no_gps_data": translations.get(
+            f"component.{DOMAIN}.common.no_gps_data",
+            "No GPS data available",
+        ),
     }
 
     async_add_entities(
@@ -583,7 +591,7 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
 class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     """Primary energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie"
+    _attr_translation_key = "last_charge_energy"
     _attr_unique_id = "ford_triplog_last_charge_energy"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -608,7 +616,7 @@ class FordTriplogLastChargeEnergyFordPassSensor(
 ):
     """FordPass energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie FordPass"
+    _attr_translation_key = "last_charge_energy_fordpass"
     _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -633,7 +641,7 @@ class FordTriplogLastChargeEnergyCalculatedSensor(
 ):
     """Calculated energy value of the last charging session."""
 
-    _attr_name = "Letzte Ladung Energie berechnet"
+    _attr_translation_key = "last_charge_energy_calculated"
     _attr_unique_id = "ford_triplog_last_charge_energy_calculated"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -658,7 +666,7 @@ class FordTriplogLastChargeEnergySourceSensor(
 ):
     """Source used for the primary charging energy value."""
 
-    _attr_name = "Letzte Ladung Energiequelle"
+    _attr_translation_key = "last_charge_energy_source"
     _attr_unique_id = "ford_triplog_last_charge_energy_source"
     _attr_icon = "mdi:source-branch"
 
@@ -709,10 +717,10 @@ class FordTriplogLastChargeStartAddressSensor(FordTriplogSensorBase):
                 self._value = (
                     f"{street}, {locality}".strip(", ")
                     if street or locality
-                    else "Keine GPS-Daten verfügbar"
+                    else self.translations["no_gps_data"]
                 )
         else:
-            self._value = address or "Keine GPS-Daten verfügbar"
+            self._value = address or self.translations["no_gps_data"]
     
 class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
     """Resolved charging location of the last charging session."""
@@ -923,7 +931,7 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
             or operator
             or network
             or address
-            or "Keine GPS-Daten verfügbar"
+            or self.translations["no_gps_data"]
         )
 
         self._attributes = {
