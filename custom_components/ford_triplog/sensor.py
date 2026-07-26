@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 1.6.0
-Release: 1.6c
+Release: 1.6d
 """
 
 from __future__ import annotations
@@ -157,6 +157,7 @@ class FordTriplogLastJourneySensor(SensorEntity):
     _attr_unique_id = "ford_triplog_last_journey"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
     _attr_icon = "mdi:map-marker-path"
+    _attr_should_poll = True
 
     def __init__(
         self,
@@ -171,6 +172,8 @@ class FordTriplogLastJourneySensor(SensorEntity):
     async def async_added_to_hass(self) -> None:
         """Load state and subscribe to Journey updates."""
 
+        await super().async_added_to_hass()
+
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
@@ -178,6 +181,11 @@ class FordTriplogLastJourneySensor(SensorEntity):
                 self._handle_journey_update,
             )
         )
+        await self._async_refresh()
+
+    async def async_update(self) -> None:
+        """Refresh the Journey during normal entity polling."""
+
         await self._async_refresh()
 
     def _handle_journey_update(self) -> None:
