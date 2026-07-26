@@ -3,7 +3,7 @@ Ford Triplog
 
 Charging location resolver.
 
-Version: 1.5.0
+Version: 1.6.0
 Phase: 3.5
 Build: 10
 
