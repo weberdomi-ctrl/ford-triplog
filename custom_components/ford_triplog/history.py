@@ -31,6 +31,7 @@ class FordTriplogHistory:
             dict[str, Any],
             dict[str, Any] | None,
             dict[str, Any] | None,
+            dict[str, Any] | None,
         ] | None = None
         self._sensor_data_cache_time = 0.0
 
@@ -39,6 +40,9 @@ class FordTriplogHistory:
 
     async def get_last_charge(self):
         return await self.storage.load_last_charge()
+
+    async def get_last_journey(self):
+        return await self.storage.journey_storage.load_last_journey()
 
     async def get_sensor_data(self):
         """Return the shared compact data snapshot used by all sensors.
@@ -63,16 +67,18 @@ class FordTriplogHistory:
             ):
                 return self._sensor_data_cache
 
-            statistics, last_trip, last_charge = await asyncio.gather(
+            statistics, last_trip, last_charge, last_journey = await asyncio.gather(
                 self.storage.load_statistics(),
                 self.storage.load_last_trip(),
                 self.storage.load_last_charge(),
+                self.storage.journey_storage.load_last_journey(),
             )
 
             snapshot = (
                 statistics or {},
                 last_trip,
                 last_charge,
+                last_journey,
             )
             self._sensor_data_cache = snapshot
             self._sensor_data_cache_time = monotonic()
