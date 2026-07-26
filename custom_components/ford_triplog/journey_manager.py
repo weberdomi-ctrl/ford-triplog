@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.6.0
-Release: 1.6j-home-zone-finalize
+Version: 1.6.1
+Release: 1.6.1a
 """
 
 from __future__ import annotations
@@ -20,7 +20,12 @@ from typing import Any, Mapping
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import SIGNAL_LAST_JOURNEY_UPDATED
+from .const import (
+    DEFAULT_JOURNEY_HOME_TIMEOUT,
+    DEFAULT_JOURNEY_HOME_ZONE,
+    DEFAULT_JOURNEY_MAX_GAP_HOURS,
+    SIGNAL_LAST_JOURNEY_UPDATED,
+)
 from .journey import FordTriplogJourney, JourneyItem
 from .journey_storage import FordTriplogJourneyStorage
 
@@ -30,8 +35,6 @@ DEFAULT_TRIP_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
 DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
-DEFAULT_JOURNEY_MAX_GAP_HOURS = 24
-DEFAULT_JOURNEY_HOME_ZONE = "zone.home"
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,6 +69,7 @@ class FordTriplogJourneyManager:
         ),
         journey_max_gap_hours: int = DEFAULT_JOURNEY_MAX_GAP_HOURS,
         home_zone_entity_id: str = DEFAULT_JOURNEY_HOME_ZONE,
+        home_timeout_minutes: int = DEFAULT_JOURNEY_HOME_TIMEOUT,
     ) -> None:
         """Initialize the daily journey manager."""
 
@@ -95,6 +99,10 @@ class FordTriplogJourneyManager:
         self.home_zone_entity_id = (
             str(home_zone_entity_id).strip() or DEFAULT_JOURNEY_HOME_ZONE
         )
+        self.home_timeout_seconds = max(
+            0,
+            int(home_timeout_minutes),
+        ) * 60
 
         self.current_journey: FordTriplogJourney | None = None
         self.last_journey: FordTriplogJourney | None = None
