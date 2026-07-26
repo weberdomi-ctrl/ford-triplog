@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.1
-Release: 1.6.1a
+Release: 1.6.1b
 """
 
 from __future__ import annotations
@@ -15,10 +15,11 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from math import asin, cos, radians, sin, sqrt
-from typing import Any, Mapping
+from typing import Any, Callable, Mapping
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers.event import async_call_later
 
 from .const import (
     DEFAULT_JOURNEY_HOME_TIMEOUT,
@@ -110,6 +111,10 @@ class FordTriplogJourneyManager:
         self._trip_data: dict[str, dict[str, Any]] = {}
         self._charge_data: dict[str, dict[str, Any]] = {}
 
+        self._home_arrival_time: datetime | None = None
+        self._home_timeout_cancel: Callable[[], None] | None = None
+        self._home_timeout_journey_id: str | None = None
+
     async def async_setup(self) -> None:
         """Initialize storage and restore saved journey state."""
 
@@ -140,6 +145,10 @@ class FordTriplogJourneyManager:
             self.current_journey.journey_id if self.current_journey else None,
             self._item_summary(self.current_journey),
         )
+
+        # A new trip means that the vehicle left the journey base before a
+        # pending minimum-stay timer completed. Keep the journey open.
+        self._cancel_home_timeout(reason="new_trip_started")
 
         self._trip_data[trip_id] = data
 
@@ -205,10 +214,11 @@ class FordTriplogJourneyManager:
             if matches:
                 self._add_trip(self.current_journey, data)
 
-                if self._should_finish_at_home(self.current_journey, data):
-                    completed = await self._finish_or_discard_current(
-                        reason="returned_to_home_zone"
-                    )
+                completed = await self._async_handle_home_arrival(
+                    self.current_journey,
+                    data,
+                )
+                if completed is not None:
                     return JourneyUpdateResult(
                         action="completed",
                         completed_journey=completed,
@@ -267,10 +277,11 @@ class FordTriplogJourneyManager:
         if matches:
             self._add_trip(self.current_journey, data)
 
-            if self._should_finish_at_home(self.current_journey, data):
-                completed = await self._finish_or_discard_current(
-                    reason="returned_to_home_zone"
-                )
+            completed = await self._async_handle_home_arrival(
+                self.current_journey,
+                data,
+            )
+            if completed is not None:
                 return JourneyUpdateResult(
                     action="completed",
                     completed_journey=completed,
@@ -472,6 +483,8 @@ class FordTriplogJourneyManager:
     ) -> FordTriplogJourney | None:
         """Archive a valid journey or discard an incomplete candidate."""
 
+        self._cancel_home_timeout(reason="journey_finished")
+
         journey = self.current_journey
         self.current_journey = None
 
@@ -636,6 +649,88 @@ class FordTriplogJourneyManager:
 
         return journey_date == cls._date_key(value)
 
+
+    async def _async_handle_home_arrival(
+        self,
+        journey: FordTriplogJourney,
+        trip: Mapping[str, Any],
+    ) -> FordTriplogJourney | None:
+        """Finish immediately or start the configured home-stay timer."""
+
+        if not self._should_finish_at_home(journey, trip):
+            return None
+
+        if self.home_timeout_seconds <= 0:
+            return await self._finish_or_discard_current(
+                reason="returned_to_home_zone"
+            )
+
+        arrival_time = self._required_datetime(trip, "end_time")
+        self._schedule_home_timeout(journey, arrival_time)
+        return None
+
+    def _schedule_home_timeout(
+        self,
+        journey: FordTriplogJourney,
+        arrival_time: datetime,
+    ) -> None:
+        """Schedule journey completion after the minimum stay at home."""
+
+        self._cancel_home_timeout(reason="home_timeout_rescheduled")
+
+        self._home_arrival_time = arrival_time
+        self._home_timeout_journey_id = journey.journey_id
+
+        now = datetime.now(tz=arrival_time.tzinfo)
+        elapsed = max(0.0, (now - arrival_time).total_seconds())
+        delay = max(0.0, self.home_timeout_seconds - elapsed)
+
+        async def _async_finish_after_home_timeout(_now: datetime) -> None:
+            expected_journey_id = self._home_timeout_journey_id
+            self._home_timeout_cancel = None
+            self._home_timeout_journey_id = None
+            self._home_arrival_time = None
+
+            if (
+                self.current_journey is None
+                or self.current_journey.journey_id != expected_journey_id
+            ):
+                return
+
+            await self._finish_or_discard_current(
+                reason="home_timeout_elapsed"
+            )
+
+        self._home_timeout_cancel = async_call_later(
+            self.hass,
+            delay,
+            _async_finish_after_home_timeout,
+        )
+
+        _LOGGER.info(
+            "Journey home timeout started: journey=%s arrival=%s delay=%.1fs",
+            journey.journey_id,
+            arrival_time.isoformat(),
+            delay,
+        )
+
+    def _cancel_home_timeout(self, *, reason: str) -> None:
+        """Cancel and clear a pending home-stay timeout."""
+
+        had_pending_timeout = self._home_timeout_cancel is not None
+
+        if self._home_timeout_cancel is not None:
+            self._home_timeout_cancel()
+
+        self._home_timeout_cancel = None
+        self._home_timeout_journey_id = None
+        self._home_arrival_time = None
+
+        if had_pending_timeout:
+            _LOGGER.info(
+                "Journey home timeout cancelled: reason=%s",
+                reason,
+            )
 
     def _should_finish_at_home(
         self,
