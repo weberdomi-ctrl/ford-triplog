@@ -7,7 +7,8 @@ Configuration Flow.
 
 Version: 1.6.0
 Phase: 3.5
-Build: 15
+Build: 16
+Release: 1.6c
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -180,6 +181,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_user_charging_site: dict[str, Any] | None = None
         self._selected_pending_charging_site: dict[str, Any] | None = None
         self._charging_site_translations: dict[str, str] | None = None
+        self._journey_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -193,8 +195,198 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "settings",
                 "user_charging_sites",
                 "download_charging_sites",
+                "journey_management",
             ],
         )
+
+
+    def _get_journey_rebuilder(self):
+        """Return the Journey rebuilder for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        rebuilder = runtime_data.get("journey_rebuilder")
+
+        if rebuilder is None:
+            raise HomeAssistantError(
+                "Journey rebuilder is not initialized"
+            )
+
+        return rebuilder
+
+    @staticmethod
+    def _journey_date_schema(
+        *,
+        include_confirmation: bool = False,
+    ) -> vol.Schema:
+        """Build the optional Journey date-range schema."""
+
+        fields: dict[Any, Any] = {
+            vol.Optional("start_date"): selector.DateSelector(),
+            vol.Optional("end_date"): selector.DateSelector(),
+        }
+
+        if include_confirmation:
+            fields[
+                vol.Required(
+                    "confirm",
+                    default=False,
+                )
+            ] = selector.BooleanSelector()
+
+        return vol.Schema(fields)
+
+    async def async_step_journey_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show Journey maintenance actions."""
+
+        return self.async_show_menu(
+            step_id="journey_management",
+            menu_options=[
+                "journey_update",
+                "journey_rebuild",
+                "journey_delete",
+            ],
+        )
+
+    async def async_step_journey_update(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create missing Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                result = await self._get_journey_rebuilder().async_update_journeys(
+                    start_date=user_input.get("start_date"),
+                    end_date=user_input.get("end_date"),
+                )
+            except (HomeAssistantError, ValueError):
+                errors["base"] = "journey_operation_failed"
+            else:
+                self._journey_result = self._format_journey_result(
+                    result.to_dict()
+                )
+                return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_update",
+            data_schema=self._journey_date_schema(),
+            errors=errors,
+        )
+
+    async def async_step_journey_rebuild(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Rebuild Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                errors["base"] = "journey_confirmation_required"
+            else:
+                try:
+                    result = await self._get_journey_rebuilder().async_rebuild_journeys(
+                        start_date=user_input.get("start_date"),
+                        end_date=user_input.get("end_date"),
+                    )
+                except (HomeAssistantError, ValueError):
+                    errors["base"] = "journey_operation_failed"
+                else:
+                    self._journey_result = self._format_journey_result(
+                        result.to_dict()
+                    )
+                    return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_rebuild",
+            data_schema=self._journey_date_schema(
+                include_confirmation=True
+            ),
+            errors=errors,
+        )
+
+    async def async_step_journey_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Delete Journeys in an optional date range."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                errors["base"] = "journey_confirmation_required"
+            else:
+                try:
+                    result = await self._get_journey_rebuilder().async_delete_journeys(
+                        start_date=user_input.get("start_date"),
+                        end_date=user_input.get("end_date"),
+                    )
+                except (HomeAssistantError, ValueError):
+                    errors["base"] = "journey_operation_failed"
+                else:
+                    self._journey_result = self._format_journey_result(
+                        result.to_dict()
+                    )
+                    return await self.async_step_journey_result()
+
+        return self.async_show_form(
+            step_id="journey_delete",
+            data_schema=self._journey_date_schema(
+                include_confirmation=True
+            ),
+            errors=errors,
+        )
+
+    async def async_step_journey_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show a Journey maintenance result."""
+
+        if user_input is not None:
+            return await self.async_step_journey_management()
+
+        return self.async_show_form(
+            step_id="journey_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._journey_result,
+        )
+
+    @staticmethod
+    def _format_journey_result(
+        result: dict[str, Any],
+    ) -> dict[str, str]:
+        """Format result values for translation placeholders."""
+
+        affected_dates = result.get("affected_dates") or []
+
+        return {
+            "mode": str(result.get("mode") or ""),
+            "start_date": str(result.get("start_date") or "—"),
+            "end_date": str(result.get("end_date") or "—"),
+            "source_trips": str(result.get("source_trips", 0)),
+            "source_charges": str(result.get("source_charges", 0)),
+            "processed_records": str(result.get("processed_records", 0)),
+            "journeys_created": str(result.get("journeys_created", 0)),
+            "journeys_deleted": str(result.get("journeys_deleted", 0)),
+            "skipped_records": str(result.get("skipped_records", 0)),
+            "affected_dates": ", ".join(affected_dates) or "—",
+        }
+
 
     async def async_step_settings(
         self,
