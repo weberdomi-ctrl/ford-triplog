@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6a
+Release: 1.6c
 """
 
 from __future__ import annotations
@@ -780,6 +780,7 @@ class FordTriplogJourneyManager:
 
         if isinstance(value, Mapping):
             for key in (
+                "display",
                 "display_name",
                 "formatted",
                 "address",
@@ -789,7 +790,7 @@ class FordTriplogJourneyManager:
                 if candidate:
                     return str(candidate).strip() or None
 
-            return str(dict(value))
+            return None
 
         return str(value).strip() or None
 
