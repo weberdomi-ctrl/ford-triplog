@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.6.0
-Phase: 3.5
-Build: 16
-Release: 1.6c
+Version: 1.6.1
+Phase: 4.0
+Build: 01
+Release: 1.6.1a
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -16,6 +16,7 @@ Changes:
 - Automatically assigns Zuhause or Arbeit when the name is left empty.
 - Falls back to the address when no explicit name is available.
 - Keeps Build 14 translation-placeholder compatibility.
+- Adds configurable Journey base zone, home timeout and maximum gap options.
 """
 
 from __future__ import annotations
@@ -56,6 +57,12 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    CONF_JOURNEY_HOME_ZONE,
+    CONF_JOURNEY_HOME_TIMEOUT,
+    CONF_JOURNEY_MAX_GAP_HOURS,
+    DEFAULT_JOURNEY_HOME_ZONE,
+    DEFAULT_JOURNEY_HOME_TIMEOUT,
+    DEFAULT_JOURNEY_MAX_GAP_HOURS,
     DOMAIN,
     NAME,
     VERSION as FORD_TRIPLOG_VERSION,
@@ -1797,6 +1804,50 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         min=40,
                         max=120,
                         step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_HOME_ZONE,
+                    default=self._options.get(
+                        CONF_JOURNEY_HOME_ZONE,
+                        DEFAULT_JOURNEY_HOME_ZONE,
+                    ),
+                ): selector.EntitySelector(
+                    selector.EntitySelectorConfig(
+                        domain="zone",
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_HOME_TIMEOUT,
+                    default=self._options.get(
+                        CONF_JOURNEY_HOME_TIMEOUT,
+                        DEFAULT_JOURNEY_HOME_TIMEOUT,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=120,
+                        step=1,
+                        unit_of_measurement="min",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_JOURNEY_MAX_GAP_HOURS,
+                    default=self._options.get(
+                        CONF_JOURNEY_MAX_GAP_HOURS,
+                        DEFAULT_JOURNEY_MAX_GAP_HOURS,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=1,
+                        max=72,
+                        step=1,
+                        unit_of_measurement="h",
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
