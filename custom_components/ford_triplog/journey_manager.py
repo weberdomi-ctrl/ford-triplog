@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6i-journey-gap
+Release: 1.6j-home-zone-finalize
 """
 
 from __future__ import annotations
@@ -31,6 +31,7 @@ DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
 DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
 DEFAULT_JOURNEY_MAX_GAP_HOURS = 24
+DEFAULT_JOURNEY_HOME_ZONE = "zone.home"
 
 
 @dataclass(slots=True, frozen=True)
@@ -64,6 +65,7 @@ class FordTriplogJourneyManager:
             DEFAULT_LOCATION_MATCH_RADIUS_METERS
         ),
         journey_max_gap_hours: int = DEFAULT_JOURNEY_MAX_GAP_HOURS,
+        home_zone_entity_id: str = DEFAULT_JOURNEY_HOME_ZONE,
     ) -> None:
         """Initialize the daily journey manager."""
 
@@ -90,6 +92,9 @@ class FordTriplogJourneyManager:
             1,
             int(journey_max_gap_hours),
         ) * 60 * 60
+        self.home_zone_entity_id = (
+            str(home_zone_entity_id).strip() or DEFAULT_JOURNEY_HOME_ZONE
+        )
 
         self.current_journey: FordTriplogJourney | None = None
         self.last_journey: FordTriplogJourney | None = None
@@ -191,6 +196,17 @@ class FordTriplogJourneyManager:
 
             if matches:
                 self._add_trip(self.current_journey, data)
+
+                if self._should_finish_at_home(self.current_journey, data):
+                    completed = await self._finish_or_discard_current(
+                        reason="returned_to_home_zone"
+                    )
+                    return JourneyUpdateResult(
+                        action="completed",
+                        completed_journey=completed,
+                        reason="returned_to_home_zone",
+                    )
+
                 await self.storage.save_current_journey(
                     self.current_journey
                 )
@@ -242,6 +258,17 @@ class FordTriplogJourneyManager:
 
         if matches:
             self._add_trip(self.current_journey, data)
+
+            if self._should_finish_at_home(self.current_journey, data):
+                completed = await self._finish_or_discard_current(
+                    reason="returned_to_home_zone"
+                )
+                return JourneyUpdateResult(
+                    action="completed",
+                    completed_journey=completed,
+                    reason="returned_to_home_zone",
+                )
+
             await self.storage.save_current_journey(self.current_journey)
             return JourneyUpdateResult(
                 action="updated",
@@ -600,6 +627,74 @@ class FordTriplogJourneyManager:
             )
 
         return journey_date == cls._date_key(value)
+
+
+    def _should_finish_at_home(
+        self,
+        journey: FordTriplogJourney,
+        trip: Mapping[str, Any],
+    ) -> bool:
+        """Return whether a complete journey ended inside the home zone."""
+
+        if not self.is_complete_journey(journey):
+            return False
+
+        zone_state = self.hass.states.get(self.home_zone_entity_id)
+        if zone_state is None:
+            _LOGGER.debug(
+                "Journey home-zone check skipped: %s not found",
+                self.home_zone_entity_id,
+            )
+            return False
+
+        end_latitude = trip.get("end_latitude")
+        end_longitude = trip.get("end_longitude")
+
+        end_address = trip.get("end_address")
+        if isinstance(end_address, Mapping):
+            if end_latitude is None:
+                end_latitude = end_address.get("latitude")
+            if end_longitude is None:
+                end_longitude = end_address.get("longitude")
+
+        zone_latitude = zone_state.attributes.get("latitude")
+        zone_longitude = zone_state.attributes.get("longitude")
+        zone_radius = zone_state.attributes.get("radius")
+
+        coordinates = (
+            end_latitude,
+            end_longitude,
+            zone_latitude,
+            zone_longitude,
+            zone_radius,
+        )
+        if any(value is None for value in coordinates):
+            _LOGGER.debug(
+                "Journey home-zone check skipped because coordinates or radius are missing"
+            )
+            return False
+
+        try:
+            distance = self._distance_meters(
+                float(end_latitude),
+                float(end_longitude),
+                float(zone_latitude),
+                float(zone_longitude),
+            )
+            radius = max(0.0, float(zone_radius))
+        except (TypeError, ValueError):
+            return False
+
+        inside_home = distance <= radius
+        _LOGGER.info(
+            "Journey home-zone check: trip=%s zone=%s distance=%.1fm radius=%.1fm inside=%s",
+            trip.get("trip_id"),
+            self.home_zone_entity_id,
+            distance,
+            radius,
+            inside_home,
+        )
+        return inside_home
 
     def _trip_matches_trip(
         self,

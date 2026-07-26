@@ -5,13 +5,14 @@ Track your Ford.
 
 Central constants used throughout the integration.
 
-Version: 1.6.0
-Release: 1.6a
-Phase: 3.4
-Build: 06
+Version: 1.6.1
+Release: 1.6.1a
+Phase: 4.0
+Build: 01
 Changes:
-- Added constants for pending unknown charging locations.
-- Keeps the user-defined charging-site database constants.
+- Added configurable Journey Home Zone.
+- Added configurable Journey Home Timeout.
+- Added configurable Journey Maximum Gap.
 """
 
 from __future__ import annotations
@@ -79,6 +80,15 @@ CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
 
 CONF_SMART_TRIP: Final = "smart_trip"
 CONF_SMART_TRIP_TIMEOUT: Final = "smart_trip_timeout"
+
+
+CONF_JOURNEY_HOME_ZONE: Final = "journey_home_zone"
+CONF_JOURNEY_HOME_TIMEOUT: Final = "journey_home_timeout_minutes"
+CONF_JOURNEY_MAX_GAP_HOURS: Final = "journey_max_gap_hours"
+
+DEFAULT_JOURNEY_HOME_ZONE: Final = "zone.home"
+DEFAULT_JOURNEY_HOME_TIMEOUT: Final = 15
+DEFAULT_JOURNEY_MAX_GAP_HOURS: Final = 24
 
 # Charging defaults
 
