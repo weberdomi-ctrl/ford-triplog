@@ -332,6 +332,9 @@
       },
       "last_charge": {
         "name": "Ostatnie ładowanie"
+      },
+      "last_journey_overview": {
+        "name": "Przegląd ostatniej podróży"
       }
     }
   },
