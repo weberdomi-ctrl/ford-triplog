@@ -188,7 +188,7 @@
       },
       "journey_result": {
         "title": "Czynność dotycząca podróży zakończona",
-        "description": "Tryb: {mode}\n\nPrzejazdy: {source_trips} · Ładowania: {source_charges} · Przetworzone: {processed_records}\n\nUtworzone: {journeys_created} · Usunięte: {journeys_deleted} · Pominięte: {skipped_records}\n\nZakres: {start_date} do {end_date}\n\nDaty: {affected_dates}"
+        "description": "Tryb: {mode}\n\nPrzejazdy: {source_trips} · Ładowania: {source_charges} · Przetworzone: {processed_records}\n\nUtworzone podróże: {journeys_created} · Usunięte podróże: {journeys_deleted}\n\nPominięte pliki źródłowe: {source_files_skipped}\n\nZakres: {start_date} do {end_date}\n\nDaty: {affected_dates}"
       }
     },
     "error": {

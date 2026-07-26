@@ -5,8 +5,8 @@ Track your Ford.
 
 Rebuild and update daily journeys from archived trips and charges.
 
-Version: 1.6.0
-Release: 1.6c
+Version: 1.6.1
+Release: 1.6.1c
 """
 
 from __future__ import annotations
@@ -81,6 +81,7 @@ class JourneyRebuildProgress:
             "journeys_created": self.journeys_created,
             "journeys_deleted": self.journeys_deleted,
             "skipped_records": self.skipped_records,
+            "source_files_skipped": self.skipped_records,
             "message": self.message,
         }
 
@@ -113,6 +114,7 @@ class JourneyRebuildResult:
             "journeys_created": self.journeys_created,
             "journeys_deleted": self.journeys_deleted,
             "skipped_records": self.skipped_records,
+            "source_files_skipped": self.skipped_records,
             "affected_dates": list(self.affected_dates),
         }
 

@@ -8,7 +8,7 @@ Configuration Flow.
 Version: 1.6.1
 Phase: 4.0
 Build: 01
-Release: 1.6.1a
+Release: 1.6.1c
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -390,7 +390,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "processed_records": str(result.get("processed_records", 0)),
             "journeys_created": str(result.get("journeys_created", 0)),
             "journeys_deleted": str(result.get("journeys_deleted", 0)),
-            "skipped_records": str(result.get("skipped_records", 0)),
+            "source_files_skipped": str(
+                result.get(
+                    "source_files_skipped",
+                    result.get("skipped_records", 0),
+                )
+            ),
             "affected_dates": ", ".join(affected_dates) or "—",
         }
 
