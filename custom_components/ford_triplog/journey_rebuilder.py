@@ -6,7 +6,7 @@ Track your Ford.
 Rebuild and update daily journeys from archived trips and charges.
 
 Version: 1.6.0
-Release: 1.6a
+Release: 1.6c
 """
 
 from __future__ import annotations
@@ -17,6 +17,9 @@ from dataclasses import dataclass
 from datetime import date, datetime
 from typing import Any, Awaitable, Callable, Final, Literal, Mapping
 
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .journey import FordTriplogJourney
 from .journey_manager import FordTriplogJourneyManager
 from .journey_storage import FordTriplogJourneyStorage
@@ -138,6 +141,7 @@ class FordTriplogJourneyRebuilder:
         self.source_storage = source_storage
         self.journey_storage = journey_storage
         self.progress_callback = progress_callback
+        self.hass = journey_storage.hass
 
         self._lock = asyncio.Lock()
 
@@ -238,6 +242,10 @@ class FordTriplogJourneyRebuilder:
                 )
 
                 await self._synchronize_last_journey()
+                async_dispatcher_send(
+                    self.hass,
+                    SIGNAL_LAST_JOURNEY_UPDATED,
+                )
 
                 result = JourneyRebuildResult(
                     mode=mode,
@@ -385,6 +393,10 @@ class FordTriplogJourneyRebuilder:
 
             await self.journey_storage.clear_current_journey()
             await self._synchronize_last_journey()
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+            )
 
             result = JourneyRebuildResult(
                 mode=mode,
