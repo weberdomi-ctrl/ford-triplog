@@ -13,3 +13,72 @@ download_charging_database:
       example: CH
       selector:
         text:
+
+update_journeys:
+  name: Update journeys
+  description: Create missing journeys from existing trips and charging sessions.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Optional when multiple Ford Triplog instances are active.
+      required: false
+      selector:
+        text:
+    start_date:
+      name: Start date
+      description: Optional first date of the period to process.
+      required: false
+      selector:
+        date:
+    end_date:
+      name: End date
+      description: Optional last date of the period to process.
+      required: false
+      selector:
+        date:
+
+rebuild_journeys:
+  name: Rebuild journeys
+  description: Delete and rebuild journeys from existing trips and charging sessions.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Optional when multiple Ford Triplog instances are active.
+      required: false
+      selector:
+        text:
+    start_date:
+      name: Start date
+      description: Optional first date of the period to rebuild.
+      required: false
+      selector:
+        date:
+    end_date:
+      name: End date
+      description: Optional last date of the period to rebuild.
+      required: false
+      selector:
+        date:
+
+delete_journeys:
+  name: Delete journeys
+  description: Delete stored journeys without changing trips or charging sessions.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Optional when multiple Ford Triplog instances are active.
+      required: false
+      selector:
+        text:
+    start_date:
+      name: Start date
+      description: Optional first date of the period to delete.
+      required: false
+      selector:
+        date:
+    end_date:
+      name: End date
+      description: Optional last date of the period to delete.
+      required: false
+      selector:
+        date:
