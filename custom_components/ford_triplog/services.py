@@ -4,6 +4,7 @@ Ford Triplog
 Charging-site service actions.
 
 Version: 1.6.0
+Release: 1.6c
 """
 
 from __future__ import annotations
@@ -12,14 +13,14 @@ import logging
 import os
 import shutil
 import json
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
-from homeassistant.exceptions import ServiceValidationError
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 
 from .charging_database_builder import (
     ChargingDatabaseBuildError,
@@ -32,14 +33,21 @@ from .charging_site_lookup import (
 )
 from .const import DOMAIN
 from .countries import COUNTRIES
+from .journey_rebuilder import FordTriplogJourneyRebuilder
 
 _LOGGER = logging.getLogger(__name__)
 
 SERVICE_IMPORT_CHARGING_SITES = "import_charging_sites"
 SERVICE_DOWNLOAD_CHARGING_DATABASE = "download_charging_database"
+SERVICE_UPDATE_JOURNEYS = "update_journeys"
+SERVICE_REBUILD_JOURNEYS = "rebuild_journeys"
+SERVICE_DELETE_JOURNEYS = "delete_journeys"
 
 ATTR_FILE = "file"
 ATTR_COUNTRY = "country"
+ATTR_ENTRY_ID = "entry_id"
+ATTR_START_DATE = "start_date"
+ATTR_END_DATE = "end_date"
 
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
 
@@ -64,6 +72,18 @@ DOWNLOAD_SCHEMA = vol.Schema(
 )
 
 
+JOURNEY_MAINTENANCE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
+        vol.Optional(ATTR_START_DATE): vol.Coerce(date.fromisoformat),
+        vol.Optional(ATTR_END_DATE): vol.Coerce(date.fromisoformat),
+    }
+)
+
+
 # ---------------------------------------------------------------------------
 # NEW: Detect country_code from imported JSON file
 # ---------------------------------------------------------------------------
@@ -75,24 +95,19 @@ def _detect_country_code(path: Path) -> str:
             data = json.load(f)
     except Exception as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="json_read_failed",
-            translation_placeholders={"error": str(error)},
+            f"Could not read JSON file: {error}"
         ) from error
 
     code = str(data.get("country_code", "")).strip().upper()
 
     if not code:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="missing_country_code",
+            "The imported database does not contain a country_code field."
         )
 
     if code not in COUNTRIES:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="unsupported_import_country",
-            translation_placeholders={"country_code": code},
+            f"Unsupported country code '{code}' in imported database."
         )
 
     return code
@@ -126,8 +141,8 @@ def _resolve_import_file(
 
     if source_path.is_absolute():
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="absolute_import_path",
+            "Use a relative path below the Home Assistant configuration "
+            "directory, for example import/charging_sites_de.json."
         )
 
     source_path = (config_directory / source_path).resolve()
@@ -136,21 +151,18 @@ def _resolve_import_file(
         source_path.relative_to(config_directory)
     except ValueError as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="import_path_outside_config",
+            "The import file must be located below the Home Assistant "
+            "configuration directory."
         ) from error
 
     if source_path.suffix.lower() != ".json":
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="import_file_not_json",
+            "The charging-site import file must be a JSON file."
         )
 
     if not source_path.is_file():
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="import_file_not_found",
-            translation_placeholders={"path": str(source_path)},
+            f"Charging-site import file not found: {source_path}"
         )
 
     return source_path
@@ -163,15 +175,11 @@ def _validate_import_file(source_path: Path) -> ChargingSiteLookup:
         return ChargingSiteLookup(source_path)
     except ChargingSiteDatabaseError as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="database_invalid",
-            translation_placeholders={"error": str(error)},
+            f"Charging-site database is invalid: {error}"
         ) from error
     except (OSError, TypeError, ValueError) as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="database_validation_failed",
-            translation_placeholders={"error": str(error)},
+            f"Charging-site database could not be validated: {error}"
         ) from error
 
 
@@ -269,8 +277,7 @@ async def async_import_charging_site_database(
 
     if not coordinators:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="integration_not_loaded",
+            "Ford Triplog is not currently loaded."
         )
 
     if country_code is None:
@@ -288,12 +295,8 @@ async def async_import_charging_site_database(
         if normalized_country_code not in COUNTRIES:
             supported = ", ".join(sorted(COUNTRIES))
             raise ServiceValidationError(
-                translation_domain=DOMAIN,
-                translation_key="unsupported_country",
-                translation_placeholders={
-                    "country_code": str(country_code),
-                    "supported": supported,
-                },
+                f"Unsupported country code '{country_code}'. "
+                f"Supported countries: {supported}."
             )
 
     target_path = _database_path(hass, normalized_country_code)
@@ -308,15 +311,11 @@ async def async_import_charging_site_database(
         raise
     except ChargingSiteDatabaseError as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="imported_database_load_failed",
-            translation_placeholders={"error": str(error)},
+            f"Imported charging-site database could not be loaded: {error}"
         ) from error
     except OSError as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="database_import_failed",
-            translation_placeholders={"error": str(error)},
+            f"Charging-site database could not be imported: {error}"
         ) from error
 
     for coordinator in coordinators:
@@ -365,12 +364,8 @@ async def async_download_charging_database(
     if normalized_country_code not in COUNTRIES:
         supported = ", ".join(sorted(COUNTRIES))
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="unsupported_country",
-            translation_placeholders={
-                "country_code": str(country_code),
-                "supported": supported,
-            },
+            f"Unsupported country code '{country_code}'. "
+            f"Supported countries: {supported}."
         )
 
     output_path = _generated_database_path(
@@ -389,15 +384,11 @@ async def async_download_charging_database(
         )
     except ChargingDatabaseBuildError as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="database_download_failed",
-            translation_placeholders={"error": str(error)},
+            f"Charging-site database download failed: {error}"
         ) from error
     except (OSError, RuntimeError, ValueError) as error:
         raise ServiceValidationError(
-            translation_domain=DOMAIN,
-            translation_key="database_generation_failed",
-            translation_placeholders={"error": str(error)},
+            f"Charging-site database could not be generated: {error}"
         ) from error
 
     country_code, backup_path, active_lookup = await async_import_charging_site_database(
@@ -448,6 +439,165 @@ async def async_download_charging_database_service(
         call.data[ATTR_COUNTRY],
     )
 
+
+
+# ---------------------------------------------------------------------------
+# Journey maintenance services
+# ---------------------------------------------------------------------------
+
+def _validate_journey_date_range(
+    start_date: date | None,
+    end_date: date | None,
+) -> None:
+    """Validate an inclusive Journey maintenance date range."""
+
+    if (
+        start_date is not None
+        and end_date is not None
+        and start_date > end_date
+    ):
+        raise ServiceValidationError(
+            "start_date must not be after end_date"
+        )
+
+
+def _extract_journey_rebuilder(
+    runtime_data: Any,
+) -> FordTriplogJourneyRebuilder | None:
+    """Extract the Journey rebuilder from runtime data."""
+
+    if isinstance(
+        runtime_data,
+        FordTriplogJourneyRebuilder,
+    ):
+        return runtime_data
+
+    if isinstance(runtime_data, Mapping):
+        candidate = runtime_data.get("journey_rebuilder")
+        if isinstance(
+            candidate,
+            FordTriplogJourneyRebuilder,
+        ):
+            return candidate
+
+    candidate = getattr(
+        runtime_data,
+        "journey_rebuilder",
+        None,
+    )
+
+    if isinstance(
+        candidate,
+        FordTriplogJourneyRebuilder,
+    ):
+        return candidate
+
+    return None
+
+
+def _resolve_journey_rebuilder(
+    hass: HomeAssistant,
+    entry_id: str | None,
+) -> FordTriplogJourneyRebuilder:
+    """Resolve the Journey rebuilder for one config entry."""
+
+    domain_data = hass.data.get(DOMAIN)
+
+    if not isinstance(domain_data, Mapping):
+        raise HomeAssistantError(
+            "Ford Triplog is not initialized"
+        )
+
+    candidates: list[
+        tuple[str, FordTriplogJourneyRebuilder]
+    ] = []
+
+    for candidate_entry_id, runtime_data in domain_data.items():
+        rebuilder = _extract_journey_rebuilder(runtime_data)
+
+        if rebuilder is not None:
+            candidates.append(
+                (
+                    str(candidate_entry_id),
+                    rebuilder,
+                )
+            )
+
+    if entry_id is not None:
+        normalized_entry_id = entry_id.strip()
+
+        for candidate_entry_id, rebuilder in candidates:
+            if candidate_entry_id == normalized_entry_id:
+                return rebuilder
+
+        raise HomeAssistantError(
+            "No Journey rebuilder exists for config entry "
+            f"{normalized_entry_id}"
+        )
+
+    if not candidates:
+        raise HomeAssistantError(
+            "No initialized Ford Triplog Journey rebuilder was found"
+        )
+
+    if len(candidates) > 1:
+        raise HomeAssistantError(
+            "Several Ford Triplog config entries are active. "
+            "Specify entry_id."
+        )
+
+    return candidates[0][1]
+
+
+async def _async_execute_journey_maintenance(
+    hass: HomeAssistant,
+    call: ServiceCall,
+    *,
+    operation: str,
+) -> dict[str, Any]:
+    """Execute one Journey maintenance action."""
+
+    start_date = call.data.get(ATTR_START_DATE)
+    end_date = call.data.get(ATTR_END_DATE)
+
+    _validate_journey_date_range(
+        start_date,
+        end_date,
+    )
+
+    rebuilder = _resolve_journey_rebuilder(
+        hass,
+        call.data.get(ATTR_ENTRY_ID),
+    )
+
+    if operation == "update":
+        result = await rebuilder.async_update_journeys(
+            start_date=start_date,
+            end_date=end_date,
+        )
+    elif operation == "rebuild":
+        result = await rebuilder.async_rebuild_journeys(
+            start_date=start_date,
+            end_date=end_date,
+        )
+    elif operation == "delete":
+        result = await rebuilder.async_delete_journeys(
+            start_date=start_date,
+            end_date=end_date,
+        )
+    else:
+        raise HomeAssistantError(
+            f"Unsupported Journey maintenance operation: {operation}"
+        )
+
+    result_data = result.to_dict()
+
+    _LOGGER.info(
+        "Journey maintenance completed: %s",
+        result_data,
+    )
+
+    return result_data
 
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register Ford Triplog service actions once."""
@@ -500,3 +650,88 @@ async def async_register_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_DOWNLOAD_CHARGING_DATABASE,
         )
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_UPDATE_JOURNEYS,
+    ):
+
+        async def handle_update_journeys(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_execute_journey_maintenance(
+                hass,
+                call,
+                operation="update",
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_UPDATE_JOURNEYS,
+            handle_update_journeys,
+            schema=JOURNEY_MAINTENANCE_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_UPDATE_JOURNEYS,
+        )
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_REBUILD_JOURNEYS,
+    ):
+
+        async def handle_rebuild_journeys(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_execute_journey_maintenance(
+                hass,
+                call,
+                operation="rebuild",
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REBUILD_JOURNEYS,
+            handle_rebuild_journeys,
+            schema=JOURNEY_MAINTENANCE_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_REBUILD_JOURNEYS,
+        )
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_DELETE_JOURNEYS,
+    ):
+
+        async def handle_delete_journeys(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_execute_journey_maintenance(
+                hass,
+                call,
+                operation="delete",
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_DELETE_JOURNEYS,
+            handle_delete_journeys,
+            schema=JOURNEY_MAINTENANCE_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_DELETE_JOURNEYS,
+        )
+
