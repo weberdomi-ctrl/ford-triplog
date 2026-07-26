@@ -47,13 +47,19 @@
           "smart_trip": "Włącz Smart Trip",
           "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
           "charging": "Czujnik stanu ładowania",
-          "battery_capacity_kwh": "Użyteczna pojemność baterii (kWh)"
+          "battery_capacity_kwh": "Użyteczna pojemność baterii (kWh)",
+          "journey_home_zone": "Baza podróży",
+          "journey_home_timeout_minutes": "Minimalny pobyt w bazie podróży",
+          "journey_max_gap_hours": "Maksymalna przerwa podróży"
         },
         "data_description": {
           "smart_trip": "Łączy krótkie postoje w jedną podróż.",
           "smart_trip_timeout": "Zalecane: 300 sekund (5 minut). Minimum: 30 sekund.",
           "charging": "Czujnik stanu ładowania (dostępny tylko dla pojazdów elektrycznych Ford Pass).",
-          "battery_capacity_kwh": "Użyteczna pojemność baterii pojazdu. Domyślnie: 77 kWh."
+          "battery_capacity_kwh": "Użyteczna pojemność baterii pojazdu. Domyślnie: 77 kWh.",
+          "journey_home_zone": "Strefa, której osiągnięcie może zakończyć podróż.",
+          "journey_home_timeout_minutes": "Podróż zostanie zakończona dopiero po pozostaniu pojazdu w bazie podróży przez co najmniej ten czas. Wartość 0 oznacza natychmiastowe zakończenie.",
+          "journey_max_gap_hours": "Maksymalny czas między przejazdami przed rozpoczęciem nowej podróży. Używane jako rozwiązanie zapasowe, gdy nie można zastosować bazy podróży."
         }
       },
       "import_charging_sites": {

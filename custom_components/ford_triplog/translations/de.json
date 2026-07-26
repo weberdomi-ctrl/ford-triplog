@@ -47,13 +47,19 @@
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus-Sensor",
           "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)"
+          "soh": "Batteriezustand (SOH)",
+          "journey_home_zone": "Tour-Basis",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
+          "journey_max_gap_hours": "Maximale Tour-Pause"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
           "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
           "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh."
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann."
         }
       },
       "import_charging_sites": {

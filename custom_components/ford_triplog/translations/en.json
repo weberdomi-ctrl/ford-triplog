@@ -47,13 +47,19 @@
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)",
           "charging": "Charging status sensor",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)"
+          "battery_capacity_kwh": "Usable battery capacity (kWh)",
+          "journey_home_zone": "Journey base",
+          "journey_home_timeout_minutes": "Minimum stay at journey base",
+          "journey_max_gap_hours": "Maximum journey gap"
         },
         "data_description": {
           "smart_trip": "Merge short stops into one trip.",
           "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
           "charging": "Charging status sensor (only available for Ford Pass EVs).",
-          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh."
+          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
+          "journey_home_zone": "Zone that can end a journey.",
+          "journey_home_timeout_minutes": "The journey is completed only after the vehicle has remained at the journey base for at least this time. Set to 0 for immediate completion.",
+          "journey_max_gap_hours": "Maximum time between trips before a new journey starts. Used as a fallback when no journey base can be applied."
         }
       },
       "import_charging_sites": {
