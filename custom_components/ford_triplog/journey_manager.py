@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.6.1
-Release: 1.6.1c
+Version: 1.6.2
+Release: 1.6.2a
 """
 
 from __future__ import annotations
@@ -114,6 +114,7 @@ class FordTriplogJourneyManager:
         self._home_arrival_time: datetime | None = None
         self._home_timeout_cancel: Callable[[], None] | None = None
         self._home_timeout_journey_id: str | None = None
+        self._home_timeout_reason: str | None = None
 
     async def async_setup(self) -> None:
         """Initialize storage and restore saved journey state."""
@@ -146,13 +147,55 @@ class FordTriplogJourneyManager:
             self._item_summary(self.current_journey),
         )
 
-        # A new trip means that the vehicle left the journey base before a
-        # pending minimum-stay timer completed. Keep the journey open.
+        # A new trip cancels a pending minimum-stay timer. When no timer was
+        # active, its start position can still confirm that the previous
+        # journey had already returned home.
+        had_pending_home_timeout = self._home_timeout_cancel is not None
         self._cancel_home_timeout(reason="new_trip_started")
 
         self._trip_data[trip_id] = data
 
         completed: FordTriplogJourney | None = None
+
+        if (
+            not had_pending_home_timeout
+            and self.current_journey is not None
+            and self._can_complete_at_last_trip(self.current_journey)
+            and self._trip_start_confirms_home(data)
+        ):
+            last_trip = self._last_trip_source_data(self.current_journey)
+            if last_trip is not None:
+                previous_end = self._required_datetime(last_trip, "end_time")
+                home_stay = (start_time - previous_end).total_seconds()
+
+                if home_stay >= self.home_timeout_seconds:
+                    if not self._trim_current_to_last_trip():
+                        _LOGGER.warning(
+                            "Journey could not be trimmed to its last trip: %s",
+                            self.current_journey.journey_id,
+                        )
+                    completed = await self._finish_or_discard_current(
+                        reason="returned_to_home_zone_next_trip"
+                    )
+                    journey = self._new_journey_from_trip(data)
+                    self.current_journey = journey
+                    await self.storage.save_current_journey(journey)
+
+                    return JourneyUpdateResult(
+                        action="restarted",
+                        journey=journey,
+                        completed_journey=completed,
+                        reason="returned_to_home_zone_next_trip",
+                    )
+
+                _LOGGER.info(
+                    "Journey home confirmation by next trip ignored because "
+                    "minimum stay was not reached: journey=%s stay=%.1fs "
+                    "required=%ss",
+                    self.current_journey.journey_id,
+                    home_stay,
+                    self.home_timeout_seconds,
+                )
 
         if self.current_journey is None:
             journey = self._new_journey_from_trip(data)
@@ -217,12 +260,13 @@ class FordTriplogJourneyManager:
                 completed = await self._async_handle_home_arrival(
                     self.current_journey,
                     data,
+                    reason="returned_to_home_zone_trip",
                 )
                 if completed is not None:
                     return JourneyUpdateResult(
                         action="completed",
                         completed_journey=completed,
-                        reason="returned_to_home_zone",
+                        reason="returned_to_home_zone_trip",
                     )
 
                 await self.storage.save_current_journey(
@@ -280,12 +324,13 @@ class FordTriplogJourneyManager:
             completed = await self._async_handle_home_arrival(
                 self.current_journey,
                 data,
+                reason="returned_to_home_zone_trip",
             )
             if completed is not None:
                 return JourneyUpdateResult(
                     action="completed",
                     completed_journey=completed,
-                    reason="returned_to_home_zone",
+                    reason="returned_to_home_zone_trip",
                 )
 
             await self.storage.save_current_journey(self.current_journey)
@@ -405,6 +450,33 @@ class FordTriplogJourneyManager:
                 completed_journey=completed,
                 reason=reason,
             )
+
+        if (
+            self.is_complete_journey(self.current_journey)
+            and self._charge_confirms_home(data)
+        ):
+            last_trip = self._last_trip_source_data(self.current_journey)
+            if last_trip is not None:
+                completed = await self._async_confirm_home(
+                    self.current_journey,
+                    last_trip,
+                    reason="returned_to_home_zone_charge",
+                )
+                if completed is not None:
+                    return JourneyUpdateResult(
+                        action="completed",
+                        completed_journey=completed,
+                        reason="returned_to_home_zone_charge",
+                    )
+
+                await self.storage.save_current_journey(
+                    self.current_journey
+                )
+                return JourneyUpdateResult(
+                    action="updated",
+                    journey=self.current_journey,
+                    reason="home_confirmation_pending_charge",
+                )
 
         self._add_charge(self.current_journey, data)
         await self.storage.save_current_journey(
@@ -654,29 +726,68 @@ class FordTriplogJourneyManager:
         self,
         journey: FordTriplogJourney,
         trip: Mapping[str, Any],
+        *,
+        reason: str,
     ) -> FordTriplogJourney | None:
-        """Finish immediately or start the configured home-stay timer."""
+        """Finish or schedule completion after a trip reaches home."""
 
-        if not self._should_finish_at_home(journey, trip):
+        if not self.is_complete_journey(journey):
             return None
+
+        if not self._trip_end_confirms_home(trip):
+            return None
+
+        return await self._async_confirm_home(
+            journey,
+            trip,
+            reason=reason,
+        )
+
+    async def _async_confirm_home(
+        self,
+        journey: FordTriplogJourney,
+        last_trip: Mapping[str, Any],
+        *,
+        reason: str,
+    ) -> FordTriplogJourney | None:
+        """Finish immediately or schedule completion from the last trip end."""
+
+        arrival_time = self._required_datetime(last_trip, "end_time")
 
         if self.home_timeout_seconds <= 0:
             _LOGGER.info(
-                "Journey home zone reached: journey=%s, completing immediately",
+                "Journey home confirmed: journey=%s reason=%s, "
+                "completing immediately",
                 journey.journey_id,
+                reason,
             )
-            return await self._finish_or_discard_current(
-                reason="returned_to_home_zone"
-            )
+            return await self._finish_or_discard_current(reason=reason)
 
-        arrival_time = self._required_datetime(trip, "end_time")
-        self._schedule_home_timeout(journey, arrival_time)
+        now = datetime.now(tz=arrival_time.tzinfo)
+        elapsed = max(0.0, (now - arrival_time).total_seconds())
+        if elapsed >= self.home_timeout_seconds:
+            _LOGGER.info(
+                "Journey home confirmed: journey=%s reason=%s stay=%.1fs, "
+                "minimum stay already reached",
+                journey.journey_id,
+                reason,
+                elapsed,
+            )
+            return await self._finish_or_discard_current(reason=reason)
+
+        self._schedule_home_timeout(
+            journey,
+            arrival_time,
+            reason=reason,
+        )
         return None
 
     def _schedule_home_timeout(
         self,
         journey: FordTriplogJourney,
         arrival_time: datetime,
+        *,
+        reason: str,
     ) -> None:
         """Schedule journey completion after the minimum stay at home."""
 
@@ -684,6 +795,7 @@ class FordTriplogJourneyManager:
 
         self._home_arrival_time = arrival_time
         self._home_timeout_journey_id = journey.journey_id
+        self._home_timeout_reason = reason
 
         now = datetime.now(tz=arrival_time.tzinfo)
         elapsed = max(0.0, (now - arrival_time).total_seconds())
@@ -691,8 +803,10 @@ class FordTriplogJourneyManager:
 
         async def _async_finish_after_home_timeout(_now: datetime) -> None:
             expected_journey_id = self._home_timeout_journey_id
+            completion_reason = self._home_timeout_reason or reason
             self._home_timeout_cancel = None
             self._home_timeout_journey_id = None
+            self._home_timeout_reason = None
             self._home_arrival_time = None
 
             if (
@@ -702,7 +816,7 @@ class FordTriplogJourneyManager:
                 return
 
             await self._finish_or_discard_current(
-                reason="home_timeout_elapsed"
+                reason=f"{completion_reason}_timeout_elapsed"
             )
 
         self._home_timeout_cancel = async_call_later(
@@ -712,10 +826,12 @@ class FordTriplogJourneyManager:
         )
 
         _LOGGER.info(
-            "Journey home timeout started: journey=%s arrival=%s delay=%.1fs",
+            "Journey home timeout started: journey=%s arrival=%s "
+            "delay=%.1fs reason=%s",
             journey.journey_id,
             arrival_time.isoformat(),
             delay,
+            reason,
         )
 
     def _cancel_home_timeout(self, *, reason: str) -> None:
@@ -728,6 +844,7 @@ class FordTriplogJourneyManager:
 
         self._home_timeout_cancel = None
         self._home_timeout_journey_id = None
+        self._home_timeout_reason = None
         self._home_arrival_time = None
 
         if had_pending_timeout:
@@ -736,15 +853,160 @@ class FordTriplogJourneyManager:
                 reason,
             )
 
-    def _should_finish_at_home(
+    def _can_complete_at_last_trip(
         self,
         journey: FordTriplogJourney,
+    ) -> bool:
+        """Return whether a journey can be completed at its last trip."""
+
+        trip_items = [
+            item for item in journey.items if item.item_type == "trip"
+        ]
+        return (
+            len(trip_items) >= 2
+            and bool(journey.items)
+            and journey.items[0].item_type == "trip"
+        )
+
+    def _trim_current_to_last_trip(self) -> bool:
+        """Remove trailing charges by rebuilding through the last trip."""
+
+        journey = self.current_journey
+        if journey is None or not journey.items:
+            return False
+
+        last_trip_index = -1
+        for index, item in enumerate(journey.items):
+            if item.item_type == "trip":
+                last_trip_index = index
+
+        if last_trip_index < 0:
+            return False
+        if last_trip_index == len(journey.items) - 1:
+            return True
+
+        rebuilt = FordTriplogJourney(
+            journey_id=journey.journey_id,
+            created=journey.created,
+        )
+
+        for item in journey.items[: last_trip_index + 1]:
+            if item.item_type == "trip":
+                source = self._trip_data.get(item.item_id)
+                if source is None:
+                    return False
+                self._add_trip(rebuilt, source)
+            elif item.item_type == "charge":
+                source = self._charge_data.get(item.item_id)
+                if source is None:
+                    return False
+                self._add_charge(rebuilt, source)
+
+        self.current_journey = rebuilt
+        _LOGGER.info(
+            "Journey trailing charges removed before home completion: "
+            "journey=%s items=%s",
+            rebuilt.journey_id,
+            self._item_summary(rebuilt),
+        )
+        return True
+
+    def _last_trip_source_data(
+        self,
+        journey: FordTriplogJourney,
+    ) -> dict[str, Any] | None:
+        """Return source data for the last trip in a journey."""
+
+        for item in reversed(journey.items):
+            if item.item_type == "trip":
+                return self._trip_data.get(item.item_id)
+
+        return None
+
+    def _trip_end_confirms_home(
+        self,
         trip: Mapping[str, Any],
     ) -> bool:
-        """Return whether a complete journey ended inside the home zone."""
+        """Return whether a trip end lies inside the home zone."""
 
-        if not self.is_complete_journey(journey):
-            return False
+        latitude, longitude = self._coordinates_from_data(
+            trip,
+            prefix="end",
+        )
+        return self._is_location_inside_home(
+            latitude,
+            longitude,
+            source="trip_end",
+            item_id=trip.get("trip_id"),
+        )
+
+    def _trip_start_confirms_home(
+        self,
+        trip: Mapping[str, Any],
+    ) -> bool:
+        """Return whether a trip start lies inside the home zone."""
+
+        latitude, longitude = self._coordinates_from_data(
+            trip,
+            prefix="start",
+        )
+        return self._is_location_inside_home(
+            latitude,
+            longitude,
+            source="trip_start",
+            item_id=trip.get("trip_id"),
+        )
+
+    def _charge_confirms_home(
+        self,
+        charge: Mapping[str, Any],
+    ) -> bool:
+        """Return whether a charge start or end lies inside the home zone."""
+
+        for prefix in ("start", "end"):
+            latitude, longitude = self._coordinates_from_data(
+                charge,
+                prefix=prefix,
+            )
+            if self._is_location_inside_home(
+                latitude,
+                longitude,
+                source=f"charge_{prefix}",
+                item_id=charge.get("charge_id"),
+            ):
+                return True
+
+        return False
+
+    @staticmethod
+    def _coordinates_from_data(
+        data: Mapping[str, Any],
+        *,
+        prefix: str,
+    ) -> tuple[Any, Any]:
+        """Return coordinates from direct fields or a nested address."""
+
+        latitude = data.get(f"{prefix}_latitude")
+        longitude = data.get(f"{prefix}_longitude")
+        address = data.get(f"{prefix}_address")
+
+        if isinstance(address, Mapping):
+            if latitude is None:
+                latitude = address.get("latitude")
+            if longitude is None:
+                longitude = address.get("longitude")
+
+        return latitude, longitude
+
+    def _is_location_inside_home(
+        self,
+        latitude: Any,
+        longitude: Any,
+        *,
+        source: str,
+        item_id: Any,
+    ) -> bool:
+        """Return whether one coordinate lies inside the configured home zone."""
 
         zone_state = self.hass.states.get(self.home_zone_entity_id)
         if zone_state is None:
@@ -754,37 +1016,30 @@ class FordTriplogJourneyManager:
             )
             return False
 
-        end_latitude = trip.get("end_latitude")
-        end_longitude = trip.get("end_longitude")
-
-        end_address = trip.get("end_address")
-        if isinstance(end_address, Mapping):
-            if end_latitude is None:
-                end_latitude = end_address.get("latitude")
-            if end_longitude is None:
-                end_longitude = end_address.get("longitude")
-
         zone_latitude = zone_state.attributes.get("latitude")
         zone_longitude = zone_state.attributes.get("longitude")
         zone_radius = zone_state.attributes.get("radius")
 
         coordinates = (
-            end_latitude,
-            end_longitude,
+            latitude,
+            longitude,
             zone_latitude,
             zone_longitude,
             zone_radius,
         )
         if any(value is None for value in coordinates):
             _LOGGER.debug(
-                "Journey home-zone check skipped because coordinates or radius are missing"
+                "Journey home-zone check skipped: source=%s item=%s "
+                "coordinates or radius missing",
+                source,
+                item_id,
             )
             return False
 
         try:
             distance = self._distance_meters(
-                float(end_latitude),
-                float(end_longitude),
+                float(latitude),
+                float(longitude),
                 float(zone_latitude),
                 float(zone_longitude),
             )
@@ -794,8 +1049,10 @@ class FordTriplogJourneyManager:
 
         inside_home = distance <= radius
         _LOGGER.info(
-            "Journey home-zone check: trip=%s zone=%s distance=%.1fm radius=%.1fm inside=%s",
-            trip.get("trip_id"),
+            "Journey home-zone check: source=%s item=%s zone=%s "
+            "distance=%.1fm radius=%.1fm inside=%s",
+            source,
+            item_id,
             self.home_zone_entity_id,
             distance,
             radius,
