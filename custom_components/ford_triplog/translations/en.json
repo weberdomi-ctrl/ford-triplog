@@ -28,13 +28,15 @@
           "settings": "Settings",
           "import_charging_sites": "Import charging-site database",
           "download_charging_sites": "Download charging-site database from OpenStreetMap",
-          "user_charging_sites": "Own charging locations"
+          "user_charging_sites": "Own charging locations",
+          "journey_management": "Journey management"
         },
         "menu_option_descriptions": {
           "settings": "Manage trip, charging, and vehicle settings.",
           "import_charging_sites": "Upload a charging-site database as a JSON file and activate it immediately.",
           "download_charging_sites": "Download charging locations for a selected country directly from OpenStreetMap, process them and activate the new database immediately.",
-          "user_charging_sites": "View and manage your own charging locations."
+          "user_charging_sites": "View and manage your own charging locations.",
+          "journey_management": "Update, rebuild, or delete Journeys."
         }
       },
       "settings": {
@@ -142,6 +144,45 @@
         "data": {
           "user_charging_site_selection": "Detected charging location"
         }
+      },
+      "journey_management": {
+        "title": "Journey management",
+        "description": "Select the required maintenance action.",
+        "menu_options": {
+          "journey_update": "Update Journeys",
+          "journey_rebuild": "Rebuild Journeys",
+          "journey_delete": "Delete Journeys"
+        }
+      },
+      "journey_update": {
+        "title": "Update Journeys",
+        "description": "Creates only missing Journeys in the optional date range.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "journey_rebuild": {
+        "title": "Rebuild Journeys",
+        "description": "Deletes existing Journeys in the range and rebuilds them.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date",
+          "confirm": "Confirm action"
+        }
+      },
+      "journey_delete": {
+        "title": "Delete Journeys",
+        "description": "Deletes Journeys. Trips and charging sessions remain unchanged.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date",
+          "confirm": "Confirm action"
+        }
+      },
+      "journey_result": {
+        "title": "Journey action completed",
+        "description": "Mode: {mode}\n\nTrips: {source_trips} · Charges: {source_charges} · Processed: {processed_records}\n\nCreated: {journeys_created} · Deleted: {journeys_deleted} · Skipped: {skipped_records}\n\nRange: {start_date} to {end_date}\n\nAffected dates: {affected_dates}"
       }
     },
     "error": {
@@ -150,7 +191,9 @@
       "charging_site_download_in_progress": "A charging-site database download is already running.",
       "user_charging_sites_load_failed": "The own charging-location database could not be loaded.",
       "user_charging_site_not_found": "The selected charging location could not be found.",
-      "user_charging_site_save_failed": "The charging location could not be saved."
+      "user_charging_site_save_failed": "The charging location could not be saved.",
+      "journey_operation_failed": "The Journey action could not be completed.",
+      "journey_confirmation_required": "The action must be confirmed."
     }
   },
   "entity": {
@@ -277,6 +320,9 @@
       },
       "last_charge_energy_source": {
         "name": "Last Charge Energy Source"
+      },
+      "last_journey": {
+        "name": "Last Journey"
       }
     }
   },

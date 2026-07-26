@@ -28,13 +28,15 @@
           "settings": "Ustawienia",
           "import_charging_sites": "Importuj bazę miejsc ładowania",
           "download_charging_sites": "Pobierz bazę miejsc ładowania z OpenStreetMap",
-          "user_charging_sites": "Własne miejsca ładowania"
+          "user_charging_sites": "Własne miejsca ładowania",
+          "journey_management": "Zarządzanie podróżami"
         },
         "menu_option_descriptions": {
           "settings": "Zarządzaj ustawieniami podróży, ładowania i pojazdu.",
           "import_charging_sites": "Prześlij bazę miejsc ładowania w formacie JSON i natychmiast ją aktywuj.",
           "download_charging_sites": "Pobierz miejsca ładowania dla wybranego kraju bezpośrednio z OpenStreetMap, przetwórz je i natychmiast aktywuj nową bazę.",
-          "user_charging_sites": "Wyświetlaj i zarządzaj własnymi miejscami ładowania."
+          "user_charging_sites": "Wyświetlaj i zarządzaj własnymi miejscami ładowania.",
+          "journey_management": "Aktualizuj, przebuduj lub usuń podróże."
         }
       },
       "settings": {
@@ -142,6 +144,45 @@
         "data": {
           "user_charging_site_selection": "Wykryte miejsce ładowania"
         }
+      },
+      "journey_management": {
+        "title": "Zarządzanie podróżami",
+        "description": "Wybierz wymaganą czynność konserwacyjną.",
+        "menu_options": {
+          "journey_update": "Aktualizuj podróże",
+          "journey_rebuild": "Przebuduj podróże",
+          "journey_delete": "Usuń podróże"
+        }
+      },
+      "journey_update": {
+        "title": "Aktualizuj podróże",
+        "description": "Tworzy tylko brakujące podróże w opcjonalnym zakresie dat.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa"
+        }
+      },
+      "journey_rebuild": {
+        "title": "Przebuduj podróże",
+        "description": "Usuwa istniejące podróże w zakresie i tworzy je ponownie.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa",
+          "confirm": "Potwierdź czynność"
+        }
+      },
+      "journey_delete": {
+        "title": "Usuń podróże",
+        "description": "Usuwa podróże. Przejazdy i sesje ładowania pozostają bez zmian.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa",
+          "confirm": "Potwierdź czynność"
+        }
+      },
+      "journey_result": {
+        "title": "Czynność dotycząca podróży zakończona",
+        "description": "Tryb: {mode}\n\nPrzejazdy: {source_trips} · Ładowania: {source_charges} · Przetworzone: {processed_records}\n\nUtworzone: {journeys_created} · Usunięte: {journeys_deleted} · Pominięte: {skipped_records}\n\nZakres: {start_date} do {end_date}\n\nDaty: {affected_dates}"
       }
     },
     "error": {
@@ -150,7 +191,9 @@
       "charging_site_download_in_progress": "Pobieranie bazy miejsc ładowania jest już w toku.",
       "user_charging_sites_load_failed": "Nie udało się wczytać bazy własnych miejsc ładowania.",
       "user_charging_site_not_found": "Nie znaleziono wybranego miejsca ładowania.",
-      "user_charging_site_save_failed": "Nie udało się zapisać miejsca ładowania."
+      "user_charging_site_save_failed": "Nie udało się zapisać miejsca ładowania.",
+      "journey_operation_failed": "Nie można wykonać czynności dotyczącej podróży.",
+      "journey_confirmation_required": "Czynność musi zostać potwierdzona."
     }
   },
   "entity": {
@@ -277,6 +320,9 @@
       },
       "last_charge_energy_source": {
         "name": "Źródło energii ostatniego ładowania"
+      },
+      "last_journey": {
+        "name": "Ostatnia podróż"
       }
     }
   },
