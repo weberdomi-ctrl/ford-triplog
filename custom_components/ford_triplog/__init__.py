@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.6.0
-Release: 1.6c
+Version: 1.6.1
+Release: 1.6.1a
 """
 
 from __future__ import annotations
@@ -23,7 +23,15 @@ PLATFORMS: list[Platform] = [
     Platform.BINARY_SENSOR,
 ]
 
-from .const import DOMAIN
+from .const import (
+    CONF_JOURNEY_HOME_TIMEOUT,
+    CONF_JOURNEY_HOME_ZONE,
+    CONF_JOURNEY_MAX_GAP_HOURS,
+    DEFAULT_JOURNEY_HOME_TIMEOUT,
+    DEFAULT_JOURNEY_HOME_ZONE,
+    DEFAULT_JOURNEY_MAX_GAP_HOURS,
+    DOMAIN,
+)
 from .coordinator import FordTriplogCoordinator
 from .geo import FordTriplogGeo
 from .storage import FordTriplogStorage
@@ -86,6 +94,24 @@ async def async_setup_entry(
     journey_manager = FordTriplogJourneyManager(
         hass=hass,
         storage=journey_storage,
+        home_zone_entity_id=str(
+            config.get(
+                CONF_JOURNEY_HOME_ZONE,
+                DEFAULT_JOURNEY_HOME_ZONE,
+            )
+        ),
+        home_timeout_minutes=int(
+            config.get(
+                CONF_JOURNEY_HOME_TIMEOUT,
+                DEFAULT_JOURNEY_HOME_TIMEOUT,
+            )
+        ),
+        journey_max_gap_hours=int(
+            config.get(
+                CONF_JOURNEY_MAX_GAP_HOURS,
+                DEFAULT_JOURNEY_MAX_GAP_HOURS,
+            )
+        ),
     )
 
     await journey_manager.async_setup()
