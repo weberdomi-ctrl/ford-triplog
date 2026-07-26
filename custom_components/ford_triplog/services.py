@@ -3,7 +3,7 @@ Ford Triplog
 
 Charging-site service actions.
 
-Version: 1.4.8
+Version: 1.6.0
 """
 
 from __future__ import annotations
@@ -75,19 +75,24 @@ def _detect_country_code(path: Path) -> str:
             data = json.load(f)
     except Exception as error:
         raise ServiceValidationError(
-            f"Could not read JSON file: {error}"
+            translation_domain=DOMAIN,
+            translation_key="json_read_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
 
     code = str(data.get("country_code", "")).strip().upper()
 
     if not code:
         raise ServiceValidationError(
-            "The imported database does not contain a country_code field."
+            translation_domain=DOMAIN,
+            translation_key="missing_country_code",
         )
 
     if code not in COUNTRIES:
         raise ServiceValidationError(
-            f"Unsupported country code '{code}' in imported database."
+            translation_domain=DOMAIN,
+            translation_key="unsupported_import_country",
+            translation_placeholders={"country_code": code},
         )
 
     return code
@@ -121,8 +126,8 @@ def _resolve_import_file(
 
     if source_path.is_absolute():
         raise ServiceValidationError(
-            "Use a relative path below the Home Assistant configuration "
-            "directory, for example import/charging_sites_de.json."
+            translation_domain=DOMAIN,
+            translation_key="absolute_import_path",
         )
 
     source_path = (config_directory / source_path).resolve()
@@ -131,18 +136,21 @@ def _resolve_import_file(
         source_path.relative_to(config_directory)
     except ValueError as error:
         raise ServiceValidationError(
-            "The import file must be located below the Home Assistant "
-            "configuration directory."
+            translation_domain=DOMAIN,
+            translation_key="import_path_outside_config",
         ) from error
 
     if source_path.suffix.lower() != ".json":
         raise ServiceValidationError(
-            "The charging-site import file must be a JSON file."
+            translation_domain=DOMAIN,
+            translation_key="import_file_not_json",
         )
 
     if not source_path.is_file():
         raise ServiceValidationError(
-            f"Charging-site import file not found: {source_path}"
+            translation_domain=DOMAIN,
+            translation_key="import_file_not_found",
+            translation_placeholders={"path": str(source_path)},
         )
 
     return source_path
@@ -155,11 +163,15 @@ def _validate_import_file(source_path: Path) -> ChargingSiteLookup:
         return ChargingSiteLookup(source_path)
     except ChargingSiteDatabaseError as error:
         raise ServiceValidationError(
-            f"Charging-site database is invalid: {error}"
+            translation_domain=DOMAIN,
+            translation_key="database_invalid",
+            translation_placeholders={"error": str(error)},
         ) from error
     except (OSError, TypeError, ValueError) as error:
         raise ServiceValidationError(
-            f"Charging-site database could not be validated: {error}"
+            translation_domain=DOMAIN,
+            translation_key="database_validation_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
 
 
@@ -257,7 +269,8 @@ async def async_import_charging_site_database(
 
     if not coordinators:
         raise ServiceValidationError(
-            "Ford Triplog is not currently loaded."
+            translation_domain=DOMAIN,
+            translation_key="integration_not_loaded",
         )
 
     if country_code is None:
@@ -275,8 +288,12 @@ async def async_import_charging_site_database(
         if normalized_country_code not in COUNTRIES:
             supported = ", ".join(sorted(COUNTRIES))
             raise ServiceValidationError(
-                f"Unsupported country code '{country_code}'. "
-                f"Supported countries: {supported}."
+                translation_domain=DOMAIN,
+                translation_key="unsupported_country",
+                translation_placeholders={
+                    "country_code": str(country_code),
+                    "supported": supported,
+                },
             )
 
     target_path = _database_path(hass, normalized_country_code)
@@ -291,11 +308,15 @@ async def async_import_charging_site_database(
         raise
     except ChargingSiteDatabaseError as error:
         raise ServiceValidationError(
-            f"Imported charging-site database could not be loaded: {error}"
+            translation_domain=DOMAIN,
+            translation_key="imported_database_load_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
     except OSError as error:
         raise ServiceValidationError(
-            f"Charging-site database could not be imported: {error}"
+            translation_domain=DOMAIN,
+            translation_key="database_import_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
 
     for coordinator in coordinators:
@@ -344,8 +365,12 @@ async def async_download_charging_database(
     if normalized_country_code not in COUNTRIES:
         supported = ", ".join(sorted(COUNTRIES))
         raise ServiceValidationError(
-            f"Unsupported country code '{country_code}'. "
-            f"Supported countries: {supported}."
+            translation_domain=DOMAIN,
+            translation_key="unsupported_country",
+            translation_placeholders={
+                "country_code": str(country_code),
+                "supported": supported,
+            },
         )
 
     output_path = _generated_database_path(
@@ -364,11 +389,15 @@ async def async_download_charging_database(
         )
     except ChargingDatabaseBuildError as error:
         raise ServiceValidationError(
-            f"Charging-site database download failed: {error}"
+            translation_domain=DOMAIN,
+            translation_key="database_download_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
     except (OSError, RuntimeError, ValueError) as error:
         raise ServiceValidationError(
-            f"Charging-site database could not be generated: {error}"
+            translation_domain=DOMAIN,
+            translation_key="database_generation_failed",
+            translation_placeholders={"error": str(error)},
         ) from error
 
     country_code, backup_path, active_lookup = await async_import_charging_site_database(

@@ -307,5 +307,74 @@
     "stored_many": "Liczba zapisanych własnych miejsc ładowania: {count}.",
     "pending_one": "Wykryto 1 nieznane miejsce ładowania. Można je teraz zapisać jako własne miejsce ładowania.",
     "pending_many": "Liczba wykrytych nieznanych miejsc ładowania: {count}. Można je teraz zapisać jako własne miejsca ładowania."
+  },
+  "services": {
+    "import_charging_sites": {
+      "name": "Importuj stacje ładowania",
+      "description": "Importuje bazę stacji ładowania z pliku JSON znajdującego się w katalogu konfiguracji Home Assistant.",
+      "fields": {
+        "file": {
+          "name": "Plik",
+          "description": "Ścieżka względna w katalogu konfiguracji Home Assistant, na przykład import/charging_sites_ch.json."
+        }
+      }
+    },
+    "download_charging_database": {
+      "name": "Pobierz bazę stacji ładowania",
+      "description": "Pobiera, tworzy, importuje i aktywuje bazę stacji ładowania dla wybranego kraju.",
+      "fields": {
+        "country": {
+          "name": "Kraj",
+          "description": "Dwuliterowy kod kraju ISO 3166-1 alpha-2, na przykład CH, DE lub AT."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "json_read_failed": {
+      "message": "Nie można odczytać pliku JSON: {error}"
+    },
+    "missing_country_code": {
+      "message": "Zaimportowana baza danych nie zawiera pola country_code."
+    },
+    "unsupported_import_country": {
+      "message": "Zaimportowana baza danych zawiera nieobsługiwany kod kraju „{country_code}”."
+    },
+    "absolute_import_path": {
+      "message": "Użyj ścieżki względnej w katalogu konfiguracji Home Assistant, na przykład import/charging_sites_de.json."
+    },
+    "import_path_outside_config": {
+      "message": "Plik importu musi znajdować się w katalogu konfiguracji Home Assistant."
+    },
+    "import_file_not_json": {
+      "message": "Plik importu bazy stacji ładowania musi być plikiem JSON."
+    },
+    "import_file_not_found": {
+      "message": "Nie znaleziono pliku importu bazy stacji ładowania: {path}"
+    },
+    "database_invalid": {
+      "message": "Baza stacji ładowania jest nieprawidłowa: {error}"
+    },
+    "database_validation_failed": {
+      "message": "Nie można sprawdzić bazy stacji ładowania: {error}"
+    },
+    "integration_not_loaded": {
+      "message": "Integracja Ford Triplog nie jest obecnie załadowana."
+    },
+    "unsupported_country": {
+      "message": "Kod kraju „{country_code}” nie jest obsługiwany. Obsługiwane kraje: {supported}."
+    },
+    "imported_database_load_failed": {
+      "message": "Nie można załadować zaimportowanej bazy stacji ładowania: {error}"
+    },
+    "database_import_failed": {
+      "message": "Nie można zaimportować bazy stacji ładowania: {error}"
+    },
+    "database_download_failed": {
+      "message": "Pobieranie bazy stacji ładowania nie powiodło się: {error}"
+    },
+    "database_generation_failed": {
+      "message": "Nie można utworzyć bazy stacji ładowania: {error}"
+    }
   }
 }

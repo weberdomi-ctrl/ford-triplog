@@ -307,5 +307,74 @@
     "stored_many": "{count} eigene Ladeorte gespeichert.",
     "pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
     "pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden."
+  },
+  "services": {
+    "import_charging_sites": {
+      "name": "Ladestationen importieren",
+      "description": "Importiert eine Ladestationsdatenbank aus einer JSON-Datei im Home-Assistant-Konfigurationsverzeichnis.",
+      "fields": {
+        "file": {
+          "name": "Datei",
+          "description": "Relativer Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_ch.json."
+        }
+      }
+    },
+    "download_charging_database": {
+      "name": "Ladestationsdatenbank herunterladen",
+      "description": "Lädt die Ladestationsdatenbank für ein Land herunter, erstellt sie, importiert sie und aktiviert sie.",
+      "fields": {
+        "country": {
+          "name": "Land",
+          "description": "ISO-3166-1-Alpha-2-Ländercode, zum Beispiel CH, DE oder AT."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "json_read_failed": {
+      "message": "Die JSON-Datei konnte nicht gelesen werden: {error}"
+    },
+    "missing_country_code": {
+      "message": "Die importierte Datenbank enthält kein Feld country_code."
+    },
+    "unsupported_import_country": {
+      "message": "Die importierte Datenbank enthält den nicht unterstützten Ländercode „{country_code}“."
+    },
+    "absolute_import_path": {
+      "message": "Verwende einen relativen Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_de.json."
+    },
+    "import_path_outside_config": {
+      "message": "Die Importdatei muss sich unterhalb des Home-Assistant-Konfigurationsverzeichnisses befinden."
+    },
+    "import_file_not_json": {
+      "message": "Die Importdatei der Ladestationsdatenbank muss eine JSON-Datei sein."
+    },
+    "import_file_not_found": {
+      "message": "Die Importdatei der Ladestationsdatenbank wurde nicht gefunden: {path}"
+    },
+    "database_invalid": {
+      "message": "Die Ladestationsdatenbank ist ungültig: {error}"
+    },
+    "database_validation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht geprüft werden: {error}"
+    },
+    "integration_not_loaded": {
+      "message": "Ford Triplog ist derzeit nicht geladen."
+    },
+    "unsupported_country": {
+      "message": "Der Ländercode „{country_code}“ wird nicht unterstützt. Unterstützte Länder: {supported}."
+    },
+    "imported_database_load_failed": {
+      "message": "Die importierte Ladestationsdatenbank konnte nicht geladen werden: {error}"
+    },
+    "database_import_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht importiert werden: {error}"
+    },
+    "database_download_failed": {
+      "message": "Das Herunterladen der Ladestationsdatenbank ist fehlgeschlagen: {error}"
+    },
+    "database_generation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
+    }
   }
 }
