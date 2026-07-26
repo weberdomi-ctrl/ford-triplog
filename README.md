@@ -191,10 +191,8 @@ Everything remains inside your Home Assistant installation.
 
   [Privacy](docs/privacy.md)                   Privacy information
 
-  [Troubleshooting](docs/troubleshooting.md)   Common issues and solutions
-
-  [Automation                                  Example automations
-  Examples](docs/automation_examples.md)       
+  [Automatation](docs/automation_examples.md)   Automation examples
+     
   -------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
