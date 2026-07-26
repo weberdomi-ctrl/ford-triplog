@@ -6,7 +6,7 @@ Track your Ford.
 Separate storage for daily journeys.
 
 Version: 1.6.0
-Release: 1.6a
+Release: 1.6b
 """
 
 from __future__ import annotations
@@ -152,6 +152,27 @@ class FordTriplogJourneyStorage:
             )
             return None
 
+    async def save_last_journey(
+        self,
+        journey: FordTriplogJourney | dict[str, Any],
+    ) -> None:
+        """Save the last completed journey cache."""
+
+        data = self._normalize_journey_data(journey)
+
+        await self._async_write_json(
+            self._last_journey_path,
+            data,
+        )
+
+    async def clear_last_journey(self) -> None:
+        """Remove the last completed journey cache."""
+
+        await self.hass.async_add_executor_job(
+            self._unlink_file,
+            self._last_journey_path,
+        )
+
     async def list_journey_files(self) -> list[Path]:
         """Return all archived journey files."""
 
@@ -235,6 +256,29 @@ class FordTriplogJourneyStorage:
             self._unlink_file,
             path,
         )
+
+    async def delete_all_journeys(
+        self,
+        *,
+        clear_current: bool = True,
+        clear_last: bool = True,
+    ) -> int:
+        """Delete all archived journeys and optional cache files.
+
+        Trips and charging sessions are never changed.
+        """
+
+        deleted = await self.hass.async_add_executor_job(
+            self._delete_all_journey_files
+        )
+
+        if clear_current:
+            await self.clear_current_journey()
+
+        if clear_last:
+            await self.clear_last_journey()
+
+        return deleted
 
     def _normalize_journey_data(
         self,
@@ -363,6 +407,17 @@ class FordTriplogJourneyStorage:
             for path in self._journeys_directory.glob("*.json")
             if path.is_file()
         )
+
+    def _delete_all_journey_files(self) -> int:
+        """Delete all archived journey files."""
+
+        deleted = 0
+
+        for path in self._list_journey_files():
+            if self._unlink_file(path):
+                deleted += 1
+
+        return deleted
 
     @staticmethod
     def _unlink_file(path: Path) -> bool:
