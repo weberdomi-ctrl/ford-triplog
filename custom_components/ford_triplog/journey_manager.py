@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6g-debug
+Release: 1.6i-journey-gap
 """
 
 from __future__ import annotations
@@ -30,6 +30,7 @@ DEFAULT_TRIP_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
 DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
+DEFAULT_JOURNEY_MAX_GAP_HOURS = 24
 
 
 @dataclass(slots=True, frozen=True)
@@ -62,6 +63,7 @@ class FordTriplogJourneyManager:
         location_match_radius_meters: float = (
             DEFAULT_LOCATION_MATCH_RADIUS_METERS
         ),
+        journey_max_gap_hours: int = DEFAULT_JOURNEY_MAX_GAP_HOURS,
     ) -> None:
         """Initialize the daily journey manager."""
 
@@ -84,6 +86,10 @@ class FordTriplogJourneyManager:
             0.0,
             float(location_match_radius_meters),
         )
+        self.journey_max_gap_seconds = max(
+            1,
+            int(journey_max_gap_hours),
+        ) * 60 * 60
 
         self.current_journey: FordTriplogJourney | None = None
         self.last_journey: FordTriplogJourney | None = None
@@ -101,13 +107,6 @@ class FordTriplogJourneyManager:
         )
         self.last_journey = await self.storage.load_last_journey()
 
-        if (
-            self.current_journey is not None
-            and not self.current_journey.is_same_day()
-        ):
-            await self.async_finalize_current(
-                reason="restored_journey_crosses_day_boundary"
-            )
 
     async def async_process_trip(
         self,
@@ -129,24 +128,9 @@ class FordTriplogJourneyManager:
             self._item_summary(self.current_journey),
         )
 
-        if self._date_key(start_time) != self._date_key(end_time):
-            return JourneyUpdateResult(
-                action="ignored",
-                reason="trip_crosses_day_boundary",
-            )
-
         self._trip_data[trip_id] = data
 
         completed: FordTriplogJourney | None = None
-
-        if self.current_journey is not None:
-            if not self._same_journey_day(
-                self.current_journey,
-                start_time,
-            ):
-                completed = await self._finish_or_discard_current(
-                    reason="day_changed"
-                )
 
         if self.current_journey is None:
             journey = self._new_journey_from_trip(data)
@@ -232,18 +216,49 @@ class FordTriplogJourneyManager:
                 reason=reason,
             )
 
-        completed = await self._finish_or_discard_current(
-            reason="trip_without_intermediate_charge"
+        previous_trip = self._trip_data.get(last_item.item_id)
+        if previous_trip is None:
+            completed = await self._finish_or_discard_current(
+                reason="missing_previous_trip_source_data"
+            )
+            journey = self._new_journey_from_trip(data)
+            self.current_journey = journey
+            await self.storage.save_current_journey(journey)
+            return JourneyUpdateResult(
+                action="restarted",
+                journey=journey,
+                completed_journey=completed,
+                reason="missing_previous_trip_source_data",
+            )
+
+        matches, reason = self._trip_matches_trip(previous_trip, data)
+        _LOGGER.info(
+            "Journey debug: trip %s -> trip %s match=%s reason=%s",
+            last_item.item_id,
+            trip_id,
+            matches,
+            reason,
         )
+
+        if matches:
+            self._add_trip(self.current_journey, data)
+            await self.storage.save_current_journey(self.current_journey)
+            return JourneyUpdateResult(
+                action="updated",
+                journey=self.current_journey,
+                completed_journey=completed,
+                reason=reason,
+            )
+
+        completed = await self._finish_or_discard_current(reason=reason)
         journey = self._new_journey_from_trip(data)
         self.current_journey = journey
         await self.storage.save_current_journey(journey)
-
         return JourneyUpdateResult(
             action="restarted",
             journey=journey,
             completed_journey=completed,
-            reason="trip_without_intermediate_charge",
+            reason=reason,
         )
 
     async def async_process_charge(
@@ -267,34 +282,11 @@ class FordTriplogJourneyManager:
             self._item_summary(self.current_journey),
         )
 
-        if self._date_key(start_time) != self._date_key(end_time):
-            completed = await self._finish_or_discard_current(
-                reason="charge_crosses_day_boundary"
-            )
-            return JourneyUpdateResult(
-                action="ignored",
-                completed_journey=completed,
-                reason="charge_crosses_day_boundary",
-            )
-
         self._charge_data[charge_id] = data
 
         if self.current_journey is None:
             return JourneyUpdateResult(
                 action="ignored",
-                reason="charge_without_previous_trip",
-            )
-
-        if not self._same_journey_day(
-            self.current_journey,
-            start_time,
-        ):
-            completed = await self._finish_or_discard_current(
-                reason="day_changed"
-            )
-            return JourneyUpdateResult(
-                action="ignored",
-                completed_journey=completed,
                 reason="charge_without_previous_trip",
             )
 
@@ -406,37 +398,21 @@ class FordTriplogJourneyManager:
         self,
         reference_time: datetime | str,
     ) -> JourneyUpdateResult:
-        """Finalize the current journey when a new local day starts."""
+        """Keep journeys open across calendar-day boundaries."""
 
-        if self.current_journey is None:
-            return JourneyUpdateResult(
-                action="unchanged",
-                reason="no_current_journey",
-            )
-
-        reference = self._parse_datetime(reference_time)
-
-        if self._same_journey_day(
-            self.current_journey,
-            reference,
-        ):
-            return JourneyUpdateResult(
-                action="unchanged",
-                journey=self.current_journey,
-                reason="same_day",
-            )
-
-        return await self.async_finalize_current(
-            reason="day_changed"
+        return JourneyUpdateResult(
+            action="unchanged",
+            journey=self.current_journey,
+            reason="calendar_day_boundary_ignored",
         )
 
     @staticmethod
     def is_complete_journey(
         journey: FordTriplogJourney,
     ) -> bool:
-        """Return whether a journey contains Trip-Charge-Trip."""
+        """Return whether a journey starts and ends with at least two trips."""
 
-        if journey.trip_count < 2 or journey.charge_count < 1:
+        if journey.trip_count < 2:
             return False
 
         item_types = [
@@ -451,17 +427,8 @@ class FordTriplogJourneyManager:
         ):
             return False
 
-        # Consecutive charging sessions are valid. This occurs, for example,
-        # when the vehicle reaches a configured SOC limit and charging is then
-        # restarted without an intervening trip. Consecutive trips still split
-        # journeys because a charge is required between journey legs.
-        return all(
-            not (current == following == "trip")
-            for current, following in zip(
-                item_types,
-                item_types[1:],
-            )
-        )
+        # Both consecutive trips and consecutive charging sessions are valid.
+        return all(item_type in {"trip", "charge"} for item_type in item_types)
 
     async def _finish_or_discard_current(
         self,
@@ -634,6 +601,32 @@ class FordTriplogJourneyManager:
 
         return journey_date == cls._date_key(value)
 
+    def _trip_matches_trip(
+        self,
+        previous_trip: Mapping[str, Any],
+        trip: Mapping[str, Any],
+    ) -> tuple[bool, str]:
+        """Check whether a trip continues the current journey."""
+
+        previous_end = self._required_datetime(previous_trip, "end_time")
+        trip_start = self._required_datetime(trip, "start_time")
+        gap = (trip_start - previous_end).total_seconds()
+
+        if gap < 0:
+            return False, "trip_starts_before_previous_trip_ends"
+        if gap > self.journey_max_gap_seconds:
+            return False, "journey_max_gap_exceeded"
+
+        if not self._locations_match(
+            previous_trip.get("end_latitude"),
+            previous_trip.get("end_longitude"),
+            trip.get("start_latitude"),
+            trip.get("start_longitude"),
+        ):
+            return True, "matched_by_time_location_changed"
+
+        return True, "matched_by_time"
+
     def _trip_matches_charge(
         self,
         trip: Mapping[str, Any],
@@ -683,8 +676,8 @@ class FordTriplogJourneyManager:
         if gap < 0:
             return False, "charge_starts_before_trip_ends"
 
-        if gap > self.trip_to_charge_timeout_seconds:
-            return False, "trip_to_charge_timeout"
+        if gap > self.journey_max_gap_seconds:
+            return False, "journey_max_gap_exceeded"
 
         if not self._locations_match(
             trip.get("end_latitude"),
@@ -692,9 +685,9 @@ class FordTriplogJourneyManager:
             charge.get("start_latitude"),
             charge.get("start_longitude"),
         ):
-            return False, "trip_and_charge_locations_do_not_match"
+            return True, "matched_by_time_location_changed"
 
-        return True, "matched_by_time_and_location"
+        return True, "matched_by_time"
 
 
     def _charge_matches_charge(
@@ -718,8 +711,8 @@ class FordTriplogJourneyManager:
         if gap < 0:
             return False, "charge_starts_before_previous_charge_ends"
 
-        if gap > self.charge_to_charge_timeout_seconds:
-            return False, "charge_to_charge_timeout"
+        if gap > self.journey_max_gap_seconds:
+            return False, "journey_max_gap_exceeded"
 
         if not self._locations_match(
             previous_charge.get("end_latitude"),
@@ -727,9 +720,9 @@ class FordTriplogJourneyManager:
             charge.get("start_latitude"),
             charge.get("start_longitude"),
         ):
-            return False, "consecutive_charge_locations_do_not_match"
+            return True, "matched_by_time_location_changed"
 
-        return True, "matched_consecutive_charge_by_time_and_location"
+        return True, "matched_by_time"
 
     def _charge_matches_next_trip(
         self,
@@ -757,8 +750,8 @@ class FordTriplogJourneyManager:
         if gap < 0:
             return False, "trip_starts_before_charge_ends"
 
-        if gap > self.charge_to_trip_timeout_seconds:
-            return False, "charge_to_trip_timeout"
+        if gap > self.journey_max_gap_seconds:
+            return False, "journey_max_gap_exceeded"
 
         if not self._locations_match(
             charge.get("end_latitude"),
@@ -766,9 +759,9 @@ class FordTriplogJourneyManager:
             trip.get("start_latitude"),
             trip.get("start_longitude"),
         ):
-            return False, "charge_and_trip_locations_do_not_match"
+            return True, "matched_by_time_location_changed"
 
-        return True, "matched_by_time_and_location"
+        return True, "matched_by_time"
 
     def _locations_match(
         self,
