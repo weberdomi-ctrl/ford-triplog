@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6c
+Release: 1.6e
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_TRIP_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
+DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
 
 
@@ -55,6 +56,9 @@ class FordTriplogJourneyManager:
         charge_to_trip_timeout_seconds: int = (
             DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS
         ),
+        charge_to_charge_timeout_seconds: int = (
+            DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS
+        ),
         location_match_radius_meters: float = (
             DEFAULT_LOCATION_MATCH_RADIUS_METERS
         ),
@@ -71,6 +75,10 @@ class FordTriplogJourneyManager:
         self.charge_to_trip_timeout_seconds = max(
             0,
             int(charge_to_trip_timeout_seconds),
+        )
+        self.charge_to_charge_timeout_seconds = max(
+            0,
+            int(charge_to_charge_timeout_seconds),
         )
         self.location_match_radius_meters = max(
             0.0,
@@ -266,26 +274,47 @@ class FordTriplogJourneyManager:
 
         last_item = self._last_item(self.current_journey)
 
-        if last_item is None or last_item.item_type != "trip":
+        if last_item is None:
             return JourneyUpdateResult(
                 action="ignored",
                 journey=self.current_journey,
-                reason="charge_not_after_trip",
+                reason="charge_without_previous_item",
             )
 
-        trip_data = self._trip_data.get(last_item.item_id)
+        if last_item.item_type == "trip":
+            trip_data = self._trip_data.get(last_item.item_id)
 
-        if trip_data is None:
+            if trip_data is None:
+                return JourneyUpdateResult(
+                    action="ignored",
+                    journey=self.current_journey,
+                    reason="missing_trip_source_data",
+                )
+
+            matches, reason = self._trip_matches_charge(
+                trip_data,
+                data,
+            )
+        elif last_item.item_type == "charge":
+            previous_charge = self._charge_data.get(last_item.item_id)
+
+            if previous_charge is None:
+                return JourneyUpdateResult(
+                    action="ignored",
+                    journey=self.current_journey,
+                    reason="missing_previous_charge_source_data",
+                )
+
+            matches, reason = self._charge_matches_charge(
+                previous_charge,
+                data,
+            )
+        else:
             return JourneyUpdateResult(
                 action="ignored",
                 journey=self.current_journey,
-                reason="missing_trip_source_data",
+                reason="unsupported_previous_item_type",
             )
-
-        matches, reason = self._trip_matches_charge(
-            trip_data,
-            data,
-        )
 
         if not matches:
             completed = await self._finish_or_discard_current(
@@ -380,8 +409,12 @@ class FordTriplogJourneyManager:
         ):
             return False
 
+        # Consecutive charging sessions are valid. This occurs, for example,
+        # when the vehicle reaches a configured SOC limit and charging is then
+        # restarted without an intervening trip. Consecutive trips still split
+        # journeys because a charge is required between journey legs.
         return all(
-            current != following
+            not (current == following == "trip")
             for current, following in zip(
                 item_types,
                 item_types[1:],
@@ -595,6 +628,41 @@ class FordTriplogJourneyManager:
             return False, "trip_and_charge_locations_do_not_match"
 
         return True, "matched_by_time_and_location"
+
+
+    def _charge_matches_charge(
+        self,
+        previous_charge: Mapping[str, Any],
+        charge: Mapping[str, Any],
+    ) -> tuple[bool, str]:
+        """Check whether another charge continues at the same stop."""
+
+        previous_end = self._required_datetime(
+            previous_charge,
+            "end_time",
+        )
+        charge_start = self._required_datetime(
+            charge,
+            "start_time",
+        )
+
+        gap = (charge_start - previous_end).total_seconds()
+
+        if gap < 0:
+            return False, "charge_starts_before_previous_charge_ends"
+
+        if gap > self.charge_to_charge_timeout_seconds:
+            return False, "charge_to_charge_timeout"
+
+        if not self._locations_match(
+            previous_charge.get("end_latitude"),
+            previous_charge.get("end_longitude"),
+            charge.get("start_latitude"),
+            charge.get("start_longitude"),
+        ):
+            return False, "consecutive_charge_locations_do_not_match"
+
+        return True, "matched_consecutive_charge_by_time_and_location"
 
     def _charge_matches_next_trip(
         self,
