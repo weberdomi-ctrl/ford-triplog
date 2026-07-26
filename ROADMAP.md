@@ -76,6 +76,7 @@ Examples:
 - Additional diagnostics
 - Enhanced translations
 - UI refinements
+- Polish translation (thanks to sitek76)
 
 ---
 
