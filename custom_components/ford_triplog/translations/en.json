@@ -267,5 +267,11 @@
         "name": "Average Trip Consumption"
       }
     }
+  },
+  "common": {
+    "today": "Today",
+    "yesterday": "Yesterday",
+    "unknown": "Unknown",
+    "no_gps_data": "No GPS data available"
   }
 }

@@ -3,18 +3,18 @@
     "step": {
       "user": {
         "title": "Ford Triplog",
-        "description": "Konfiguracja Ford Triplog.",
+        "description": "Skonfiguruj Ford Triplog.",
         "data": {
-          "ignition": "Zapłon.",
-          "odometer": "Licznik kilometrów.",
-          "tracker": "Śledzenie samochodu.",
-          "charging": "Sensor statusu ładowania (opcja dostępna dla samochodów elektrycznych).",
-          "smart_trip": "Włącz inteligentną podróż.",
-          "smart_trip_timeout": "Limit czasu inteligentnej podróży (sekundy)."
+          "ignition": "Zapłon",
+          "odometer": "Przebieg",
+          "tracker": "Lokalizator pojazdu",
+          "charging": "Czujnik stanu ładowania (dostępny tylko dla pojazdów elektrycznych Ford Pass)",
+          "smart_trip": "Włącz Smart Trip",
+          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)"
         },
         "data_description": {
-          "smart_trip": "Połącz któtkie postoje w jendą podróż.",
-          "smart_trip_timeout": "Czas przerwy kończącej podróż."
+          "smart_trip": "Łączy krótkie postoje w jedną podróż.",
+          "smart_trip_timeout": "Czas, po którym wstrzymana podróż zostanie zakończona."
         }
       }
     }
@@ -22,21 +22,256 @@
   "options": {
     "step": {
       "init": {
-        "description": "Ford Triplog - opcje.",
+        "title": "Ford Triplog",
+        "description": "Wybierz sekcję, którą chcesz zarządzać.",
+        "menu_options": {
+          "settings": "Ustawienia",
+          "import_charging_sites": "Importuj bazę miejsc ładowania",
+          "download_charging_sites": "Pobierz bazę miejsc ładowania z OpenStreetMap",
+          "user_charging_sites": "Własne miejsca ładowania"
+        },
+        "menu_option_descriptions": {
+          "settings": "Zarządzaj ustawieniami podróży, ładowania i pojazdu.",
+          "import_charging_sites": "Prześlij bazę miejsc ładowania w formacie JSON i natychmiast ją aktywuj.",
+          "download_charging_sites": "Pobierz miejsca ładowania dla wybranego kraju bezpośrednio z OpenStreetMap, przetwórz je i natychmiast aktywuj nową bazę.",
+          "user_charging_sites": "Wyświetlaj i zarządzaj własnymi miejscami ładowania."
+        }
+      },
+      "settings": {
+        "title": "Ustawienia",
+        "description": "Skonfiguruj Ford Triplog.",
         "data": {
-          "soh": "Zdrowie baterii (SOH).",
-          "smart_trip": "Włącz inteligentną podróż.",
-          "smart_trip_timeout": "Limit czasu inteligentnej podróży (sekundy).",
-          "charging": "Sensor statusu ładowania.",
-          "battery_capacity_kwh": "Pojemność baterii netto (kWh)."   
+          "soh": "Stan zdrowia baterii (SOH)",
+          "smart_trip": "Włącz Smart Trip",
+          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
+          "charging": "Czujnik stanu ładowania",
+          "battery_capacity_kwh": "Użyteczna pojemność baterii (kWh)"
         },
         "data_description": {
-          "smart_trip": "Połącz któtkie postoje w jendą podróż.",
-          "smart_trip_timeout": "Wartość minimalna: 30 sekund.",
-          "charging": "Sensor statusu ładowania (opcja dostępna dla samochodów elektrycznych).",
-          "battery_capacity_kwh": "Pojemność baterii netto. Domyślnie: 77 kWh."   
+          "smart_trip": "Łączy krótkie postoje w jedną podróż.",
+          "smart_trip_timeout": "Zalecane: 300 sekund (5 minut). Minimum: 30 sekund.",
+          "charging": "Czujnik stanu ładowania (dostępny tylko dla pojazdów elektrycznych Ford Pass).",
+          "battery_capacity_kwh": "Użyteczna pojemność baterii pojazdu. Domyślnie: 77 kWh."
+        }
+      },
+      "import_charging_sites": {
+        "title": "Importuj bazę miejsc ładowania",
+        "description": "Wybierz bazę miejsc ładowania Ford Triplog w formacie JSON. Aktywna baza zostanie automatycznie zarchiwizowana i zastąpiona po pomyślnej weryfikacji.",
+        "data": {
+          "charging_site_file": "Plik JSON"
+        },
+        "data_description": {
+          "charging_site_file": "Na przykład charging_sites_de.json, charging_sites_at.json lub charging_sites_ch.json."
+        }
+      },
+      "import_charging_sites_success": {
+        "title": "Import zakończony pomyślnie",
+        "description": "Baza miejsc ładowania została zaimportowana i natychmiast aktywowana.\n\nWykryte miejsca ładowania: {searchable_sites}\nKomórki geohash: {index_cells}"
+      },
+      "download_charging_sites": {
+        "title": "Pobierz bazę miejsc ładowania",
+        "description": "Wybierz kraj, dla którego miejsca ładowania mają zostać pobrane bezpośrednio z OpenStreetMap. Bieżąca baza zostanie automatycznie zarchiwizowana przed aktywacją nowej. W zależności od kraju proces może potrwać od kilku sekund do kilku minut.",
+        "data": {
+          "charging_site_country": "Kraj"
+        },
+        "data_description": {
+          "charging_site_country": "Dla wybranego kraju zostanie utworzona i natychmiast aktywowana nowa baza miejsc ładowania."
+        }
+      },
+      "download_charging_sites_success": {
+        "title": "Baza miejsc ładowania została aktywowana",
+        "description": "Baza miejsc ładowania dla **{country} ({country_code})** została pomyślnie pobrana z OpenStreetMap, przetworzona i aktywowana.\n\n**Pobieranie i przetwarzanie**\n- Elementy OpenStreetMap: **{downloaded_elements}**\n- Znormalizowane stacje ładowania: **{normalized_stations}**\n- Logiczne miejsca ładowania: **{searchable_sites}**\n- Komórki geohash: **{index_cells}**\n- Pominięte elementy: **{skipped_elements}**\n\n**Baza danych**\n- Rozmiar: **{database_size}**\n- Łączny czas: **{duration}**\n\nNowa baza jest natychmiast dostępna do wykrywania miejsc ładowania."
+      },
+      "download_charging_sites_progress": {
+        "title": "Tworzenie bazy miejsc ładowania",
+        "description": "Kraj: {country_code}\n\nEtap: {stage}\n{message}\n\nPostęp: {progress}%\nKrok {step} z {total_steps}\nUpłynęło: {elapsed} s\n\n{progress_log}"
+      },
+      "download_charging_sites_result": {
+        "title": "Tworzenie bazy miejsc ładowania zakończone",
+        "description": "Baza miejsc ładowania została pomyślnie utworzona i aktywowana."
+      },
+      "user_charging_sites": {
+        "title": "Własne miejsca ładowania",
+        "description": "{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Miejsce ładowania"
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Typ:** {type}\n**Współrzędne:** {coordinates}\n**Promień:** {radius}\n**Operator:** {operator}\n**Sieć:** {network}\n**Moc:** {power}\n\nTworzenie, edytowanie i usuwanie wpisów zostanie dodane w Build 04."
+      },
+      "user_charging_site_edit": {
+        "title": "Utwórz lub edytuj miejsce ładowania",
+        "description": "Pola odpowiadają modelowi bazy stacji ładowania OSM. Można wybrać wiele złączy oraz podać własną wartość marki. Dla wykrytych miejsc ładowania dostępne dane są wstępnie uzupełniane.",
+        "data": {
+          "name": "Nazwa",
+          "street": "Ulica",
+          "house_number": "Numer budynku",
+          "postcode": "Kod pocztowy",
+          "city": "Miejscowość",
+          "country": "Kraj",
+          "latitude": "Szerokość geograficzna",
+          "longitude": "Długość geograficzna",
+          "radius": "Promień wykrywania",
+          "type": "Typ",
+          "power_kw": "Maksymalna moc ładowania",
+          "capacity": "Liczba punktów ładowania",
+          "connectors": "Złącza (wybór wielokrotny)",
+          "operator": "Operator",
+          "network": "Sieć",
+          "brand": "Marka / dostawca",
+          "notes": "Notatki",
+          "action": "Akcja"
+        }
+      },
+      "user_charging_site_delete": {
+        "title": "Usuń miejsce ładowania",
+        "description": "Czy na pewno chcesz usunąć „{name}”?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Własne miejsca ładowania",
+        "description": "{pending_text}\n\n{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Miejsce ładowania"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Dodaj nieznane miejsca ładowania",
+        "description": "Wybierz jedną z {pending_count} wykrytych lokalizacji. Współrzędne i dostępne dane stacji zostaną wstępnie uzupełnione.",
+        "data": {
+          "user_charging_site_selection": "Wykryte miejsce ładowania"
         }
       }
+    },
+    "error": {
+      "invalid_charging_site_database": "Plik nie jest prawidłową ani zgodną bazą miejsc ładowania Ford Triplog.",
+      "charging_site_download_failed": "Nie udało się pobrać lub przetworzyć bazy miejsc ładowania. Sprawdź dziennik Home Assistant, aby uzyskać więcej informacji.",
+      "charging_site_download_in_progress": "Pobieranie bazy miejsc ładowania jest już w toku.",
+      "user_charging_sites_load_failed": "Nie udało się wczytać bazy własnych miejsc ładowania.",
+      "user_charging_site_not_found": "Nie znaleziono wybranego miejsca ładowania.",
+      "user_charging_site_save_failed": "Nie udało się zapisać miejsca ładowania."
     }
+  },
+  "entity": {
+    "sensor": {
+      "trip_count": {
+        "name": "Liczba podróży"
+      },
+      "total_distance": {
+        "name": "Łączny dystans"
+      },
+      "total_energy_used": {
+        "name": "Łączne zużycie energii"
+      },
+      "average_consumption": {
+        "name": "Średnie zużycie"
+      },
+      "total_duration": {
+        "name": "Łączny czas"
+      },
+      "total_driving_time": {
+        "name": "Łączny czas jazdy"
+      },
+      "last_distance": {
+        "name": "Dystans ostatniej podróży"
+      },
+      "last_energy_used": {
+        "name": "Energia zużyta podczas ostatniej podróży"
+      },
+      "last_consumption": {
+        "name": "Zużycie podczas ostatniej podróży"
+      },
+      "last_average_speed": {
+        "name": "Średnia prędkość ostatniej podróży"
+      },
+      "last_duration": {
+        "name": "Czas trwania ostatniej podróży"
+      },
+      "last_driving_time": {
+        "name": "Czas jazdy ostatniej podróży"
+      },
+      "last_start_address": {
+        "name": "Adres początkowy ostatniej podróży"
+      },
+      "last_destination": {
+        "name": "Ostatni cel podróży"
+      },
+      "last_start_time": {
+        "name": "Czas rozpoczęcia ostatniej podróży"
+      },
+      "last_end_time": {
+        "name": "Czas zakończenia ostatniej podróży"
+      },
+      "last_charge_start_time": {
+        "name": "Czas rozpoczęcia ostatniego ładowania"
+      },
+      "last_charge_end_time": {
+        "name": "Czas zakończenia ostatniego ładowania"
+      },
+      "last_charge_start_soc": {
+        "name": "Poziom naładowania na początku ostatniego ładowania"
+      },
+      "last_charge_end_soc": {
+        "name": "Poziom naładowania na końcu ostatniego ładowania"
+      },
+      "last_charge_soc_added": {
+        "name": "Poziom naładowania dodany podczas ostatniego ładowania"
+      },
+      "last_charge_duration": {
+        "name": "Czas trwania ostatniego ładowania"
+      },
+      "last_charging_location": {
+        "name": "Ostatnie miejsce ładowania"
+      },
+      "last_charging_site": {
+        "name": "Ostatnia stacja ładowania"
+      },
+      "last_trip_start_soc": {
+        "name": "Poziom naładowania na początku ostatniej podróży"
+      },
+      "last_trip_end_soc": {
+        "name": "Poziom naładowania na końcu ostatniej podróży"
+      },
+      "last_trip_soc_used": {
+        "name": "Poziom naładowania zużyty podczas ostatniej podróży"
+      },
+      "charge_count": {
+        "name": "Liczba ładowań"
+      },
+      "average_charge_soc_added": {
+        "name": "Średni dodany poziom naładowania"
+      },
+      "average_charge_duration": {
+        "name": "Średni czas ładowania"
+      },
+      "average_charge_start_soc": {
+        "name": "Średni poziom naładowania na początku ładowania"
+      },
+      "average_charge_end_soc": {
+        "name": "Średni poziom naładowania na końcu ładowania"
+      },
+      "average_trip_distance": {
+        "name": "Średni dystans podróży"
+      },
+      "average_trip_duration": {
+        "name": "Średni czas trwania podróży"
+      },
+      "average_trip_energy": {
+        "name": "Średnie zużycie energii na podróż"
+      },
+      "average_trip_soc_used": {
+        "name": "Średni poziom naładowania zużyty na podróż"
+      },
+      "average_trip_consumption": {
+        "name": "Średnie zużycie na podróż"
+      }
+    }
+  },
+  "common": {
+    "today": "Dzisiaj",
+    "yesterday": "Wczoraj",
+    "unknown": "Nieznane",
+    "no_gps_data": "Brak danych GPS"
   }
 }

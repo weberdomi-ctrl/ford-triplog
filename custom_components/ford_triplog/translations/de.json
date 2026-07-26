@@ -267,5 +267,11 @@
         "name": "Durchschnittlicher Verbrauch pro Fahrt"
       }
     }
+  },
+  "common": {
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "unknown": "Unbekannt",
+    "no_gps_data": "Keine GPS-Daten verfügbar"
   }
 }
