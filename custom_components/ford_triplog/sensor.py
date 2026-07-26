@@ -379,8 +379,21 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         if value is None:
             return None
 
-        formatted = format_address_short(value)
-        return formatted or None
+        if isinstance(value, str):
+            value = value.strip()
+            if not value:
+                return None
+
+            # Journey addresses are currently stored as complete strings.
+            # Keep the most useful leading address parts for dashboards.
+            parts = [part.strip() for part in value.split(",") if part.strip()]
+            return ", ".join(parts[:3]) if parts else value
+
+        if isinstance(value, dict):
+            formatted = format_address_short(value)
+            return formatted or None
+
+        return str(value)
 
     def _build_timeline(self, journey) -> tuple[list[dict[str, Any]], int]:
         """Build start, trip, pause, charge and end timeline entries."""
