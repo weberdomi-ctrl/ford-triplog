@@ -329,6 +329,9 @@
       },
       "last_journey": {
         "name": "Letzte Tour"
+      },
+      "last_charge": {
+        "name": "Letzter Ladevorgang"
       }
     }
   },

@@ -148,6 +148,12 @@
       },
       "average_trip_consumption": {
         "name": "Average Trip Consumption"
+      },
+      "last_charge": {
+        "name": "Last charge"
+      },
+      "last_journey": {
+        "name": "Last Journey"
       }
     }
   }

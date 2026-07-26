@@ -28,6 +28,13 @@ Features include:
 
 ------------------------------------------------------------------------
 
+### Added
+- New "Last Journey Overview" sensor for Home Assistant dashboards.
+- Provides a structured journey timeline including start, trips, pauses, charging sessions and destination.
+- Includes summarized driving, charging and pause durations for easier dashboard visualization.
+
+------------------------------------------------------------------------
+
 ## Improved Charging Location Recognition
 
 Charging locations are now resolved using multiple prioritized data
