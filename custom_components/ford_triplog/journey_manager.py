@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6e
+Release: 1.6f
 """
 
 from __future__ import annotations
@@ -669,17 +669,12 @@ class FordTriplogJourneyManager:
         charge: Mapping[str, Any],
         trip: Mapping[str, Any],
     ) -> tuple[bool, str]:
-        """Check whether a trip follows a charge."""
+        """Check whether a trip follows a charge.
 
-        trip_id = str(trip.get("trip_id", "")).strip()
-        linked_trip_id = str(
-            charge.get("trip_id") or ""
-        ).strip()
-
-        if linked_trip_id:
-            if linked_trip_id != trip_id:
-                return False, "charge_links_different_next_trip"
-            return True, "matched_by_charge_link"
+        ``charge.trip_id`` belongs to the trip that preceded the charging
+        session. It must not be interpreted as a link to the following trip.
+        The next trip is therefore matched by chronology and location.
+        """
 
         charge_end = self._required_datetime(
             charge,
