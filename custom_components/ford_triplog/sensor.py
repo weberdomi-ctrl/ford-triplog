@@ -28,6 +28,7 @@ from homeassistant.const import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from .utils import (
     format_address,
     format_address_short,
@@ -46,7 +47,8 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN, VERSION
+from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
+from .journey_storage import FordTriplogJourneyStorage
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -59,6 +61,7 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
+    journey_storage = data.get("journey_storage")
 
     translations = await async_get_translations(
         hass,
@@ -88,6 +91,12 @@ async def async_setup_entry(
 
     async_add_entities(
         [
+            # Last journey
+            FordTriplogLastJourneySensor(
+                journey_storage,
+                common_translations,
+            ),
+
             # Last trip
             FordTriplogLastStartAddressSensor(coordinator, history, common_translations),
             FordTriplogLastEndAddressSensor(coordinator, history, common_translations),
@@ -137,6 +146,142 @@ async def async_setup_entry(
 
 
     )
+
+
+
+class FordTriplogLastJourneySensor(SensorEntity):
+    """Expose the last completed Journey."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "last_journey"
+    _attr_unique_id = "ford_triplog_last_journey"
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_icon = "mdi:map-marker-path"
+
+    def __init__(
+        self,
+        storage: FordTriplogJourneyStorage | None,
+        translations: dict[str, str],
+    ) -> None:
+        self.storage = storage
+        self.translations = translations
+        self._journey = None
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        """Load state and subscribe to Journey updates."""
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+        await self._async_refresh()
+
+    def _handle_journey_update(self) -> None:
+        """Schedule a refresh after a Journey update."""
+
+        self.hass.async_create_task(
+            self._async_refresh_and_write()
+        )
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh the sensor and write the new state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        """Load the last completed Journey."""
+
+        if self.storage is None:
+            self._journey = None
+            self._attr_native_value = None
+            return
+
+        self._journey = await self.storage.load_last_journey()
+
+        if self._journey is None or not self._journey.end_time:
+            self._attr_native_value = None
+            return
+
+        try:
+            timestamp = datetime.fromisoformat(
+                self._journey.end_time
+            )
+        except (TypeError, ValueError):
+            self._attr_native_value = None
+            return
+
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.astimezone()
+
+        self._attr_native_value = timestamp
+
+    @property
+    def available(self) -> bool:
+        """Return whether Journey data is available."""
+
+        return self._journey is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return details of the last completed Journey."""
+
+        if self._journey is None:
+            return {}
+
+        journey = self._journey
+
+        return {
+            "journey_id": journey.journey_id,
+            "date": journey.date,
+            "start_time": journey.start_time,
+            "end_time": journey.end_time,
+            "start_address": journey.start_address,
+            "end_address": journey.end_address,
+            "start_latitude": journey.start_latitude,
+            "start_longitude": journey.start_longitude,
+            "end_latitude": journey.end_latitude,
+            "end_longitude": journey.end_longitude,
+            "trip_count": journey.trip_count,
+            "charge_count": journey.charge_count,
+            "trip_ids": list(journey.trip_ids),
+            "charge_ids": list(journey.charge_ids),
+            "distance_km": journey.distance_km,
+            "driving_duration_seconds": (
+                journey.driving_duration_seconds
+            ),
+            "charging_duration_seconds": (
+                journey.charging_duration_seconds
+            ),
+            "total_duration_seconds": (
+                journey.total_duration_seconds
+            ),
+            "energy_used_kwh": journey.energy_used_kwh,
+            "energy_charged_kwh": journey.energy_charged_kwh,
+            "average_consumption_kwh_100km": (
+                journey.average_consumption_kwh_100km
+            ),
+            "items": [
+                item.to_dict()
+                for item in journey.items
+            ],
+        }
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
 
 
 class FordTriplogSensorBase(SensorEntity):

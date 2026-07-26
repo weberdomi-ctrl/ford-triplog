@@ -151,6 +151,9 @@
       },
       "last_charge": {
         "name": "Last charge"
+      },
+      "last_journey": {
+        "name": "Last Journey"
       }
     }
   }
