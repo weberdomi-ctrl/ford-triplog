@@ -5,14 +5,6 @@ Track your Ford.
 
 Central constants used throughout the integration.
 
-Version: 1.6.1
-Release: 1.6.1a
-Phase: 4.0
-Build: 01
-Changes:
-- Added configurable Journey Home Zone.
-- Added configurable Journey Home Timeout.
-- Added configurable Journey Maximum Gap.
 """
 
 from __future__ import annotations
@@ -26,7 +18,7 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "1.6.2"
+VERSION: Final = "1.6.0"
 
 #
 # Storage
