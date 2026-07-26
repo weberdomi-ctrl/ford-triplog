@@ -188,11 +188,16 @@ class FordTriplogLastJourneySensor(SensorEntity):
 
         await self._async_refresh()
 
-    def _handle_journey_update(self) -> None:
+    def _handle_journey_update(self, *_args: object) -> None:
         """Schedule a refresh after a Journey maintenance operation."""
 
-        self.hass.async_create_task(
-            self._async_refresh_and_write()
+        # Dispatcher signals may include the updated Journey as payload and
+        # may be emitted from a worker thread during maintenance. Schedule the
+        # coroutine creation itself on Home Assistant's event loop.
+        self.hass.loop.call_soon_threadsafe(
+            lambda: self.hass.async_create_task(
+                self._async_refresh_and_write()
+            )
         )
 
     async def _async_refresh_and_write(self) -> None:

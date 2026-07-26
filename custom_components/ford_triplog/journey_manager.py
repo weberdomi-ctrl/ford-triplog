@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.6.0
-Release: 1.6f
+Release: 1.6g-debug
 """
 
 from __future__ import annotations
@@ -120,6 +120,15 @@ class FordTriplogJourneyManager:
         start_time = self._required_datetime(data, "start_time")
         end_time = self._required_datetime(data, "end_time")
 
+        _LOGGER.info(
+            "Journey debug: process trip %s (%s -> %s), current=%s, items=%s",
+            trip_id,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            self.current_journey.journey_id if self.current_journey else None,
+            self._item_summary(self.current_journey),
+        )
+
         if self._date_key(start_time) != self._date_key(end_time):
             return JourneyUpdateResult(
                 action="ignored",
@@ -188,6 +197,13 @@ class FordTriplogJourneyManager:
                 charge_data,
                 data,
             )
+            _LOGGER.info(
+                "Journey debug: charge %s -> trip %s match=%s reason=%s",
+                last_item.item_id,
+                trip_id,
+                matches,
+                reason,
+            )
 
             if matches:
                 self._add_trip(self.current_journey, data)
@@ -240,6 +256,16 @@ class FordTriplogJourneyManager:
         charge_id = self._required_id(data, "charge_id")
         start_time = self._required_datetime(data, "start_time")
         end_time = self._required_datetime(data, "end_time")
+
+        _LOGGER.info(
+            "Journey debug: process charge %s (%s -> %s), previous_trip_id=%s, current=%s, items=%s",
+            charge_id,
+            start_time.isoformat(),
+            end_time.isoformat(),
+            data.get("previous_trip_id") or data.get("trip_id"),
+            self.current_journey.journey_id if self.current_journey else None,
+            self._item_summary(self.current_journey),
+        )
 
         if self._date_key(start_time) != self._date_key(end_time):
             completed = await self._finish_or_discard_current(
@@ -295,6 +321,15 @@ class FordTriplogJourneyManager:
                 trip_data,
                 data,
             )
+            _LOGGER.info(
+                "Journey debug: trip %s -> charge %s match=%s reason=%s, trip.next_charge_id=%s, charge.previous_trip_id=%s",
+                last_item.item_id,
+                charge_id,
+                matches,
+                reason,
+                trip_data.get("next_charge_id"),
+                data.get("previous_trip_id") or data.get("trip_id"),
+            )
         elif last_item.item_type == "charge":
             previous_charge = self._charge_data.get(last_item.item_id)
 
@@ -308,6 +343,13 @@ class FordTriplogJourneyManager:
             matches, reason = self._charge_matches_charge(
                 previous_charge,
                 data,
+            )
+            _LOGGER.info(
+                "Journey debug: charge %s -> charge %s match=%s reason=%s",
+                last_item.item_id,
+                charge_id,
+                matches,
+                reason,
             )
         else:
             return JourneyUpdateResult(
@@ -439,10 +481,13 @@ class FordTriplogJourneyManager:
         self._remove_cached_source_data(journey)
 
         if not self.is_complete_journey(journey):
-            _LOGGER.debug(
-                "Discarded incomplete journey %s: %s",
+            _LOGGER.info(
+                "Journey debug: discarded incomplete journey %s: reason=%s, trips=%s, charges=%s, items=%s",
                 journey.journey_id,
                 reason,
+                journey.trip_count,
+                journey.charge_count,
+                self._item_summary(journey),
             )
             return None
 
@@ -476,6 +521,20 @@ class FordTriplogJourneyManager:
         journey = FordTriplogJourney()
         self._add_trip(journey, trip)
         return journey
+
+    @staticmethod
+    def _item_summary(
+        journey: FordTriplogJourney | None,
+    ) -> str:
+        """Return a compact journey item list for diagnostics."""
+
+        if journey is None:
+            return "[]"
+
+        return "[" + ", ".join(
+            f"{item.item_type}:{item.item_id}"
+            for item in journey.items
+        ) + "]"
 
     @staticmethod
     def _last_item(
@@ -592,15 +651,23 @@ class FordTriplogJourneyManager:
             charge.get("previous_trip_id") or ""
         ).strip()
 
+        # A trip stores only one next_charge_id. If several charging
+        # sessions follow the same trip, a later session may overwrite that
+        # field. Therefore the charge's previous_trip_id is authoritative
+        # whenever it is present.
+        if previous_trip_id:
+            if previous_trip_id != trip_id:
+                return False, "charge_links_different_trip"
+            if linked_charge_id == charge_id:
+                return True, "matched_by_both_links"
+            if linked_charge_id:
+                return True, "matched_by_charge_link_trip_points_to_later_charge"
+            return True, "matched_by_charge_link"
+
         if linked_charge_id:
             if linked_charge_id != charge_id:
                 return False, "trip_links_different_charge"
             return True, "matched_by_trip_link"
-
-        if previous_trip_id:
-            if previous_trip_id != trip_id:
-                return False, "charge_links_different_trip"
-            return True, "matched_by_charge_link"
 
         trip_end = self._required_datetime(
             trip,
