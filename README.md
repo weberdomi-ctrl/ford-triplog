@@ -312,16 +312,8 @@ Contribution guide:
 If Ford Triplog is useful to you, consider supporting future
 development.
 
-```{=html}
-<p align="center">
-```
-`<a href="https://ko-fi.com/dompressor">`{=html}
-`<img src="https://storage.ko-fi.com/cdn/kofi3.png?v=3" width="220">`{=html}
-`</a>`{=html}
+➡ **[Buy me a Coffee](https://ko-fi.com/dompressor)**
 
-```{=html}
-</p>
-```
 Every contribution helps improving the project.
 
 ------------------------------------------------------------------------
@@ -367,13 +359,7 @@ owners.
 
 ------------------------------------------------------------------------
 
-```{=html}
-<p align="center">
-```
-Made for the Home Assistant Community ❤️
+# Made for the Home Assistant Community ❤️
 
 If you like Ford Triplog, consider giving the project a ⭐ on GitHub.
 
-```{=html}
-</p>
-```
