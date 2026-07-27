@@ -338,6 +338,16 @@ Release information:
 
 ------------------------------------------------------------------------
 
+# Help translate Ford Triplog
+
+Want to see Ford Triplog in your native language?
+
+New translations and improvements to existing ones are always welcome. Simply submit a Pull Request with your translation files.
+
+Every contribution helps make Ford Triplog more accessible to the Home Assistant community. Thank you!
+
+------------------------------------------------------------------------
+
 # License
 
 Ford Triplog is released under the MIT License.
