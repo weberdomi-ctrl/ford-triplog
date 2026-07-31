@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.7.2
+Version: 1.7.3
 """
 
 from __future__ import annotations
@@ -344,12 +344,8 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
     def _seconds_between(start: Any, end: Any) -> int:
         """Return the non-negative duration between two timestamps."""
 
-        start_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(
-            start
-        )
-        end_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(
-            end
-        )
+        start_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(start)
+        end_dt = FordTriplogLastJourneyOverviewSensor._parse_datetime(end)
 
         if start_dt is None or end_dt is None:
             return 0
@@ -377,9 +373,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
     def _format_clock(value: Any) -> str | None:
         """Return a compact local clock time."""
 
-        timestamp = (
-            FordTriplogLastJourneyOverviewSensor._parse_datetime(value)
-        )
+        timestamp = FordTriplogLastJourneyOverviewSensor._parse_datetime(value)
         if timestamp is None:
             return None
 
@@ -397,8 +391,6 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if not value:
                 return None
 
-            # Journey addresses are currently stored as complete strings.
-            # Keep the most useful leading address parts for dashboards.
             parts = [part.strip() for part in value.split(",") if part.strip()]
             return ", ".join(parts[:3]) if parts else value
 
@@ -408,64 +400,259 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
         return str(value)
 
+    @staticmethod
+    def _optional_number(value: Any, digits: int = 1) -> float | None:
+        """Return a rounded number while preserving missing values."""
+
+        if value is None:
+            return None
+
+        try:
+            return round(float(value), digits)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _soc_used(start_soc: Any, end_soc: Any) -> float | None:
+        """Return used SOC for one trip."""
+
+        try:
+            return round(float(start_soc) - float(end_soc), 1)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _soc_added(start_soc: Any, end_soc: Any) -> float | None:
+        """Return added SOC for one charging session."""
+
+        try:
+            return round(float(end_soc) - float(start_soc), 1)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _consumption(distance_km: Any, energy_kwh: Any) -> float | None:
+        """Return consumption in kWh/100 km."""
+
+        try:
+            distance = float(distance_km)
+            energy = float(energy_kwh)
+        except (TypeError, ValueError):
+            return None
+
+        if distance <= 0:
+            return None
+
+        return round((energy / distance) * 100, 1)
+
+    def _item_start_location(self, item: Any) -> str | None:
+        """Return the resolved start location of an item."""
+
+        if getattr(item, "item_type", None) == "trip":
+            return (
+                getattr(item, "start_location", None)
+                or self._short_address(getattr(item, "start_address", None))
+            )
+
+        return (
+            getattr(item, "location", None)
+            or self._short_address(getattr(item, "address", None))
+        )
+
+    def _item_end_location(self, item: Any) -> str | None:
+        """Return the resolved end location of an item."""
+
+        if getattr(item, "item_type", None) == "trip":
+            return (
+                getattr(item, "end_location", None)
+                or self._short_address(getattr(item, "end_address", None))
+            )
+
+        return (
+            getattr(item, "location", None)
+            or self._short_address(getattr(item, "address", None))
+        )
+
+    def _item_location_details(
+        self,
+        item: Any,
+        *,
+        endpoint: str | None = None,
+    ) -> dict[str, Any]:
+        """Return location details for one Journey item."""
+
+        if getattr(item, "item_type", None) == "trip":
+            prefix = endpoint or "end"
+            return {
+                "location": getattr(item, f"{prefix}_location", None)
+                or self._short_address(
+                    getattr(item, f"{prefix}_address", None)
+                ),
+                "address": self._short_address(
+                    getattr(item, f"{prefix}_address", None)
+                ),
+                "latitude": getattr(item, f"{prefix}_latitude", None),
+                "longitude": getattr(item, f"{prefix}_longitude", None),
+                "location_source": getattr(
+                    item,
+                    f"{prefix}_location_source",
+                    None,
+                ),
+            }
+
+        return {
+            "location": getattr(item, "location", None)
+            or self._short_address(getattr(item, "address", None)),
+            "address": self._short_address(getattr(item, "address", None)),
+            "latitude": getattr(item, "latitude", None),
+            "longitude": getattr(item, "longitude", None),
+            "location_source": getattr(item, "location_source", None),
+        }
+
     def _build_timeline(self, journey) -> tuple[list[dict[str, Any]], int]:
         """Build start, trip, pause, charge and end timeline entries."""
 
         timeline: list[dict[str, Any]] = []
         total_pause_seconds = 0
+        items = list(journey.items)
 
-        start_address = self._short_address(journey.start_address)
-        end_address = self._short_address(journey.end_address)
+        first_item = items[0] if items else None
+        last_item = items[-1] if items else None
+
+        start_location = (
+            self._item_start_location(first_item)
+            if first_item is not None
+            else self._short_address(journey.start_address)
+        )
+        end_location = (
+            self._item_end_location(last_item)
+            if last_item is not None
+            else self._short_address(journey.end_address)
+        )
 
         timeline.append(
             {
                 "type": "start",
                 "time": journey.start_time,
                 "time_formatted": self._format_clock(journey.start_time),
-                "location": start_address,
+                "location": start_location,
+                "address": self._short_address(journey.start_address),
+                "latitude": journey.start_latitude,
+                "longitude": journey.start_longitude,
             }
         )
 
-        items = list(journey.items)
-
         for index, item in enumerate(items):
-            duration_seconds = self._seconds_between(
-                item.start_time,
-                item.end_time,
+            duration_seconds = (
+                getattr(item, "duration_seconds", None)
+                or self._seconds_between(item.start_time, item.end_time)
             )
 
             if item.item_type == "trip":
+                distance_km = self._optional_number(
+                    getattr(item, "distance_km", None),
+                    1,
+                )
+                energy_kwh = self._optional_number(
+                    getattr(item, "energy_kwh", None),
+                    2,
+                )
+                start_soc = self._optional_number(
+                    getattr(item, "start_soc", None),
+                    1,
+                )
+                end_soc = self._optional_number(
+                    getattr(item, "end_soc", None),
+                    1,
+                )
+
                 entry = {
                     "type": "trip",
                     "id": item.item_id,
                     "start_time": item.start_time,
                     "end_time": item.end_time,
-                    "start_time_formatted": self._format_clock(
-                        item.start_time
-                    ),
-                    "end_time_formatted": self._format_clock(
-                        item.end_time
-                    ),
+                    "start_time_formatted": self._format_clock(item.start_time),
+                    "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
+                    "start_location": self._item_start_location(item),
+                    "end_location": self._item_end_location(item),
+                    "start_address": self._short_address(
+                        getattr(item, "start_address", None)
+                    ),
+                    "end_address": self._short_address(
+                        getattr(item, "end_address", None)
+                    ),
+                    "start_latitude": getattr(
+                        item,
+                        "start_latitude",
+                        None,
+                    ),
+                    "start_longitude": getattr(
+                        item,
+                        "start_longitude",
+                        None,
+                    ),
+                    "end_latitude": getattr(item, "end_latitude", None),
+                    "end_longitude": getattr(item, "end_longitude", None),
+                    "start_location_source": getattr(
+                        item,
+                        "start_location_source",
+                        None,
+                    ),
+                    "end_location_source": getattr(
+                        item,
+                        "end_location_source",
+                        None,
+                    ),
+                    "distance_km": distance_km,
+                    "energy_used_kwh": energy_kwh,
+                    "start_soc": start_soc,
+                    "end_soc": end_soc,
+                    "soc_used": self._soc_used(start_soc, end_soc),
+                    "consumption_kwh_100km": self._consumption(
+                        distance_km,
+                        energy_kwh,
+                    ),
                 }
             else:
+                location_details = self._item_location_details(item)
+                start_soc = self._optional_number(
+                    getattr(item, "start_soc", None),
+                    1,
+                )
+                end_soc = self._optional_number(
+                    getattr(item, "end_soc", None),
+                    1,
+                )
+                energy_kwh = self._optional_number(
+                    getattr(item, "energy_kwh", None),
+                    2,
+                )
+
                 entry = {
                     "type": "charge",
                     "id": item.item_id,
                     "start_time": item.start_time,
                     "end_time": item.end_time,
-                    "start_time_formatted": self._format_clock(
-                        item.start_time
-                    ),
-                    "end_time_formatted": self._format_clock(
-                        item.end_time
-                    ),
+                    "start_time_formatted": self._format_clock(item.start_time),
+                    "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
+                    **location_details,
+                    "start_soc": start_soc,
+                    "end_soc": end_soc,
+                    "soc_added": self._soc_added(start_soc, end_soc),
+                    "energy_charged_kwh": energy_kwh,
                 }
 
-            timeline.append(entry)
+            timeline.append(
+                {
+                    key: value
+                    for key, value in entry.items()
+                    if value is not None
+                }
+            )
 
             if index >= len(items) - 1:
                 continue
@@ -480,21 +667,31 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 continue
 
             total_pause_seconds += pause_seconds
+            pause_location = self._item_location_details(
+                item,
+                endpoint="end",
+            )
+
+            pause_entry = {
+                "type": "pause",
+                "start_time": item.end_time,
+                "end_time": next_item.start_time,
+                "start_time_formatted": self._format_clock(item.end_time),
+                "end_time_formatted": self._format_clock(
+                    next_item.start_time
+                ),
+                "duration_seconds": pause_seconds,
+                "duration": format_duration(pause_seconds),
+                "after": item.item_type,
+                "before": next_item.item_type,
+                **pause_location,
+            }
+
             timeline.append(
                 {
-                    "type": "pause",
-                    "start_time": item.end_time,
-                    "end_time": next_item.start_time,
-                    "start_time_formatted": self._format_clock(
-                        item.end_time
-                    ),
-                    "end_time_formatted": self._format_clock(
-                        next_item.start_time
-                    ),
-                    "duration_seconds": pause_seconds,
-                    "duration": format_duration(pause_seconds),
-                    "after": item.item_type,
-                    "before": next_item.item_type,
+                    key: value
+                    for key, value in pause_entry.items()
+                    if value is not None
                 }
             )
 
@@ -503,7 +700,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "type": "end",
                 "time": journey.end_time,
                 "time_formatted": self._format_clock(journey.end_time),
-                "location": end_address,
+                "location": end_location,
+                "address": self._short_address(journey.end_address),
+                "latitude": journey.end_latitude,
+                "longitude": journey.end_longitude,
             }
         )
 
@@ -531,6 +731,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         distance = round(float(journey.distance_km or 0), 1)
         total_duration = int(journey.total_duration_seconds or 0)
 
+        items = list(journey.items)
+        first_item = items[0] if items else None
+        last_item = items[-1] if items else None
+
         self._attr_native_value = (
             f"{distance:g} km · "
             f"{self._format_duration_compact(total_duration)}"
@@ -542,6 +746,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "start": {
                 "time": journey.start_time,
                 "time_formatted": self._format_clock(journey.start_time),
+                "location": (
+                    self._item_start_location(first_item)
+                    if first_item is not None
+                    else self._short_address(journey.start_address)
+                ),
                 "address": self._short_address(journey.start_address),
                 "latitude": journey.start_latitude,
                 "longitude": journey.start_longitude,
@@ -549,6 +758,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "end": {
                 "time": journey.end_time,
                 "time_formatted": self._format_clock(journey.end_time),
+                "location": (
+                    self._item_end_location(last_item)
+                    if last_item is not None
+                    else self._short_address(journey.end_address)
+                ),
                 "address": self._short_address(journey.end_address),
                 "latitude": journey.end_latitude,
                 "longitude": journey.end_longitude,
@@ -556,17 +770,13 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "distance_km": distance,
             "total_duration_seconds": total_duration,
             "total_duration": format_duration(total_duration),
-            "driving_duration_seconds": (
-                journey.driving_duration_seconds
-            ),
+            "driving_duration_seconds": journey.driving_duration_seconds,
             "driving_duration": format_duration(
                 journey.driving_duration_seconds
             ),
             "pause_duration_seconds": pause_seconds,
             "pause_duration": format_duration(pause_seconds),
-            "charging_duration_seconds": (
-                journey.charging_duration_seconds
-            ),
+            "charging_duration_seconds": journey.charging_duration_seconds,
             "charging_duration": format_duration(
                 journey.charging_duration_seconds
             ),
