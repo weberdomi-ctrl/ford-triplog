@@ -29,6 +29,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.util import dt as dt_util
 from .utils import (
     format_address,
     format_address_short,
@@ -377,7 +378,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         if timestamp is None:
             return None
 
-        return timestamp.astimezone().strftime("%H:%M")
+        return dt_util.as_local(timestamp).strftime("%H:%M")
 
     @staticmethod
     def _short_address(value: Any) -> str | None:
