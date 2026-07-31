@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.6.3
+Version: 1.7.2
 """
 
 from __future__ import annotations
@@ -184,12 +184,10 @@ class FordTriplogLastJourneySensor(SensorEntity):
         )
         await self._async_refresh()
 
-    def _handle_journey_update(self) -> None:
-        """Schedule a refresh after a Journey update."""
+    def _handle_journey_update(self, *_args: Any) -> None:
+        """Schedule a thread-safe refresh after a Journey update."""
 
-        self.hass.async_create_task(
-            self._async_refresh_and_write()
-        )
+        self.hass.add_job(self._async_refresh_and_write)
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
@@ -319,12 +317,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         )
         await self._async_refresh()
 
-    def _handle_journey_update(self) -> None:
-        """Schedule a refresh after a Journey update."""
+    def _handle_journey_update(self, *_args: Any) -> None:
+        """Schedule a thread-safe refresh after a Journey update."""
 
-        self.hass.async_create_task(
-            self._async_refresh_and_write()
-        )
+        self.hass.add_job(self._async_refresh_and_write)
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
