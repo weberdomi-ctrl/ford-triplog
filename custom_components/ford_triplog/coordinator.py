@@ -3,13 +3,15 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.5.0
-Phase: 3.4
-Build: 06
+Version: 1.7.0-dev
+Phase: Issue #14
+Build: 001
 
 Changes:
-- Initializes pending unknown charging-location storage.
-- Passes pending storage to the resolver.
+- Waits for a newer FordPass tracker update before finalizing a paused trip.
+- Re-checks GPS after the Smart Trip timeout and reacts immediately to tracker events.
+- Uses unknown end coordinates when no fresh GPS update arrives within the safety timeout.
+- Keeps the original trip end time unchanged while waiting for GPS.
 """
 
 from __future__ import annotations
@@ -52,6 +54,7 @@ _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
+GPS_UPDATE_TIMEOUT = 60
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -151,6 +154,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.smart_trip_timer: asyncio.TimerHandle | None = None
         self.trip_end_time = None
         self.trip_end_state: dict[str, Any] | None = None
+
+        # Issue #14: signal tracker updates while a paused trip is waiting
+        # for a fresh final GPS position.
+        self._gps_update_event = asyncio.Event()
        
 
     async def async_setup(self):
@@ -405,12 +412,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         tracker = self.hass.states.get(self.config.get("tracker"))
         data["latitude"] = tracker.attributes.get("latitude") if tracker else None
         data["longitude"] = tracker.attributes.get("longitude") if tracker else None
+        data["gps_updated_at"] = (
+            tracker.last_updated.isoformat() if tracker else None
+        )
         return data
 
 
 
 
     async def _state_changed(self, event: Event):
+        if event.data.get("entity_id") == self.config.get("tracker"):
+            self._gps_update_event.set()
+
         self.vehicle_state = self._read_vehicle_state()
         ignition = str(self.vehicle_state.get("ignition")).lower() in (
             "on", "true", "1", "running"
@@ -1115,6 +1128,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 "longitude": state.get("longitude"),
                 "address": address,
                 "end_time": end_time,
+                "gps_updated_at": state.get("gps_updated_at"),
             }
 
             # Smart Trip pauses the captured trip object. The timeout only
@@ -1380,8 +1394,89 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self._charge_finalizing = False
 
 
+    @staticmethod
+    def _gps_timestamp_is_newer(
+        current_value: Any,
+        baseline_value: Any,
+    ) -> bool:
+        """Return whether the tracker timestamp is newer than the baseline."""
+
+        current = dt_util.parse_datetime(str(current_value or ""))
+        baseline = dt_util.parse_datetime(str(baseline_value or ""))
+
+        if current is None:
+            return False
+
+        if baseline is None:
+            return True
+
+        return current > baseline
+
+    async def _wait_for_fresh_trip_end_gps(
+        self,
+        baseline_timestamp: Any,
+    ) -> dict[str, Any] | None:
+        """Wait for a tracker update newer than the captured trip-end GPS."""
+
+        deadline = self.hass.loop.time() + GPS_UPDATE_TIMEOUT
+
+        while True:
+            state = self._read_vehicle_state()
+
+            if self._gps_timestamp_is_newer(
+                state.get("gps_updated_at"),
+                baseline_timestamp,
+            ):
+                latitude = state.get("latitude")
+                longitude = state.get("longitude")
+
+                if latitude is not None and longitude is not None:
+                    state["address"] = await self._get_address(state)
+                    _LOGGER.info(
+                        "Fresh trip-end GPS received: %s, %s (%s)",
+                        latitude,
+                        longitude,
+                        state.get("gps_updated_at"),
+                    )
+                    return state
+
+                _LOGGER.debug(
+                    "Tracker timestamp changed but coordinates are unavailable"
+                )
+
+            remaining = deadline - self.hass.loop.time()
+            if remaining <= 0:
+                _LOGGER.warning(
+                    "No fresh trip-end GPS received within %ss",
+                    GPS_UPDATE_TIMEOUT,
+                )
+                return None
+
+            # Clear before the second read to avoid missing an update between
+            # the initial check and waiting on the event.
+            self._gps_update_event.clear()
+
+            state = self._read_vehicle_state()
+            if self._gps_timestamp_is_newer(
+                state.get("gps_updated_at"),
+                baseline_timestamp,
+            ):
+                continue
+
+            try:
+                await asyncio.wait_for(
+                    self._gps_update_event.wait(),
+                    timeout=remaining,
+                )
+            except asyncio.TimeoutError:
+                _LOGGER.warning(
+                    "No fresh trip-end GPS received within %ss",
+                    GPS_UPDATE_TIMEOUT,
+                )
+                return None
+
     async def _smart_trip_timeout(self):
-        """Finalize a paused trip using its captured end-state snapshot."""
+        """Finalize a paused trip after refreshing its final GPS position."""
 
         _LOGGER.info("Smart Trip timeout reached")
         self.smart_trip_timer = None
@@ -1406,6 +1501,23 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         end_state = self.trip_end_state
         self.trip_end_state = None
+
+        fresh_gps_state = await self._wait_for_fresh_trip_end_gps(
+            end_state.get("gps_updated_at")
+        )
+
+        if fresh_gps_state is not None:
+            end_state["latitude"] = fresh_gps_state.get("latitude")
+            end_state["longitude"] = fresh_gps_state.get("longitude")
+            end_state["address"] = fresh_gps_state.get("address")
+            end_state["gps_updated_at"] = fresh_gps_state.get(
+                "gps_updated_at"
+            )
+        else:
+            # Never archive a known stale position as the trip destination.
+            end_state["latitude"] = None
+            end_state["longitude"] = None
+            end_state["address"] = None
 
         self.current_trip.finish(
             odometer=end_state.get("odometer"),
