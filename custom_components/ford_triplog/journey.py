@@ -5,8 +5,8 @@ Track your Ford.
 
 Journey data model.
 
-Version: 1.6.0
-Release: 1.6a
+Version: 1.7.3
+Release: 1.7.3
 """
 
 from __future__ import annotations
@@ -101,6 +101,30 @@ class JourneyItem:
     start_time: str | None = None
     end_time: str | None = None
 
+    distance_km: float | None = None
+    duration_seconds: int | None = None
+    energy_kwh: float | None = None
+    start_soc: float | None = None
+    end_soc: float | None = None
+
+    start_location: str | None = None
+    start_address: str | None = None
+    start_latitude: float | None = None
+    start_longitude: float | None = None
+    start_location_source: str | None = None
+
+    end_location: str | None = None
+    end_address: str | None = None
+    end_latitude: float | None = None
+    end_longitude: float | None = None
+    end_location_source: str | None = None
+
+    location: str | None = None
+    address: str | None = None
+    latitude: float | None = None
+    longitude: float | None = None
+    location_source: str | None = None
+
     def __post_init__(self) -> None:
         """Validate and normalize the journey item."""
 
@@ -116,14 +140,74 @@ class JourneyItem:
         self.start_time = _normalize_iso_datetime(self.start_time)
         self.end_time = _normalize_iso_datetime(self.end_time)
 
+        self.distance_km = _as_optional_float(self.distance_km)
+        self.duration_seconds = (
+            None
+            if self.duration_seconds is None
+            else max(0, _as_int(self.duration_seconds))
+        )
+        self.energy_kwh = _as_optional_float(self.energy_kwh)
+        self.start_soc = _as_optional_float(self.start_soc)
+        self.end_soc = _as_optional_float(self.end_soc)
+
+        for field_name in (
+            "start_location",
+            "start_address",
+            "start_location_source",
+            "end_location",
+            "end_address",
+            "end_location_source",
+            "location",
+            "address",
+            "location_source",
+        ):
+            setattr(
+                self,
+                field_name,
+                _as_optional_string(getattr(self, field_name)),
+            )
+
+        self.start_latitude = _as_optional_float(self.start_latitude)
+        self.start_longitude = _as_optional_float(self.start_longitude)
+        self.end_latitude = _as_optional_float(self.end_latitude)
+        self.end_longitude = _as_optional_float(self.end_longitude)
+        self.latitude = _as_optional_float(self.latitude)
+        self.longitude = _as_optional_float(self.longitude)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize the journey item."""
 
-        return {
+        data = {
             "type": self.item_type,
             "id": self.item_id,
             "start_time": self.start_time,
             "end_time": self.end_time,
+            "distance_km": self.distance_km,
+            "duration_seconds": self.duration_seconds,
+            "energy_kwh": self.energy_kwh,
+            "start_soc": self.start_soc,
+            "end_soc": self.end_soc,
+            "start_location": self.start_location,
+            "start_address": self.start_address,
+            "start_latitude": self.start_latitude,
+            "start_longitude": self.start_longitude,
+            "start_location_source": self.start_location_source,
+            "end_location": self.end_location,
+            "end_address": self.end_address,
+            "end_latitude": self.end_latitude,
+            "end_longitude": self.end_longitude,
+            "end_location_source": self.end_location_source,
+            "location": self.location,
+            "address": self.address,
+            "latitude": self.latitude,
+            "longitude": self.longitude,
+            "location_source": self.location_source,
+        }
+
+        return {
+            key: value
+            for key, value in data.items()
+            if value is not None
         }
 
     @classmethod
@@ -135,6 +219,26 @@ class JourneyItem:
             item_id=str(data.get("id", "")).strip(),
             start_time=data.get("start_time"),
             end_time=data.get("end_time"),
+            distance_km=data.get("distance_km"),
+            duration_seconds=data.get("duration_seconds"),
+            energy_kwh=data.get("energy_kwh"),
+            start_soc=data.get("start_soc"),
+            end_soc=data.get("end_soc"),
+            start_location=data.get("start_location"),
+            start_address=data.get("start_address"),
+            start_latitude=data.get("start_latitude"),
+            start_longitude=data.get("start_longitude"),
+            start_location_source=data.get("start_location_source"),
+            end_location=data.get("end_location"),
+            end_address=data.get("end_address"),
+            end_latitude=data.get("end_latitude"),
+            end_longitude=data.get("end_longitude"),
+            end_location_source=data.get("end_location_source"),
+            location=data.get("location"),
+            address=data.get("address"),
+            latitude=data.get("latitude"),
+            longitude=data.get("longitude"),
+            location_source=data.get("location_source"),
         )
 
 
@@ -248,12 +352,18 @@ class FordTriplogJourney:
         distance_km: float = 0.0,
         duration_seconds: int = 0,
         energy_used_kwh: float = 0.0,
+        start_soc: float | None = None,
+        end_soc: float | None = None,
+        start_location: str | None = None,
         start_address: str | None = None,
-        end_address: str | None = None,
         start_latitude: float | None = None,
         start_longitude: float | None = None,
+        start_location_source: str | None = None,
+        end_location: str | None = None,
+        end_address: str | None = None,
         end_latitude: float | None = None,
         end_longitude: float | None = None,
+        end_location_source: str | None = None,
     ) -> bool:
         """Add a trip reference and its aggregate values.
 
@@ -272,6 +382,21 @@ class FordTriplogJourney:
             item_id=normalized_id,
             start_time=start_time,
             end_time=end_time,
+            distance_km=max(0.0, _as_float(distance_km)),
+            duration_seconds=max(0, _as_int(duration_seconds)),
+            energy_kwh=max(0.0, _as_float(energy_used_kwh)),
+            start_soc=start_soc,
+            end_soc=end_soc,
+            start_location=start_location,
+            start_address=start_address,
+            start_latitude=start_latitude,
+            start_longitude=start_longitude,
+            start_location_source=start_location_source,
+            end_location=end_location,
+            end_address=end_address,
+            end_latitude=end_latitude,
+            end_longitude=end_longitude,
+            end_location_source=end_location_source,
         )
         self.items.append(item)
 
@@ -306,6 +431,13 @@ class FordTriplogJourney:
         end_time: str | datetime | None = None,
         duration_seconds: int = 0,
         energy_charged_kwh: float = 0.0,
+        start_soc: float | None = None,
+        end_soc: float | None = None,
+        location: str | None = None,
+        address: str | None = None,
+        latitude: float | None = None,
+        longitude: float | None = None,
+        location_source: str | None = None,
     ) -> bool:
         """Add a charging-session reference and its aggregate values.
 
@@ -325,6 +457,15 @@ class FordTriplogJourney:
                 item_id=normalized_id,
                 start_time=start_time,
                 end_time=end_time,
+                duration_seconds=max(0, _as_int(duration_seconds)),
+                energy_kwh=max(0.0, _as_float(energy_charged_kwh)),
+                start_soc=start_soc,
+                end_soc=end_soc,
+                location=location,
+                address=address,
+                latitude=latitude,
+                longitude=longitude,
+                location_source=location_source,
             )
         )
 

@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.6.2
-Release: 1.6.2a
+Version: 1.7.3
+Release: 1.7.3
 """
 
 from __future__ import annotations
@@ -1350,6 +1350,197 @@ class FordTriplogJourneyManager:
             return 0.0
 
     @staticmethod
+    def _optional_float_value(
+        data: Mapping[str, Any],
+        key: str,
+    ) -> float | None:
+        """Return one optional float value without converting missing data to zero."""
+
+        value = data.get(key)
+        if value is None:
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    def _resolve_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Resolve coordinates against all configured Home Assistant zones."""
+
+        try:
+            item_latitude = float(latitude)
+            item_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone: tuple[float, str] | None = None
+
+        for zone_state in self.hass.states.async_all("zone"):
+            zone_latitude = zone_state.attributes.get("latitude")
+            zone_longitude = zone_state.attributes.get("longitude")
+            zone_radius = zone_state.attributes.get("radius", 100)
+
+            try:
+                distance = self._distance_meters(
+                    item_latitude,
+                    item_longitude,
+                    float(zone_latitude),
+                    float(zone_longitude),
+                )
+                radius = max(0.0, float(zone_radius))
+            except (TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            zone_name = str(
+                zone_state.attributes.get(
+                    "friendly_name",
+                    zone_state.name,
+                )
+            ).strip()
+            if not zone_name:
+                continue
+
+            if matching_zone is None or distance < matching_zone[0]:
+                matching_zone = (distance, zone_name)
+
+        return matching_zone[1] if matching_zone else None
+
+    @staticmethod
+    def _fordpass_location(
+        charge: Mapping[str, Any],
+    ) -> dict[str, Any]:
+        """Return the FordPass charging location snapshot when available."""
+
+        snapshot = charge.get("fordpass_last_charge")
+        if not isinstance(snapshot, Mapping):
+            return {}
+
+        attributes = snapshot.get("attributes")
+        if not isinstance(attributes, Mapping):
+            return {}
+
+        location = attributes.get("location")
+        return dict(location) if isinstance(location, Mapping) else {}
+
+    @classmethod
+    def _fordpass_address(
+        cls,
+        location: Mapping[str, Any],
+    ) -> str | None:
+        """Return a readable address from a FordPass location."""
+
+        address = location.get("address")
+        if not isinstance(address, Mapping):
+            return cls._address_value(address)
+
+        address_1 = cls._address_value(address.get("address1"))
+        postcode = cls._address_value(address.get("postalCode"))
+        city = cls._address_value(address.get("city"))
+
+        locality = " ".join(
+            part for part in (postcode, city) if part
+        )
+
+        if address_1 and locality:
+            return f"{address_1}, {locality}"
+        return address_1 or locality or None
+
+    def _resolve_trip_location(
+        self,
+        trip: Mapping[str, Any],
+        *,
+        prefix: str,
+    ) -> tuple[str | None, str | None, Any, Any, str | None]:
+        """Resolve one trip boundary using zone before address."""
+
+        latitude, longitude = self._coordinates_from_data(
+            trip,
+            prefix=prefix,
+        )
+        address = self._address_value(trip.get(f"{prefix}_address"))
+        zone_name = self._resolve_zone_name(latitude, longitude)
+
+        if zone_name:
+            return zone_name, address, latitude, longitude, "zone"
+        if address:
+            return address, address, latitude, longitude, "address"
+
+        return None, None, latitude, longitude, None
+
+    def _resolve_charge_location(
+        self,
+        charge: Mapping[str, Any],
+    ) -> tuple[str | None, str | None, Any, Any, str | None]:
+        """Resolve a charging location.
+
+        Priority: Home Assistant zone, FordPass, OSM, address.
+        """
+
+        fordpass_location = self._fordpass_location(charge)
+
+        latitude = (
+            fordpass_location.get("latitude")
+            or charge.get("start_latitude")
+            or charge.get("end_latitude")
+        )
+        longitude = (
+            fordpass_location.get("longitude")
+            or charge.get("start_longitude")
+            or charge.get("end_longitude")
+        )
+
+        zone_name = self._resolve_zone_name(latitude, longitude)
+        fordpass_name = self._address_value(
+            fordpass_location.get("name")
+        )
+        fordpass_address = self._fordpass_address(fordpass_location)
+
+        osm_name = next(
+            (
+                self._address_value(charge.get(key))
+                for key in (
+                    "charging_site_name",
+                    "charging_site_brand",
+                    "charging_site_operator",
+                    "charging_site_network",
+                )
+                if self._address_value(charge.get(key))
+                and str(charge.get(key)).strip().upper() != "UNKNOWN"
+            ),
+            None,
+        )
+
+        stored_address = self._address_value(
+            charge.get("start_address")
+        )
+        address = fordpass_address or stored_address
+
+        if zone_name:
+            return zone_name, address, latitude, longitude, "zone"
+        if fordpass_name:
+            return (
+                fordpass_name,
+                address,
+                latitude,
+                longitude,
+                "fordpass",
+            )
+        if osm_name:
+            return osm_name, address, latitude, longitude, "osm"
+        if address:
+            return address, address, latitude, longitude, "address"
+
+        return None, None, latitude, longitude, None
+
+    @staticmethod
     def _address_value(value: Any) -> str | None:
         """Return a readable address value."""
 
@@ -1381,7 +1572,23 @@ class FordTriplogJourneyManager:
         journey: FordTriplogJourney,
         trip: Mapping[str, Any],
     ) -> None:
-        """Add one trip to a journey."""
+        """Add one trip with metrics and resolved boundary locations."""
+
+        (
+            start_location,
+            start_address,
+            start_latitude,
+            start_longitude,
+            start_location_source,
+        ) = self._resolve_trip_location(trip, prefix="start")
+
+        (
+            end_location,
+            end_address,
+            end_latitude,
+            end_longitude,
+            end_location_source,
+        ) = self._resolve_trip_location(trip, prefix="end")
 
         journey.add_trip(
             self._required_id(trip, "trip_id"),
@@ -1396,16 +1603,24 @@ class FordTriplogJourneyManager:
                 trip,
                 "energy_used_kwh",
             ),
-            start_address=self._address_value(
-                trip.get("start_address")
+            start_soc=self._optional_float_value(
+                trip,
+                "start_soc",
             ),
-            end_address=self._address_value(
-                trip.get("end_address")
+            end_soc=self._optional_float_value(
+                trip,
+                "end_soc",
             ),
-            start_latitude=trip.get("start_latitude"),
-            start_longitude=trip.get("start_longitude"),
-            end_latitude=trip.get("end_latitude"),
-            end_longitude=trip.get("end_longitude"),
+            start_location=start_location,
+            start_address=start_address,
+            start_latitude=start_latitude,
+            start_longitude=start_longitude,
+            start_location_source=start_location_source,
+            end_location=end_location,
+            end_address=end_address,
+            end_latitude=end_latitude,
+            end_longitude=end_longitude,
+            end_location_source=end_location_source,
         )
 
     def _add_charge(
@@ -1413,7 +1628,15 @@ class FordTriplogJourneyManager:
         journey: FordTriplogJourney,
         charge: Mapping[str, Any],
     ) -> None:
-        """Add one charging session to a journey."""
+        """Add one charging session with metrics and resolved location."""
+
+        (
+            location,
+            address,
+            latitude,
+            longitude,
+            location_source,
+        ) = self._resolve_charge_location(charge)
 
         journey.add_charge(
             self._required_id(charge, "charge_id"),
@@ -1424,6 +1647,19 @@ class FordTriplogJourneyManager:
                 charge,
                 "energy_added_kwh",
             ),
+            start_soc=self._optional_float_value(
+                charge,
+                "start_soc",
+            ),
+            end_soc=self._optional_float_value(
+                charge,
+                "end_soc",
+            ),
+            location=location,
+            address=address,
+            latitude=latitude,
+            longitude=longitude,
+            location_source=location_source,
         )
 
     def _remove_cached_source_data(
