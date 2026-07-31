@@ -145,8 +145,11 @@ Features include:
 -   Configuration Flow
 -   Options Flow
 -   Automatic recovery
+-   Journey overview sensor
+-   Rich Journey timeline attributes
 -   Persistent local storage
 -   HACS support
+
 
 ------------------------------------------------------------------------
 
@@ -285,9 +288,12 @@ available in the documentation.
 
 ## Version 1.8
 
+-   Journey energy balance
+-   Charging cost calculation
+-   Maintenance and rebuild tools
 -   Automatic charging database country switching
--   Optional database backend
 -   Extended statistics
+-   Optional database backend
 -   Long-term history
 -   Multi-vehicle enhancements
 
