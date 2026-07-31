@@ -3,15 +3,15 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.7.0-dev
-Phase: Issue #14
+Version: 1.7.2
+Phase: Issue #15
 Build: 001
 
 Changes:
-- Waits for a newer FordPass tracker update before finalizing a paused trip.
-- Re-checks GPS after the Smart Trip timeout and reacts immediately to tracker events.
-- Uses unknown end coordinates when no fresh GPS update arrives within the safety timeout.
-- Keeps the original trip end time unchanged while waiting for GPS.
+- Automatically rebuilds the affected Journey day after a trip is saved.
+- Uses the configured Home Assistant local timezone for the Journey date.
+- Reuses the existing Journey rebuilder instead of calling the service layer.
+- Keeps trip finalization successful if the Journey rebuild fails.
 """
 
 from __future__ import annotations
@@ -158,6 +158,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Issue #14: signal tracker updates while a paused trip is waiting
         # for a fresh final GPS position.
         self._gps_update_event = asyncio.Event()
+
+        # Issue #15: assigned during integration setup after the Journey
+        # infrastructure has been initialized.
+        self.journey_rebuilder: Any | None = None
        
 
     async def async_setup(self):
@@ -1295,6 +1299,44 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         await self.storage.save_trip(trip)
         await self.storage.save_last_trip(trip)
         await self.history.refresh_statistics()
+
+        # Issue #15: rebuild only the local calendar day affected by the
+        # newly archived trip. Journey maintenance failures must never undo
+        # or block an otherwise successful trip save.
+        if self.journey_rebuilder is not None:
+            try:
+                start_time = dt_util.parse_datetime(
+                    str(trip.get("start_time") or "")
+                )
+
+                if start_time is None:
+                    raise ValueError(
+                        "Saved trip has no valid start_time"
+                    )
+
+                if start_time.tzinfo is None:
+                    start_time = start_time.replace(
+                        tzinfo=dt_util.UTC
+                    )
+
+                journey_date = dt_util.as_local(start_time).date()
+
+                await self.journey_rebuilder.async_rebuild_journeys(
+                    start_date=journey_date,
+                    end_date=journey_date,
+                )
+
+                _LOGGER.info(
+                    "Journey rebuilt automatically for %s after trip %s",
+                    journey_date,
+                    trip.get("trip_id"),
+                )
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception(
+                    "Automatic Journey rebuild failed after trip %s",
+                    trip.get("trip_id"),
+                )
+
         await self.storage.delete_current_trip()
 
         self.last_completed_trip = trip_obj
