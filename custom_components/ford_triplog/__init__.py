@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.6.1
-Release: 1.6.1a
+Version: 1.7.2
+Release: 1.7.2
 """
 
 from __future__ import annotations
@@ -120,6 +120,11 @@ async def async_setup_entry(
         source_storage=storage,
         journey_storage=journey_storage,
     )
+
+    # Issue #15
+    # Allow the coordinator to trigger automatic Journey rebuilds
+    # after a trip has been saved successfully.
+    coordinator.journey_rebuilder = journey_rebuilder
 
     await async_register_services(hass)
 
