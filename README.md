@@ -56,17 +56,21 @@ Your data always remains under your control.
 
 ## 🛣️ Journey Management
 
-Ford Triplog automatically combines related trips and charging sessions into a single Journey.
+Ford Triplog automatically combines related trips and charging sessions into a single Journey
 
 Features include:
 
 - Automatic Journey creation
+- Automatic Journey rebuild
+- Complete Journey timeline
 - Multiple trips per Journey
 - Multiple charging sessions per Journey
+- Pause detection
 - Home-zone based Journey completion
 - Configurable timeout and maximum gap
 - Native Journey sensor
-
+- Local timezone support
+- Rich dashboard attributes
 
 ------------------------------------------------------------------------
 
@@ -80,6 +84,8 @@ Automatically records every charging session including:
 -   Charging location
 -   Charging provider
 -   Linked trip (when available)
+-   Journey integration
+-   Charging station recognition
 
 ------------------------------------------------------------------------
 
@@ -89,10 +95,10 @@ Charging locations are resolved automatically using multiple sources.
 
 Priority order:
 
-1.  FordPass charging information
-2.  User-defined charging locations
+1.  Home Assistant zones
+2.  FordPass charging information
 3.  Local OpenStreetMap charging database
-4.  Reverse geocoding
+4.  Address fallback
 
 This provides highly reliable charging location detection while allowing
 complete user customization.
@@ -245,43 +251,37 @@ available in the documentation.
 
 ------------------------------------------------------------------------
 
-## What's new in Version 1.6.0
+## Features
 
-Version 1.6.0 is the largest Ford Triplog update so far and introduces
-comprehensive journey management together with major charging-location
-improvements.
-
-### New features
-
--   Journey management with automatic Journey creation
--   Journey update, rebuild and delete tools
--   Home-zone based Journey completion
--   Configurable Journey home zone, timeout and maximum gap
--   OpenStreetMap charging-site database download and import
--   User-defined charging locations
--   Intelligent charging-site recognition with multiple data sources
--   Native Journey sensor
--   Improved configuration and options flow
--   Complete English, German and Polish translations
-
-### Improvements
-
--   More reliable trip and charging detection
--   Improved multi-trip and multi-charge Journey handling
--   Improved Home Assistant integration
--   Better diagnostics and local storage handling
+- 🚗 Automatic trip detection using FordPass vehicle data
+- 🧠 Smart Trip mode merges short stops into a single journey
+- 🛣️ Journey Management with complete trip timelines
+- ⚡ Automatic charging session detection
+- 📍 Intelligent location recognition using:
+  - Home Assistant zones
+  - FordPass charging information
+  - Offline OpenStreetMap charging database
+  - Address fallback
+- 🔋 Detailed trip metrics:
+  - Distance
+  - Duration
+  - Energy consumption
+  - Consumption (kWh/100 km)
+  - Start and end State of Charge (SOC)
+- ⚡ Detailed charging metrics:
+  - Charged energy
+  - Charging duration
+  - SOC before and after charging
+- 📊 Journey statistics for Home Assistant dashboards
+- 🗺️ Offline charging station database
+- 🌍 Multi-language support (English, German and Polish)
+- 🔒 Local-first architecture with local JSON storage
+- 🏠 Full Home Assistant integration
+- 📦 HACS compatible
 
 ------------------------------------------------------------------------
 
 # Roadmap
-
-## Version 1.7
-
--   Charging cost calculation
--   Home charging tariffs
--   Seasonal electricity tariffs
--   Extended maintenance tools
--   Additional dashboard examples
 
 ## Version 1.8
 
