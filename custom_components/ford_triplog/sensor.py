@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.8.0 - Step 3
+Version: 1.8.6 - Journey charging costs
 """
 
 from __future__ import annotations
@@ -283,6 +283,15 @@ class FordTriplogLastJourneySensor(SensorEntity):
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
+            "charging_cost_total": journey.charging_cost_total,
+            "charging_energy_cost": journey.charging_energy_cost,
+            "charging_additional_cost": (
+                journey.charging_additional_cost
+            ),
+            "average_charging_price_per_kwh": (
+                journey.average_charging_price_per_kwh
+            ),
+            "currency": journey.currency,
             "items": [
                 item.to_dict()
                 for item in journey.items
@@ -660,6 +669,28 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "end_soc": end_soc,
                     "soc_added": self._soc_added(start_soc, end_soc),
                     "energy_charged_kwh": energy_kwh,
+                    "energy_billed_kwh": self._optional_number(
+                        getattr(item, "energy_billed_kwh", None),
+                        2,
+                    ),
+                    "cost_total": self._optional_number(
+                        getattr(item, "cost_total", None),
+                        2,
+                    ),
+                    "energy_cost": self._optional_number(
+                        getattr(item, "energy_cost", None),
+                        2,
+                    ),
+                    "energy_price_per_kwh": self._optional_number(
+                        getattr(item, "energy_price_per_kwh", None),
+                        4,
+                    ),
+                    "effective_price_per_kwh": self._optional_number(
+                        getattr(item, "effective_price_per_kwh", None),
+                        4,
+                    ),
+                    "currency": getattr(item, "currency", None),
+                    "cost_source": getattr(item, "cost_source", None),
                 }
 
             timeline.append(
@@ -818,6 +849,15 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
+            "charging_cost_total": journey.charging_cost_total,
+            "charging_energy_cost": journey.charging_energy_cost,
+            "charging_additional_cost": (
+                journey.charging_additional_cost
+            ),
+            "average_charging_price_per_kwh": (
+                journey.average_charging_price_per_kwh
+            ),
+            "currency": journey.currency,
             "timeline": timeline,
         }
 
@@ -1266,6 +1306,37 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
                 "energy_added_kwh_calculated"
             ),
             "energy_source": last_charge.get("energy_source"),
+            "energy_billed_kwh": last_charge.get(
+                "energy_billed_kwh"
+            ),
+            "energy_billed_source": last_charge.get(
+                "energy_billed_source"
+            ),
+            "charging_loss_kwh": last_charge.get(
+                "charging_loss_kwh"
+            ),
+            "charging_loss_percent": last_charge.get(
+                "charging_loss_percent"
+            ),
+            "energy_cost": last_charge.get("energy_cost"),
+            "session_fee": last_charge.get("session_fee"),
+            "time_fee": last_charge.get("time_fee"),
+            "blocking_fee": last_charge.get("blocking_fee"),
+            "parking_fee": last_charge.get("parking_fee"),
+            "other_cost": last_charge.get("other_cost"),
+            "cost_total": last_charge.get("cost_total"),
+            "currency": last_charge.get("currency"),
+            "energy_price_per_kwh": last_charge.get(
+                "energy_price_per_kwh"
+            ),
+            "effective_price_per_kwh": last_charge.get(
+                "effective_price_per_kwh"
+            ),
+            "cost_source": last_charge.get("cost_source"),
+            "cost_verified": last_charge.get("cost_verified"),
+            "receipt_filename": last_charge.get(
+                "receipt_filename"
+            ),
             "charging_location": charging_location,
             "address": address,
             "latitude": last_charge.get("start_latitude"),
