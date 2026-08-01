@@ -212,21 +212,35 @@
       },
       "charge_cost_edit": {
         "title": "Edycja kosztów ładowania",
-        "description": "**Sesja:** {charge_id}\n\n**Data:** {date}\n**Lokalizacja:** {location}\n**Energia:** {energy_kwh} kWh\n**Poziom naładowania:** {start_soc} % → {end_soc} %\n\n**Aktualny koszt:** {current_cost} {current_currency}\n**Cena za kWh:** {current_price_per_kwh}",
+        "description": "**Sesja ładowania:** {charge_id}\n\n**Data:** {date}\n**Lokalizacja:** {location}\n**Energia dodana do pojazdu:** {energy_kwh} kWh\n**Poziom naładowania:** {start_soc} % → {end_soc} %\n\n**Rozliczona energia:** {current_energy_billed_kwh} kWh\n**Strata ładowania:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Aktualny koszt:** {current_cost} {current_currency}\n**Cena energii za kWh:** {current_energy_price_per_kwh}\n**Efektywna cena za kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Łączny koszt",
           "currency": "Waluta",
-          "action": "Akcja"
+          "action": "Akcja",
+          "energy_billed_kwh": "Rozliczona energia",
+          "energy_cost": "Koszt energii",
+          "session_fee": "Opłata startowa / za sesję",
+          "time_fee": "Opłata czasowa",
+          "blocking_fee": "Opłata za blokowanie",
+          "parking_fee": "Opłata parkingowa",
+          "other_cost": "Inne koszty"
         },
         "data_description": {
-          "cost_total": "Łączna kwota. Cena za kWh jest obliczana automatycznie.",
+          "cost_total": "Opcjonalna kwota całkowita dla prostych lub starszych wpisów. Po podaniu składników koszt jest obliczany automatycznie.",
           "currency": "Trzyliterowy kod waluty, np. CHF lub EUR.",
-          "action": "Zapisz koszty lub usuń wszystkie informacje o kosztach."
+          "action": "Zapisz koszty lub usuń wszystkie informacje o kosztach.",
+          "energy_billed_kwh": "Energia z faktury, stacji ładowania lub aplikacji. Służy do obliczania strat ładowania.",
+          "energy_cost": "Koszt samej energii bez dodatkowych opłat.",
+          "session_fee": "Jednorazowa opłata startowa lub za sesję.",
+          "time_fee": "Opłata zależna od czasu.",
+          "blocking_fee": "Opłata za zajmowanie punktu ładowania.",
+          "parking_fee": "Dodatkowa opłata parkingowa.",
+          "other_cost": "Pozostałe koszty niepasujące do innych kategorii."
         }
       },
       "charge_cost_result": {
         "title": "Koszty ładowania zaktualizowane",
-        "description": "**Akcja:** {action}\n\n**Sesja:** {charge_id}\n**Koszt:** {cost_total} {currency}\n**Cena za kWh:** {price_per_kwh}"
+        "description": "**Akcja:** {action}\n\n**Sesja ładowania:** {charge_id}\n**Rozliczona energia:** {energy_billed_kwh} kWh\n**Strata ładowania:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Koszt:** {cost_total} {currency}\n**Cena energii za kWh:** {energy_price_per_kwh}\n**Efektywna cena za kWh:** {price_per_kwh}"
       }
     },
     "error": {

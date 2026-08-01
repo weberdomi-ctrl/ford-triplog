@@ -212,21 +212,35 @@
       },
       "charge_cost_edit": {
         "title": "Edit charging costs",
-        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Location:** {location}\n**Charged energy:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Current cost:** {current_cost} {current_currency}\n**Current price per kWh:** {current_price_per_kwh}",
+        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Location:** {location}\n**Energy added to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Total cost",
           "currency": "Currency",
-          "action": "Action"
+          "action": "Action",
+          "energy_billed_kwh": "Billed energy",
+          "energy_cost": "Energy cost",
+          "session_fee": "Start / session fee",
+          "time_fee": "Time fee",
+          "blocking_fee": "Blocking fee",
+          "parking_fee": "Parking fee",
+          "other_cost": "Other cost"
         },
         "data_description": {
-          "cost_total": "Total amount paid. The price per kWh is calculated automatically.",
+          "cost_total": "Optional total for simple or older entries. When detailed cost components are entered, the total is calculated automatically.",
           "currency": "Three-letter currency code, for example CHF or EUR.",
-          "action": "Save costs or remove all stored cost information."
+          "action": "Save costs or remove all stored cost information.",
+          "energy_billed_kwh": "Energy shown on the invoice, charging station, or charging app. Used to calculate charging losses.",
+          "energy_cost": "Energy-only cost excluding additional fees.",
+          "session_fee": "One-time start or session fee.",
+          "time_fee": "Time-based charging fee.",
+          "blocking_fee": "Fee for occupying the charging point.",
+          "parking_fee": "Additional parking fee.",
+          "other_cost": "Any cost that does not fit another category."
         }
       },
       "charge_cost_result": {
         "title": "Charging costs updated",
-        "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Cost:** {cost_total} {currency}\n**Price per kWh:** {price_per_kwh}"
+        "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Billed energy:** {energy_billed_kwh} kWh\n**Charging loss:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Cost:** {cost_total} {currency}\n**Energy price per kWh:** {energy_price_per_kwh}\n**Effective price per kWh:** {price_per_kwh}"
       }
     },
     "error": {
