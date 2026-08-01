@@ -3,18 +3,18 @@
     "step": {
       "user": {
         "title": "Ford Triplog",
-        "description": "Skonfiguruj Ford Triplog.",
+        "description": "Ford Triplog konfigurieren.",
         "data": {
-          "ignition": "Zapłon",
-          "odometer": "Przebieg",
-          "tracker": "Lokalizator pojazdu",
-          "charging": "Czujnik stanu ładowania (dostępny tylko dla pojazdów elektrycznych Ford Pass)",
-          "smart_trip": "Włącz Smart Trip",
-          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)"
+          "ignition": "Zündung",
+          "odometer": "Kilometerstand",
+          "tracker": "Fahrzeug-Tracker",
+          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
         },
         "data_description": {
-          "smart_trip": "Łączy krótkie postoje w jedną podróż.",
-          "smart_trip_timeout": "Czas, po którym wstrzymana podróż zostanie zakończona."
+          "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
+          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
         }
       }
     }
@@ -23,414 +23,454 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wybierz sekcję, którą chcesz zarządzać.",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
-          "settings": "Ustawienia",
-          "import_charging_sites": "Importuj bazę miejsc ładowania",
-          "download_charging_sites": "Pobierz bazę miejsc ładowania z OpenStreetMap",
-          "user_charging_sites": "Własne miejsca ładowania",
-          "journey_management": "Zarządzanie podróżami"
+          "settings": "Einstellungen",
+          "import_charging_sites": "Ladeort-Datenbank importieren",
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
+          "user_charging_sites": "Eigene Ladeorte",
+          "journey_management": "Tour-Verwaltung",
+          "charge_management": "Sesje ładowania"
         },
         "menu_option_descriptions": {
-          "settings": "Zarządzaj ustawieniami podróży, ładowania i pojazdu.",
-          "import_charging_sites": "Prześlij bazę miejsc ładowania w formacie JSON i natychmiast ją aktywuj.",
-          "download_charging_sites": "Pobierz miejsca ładowania dla wybranego kraju bezpośrednio z OpenStreetMap, przetwórz je i natychmiast aktywuj nową bazę.",
-          "user_charging_sites": "Wyświetlaj i zarządzaj własnymi miejscami ładowania.",
-          "journey_management": "Aktualizuj, przebuduj lub usuń podróże."
+          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
+          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
+          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
+          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami."
         }
       },
       "settings": {
-        "title": "Ustawienia",
-        "description": "Skonfiguruj Ford Triplog.",
+        "title": "Einstellungen",
+        "description": "Ford Triplog konfigurieren.",
         "data": {
-          "soh": "Stan zdrowia baterii (SOH)",
-          "smart_trip": "Włącz Smart Trip",
-          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
-          "charging": "Czujnik stanu ładowania",
-          "battery_capacity_kwh": "Użyteczna pojemność baterii (kWh)",
-          "journey_home_zone": "Baza podróży",
-          "journey_home_timeout_minutes": "Minimalny pobyt w bazie podróży",
-          "journey_max_gap_hours": "Maksymalna przerwa podróży"
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "charging": "Ladestatus-Sensor",
+          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
+          "soh": "Batteriezustand (SOH)",
+          "journey_home_zone": "Tour-Basis",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
+          "journey_max_gap_hours": "Maximale Tour-Pause"
         },
         "data_description": {
-          "smart_trip": "Łączy krótkie postoje w jedną podróż.",
-          "smart_trip_timeout": "Zalecane: 300 sekund (5 minut). Minimum: 30 sekund.",
-          "charging": "Czujnik stanu ładowania (dostępny tylko dla pojazdów elektrycznych Ford Pass).",
-          "battery_capacity_kwh": "Użyteczna pojemność baterii pojazdu. Domyślnie: 77 kWh.",
-          "journey_home_zone": "Strefa, której osiągnięcie może zakończyć podróż.",
-          "journey_home_timeout_minutes": "Podróż zostanie zakończona dopiero po pozostaniu pojazdu w bazie podróży przez co najmniej ten czas. Wartość 0 oznacza natychmiastowe zakończenie.",
-          "journey_max_gap_hours": "Maksymalny czas między przejazdami przed rozpoczęciem nowej podróży. Używane jako rozwiązanie zapasowe, gdy nie można zastosować bazy podróży."
+          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
+          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
+          "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann."
         }
       },
       "import_charging_sites": {
-        "title": "Importuj bazę miejsc ładowania",
-        "description": "Wybierz bazę miejsc ładowania Ford Triplog w formacie JSON. Aktywna baza zostanie automatycznie zarchiwizowana i zastąpiona po pomyślnej weryfikacji.",
+        "title": "Ladeort-Datenbank importieren",
+        "description": "Wähle eine Ford-Triplog-Ladeort-Datenbank im JSON-Format aus. Die bestehende Datenbank wird automatisch gesichert und nach erfolgreicher Prüfung ersetzt.",
         "data": {
-          "charging_site_file": "Plik JSON"
+          "charging_site_file": "JSON-Datei"
         },
         "data_description": {
-          "charging_site_file": "Na przykład charging_sites_de.json, charging_sites_at.json lub charging_sites_ch.json."
+          "charging_site_file": "Zum Beispiel charging_sites_de.json, charging_sites_at.json oder charging_sites_ch.json."
         }
       },
       "import_charging_sites_success": {
-        "title": "Import zakończony pomyślnie",
-        "description": "Baza miejsc ładowania została zaimportowana i natychmiast aktywowana.\n\nWykryte miejsca ładowania: {searchable_sites}\nKomórki geohash: {index_cells}"
+        "title": "Import erfolgreich",
+        "description": "Die Ladeort-Datenbank wurde importiert und sofort aktiviert.\n\nErkannte Ladeorte: {searchable_sites}\nGeohash-Zellen: {index_cells}"
       },
       "download_charging_sites": {
-        "title": "Pobierz bazę miejsc ładowania",
-        "description": "Wybierz kraj, dla którego miejsca ładowania mają zostać pobrane bezpośrednio z OpenStreetMap. Bieżąca baza zostanie automatycznie zarchiwizowana przed aktywacją nowej. W zależności od kraju proces może potrwać od kilku sekund do kilku minut.",
+        "title": "Ladeort-Datenbank herunterladen",
+        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert. Der Vorgang kann einige Sekunden oder Minuten dauern.",
         "data": {
-          "charging_site_country": "Kraj"
+          "charging_site_country": "Land"
         },
         "data_description": {
-          "charging_site_country": "Dla wybranego kraju zostanie utworzona i natychmiast aktywowana nowa baza miejsc ładowania."
+          "charging_site_country": "Für das ausgewählte Land wird eine neue Ladeort-Datenbank erstellt und sofort aktiviert."
         }
       },
       "download_charging_sites_success": {
-        "title": "Baza miejsc ładowania została aktywowana",
-        "description": "Baza miejsc ładowania dla **{country} ({country_code})** została pomyślnie pobrana z OpenStreetMap, przetworzona i aktywowana.\n\n**Pobieranie i przetwarzanie**\n- Elementy OpenStreetMap: **{downloaded_elements}**\n- Znormalizowane stacje ładowania: **{normalized_stations}**\n- Logiczne miejsca ładowania: **{searchable_sites}**\n- Komórki geohash: **{index_cells}**\n- Pominięte elementy: **{skipped_elements}**\n\n**Baza danych**\n- Rozmiar: **{database_size}**\n- Łączny czas: **{duration}**\n\nNowa baza jest natychmiast dostępna do wykrywania miejsc ładowania."
+        "title": "Ladeort-Datenbank erfolgreich aktiviert",
+        "description": "Die Ladeort-Datenbank für **{country} ({country_code})** wurde erfolgreich von OpenStreetMap heruntergeladen, verarbeitet und sofort aktiviert.\n\n**Download und Verarbeitung**\n- OSM-Elemente: **{downloaded_elements}**\n- Normalisierte Ladestationen: **{normalized_stations}**\n- Erkannte Ladeorte: **{searchable_sites}**\n- Geohash-Zellen: **{index_cells}**\n- Übersprungene Elemente: **{skipped_elements}**\n\n**Datenbank**\n- Größe: **{database_size}**\n- Gesamtdauer: **{duration}**\n\nDie neue Datenbank steht sofort für die Ladeorterkennung zur Verfügung."
       },
       "download_charging_sites_progress": {
-        "title": "Tworzenie bazy miejsc ładowania",
-        "description": "Kraj: {country_code}\n\nEtap: {stage}\n{message}\n\nPostęp: {progress}%\nKrok {step} z {total_steps}\nUpłynęło: {elapsed} s\n\n{progress_log}"
+        "title": "Ladeort-Datenbank wird erstellt",
+        "description": "Land: {country_code}\n\nSchritt: {stage}\n{message}\n\nFortschritt: {progress}%\nSchritt {step} von {total_steps}\nVergangene Zeit: {elapsed} s\n\n{progress_log}"
       },
       "download_charging_sites_result": {
-        "title": "Tworzenie bazy miejsc ładowania zakończone",
-        "description": "Baza miejsc ładowania została pomyślnie utworzona i aktywowana."
+        "title": "Ladeort-Datenbank abgeschlossen",
+        "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
       },
       "user_charging_sites": {
-        "title": "Własne miejsca ładowania",
+        "title": "Eigene Ladeorte",
         "description": "{stored_text}",
         "data": {
-          "user_charging_site_selection": "Miejsce ładowania"
+          "user_charging_site_selection": "Ladeort"
         }
       },
       "user_charging_site_details": {
         "title": "{name}",
-        "description": "**Typ:** {type}\n**Współrzędne:** {coordinates}\n**Promień:** {radius}\n**Operator:** {operator}\n**Sieć:** {network}\n**Moc:** {power}\n\nTworzenie, edytowanie i usuwanie wpisów zostanie dodane w Build 04."
+        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}\n\nDas Anlegen, Bearbeiten und Löschen folgt in Build 04."
       },
       "user_charging_site_edit": {
-        "title": "Utwórz lub edytuj miejsce ładowania",
-        "description": "Pola odpowiadają modelowi bazy stacji ładowania OSM. Można wybrać wiele złączy oraz podać własną wartość marki. Dla wykrytych miejsc ładowania dostępne dane są wstępnie uzupełniane.",
+        "title": "Ladeort erfassen oder bearbeiten",
+        "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Anschlüsse können mehrfach ausgewählt werden; bei der Marke sind auch eigene Werte möglich. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
         "data": {
-          "name": "Nazwa",
-          "street": "Ulica",
-          "house_number": "Numer budynku",
-          "postcode": "Kod pocztowy",
-          "city": "Miejscowość",
-          "country": "Kraj",
-          "latitude": "Szerokość geograficzna",
-          "longitude": "Długość geograficzna",
-          "radius": "Promień wykrywania",
+          "name": "Name",
+          "street": "Strasse",
+          "house_number": "Hausnummer",
+          "postcode": "Postleitzahl",
+          "city": "Ort",
+          "country": "Land",
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "radius": "Erkennungsradius",
           "type": "Typ",
-          "power_kw": "Maksymalna moc ładowania",
-          "capacity": "Liczba punktów ładowania",
-          "connectors": "Złącza (wybór wielokrotny)",
-          "operator": "Operator",
-          "network": "Sieć",
-          "brand": "Marka / dostawca",
-          "notes": "Notatki",
-          "action": "Akcja"
+          "power_kw": "Maximale Ladeleistung",
+          "capacity": "Anzahl Ladepunkte",
+          "connectors": "Anschlüsse (Mehrfachauswahl)",
+          "operator": "Betreiber",
+          "network": "Netzwerk",
+          "brand": "Marke / Anbieter",
+          "notes": "Notizen",
+          "action": "Aktion"
         }
       },
       "user_charging_site_delete": {
-        "title": "Usuń miejsce ładowania",
-        "description": "Czy na pewno chcesz usunąć „{name}”?"
+        "title": "Ladeort löschen",
+        "description": "Soll der Ladeort „{name}“ wirklich gelöscht werden?"
       },
       "user_charging_sites_pending_notice": {
-        "title": "Własne miejsca ładowania",
+        "title": "Eigene Ladeorte",
         "description": "{pending_text}\n\n{stored_text}",
         "data": {
-          "user_charging_site_selection": "Miejsce ładowania"
+          "user_charging_site_selection": "Ladeort"
         }
       },
       "pending_charging_sites": {
-        "title": "Dodaj nieznane miejsca ładowania",
-        "description": "Wybierz jedną z {pending_count} wykrytych lokalizacji. Współrzędne i dostępne dane stacji zostaną wstępnie uzupełnione.",
+        "title": "Unbekannte Ladeorte erfassen",
+        "description": "Wähle einen der {pending_count} erkannten Ladeorte aus. Koordinaten und verfügbare Stationsdaten werden beim Erfassen vorausgefüllt.",
         "data": {
-          "user_charging_site_selection": "Wykryte miejsce ładowania"
+          "user_charging_site_selection": "Erkannter Ladeort"
         }
       },
       "journey_management": {
-        "title": "Zarządzanie podróżami",
-        "description": "Wybierz wymaganą czynność konserwacyjną.",
+        "title": "Tour-Verwaltung",
+        "description": "Wähle die gewünschte Wartungsaktion.",
         "menu_options": {
-          "journey_update": "Aktualizuj podróże",
-          "journey_rebuild": "Przebuduj podróże",
-          "journey_delete": "Usuń podróże"
+          "journey_update": "Touren aktualisieren",
+          "journey_rebuild": "Touren neu berechnen",
+          "journey_delete": "Touren löschen"
         }
       },
       "journey_update": {
-        "title": "Aktualizuj podróże",
-        "description": "Tworzy tylko brakujące podróże w opcjonalnym zakresie dat.",
+        "title": "Touren aktualisieren",
+        "description": "Erstellt nur fehlende Touren im optionalen Zeitraum.",
         "data": {
-          "start_date": "Data początkowa",
-          "end_date": "Data końcowa"
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
         }
       },
       "journey_rebuild": {
-        "title": "Przebuduj podróże",
-        "description": "Usuwa istniejące podróże w zakresie i tworzy je ponownie.",
+        "title": "Touren neu berechnen",
+        "description": "Löscht bestehende Touren im Zeitraum und berechnet sie neu.",
         "data": {
-          "start_date": "Data początkowa",
-          "end_date": "Data końcowa",
-          "confirm": "Potwierdź czynność"
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
         }
       },
       "journey_delete": {
-        "title": "Usuń podróże",
-        "description": "Usuwa podróże. Przejazdy i sesje ładowania pozostają bez zmian.",
+        "title": "Touren löschen",
+        "description": "Löscht Touren. Trips und Ladevorgänge bleiben erhalten.",
         "data": {
-          "start_date": "Data początkowa",
-          "end_date": "Data końcowa",
-          "confirm": "Potwierdź czynność"
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
         }
       },
       "journey_result": {
-        "title": "Czynność dotycząca podróży zakończona",
-        "description": "Tryb: {mode}\n\nPrzejazdy: {source_trips} · Ładowania: {source_charges} · Przetworzone: {processed_records}\n\nUtworzone podróże: {journeys_created} · Usunięte podróże: {journeys_deleted}\n\nPominięte pliki źródłowe: {source_files_skipped}\n\nZakres: {start_date} do {end_date}\n\nDaty: {affected_dates}"
+        "title": "Tour-Aktion abgeschlossen",
+        "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
+      },
+      "charge_management": {
+        "title": "Sesje ładowania",
+        "description": "Wybierz jedną z {charge_count} zapisanych sesji ładowania.",
+        "data": {
+          "charge_selection": "Sesja ładowania"
+        },
+        "data_description": {
+          "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty."
+        }
+      },
+      "charge_cost_edit": {
+        "title": "Edycja kosztów ładowania",
+        "description": "**Sesja:** {charge_id}\n\n**Data:** {date}\n**Lokalizacja:** {location}\n**Energia:** {energy_kwh} kWh\n**Poziom naładowania:** {start_soc} % → {end_soc} %\n\n**Aktualny koszt:** {current_cost} {current_currency}\n**Cena za kWh:** {current_price_per_kwh}",
+        "data": {
+          "cost_total": "Łączny koszt",
+          "currency": "Waluta",
+          "action": "Akcja"
+        },
+        "data_description": {
+          "cost_total": "Łączna kwota. Cena za kWh jest obliczana automatycznie.",
+          "currency": "Trzyliterowy kod waluty, np. CHF lub EUR.",
+          "action": "Zapisz koszty lub usuń wszystkie informacje o kosztach."
+        }
+      },
+      "charge_cost_result": {
+        "title": "Koszty ładowania zaktualizowane",
+        "description": "**Akcja:** {action}\n\n**Sesja:** {charge_id}\n**Koszt:** {cost_total} {currency}\n**Cena za kWh:** {price_per_kwh}"
       }
     },
     "error": {
-      "invalid_charging_site_database": "Plik nie jest prawidłową ani zgodną bazą miejsc ładowania Ford Triplog.",
-      "charging_site_download_failed": "Nie udało się pobrać lub przetworzyć bazy miejsc ładowania. Sprawdź dziennik Home Assistant, aby uzyskać więcej informacji.",
-      "charging_site_download_in_progress": "Pobieranie bazy miejsc ładowania jest już w toku.",
-      "user_charging_sites_load_failed": "Nie udało się wczytać bazy własnych miejsc ładowania.",
-      "user_charging_site_not_found": "Nie znaleziono wybranego miejsca ładowania.",
-      "user_charging_site_save_failed": "Nie udało się zapisać miejsca ładowania.",
-      "journey_operation_failed": "Nie można wykonać czynności dotyczącej podróży.",
-      "journey_confirmation_required": "Czynność musi zostać potwierdzona."
+      "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
+      "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll auf weitere Details.",
+      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
+      "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
+      "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
+      "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden.",
+      "journey_operation_failed": "Die Tour-Aktion konnte nicht ausgeführt werden.",
+      "journey_confirmation_required": "Die Aktion muss bestätigt werden.",
+      "charge_load_failed": "Nie udało się wczytać zapisanych sesji ładowania.",
+      "charge_none_available": "Nie znaleziono zapisanych sesji ładowania.",
+      "charge_not_found": "Wybrana sesja ładowania nie została znaleziona.",
+      "charge_cost_save_failed": "Nie udało się zapisać lub usunąć kosztów ładowania."
     }
   },
   "entity": {
     "sensor": {
       "trip_count": {
-        "name": "Liczba podróży"
+        "name": "Anzahl Fahrten"
       },
       "total_distance": {
-        "name": "Łączny dystans"
+        "name": "Gesamtdistanz"
       },
       "total_energy_used": {
-        "name": "Łączne zużycie energii"
+        "name": "Gesamtenergieverbrauch"
       },
       "average_consumption": {
-        "name": "Średnie zużycie"
+        "name": "Durchschnittsverbrauch"
       },
       "total_duration": {
-        "name": "Łączny czas"
+        "name": "Gesamtdauer"
       },
       "total_driving_time": {
-        "name": "Łączny czas jazdy"
+        "name": "Gesamte Fahrzeit"
       },
       "last_distance": {
-        "name": "Dystans ostatniej podróży"
+        "name": "Letzte Fahrtdistanz"
       },
       "last_energy_used": {
-        "name": "Energia zużyta podczas ostatniej podróży"
+        "name": "Energieverbrauch der letzten Fahrt"
       },
       "last_consumption": {
-        "name": "Zużycie podczas ostatniej podróży"
+        "name": "Verbrauch der letzten Fahrt"
       },
       "last_average_speed": {
-        "name": "Średnia prędkość ostatniej podróży"
+        "name": "Durchschnittsgeschwindigkeit der letzten Fahrt"
       },
       "last_duration": {
-        "name": "Czas trwania ostatniej podróży"
+        "name": "Dauer der letzten Fahrt"
       },
       "last_driving_time": {
-        "name": "Czas jazdy ostatniej podróży"
+        "name": "Fahrzeit der letzten Fahrt"
       },
       "last_start_address": {
-        "name": "Adres początkowy ostatniej podróży"
+        "name": "Startadresse der letzten Fahrt"
       },
       "last_destination": {
-        "name": "Ostatni cel podróży"
+        "name": "Letztes Ziel"
       },
       "last_start_time": {
-        "name": "Czas rozpoczęcia ostatniej podróży"
+        "name": "Startzeit der letzten Fahrt"
       },
       "last_end_time": {
-        "name": "Czas zakończenia ostatniej podróży"
+        "name": "Endzeit der letzten Fahrt"
       },
       "last_charge_start_time": {
-        "name": "Czas rozpoczęcia ostatniego ładowania"
+        "name": "Startzeit des letzten Ladevorgangs"
       },
       "last_charge_end_time": {
-        "name": "Czas zakończenia ostatniego ładowania"
+        "name": "Endzeit des letzten Ladevorgangs"
       },
       "last_charge_start_soc": {
-        "name": "Poziom naładowania na początku ostatniego ładowania"
+        "name": "Ladestand zu Beginn des letzten Ladevorgangs"
       },
       "last_charge_end_soc": {
-        "name": "Poziom naładowania na końcu ostatniego ładowania"
+        "name": "Ladestand am Ende des letzten Ladevorgangs"
       },
       "last_charge_soc_added": {
-        "name": "Poziom naładowania dodany podczas ostatniego ładowania"
+        "name": "Geladener Ladestand beim letzten Ladevorgang"
       },
       "last_charge_duration": {
-        "name": "Czas trwania ostatniego ładowania"
+        "name": "Dauer des letzten Ladevorgangs"
       },
       "last_charging_location": {
-        "name": "Ostatnie miejsce ładowania"
+        "name": "Letzter Ladeort"
       },
       "last_charging_site": {
-        "name": "Ostatnia stacja ładowania"
+        "name": "Letzte Ladestation"
       },
       "last_trip_start_soc": {
-        "name": "Poziom naładowania na początku ostatniej podróży"
+        "name": "Ladestand zu Beginn der letzten Fahrt"
       },
       "last_trip_end_soc": {
-        "name": "Poziom naładowania na końcu ostatniej podróży"
+        "name": "Ladestand am Ende der letzten Fahrt"
       },
       "last_trip_soc_used": {
-        "name": "Poziom naładowania zużyty podczas ostatniej podróży"
+        "name": "Verbrauchter Ladestand der letzten Fahrt"
       },
       "charge_count": {
-        "name": "Liczba ładowań"
+        "name": "Anzahl Ladevorgänge"
       },
       "average_charge_soc_added": {
-        "name": "Średni dodany poziom naładowania"
+        "name": "Durchschnittlich geladener Ladestand"
       },
       "average_charge_duration": {
-        "name": "Średni czas ładowania"
+        "name": "Durchschnittliche Ladedauer"
       },
       "average_charge_start_soc": {
-        "name": "Średni poziom naładowania na początku ładowania"
+        "name": "Durchschnittlicher Ladestand bei Ladebeginn"
       },
       "average_charge_end_soc": {
-        "name": "Średni poziom naładowania na końcu ładowania"
+        "name": "Durchschnittlicher Ladestand bei Ladeende"
       },
       "average_trip_distance": {
-        "name": "Średni dystans podróży"
+        "name": "Durchschnittliche Fahrtdistanz"
       },
       "average_trip_duration": {
-        "name": "Średni czas trwania podróży"
+        "name": "Durchschnittliche Fahrtdauer"
       },
       "average_trip_energy": {
-        "name": "Średnie zużycie energii na podróż"
+        "name": "Durchschnittlicher Energieverbrauch pro Fahrt"
       },
       "average_trip_soc_used": {
-        "name": "Średni poziom naładowania zużyty na podróż"
+        "name": "Durchschnittlich verbrauchter Ladestand pro Fahrt"
       },
       "average_trip_consumption": {
-        "name": "Średnie zużycie na podróż"
+        "name": "Durchschnittlicher Verbrauch pro Fahrt"
       },
       "last_charge_energy": {
-        "name": "Energia ostatniego ładowania"
+        "name": "Energie der letzten Ladung"
       },
       "last_charge_energy_fordpass": {
-        "name": "Energia ostatniego ładowania z FordPass"
+        "name": "FordPass-Energie der letzten Ladung"
       },
       "last_charge_energy_calculated": {
-        "name": "Obliczona energia ostatniego ładowania"
+        "name": "Berechnete Energie der letzten Ladung"
       },
       "last_charge_energy_source": {
-        "name": "Źródło energii ostatniego ładowania"
+        "name": "Energiequelle der letzten Ladung"
       },
       "last_journey": {
-        "name": "Ostatnia podróż"
+        "name": "Letzte Tour"
       },
       "last_charge": {
-        "name": "Ostatnie ładowanie"
+        "name": "Letzter Ladevorgang"
       },
       "last_journey_overview": {
-        "name": "Przegląd ostatniej podróży"
+        "name": "Letzte Tour Übersicht"
       }
     }
   },
   "common": {
-    "today": "Dzisiaj",
-    "yesterday": "Wczoraj",
-    "unknown": "Nieznane",
-    "no_gps_data": "Brak danych GPS",
-    "charging_site_home": "Dom",
-    "charging_site_work": "Praca",
-    "charging_site_public": "Publiczna",
-    "charging_site_private": "Prywatna",
-    "charging_site_dealer": "Dealer",
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "unknown": "Unbekannt",
+    "no_gps_data": "Keine GPS-Daten verfügbar",
+    "charging_site_home": "Zuhause",
+    "charging_site_work": "Arbeit",
+    "charging_site_public": "Öffentlich",
+    "charging_site_private": "Privat",
+    "charging_site_dealer": "Händler",
     "charging_site_hotel": "Hotel",
-    "charging_site_other": "Inna",
-    "charging_site_custom": "Niestandardowa",
-    "charging_site_location": "Miejsce ładowania",
-    "charging_site_unknown_location": "Nieznane miejsce ładowania",
-    "charging_site_new_location": "+ Nowe miejsce ładowania",
-    "charging_site_pending_locations": "⚠ Nowo wykryte miejsca ładowania ({count})",
-    "charging_site_save": "Zapisz",
-    "charging_site_delete": "Usuń",
-    "charging_site_step": "Krok",
-    "charging_site_no_progress": "Brak komunikatów o postępie.",
-    "charging_site_stored_one": "Zapisano 1 własne miejsce ładowania.",
-    "charging_site_stored_many": "Liczba zapisanych własnych miejsc ładowania: {count}.",
-    "charging_site_pending_one": "Wykryto 1 nieznane miejsce ładowania. Można je teraz zapisać jako własne miejsce ładowania.",
-    "charging_site_pending_many": "Liczba wykrytych nieznanych miejsc ładowania: {count}. Można je teraz zapisać jako własne miejsca ładowania."
+    "charging_site_other": "Sonstige",
+    "charging_site_custom": "Benutzerdefiniert",
+    "charging_site_location": "Ladeort",
+    "charging_site_unknown_location": "Unbekannter Ladeort",
+    "charging_site_new_location": "+ Neuer Ladeort",
+    "charging_site_pending_locations": "⚠ Neue erkannte Ladeorte ({count})",
+    "charging_site_save": "Speichern",
+    "charging_site_delete": "Löschen",
+    "charging_site_step": "Schritt",
+    "charging_site_no_progress": "Noch keine Fortschrittsmeldungen.",
+    "charging_site_stored_one": "1 eigener Ladeort gespeichert.",
+    "charging_site_stored_many": "{count} eigene Ladeorte gespeichert.",
+    "charging_site_pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
+    "charging_site_pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden.",
+    "charge_action_save": "Zapisz",
+    "charge_action_clear": "Usuń koszty",
+    "charge_management": "Sesje ładowania",
+    "charge_cost": "Koszty ładowania",
+    "charge_currency": "Waluta",
+    "charge_price_per_kwh": "Cena za kWh"
   },
   "services": {
     "import_charging_sites": {
-      "name": "Importuj stacje ładowania",
-      "description": "Importuje bazę stacji ładowania z pliku JSON znajdującego się w katalogu konfiguracji Home Assistant.",
+      "name": "Ladestationen importieren",
+      "description": "Importiert eine Ladestationsdatenbank aus einer JSON-Datei im Home-Assistant-Konfigurationsverzeichnis.",
       "fields": {
         "file": {
-          "name": "Plik",
-          "description": "Ścieżka względna w katalogu konfiguracji Home Assistant, na przykład import/charging_sites_ch.json."
+          "name": "Datei",
+          "description": "Relativer Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_ch.json."
         }
       }
     },
     "download_charging_database": {
-      "name": "Pobierz bazę stacji ładowania",
-      "description": "Pobiera, tworzy, importuje i aktywuje bazę stacji ładowania dla wybranego kraju.",
+      "name": "Ladestationsdatenbank herunterladen",
+      "description": "Lädt die Ladestationsdatenbank für ein Land herunter, erstellt sie, importiert sie und aktiviert sie.",
       "fields": {
         "country": {
-          "name": "Kraj",
-          "description": "Dwuliterowy kod kraju ISO 3166-1 alpha-2, na przykład CH, DE lub AT."
+          "name": "Land",
+          "description": "ISO-3166-1-Alpha-2-Ländercode, zum Beispiel CH, DE oder AT."
         }
       }
     }
   },
   "exceptions": {
     "json_read_failed": {
-      "message": "Nie można odczytać pliku JSON: {error}"
+      "message": "Die JSON-Datei konnte nicht gelesen werden: {error}"
     },
     "missing_country_code": {
-      "message": "Zaimportowana baza danych nie zawiera pola country_code."
+      "message": "Die importierte Datenbank enthält kein Feld country_code."
     },
     "unsupported_import_country": {
-      "message": "Zaimportowana baza danych zawiera nieobsługiwany kod kraju „{country_code}”."
+      "message": "Die importierte Datenbank enthält den nicht unterstützten Ländercode „{country_code}“."
     },
     "absolute_import_path": {
-      "message": "Użyj ścieżki względnej w katalogu konfiguracji Home Assistant, na przykład import/charging_sites_de.json."
+      "message": "Verwende einen relativen Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_de.json."
     },
     "import_path_outside_config": {
-      "message": "Plik importu musi znajdować się w katalogu konfiguracji Home Assistant."
+      "message": "Die Importdatei muss sich unterhalb des Home-Assistant-Konfigurationsverzeichnisses befinden."
     },
     "import_file_not_json": {
-      "message": "Plik importu bazy stacji ładowania musi być plikiem JSON."
+      "message": "Die Importdatei der Ladestationsdatenbank muss eine JSON-Datei sein."
     },
     "import_file_not_found": {
-      "message": "Nie znaleziono pliku importu bazy stacji ładowania: {path}"
+      "message": "Die Importdatei der Ladestationsdatenbank wurde nicht gefunden: {path}"
     },
     "database_invalid": {
-      "message": "Baza stacji ładowania jest nieprawidłowa: {error}"
+      "message": "Die Ladestationsdatenbank ist ungültig: {error}"
     },
     "database_validation_failed": {
-      "message": "Nie można sprawdzić bazy stacji ładowania: {error}"
+      "message": "Die Ladestationsdatenbank konnte nicht geprüft werden: {error}"
     },
     "integration_not_loaded": {
-      "message": "Integracja Ford Triplog nie jest obecnie załadowana."
+      "message": "Ford Triplog ist derzeit nicht geladen."
     },
     "unsupported_country": {
-      "message": "Kod kraju „{country_code}” nie jest obsługiwany. Obsługiwane kraje: {supported}."
+      "message": "Der Ländercode „{country_code}“ wird nicht unterstützt. Unterstützte Länder: {supported}."
     },
     "imported_database_load_failed": {
-      "message": "Nie można załadować zaimportowanej bazy stacji ładowania: {error}"
+      "message": "Die importierte Ladestationsdatenbank konnte nicht geladen werden: {error}"
     },
     "database_import_failed": {
-      "message": "Nie można zaimportować bazy stacji ładowania: {error}"
+      "message": "Die Ladestationsdatenbank konnte nicht importiert werden: {error}"
     },
     "database_download_failed": {
-      "message": "Pobieranie bazy stacji ładowania nie powiodło się: {error}"
+      "message": "Das Herunterladen der Ladestationsdatenbank ist fehlgeschlagen: {error}"
     },
     "database_generation_failed": {
-      "message": "Nie można utworzyć bazy stacji ładowania: {error}"
+      "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
     }
   }
 }
