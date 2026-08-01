@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.8.3
-Phase: Home charging tariffs
+Version: 1.8.4
+Phase: Detailed charging costs GUI
 Build: 01
-Release: 1.8.3
+Release: 1.8.4
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -98,6 +98,13 @@ USER_CHARGING_SITE_PENDING = "__pending__"
 CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
 CONF_CHARGE_CURRENCY = "currency"
+CONF_CHARGE_ENERGY_BILLED_KWH = "energy_billed_kwh"
+CONF_CHARGE_ENERGY_COST = "energy_cost"
+CONF_CHARGE_SESSION_FEE = "session_fee"
+CONF_CHARGE_TIME_FEE = "time_fee"
+CONF_CHARGE_BLOCKING_FEE = "blocking_fee"
+CONF_CHARGE_PARKING_FEE = "parking_fee"
+CONF_CHARGE_OTHER_COST = "other_cost"
 CONF_CHARGE_ACTION = "action"
 
 CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
@@ -369,12 +376,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 else:
                     result = await manager.async_set_cost(
                         self._selected_charge_id,
-                        cost_total=user_input[
-                            CONF_CHARGE_COST_TOTAL
-                        ],
                         currency=user_input[
                             CONF_CHARGE_CURRENCY
                         ],
+                        cost_total=user_input.get(
+                            CONF_CHARGE_COST_TOTAL
+                        ),
+                        energy_billed_kwh=user_input.get(
+                            CONF_CHARGE_ENERGY_BILLED_KWH
+                        ),
+                        energy_cost=user_input.get(
+                            CONF_CHARGE_ENERGY_COST
+                        ),
+                        session_fee=user_input.get(
+                            CONF_CHARGE_SESSION_FEE
+                        ),
+                        time_fee=user_input.get(
+                            CONF_CHARGE_TIME_FEE
+                        ),
+                        blocking_fee=user_input.get(
+                            CONF_CHARGE_BLOCKING_FEE
+                        ),
+                        parking_fee=user_input.get(
+                            CONF_CHARGE_PARKING_FEE
+                        ),
+                        other_cost=user_input.get(
+                            CONF_CHARGE_OTHER_COST
+                        ),
+                        energy_billed_source="manual",
                     )
             except (HomeAssistantError, ValueError):
                 errors["base"] = "charge_cost_save_failed"
@@ -400,10 +429,46 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "price_per_kwh": self._format_optional_number(
                             getattr(
                                 saved_charge,
-                                "price_per_kwh",
+                                "effective_price_per_kwh",
+                                getattr(
+                                    saved_charge,
+                                    "price_per_kwh",
+                                    None,
+                                ),
+                            ),
+                            4,
+                        ),
+                        "energy_price_per_kwh": self._format_optional_number(
+                            getattr(
+                                saved_charge,
+                                "energy_price_per_kwh",
                                 None,
                             ),
                             4,
+                        ),
+                        "energy_billed_kwh": self._format_optional_number(
+                            getattr(
+                                saved_charge,
+                                "energy_billed_kwh",
+                                None,
+                            ),
+                            2,
+                        ),
+                        "charging_loss_kwh": self._format_optional_number(
+                            getattr(
+                                saved_charge,
+                                "charging_loss_kwh",
+                                None,
+                            ),
+                            2,
+                        ),
+                        "charging_loss_percent": self._format_optional_number(
+                            getattr(
+                                saved_charge,
+                                "charging_loss_percent",
+                                None,
+                            ),
+                            2,
                         ),
                     }
                     self._selected_charge_id = None
@@ -415,12 +480,107 @@ class FordTriplogOptionsFlow(OptionsFlow):
             else 0.0
         )
         default_currency = str(charge.currency or "CHF").upper()
+        default_energy_billed = (
+            float(charge.energy_billed_kwh)
+            if getattr(charge, "energy_billed_kwh", None) is not None
+            else 0.0
+        )
 
         return self.async_show_form(
             step_id="charge_cost_edit",
             data_schema=vol.Schema(
                 {
-                    vol.Required(
+                    vol.Optional(
+                        CONF_CHARGE_ENERGY_BILLED_KWH,
+                        default=default_energy_billed,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=1000,
+                            step=0.01,
+                            unit_of_measurement="kWh",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_ENERGY_COST,
+                        default=float(
+                            getattr(charge, "energy_cost", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_SESSION_FEE,
+                        default=float(
+                            getattr(charge, "session_fee", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_TIME_FEE,
+                        default=float(
+                            getattr(charge, "time_fee", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_BLOCKING_FEE,
+                        default=float(
+                            getattr(charge, "blocking_fee", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_PARKING_FEE,
+                        default=float(
+                            getattr(charge, "parking_fee", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_CHARGE_OTHER_COST,
+                        default=float(
+                            getattr(charge, "other_cost", None) or 0.0
+                        ),
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Optional(
                         CONF_CHARGE_COST_TOTAL,
                         default=default_cost,
                     ): selector.NumberSelector(
@@ -494,8 +654,52 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 ),
                 "current_price_per_kwh": (
                     self._format_optional_number(
-                        charge.price_per_kwh,
+                        getattr(
+                            charge,
+                            "effective_price_per_kwh",
+                            charge.price_per_kwh,
+                        ),
                         4,
+                    )
+                ),
+                "current_energy_price_per_kwh": (
+                    self._format_optional_number(
+                        getattr(
+                            charge,
+                            "energy_price_per_kwh",
+                            None,
+                        ),
+                        4,
+                    )
+                ),
+                "current_energy_billed_kwh": (
+                    self._format_optional_number(
+                        getattr(
+                            charge,
+                            "energy_billed_kwh",
+                            None,
+                        ),
+                        2,
+                    )
+                ),
+                "current_charging_loss_kwh": (
+                    self._format_optional_number(
+                        getattr(
+                            charge,
+                            "charging_loss_kwh",
+                            None,
+                        ),
+                        2,
+                    )
+                ),
+                "current_charging_loss_percent": (
+                    self._format_optional_number(
+                        getattr(
+                            charge,
+                            "charging_loss_percent",
+                            None,
+                        ),
+                        2,
                     )
                 ),
             },

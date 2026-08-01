@@ -5,8 +5,8 @@ Track your Ford.
 
 Charging-session management and manual cost handling.
 
-Version: 1.8.2
-Release: 1.8.2 - Charge Manager
+Version: 1.8.4
+Release: 1.8.4 - Detailed charging costs
 """
 
 from __future__ import annotations
@@ -150,14 +150,44 @@ class FordTriplogChargeManager:
         self,
         charge_id: str,
         *,
-        cost_total: float,
         currency: str,
+        cost_total: float | None = None,
+        energy_billed_kwh: float | None = None,
+        energy_cost: float | None = None,
+        session_fee: float | None = None,
+        time_fee: float | None = None,
+        blocking_fee: float | None = None,
+        parking_fee: float | None = None,
+        other_cost: float | None = None,
+        energy_billed_source: str = "manual",
     ) -> ChargeManagerResult:
-        """Set and verify manual costs for one charging session."""
+        """Set and verify detailed manual costs for one charging session."""
 
         normalized_id = self._normalize_charge_id(charge_id)
-        normalized_cost = self._normalize_cost(cost_total)
         normalized_currency = self._normalize_currency(currency)
+
+        normalized_cost = self._normalize_optional_cost(cost_total)
+        normalized_energy_billed = self._normalize_optional_cost(
+            energy_billed_kwh
+        )
+        normalized_energy_cost = self._normalize_optional_cost(
+            energy_cost
+        )
+        normalized_session_fee = self._normalize_optional_cost(
+            session_fee
+        )
+        normalized_time_fee = self._normalize_optional_cost(
+            time_fee
+        )
+        normalized_blocking_fee = self._normalize_optional_cost(
+            blocking_fee
+        )
+        normalized_parking_fee = self._normalize_optional_cost(
+            parking_fee
+        )
+        normalized_other_cost = self._normalize_optional_cost(
+            other_cost
+        )
 
         charge = await self.async_get_charge(normalized_id)
 
@@ -168,7 +198,34 @@ class FordTriplogChargeManager:
                 reason="charge_not_found",
             )
 
-        charge.cost_total = normalized_cost
+        charge.energy_billed_kwh = normalized_energy_billed
+        charge.energy_billed_source = str(
+            energy_billed_source or "manual"
+        ).strip().lower()
+
+        charge.energy_cost = normalized_energy_cost
+        charge.session_fee = normalized_session_fee
+        charge.time_fee = normalized_time_fee
+        charge.blocking_fee = normalized_blocking_fee
+        charge.parking_fee = normalized_parking_fee
+        charge.other_cost = normalized_other_cost
+
+        # Legacy/simple input remains supported when no detailed cost
+        # components are provided.
+        detailed_components = (
+            normalized_energy_cost,
+            normalized_session_fee,
+            normalized_time_fee,
+            normalized_blocking_fee,
+            normalized_parking_fee,
+            normalized_other_cost,
+        )
+        charge.cost_total = (
+            normalized_cost
+            if not any(value is not None for value in detailed_components)
+            else None
+        )
+
         charge.currency = normalized_currency
         charge.cost_source = "manual"
         charge.cost_verified = True
@@ -192,9 +249,9 @@ class FordTriplogChargeManager:
             "Manual charging costs saved: charge=%s total=%.2f %s "
             "price_per_kwh=%s",
             normalized_id,
-            normalized_cost,
+            charge.cost_total or 0.0,
             normalized_currency,
-            charge.price_per_kwh,
+            charge.effective_price_per_kwh,
         )
 
         return ChargeManagerResult(
@@ -220,8 +277,22 @@ class FordTriplogChargeManager:
                 reason="charge_not_found",
             )
 
+        charge.energy_billed_kwh = None
+        charge.energy_billed_source = "none"
+        charge.charging_loss_kwh = None
+        charge.charging_loss_percent = None
+
+        charge.energy_cost = None
+        charge.session_fee = None
+        charge.time_fee = None
+        charge.blocking_fee = None
+        charge.parking_fee = None
+        charge.other_cost = None
+
         charge.cost_total = None
         charge.currency = None
+        charge.energy_price_per_kwh = None
+        charge.effective_price_per_kwh = None
         charge.price_per_kwh = None
         charge.cost_source = "none"
         charge.cost_verified = False
@@ -289,6 +360,18 @@ class FordTriplogChargeManager:
             raise ValueError("charge_id must not be empty")
 
         return normalized
+
+    @classmethod
+    def _normalize_optional_cost(
+        cls,
+        value: Any,
+    ) -> float | None:
+        """Return an optional non-negative cost or energy value."""
+
+        if value is None or value == "":
+            return None
+
+        return cls._normalize_cost(value)
 
     @staticmethod
     def _normalize_cost(value: Any) -> float:
