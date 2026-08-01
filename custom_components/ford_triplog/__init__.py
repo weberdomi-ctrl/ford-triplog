@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.7.2
-Release: 1.7.2
+Version: 1.8.0
+Release: 1.8.0 - Step 3
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ PLATFORMS: list[Platform] = [
 ]
 
 from .const import (
+    CONF_BATTERY_CAPACITY,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -112,6 +113,9 @@ async def async_setup_entry(
                 DEFAULT_JOURNEY_MAX_GAP_HOURS,
             )
         ),
+        battery_capacity_kwh=config.get(
+            CONF_BATTERY_CAPACITY
+        ),
     )
 
     await journey_manager.async_setup()
@@ -119,6 +123,9 @@ async def async_setup_entry(
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,
         journey_storage=journey_storage,
+        battery_capacity_kwh=config.get(
+            CONF_BATTERY_CAPACITY
+        ),
     )
 
     # Issue #15
