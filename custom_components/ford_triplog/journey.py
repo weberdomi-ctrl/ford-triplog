@@ -5,8 +5,8 @@ Track your Ford.
 
 Journey data model.
 
-Version: 1.8.0
-Release: 1.8.0 - Step 3
+Version: 1.8.6
+Release: 1.8.6 - Journey charging costs
 """
 
 from __future__ import annotations
@@ -125,6 +125,13 @@ class JourneyItem:
     longitude: float | None = None
     location_source: str | None = None
 
+    cost_total: float | None = None
+    energy_cost: float | None = None
+    energy_price_per_kwh: float | None = None
+    effective_price_per_kwh: float | None = None
+    currency: str | None = None
+    cost_source: str | None = None
+
     def __post_init__(self) -> None:
         """Validate and normalize the journey item."""
 
@@ -174,6 +181,17 @@ class JourneyItem:
         self.latitude = _as_optional_float(self.latitude)
         self.longitude = _as_optional_float(self.longitude)
 
+        self.cost_total = _as_optional_float(self.cost_total)
+        self.energy_cost = _as_optional_float(self.energy_cost)
+        self.energy_price_per_kwh = _as_optional_float(
+            self.energy_price_per_kwh
+        )
+        self.effective_price_per_kwh = _as_optional_float(
+            self.effective_price_per_kwh
+        )
+        self.currency = _as_optional_string(self.currency)
+        self.cost_source = _as_optional_string(self.cost_source)
+
     def to_dict(self) -> dict[str, Any]:
         """Serialize the journey item."""
 
@@ -202,6 +220,12 @@ class JourneyItem:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "location_source": self.location_source,
+            "cost_total": self.cost_total,
+            "energy_cost": self.energy_cost,
+            "energy_price_per_kwh": self.energy_price_per_kwh,
+            "effective_price_per_kwh": self.effective_price_per_kwh,
+            "currency": self.currency,
+            "cost_source": self.cost_source,
         }
 
         return {
@@ -239,6 +263,16 @@ class JourneyItem:
             latitude=data.get("latitude"),
             longitude=data.get("longitude"),
             location_source=data.get("location_source"),
+            cost_total=data.get("cost_total"),
+            energy_cost=data.get("energy_cost"),
+            energy_price_per_kwh=data.get(
+                "energy_price_per_kwh"
+            ),
+            effective_price_per_kwh=data.get(
+                "effective_price_per_kwh"
+            ),
+            currency=data.get("currency"),
+            cost_source=data.get("cost_source"),
         )
 
 
@@ -280,6 +314,12 @@ class FordTriplogJourney:
     energy_used_kwh: float = 0.0
     energy_charged_kwh: float = 0.0
     average_consumption_kwh_100km: float = 0.0
+
+    charging_cost_total: float = 0.0
+    charging_energy_cost: float = 0.0
+    charging_additional_cost: float = 0.0
+    average_charging_price_per_kwh: float = 0.0
+    currency: str | None = None
 
     start_soc: float | None = None
     end_soc: float | None = None
@@ -337,6 +377,23 @@ class FordTriplogJourney:
             0.0,
             _as_float(self.energy_charged_kwh),
         )
+        self.charging_cost_total = max(
+            0.0,
+            _as_float(self.charging_cost_total),
+        )
+        self.charging_energy_cost = max(
+            0.0,
+            _as_float(self.charging_energy_cost),
+        )
+        self.charging_additional_cost = max(
+            0.0,
+            _as_float(self.charging_additional_cost),
+        )
+        self.average_charging_price_per_kwh = max(
+            0.0,
+            _as_float(self.average_charging_price_per_kwh),
+        )
+        self.currency = _as_optional_string(self.currency)
         self.start_soc = _as_optional_float(self.start_soc)
         self.end_soc = _as_optional_float(self.end_soc)
         self.soc_delta = _as_float(self.soc_delta)
@@ -479,6 +536,12 @@ class FordTriplogJourney:
         latitude: float | None = None,
         longitude: float | None = None,
         location_source: str | None = None,
+        cost_total: float | None = None,
+        energy_cost: float | None = None,
+        energy_price_per_kwh: float | None = None,
+        effective_price_per_kwh: float | None = None,
+        currency: str | None = None,
+        cost_source: str | None = None,
     ) -> bool:
         """Add a charging-session reference and its aggregate values.
 
@@ -507,6 +570,12 @@ class FordTriplogJourney:
                 latitude=latitude,
                 longitude=longitude,
                 location_source=location_source,
+                cost_total=cost_total,
+                energy_cost=energy_cost,
+                energy_price_per_kwh=energy_price_per_kwh,
+                effective_price_per_kwh=effective_price_per_kwh,
+                currency=currency,
+                cost_source=cost_source,
             )
         )
 
@@ -541,6 +610,7 @@ class FordTriplogJourney:
         self.date = self.date or _date_from_datetime(self.start_time)
 
         self._recalculate_soc_values()
+        self._recalculate_charging_costs()
         self._recalculate_energy_balance()
         self._recalculate_capacity_energy_values()
         self.total_duration_seconds = self._calculate_total_duration()
@@ -556,6 +626,16 @@ class FordTriplogJourney:
         self.distance_km = round(self.distance_km, 3)
         self.energy_used_kwh = round(self.energy_used_kwh, 3)
         self.energy_charged_kwh = round(self.energy_charged_kwh, 3)
+        self.charging_cost_total = round(self.charging_cost_total, 2)
+        self.charging_energy_cost = round(self.charging_energy_cost, 2)
+        self.charging_additional_cost = round(
+            self.charging_additional_cost,
+            2,
+        )
+        self.average_charging_price_per_kwh = round(
+            self.average_charging_price_per_kwh,
+            4,
+        )
         self.soc_delta = round(self.soc_delta, 3)
         self.soc_used = round(self.soc_used, 3)
         self.soc_charged = round(self.soc_charged, 3)
@@ -628,6 +708,13 @@ class FordTriplogJourney:
             "average_consumption_kwh_100km": (
                 self.average_consumption_kwh_100km
             ),
+            "charging_cost_total": self.charging_cost_total,
+            "charging_energy_cost": self.charging_energy_cost,
+            "charging_additional_cost": self.charging_additional_cost,
+            "average_charging_price_per_kwh": (
+                self.average_charging_price_per_kwh
+            ),
+            "currency": self.currency,
             "start_soc": self.start_soc,
             "end_soc": self.end_soc,
             "soc_delta": self.soc_delta,
@@ -695,6 +782,19 @@ class FordTriplogJourney:
             average_consumption_kwh_100km=_as_float(
                 data.get("average_consumption_kwh_100km")
             ),
+            charging_cost_total=_as_float(
+                data.get("charging_cost_total")
+            ),
+            charging_energy_cost=_as_float(
+                data.get("charging_energy_cost")
+            ),
+            charging_additional_cost=_as_float(
+                data.get("charging_additional_cost")
+            ),
+            average_charging_price_per_kwh=_as_float(
+                data.get("average_charging_price_per_kwh")
+            ),
+            currency=_as_optional_string(data.get("currency")),
             start_soc=_as_optional_float(data.get("start_soc")),
             end_soc=_as_optional_float(data.get("end_soc")),
             soc_delta=_as_float(data.get("soc_delta")),
@@ -831,6 +931,46 @@ class FordTriplogJourney:
             self.soc_delta = last_soc - first_soc
         else:
             self.soc_delta = 0.0
+
+    def _recalculate_charging_costs(self) -> None:
+        """Recalculate journey-wide charging cost values."""
+
+        total_cost = 0.0
+        energy_cost = 0.0
+        currencies: set[str] = set()
+
+        for item in self.items:
+            if item.item_type != _ITEM_CHARGE:
+                continue
+
+            if item.cost_total is not None:
+                total_cost += max(0.0, item.cost_total)
+
+            if item.energy_cost is not None:
+                energy_cost += max(0.0, item.energy_cost)
+
+            if item.currency:
+                currencies.add(item.currency.upper())
+
+        self.charging_cost_total = total_cost
+        self.charging_energy_cost = energy_cost
+        self.charging_additional_cost = max(
+            0.0,
+            total_cost - energy_cost,
+        )
+
+        if self.energy_charged_kwh > 0:
+            self.average_charging_price_per_kwh = (
+                total_cost / self.energy_charged_kwh
+            )
+        else:
+            self.average_charging_price_per_kwh = 0.0
+
+        self.currency = (
+            next(iter(currencies))
+            if len(currencies) == 1
+            else None
+        )
 
     def _recalculate_energy_balance(self) -> None:
         """Recalculate journey-wide energy flow values."""
