@@ -6,7 +6,7 @@ Track your Ford.
 Journey data model.
 
 Version: 1.8.0
-Release: 1.8.0 - Step 2
+Release: 1.8.0 - Step 3
 """
 
 from __future__ import annotations
@@ -288,6 +288,9 @@ class FordTriplogJourney:
     soc_charged: float = 0.0
     soc_adjustment: float = 0.0
 
+    battery_capacity_kwh: float | None = None
+    battery_energy_delta_kwh: float | None = None
+    soc_adjustment_kwh: float | None = None
     battery_energy_balance_kwh: float = 0.0
     total_energy_flow_kwh: float = 0.0
 
@@ -340,6 +343,21 @@ class FordTriplogJourney:
         self.soc_used = max(0.0, _as_float(self.soc_used))
         self.soc_charged = max(0.0, _as_float(self.soc_charged))
         self.soc_adjustment = _as_float(self.soc_adjustment)
+        self.battery_capacity_kwh = _as_optional_float(
+            self.battery_capacity_kwh
+        )
+        if (
+            self.battery_capacity_kwh is not None
+            and self.battery_capacity_kwh <= 0
+        ):
+            self.battery_capacity_kwh = None
+
+        self.battery_energy_delta_kwh = _as_optional_float(
+            self.battery_energy_delta_kwh
+        )
+        self.soc_adjustment_kwh = _as_optional_float(
+            self.soc_adjustment_kwh
+        )
         self.battery_energy_balance_kwh = _as_float(
             self.battery_energy_balance_kwh
         )
@@ -524,6 +542,7 @@ class FordTriplogJourney:
 
         self._recalculate_soc_values()
         self._recalculate_energy_balance()
+        self._recalculate_capacity_energy_values()
         self.total_duration_seconds = self._calculate_total_duration()
 
         if self.distance_km > 0:
@@ -549,6 +568,21 @@ class FordTriplogJourney:
             self.total_energy_flow_kwh,
             3,
         )
+        if self.battery_capacity_kwh is not None:
+            self.battery_capacity_kwh = round(
+                self.battery_capacity_kwh,
+                3,
+            )
+        if self.battery_energy_delta_kwh is not None:
+            self.battery_energy_delta_kwh = round(
+                self.battery_energy_delta_kwh,
+                3,
+            )
+        if self.soc_adjustment_kwh is not None:
+            self.soc_adjustment_kwh = round(
+                self.soc_adjustment_kwh,
+                3,
+            )
 
     def is_same_day(self) -> bool:
         """Return whether the journey starts and ends on the same date."""
@@ -600,6 +634,11 @@ class FordTriplogJourney:
             "soc_used": self.soc_used,
             "soc_charged": self.soc_charged,
             "soc_adjustment": self.soc_adjustment,
+            "battery_capacity_kwh": self.battery_capacity_kwh,
+            "battery_energy_delta_kwh": (
+                self.battery_energy_delta_kwh
+            ),
+            "soc_adjustment_kwh": self.soc_adjustment_kwh,
             "battery_energy_balance_kwh": (
                 self.battery_energy_balance_kwh
             ),
@@ -662,6 +701,15 @@ class FordTriplogJourney:
             soc_used=_as_float(data.get("soc_used")),
             soc_charged=_as_float(data.get("soc_charged")),
             soc_adjustment=_as_float(data.get("soc_adjustment")),
+            battery_capacity_kwh=_as_optional_float(
+                data.get("battery_capacity_kwh")
+            ),
+            battery_energy_delta_kwh=_as_optional_float(
+                data.get("battery_energy_delta_kwh")
+            ),
+            soc_adjustment_kwh=_as_optional_float(
+                data.get("soc_adjustment_kwh")
+            ),
             battery_energy_balance_kwh=_as_float(
                 data.get("battery_energy_balance_kwh")
             ),
@@ -792,6 +840,21 @@ class FordTriplogJourney:
         )
         self.total_energy_flow_kwh = (
             self.energy_charged_kwh + self.energy_used_kwh
+        )
+
+    def _recalculate_capacity_energy_values(self) -> None:
+        """Convert SOC changes using the stored usable battery capacity."""
+
+        if self.battery_capacity_kwh is None:
+            self.battery_energy_delta_kwh = None
+            self.soc_adjustment_kwh = None
+            return
+
+        self.battery_energy_delta_kwh = (
+            self.soc_delta * self.battery_capacity_kwh / 100
+        )
+        self.soc_adjustment_kwh = (
+            self.soc_adjustment * self.battery_capacity_kwh / 100
         )
 
     def _calculate_total_duration(self) -> int:
