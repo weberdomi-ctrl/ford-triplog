@@ -3,6 +3,8 @@ Ford Triplog
 
 Charge object.
 
+Version: 1.8.0
+Release: 1.8.0 - Charging costs step 1
 """
 
 from __future__ import annotations
@@ -66,6 +68,14 @@ class Charge:
         self.energy_added_kwh_calculated: float | None = None
         self.energy_source: str = "calculated"
 
+        # Charging costs
+        self.cost_total: float | None = None
+        self.currency: str | None = None
+        self.price_per_kwh: float | None = None
+        self.cost_source: str = "none"
+        self.cost_verified: bool = False
+        self.receipt_filename: str | None = None
+
         self.include_in_statistics: bool = True
         self.exclusion_reason: str | None = None
 
@@ -106,8 +116,51 @@ class Charge:
 
         self.end_address = address
 
+    def recalculate_costs(self) -> None:
+        """Recalculate derived charging cost values."""
+
+        if self.cost_total is not None:
+            try:
+                self.cost_total = max(0.0, float(self.cost_total))
+            except (TypeError, ValueError):
+                self.cost_total = None
+
+        if self.currency is not None:
+            normalized_currency = str(self.currency).strip().upper()
+            self.currency = normalized_currency or None
+
+        self.cost_source = str(self.cost_source or "none").strip().lower()
+        if self.cost_source not in {"none", "manual", "ocr"}:
+            self.cost_source = "none"
+
+        self.cost_verified = bool(self.cost_verified)
+
+        if self.receipt_filename is not None:
+            normalized_filename = str(self.receipt_filename).strip()
+            self.receipt_filename = normalized_filename or None
+
+        self.price_per_kwh = None
+
+        if (
+            self.cost_total is not None
+            and self.energy_added_kwh is not None
+        ):
+            try:
+                energy = float(self.energy_added_kwh)
+            except (TypeError, ValueError):
+                energy = 0.0
+
+            if energy > 0:
+                self.price_per_kwh = round(
+                    self.cost_total / energy,
+                    4,
+                )
+
     def to_dict(self) -> dict[str, Any]:
         """Return the charging session as a serializable dictionary."""
+
+        self.recalculate_costs()
+
         return {
             "schema": self.schema,
             "charge_id": self.charge_id,
@@ -148,6 +201,12 @@ class Charge:
                 self.energy_added_kwh_calculated
             ),
             "energy_source": self.energy_source,
+            "cost_total": self.cost_total,
+            "currency": self.currency,
+            "price_per_kwh": self.price_per_kwh,
+            "cost_source": self.cost_source,
+            "cost_verified": self.cost_verified,
+            "receipt_filename": self.receipt_filename,
             "include_in_statistics": self.include_in_statistics,
             "exclusion_reason": self.exclusion_reason,
             "generator": GENERATOR,
@@ -219,6 +278,16 @@ class Charge:
                 else "calculated"
             ),
         )
+
+        charge.cost_total = data.get("cost_total")
+        charge.currency = data.get("currency")
+        charge.price_per_kwh = data.get("price_per_kwh")
+        charge.cost_source = data.get("cost_source", "none")
+        charge.cost_verified = bool(
+            data.get("cost_verified", False)
+        )
+        charge.receipt_filename = data.get("receipt_filename")
+        charge.recalculate_costs()
 
         charge.include_in_statistics = bool(
             data.get("include_in_statistics", True)

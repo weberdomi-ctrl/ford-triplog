@@ -243,14 +243,6 @@ See the complete installation guide:
 
 ➡ **[Installation Guide](docs/installation.md)**
 
-------------------------------------------------------------------------
-
-# Screenshots
-
-Screenshots of dashboards, charging history and configuration are
-available in the documentation.
-
-➡ **[Dashboard Examples](docs/dashboard.md)**
 
 ------------------------------------------------------------------------
 
