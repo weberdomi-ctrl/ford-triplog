@@ -206,6 +206,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._journey_result: dict[str, str] = {}
         self._selected_charge_id: str | None = None
         self._charge_result: dict[str, str] = {}
+        self._charge_translations: dict[str, str] | None = None
 
     async def async_step_init(
         self,
@@ -224,6 +225,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ],
         )
 
+
+    async def _async_get_charge_translations(self) -> dict[str, str]:
+        """Load Charge Manager translations once for this options flow."""
+
+        if self._charge_translations is not None:
+            return self._charge_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+
+        self._charge_translations = {
+            "save": translations.get(
+                f"component.{DOMAIN}.common.charge_action_save",
+                "Save",
+            ),
+            "clear": translations.get(
+                f"component.{DOMAIN}.common.charge_action_clear",
+                "Clear costs",
+            ),
+        }
+
+        return self._charge_translations
 
     def _get_charge_manager(self):
         """Return the Charge Manager for this config entry."""
@@ -311,6 +338,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return await self.async_step_charge_management()
 
         manager = self._get_charge_manager()
+        charge_text = await self._async_get_charge_translations()
         charge = await manager.async_get_charge(
             self._selected_charge_id
         )
@@ -426,11 +454,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             options=[
                                 selector.SelectOptionDict(
                                     value=CHARGE_ACTION_SAVE,
-                                    label="Save",
+                                    label=charge_text["save"],
                                 ),
                                 selector.SelectOptionDict(
                                     value=CHARGE_ACTION_CLEAR,
-                                    label="Clear costs",
+                                    label=charge_text["clear"],
                                 ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
