@@ -6,7 +6,7 @@ Track your Ford.
 Daily journey lifecycle and matching manager.
 
 Version: 1.8.6
-Release: 1.8.6 - Journey charging costs and filtering
+Release: 1.8.6 - Journey billed-energy price fix
 """
 
 from __future__ import annotations
@@ -1748,6 +1748,10 @@ class FordTriplogJourneyManager:
             latitude=latitude,
             longitude=longitude,
             location_source=location_source,
+            energy_billed_kwh=self._optional_float_value(
+                charge,
+                "energy_billed_kwh",
+            ),
             cost_total=self._optional_float_value(
                 charge,
                 "cost_total",
