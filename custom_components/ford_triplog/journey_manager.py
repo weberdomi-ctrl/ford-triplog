@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.7.3
-Release: 1.7.3
+Version: 1.8.0
+Release: 1.8.0 - Step 3
 """
 
 from __future__ import annotations
@@ -71,6 +71,7 @@ class FordTriplogJourneyManager:
         journey_max_gap_hours: int = DEFAULT_JOURNEY_MAX_GAP_HOURS,
         home_zone_entity_id: str = DEFAULT_JOURNEY_HOME_ZONE,
         home_timeout_minutes: int = DEFAULT_JOURNEY_HOME_TIMEOUT,
+        battery_capacity_kwh: float | None = None,
     ) -> None:
         """Initialize the daily journey manager."""
 
@@ -104,6 +105,9 @@ class FordTriplogJourneyManager:
             0,
             int(home_timeout_minutes),
         ) * 60
+        self.battery_capacity_kwh = self._normalize_battery_capacity(
+            battery_capacity_kwh
+        )
 
         self.current_journey: FordTriplogJourney | None = None
         self.last_journey: FordTriplogJourney | None = None
@@ -125,6 +129,19 @@ class FordTriplogJourneyManager:
             await self.storage.load_current_journey()
         )
         self.last_journey = await self.storage.load_last_journey()
+
+        if (
+            self.current_journey is not None
+            and self.current_journey.battery_capacity_kwh is None
+            and self.battery_capacity_kwh is not None
+        ):
+            self.current_journey.battery_capacity_kwh = (
+                self.battery_capacity_kwh
+            )
+            self.current_journey.recalculate()
+            await self.storage.save_current_journey(
+                self.current_journey
+            )
 
 
     async def async_process_trip(
@@ -605,9 +622,27 @@ class FordTriplogJourneyManager:
     ) -> FordTriplogJourney:
         """Create a new daily journey candidate from one trip."""
 
-        journey = FordTriplogJourney()
+        journey = FordTriplogJourney(
+            battery_capacity_kwh=self.battery_capacity_kwh,
+        )
         self._add_trip(journey, trip)
         return journey
+
+    @staticmethod
+    def _normalize_battery_capacity(
+        value: Any,
+    ) -> float | None:
+        """Return a positive usable battery capacity."""
+
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            capacity = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return capacity if capacity > 0 else None
 
     @staticmethod
     def _item_summary(
@@ -888,6 +923,7 @@ class FordTriplogJourneyManager:
         rebuilt = FordTriplogJourney(
             journey_id=journey.journey_id,
             created=journey.created,
+            battery_capacity_kwh=journey.battery_capacity_kwh,
         )
 
         for item in journey.items[: last_trip_index + 1]:
