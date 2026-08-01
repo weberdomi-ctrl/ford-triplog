@@ -6,7 +6,7 @@ Track your Ford.
 Journey data model.
 
 Version: 1.8.0
-Release: 1.8.0 - Step 1
+Release: 1.8.0 - Step 1.1
 """
 
 from __future__ import annotations
@@ -286,6 +286,7 @@ class FordTriplogJourney:
     soc_delta: float = 0.0
     soc_used: float = 0.0
     soc_charged: float = 0.0
+    soc_adjustment: float = 0.0
 
     schema: int = JOURNEY_SCHEMA_VERSION
     generator: str = GENERATOR
@@ -335,6 +336,7 @@ class FordTriplogJourney:
         self.soc_delta = _as_float(self.soc_delta)
         self.soc_used = max(0.0, _as_float(self.soc_used))
         self.soc_charged = max(0.0, _as_float(self.soc_charged))
+        self.soc_adjustment = _as_float(self.soc_adjustment)
 
         normalized_items: list[JourneyItem] = []
         for item in self.items:
@@ -527,6 +529,7 @@ class FordTriplogJourney:
         self.soc_delta = round(self.soc_delta, 3)
         self.soc_used = round(self.soc_used, 3)
         self.soc_charged = round(self.soc_charged, 3)
+        self.soc_adjustment = round(self.soc_adjustment, 3)
 
     def is_same_day(self) -> bool:
         """Return whether the journey starts and ends on the same date."""
@@ -577,6 +580,7 @@ class FordTriplogJourney:
             "soc_delta": self.soc_delta,
             "soc_used": self.soc_used,
             "soc_charged": self.soc_charged,
+            "soc_adjustment": self.soc_adjustment,
             "generator": self.generator,
             "version": self.version,
         }
@@ -634,6 +638,7 @@ class FordTriplogJourney:
             soc_delta=_as_float(data.get("soc_delta")),
             soc_used=_as_float(data.get("soc_used")),
             soc_charged=_as_float(data.get("soc_charged")),
+            soc_adjustment=_as_float(data.get("soc_adjustment")),
             generator=str(data.get("generator", GENERATOR)),
             version=str(data.get("version", VERSION)),
         )
@@ -704,8 +709,10 @@ class FordTriplogJourney:
 
         first_soc: float | None = None
         last_soc: float | None = None
+        previous_end_soc: float | None = None
         soc_used = 0.0
         soc_charged = 0.0
+        soc_adjustment = 0.0
 
         for item in self.items:
             if first_soc is None:
@@ -714,10 +721,18 @@ class FordTriplogJourney:
                 elif item.end_soc is not None:
                     first_soc = item.end_soc
 
+            if (
+                previous_end_soc is not None
+                and item.start_soc is not None
+            ):
+                soc_adjustment += item.start_soc - previous_end_soc
+
             if item.end_soc is not None:
                 last_soc = item.end_soc
+                previous_end_soc = item.end_soc
             elif item.start_soc is not None:
                 last_soc = item.start_soc
+                previous_end_soc = item.start_soc
 
             if item.start_soc is None or item.end_soc is None:
                 continue
@@ -733,6 +748,7 @@ class FordTriplogJourney:
         self.end_soc = last_soc
         self.soc_used = soc_used
         self.soc_charged = soc_charged
+        self.soc_adjustment = soc_adjustment
 
         if first_soc is not None and last_soc is not None:
             self.soc_delta = last_soc - first_soc
