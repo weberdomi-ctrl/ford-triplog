@@ -98,6 +98,29 @@ class Charge:
         self.exclusion_reason: str | None = None
 
 
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        """Return a float or None for unavailable/invalid sensor values."""
+
+        if value is None or isinstance(value, bool):
+            return None
+
+        normalized = str(value).strip().lower()
+        if normalized in {
+            "",
+            "unknown",
+            "unavailable",
+            "none",
+            "null",
+            "nan",
+        }:
+            return None
+
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
     def start(
         self,
         soc,
@@ -111,7 +134,7 @@ class Charge:
         self.created = now.isoformat()
         self.start_time = now.isoformat()
 
-        self.start_soc = float(soc) if soc is not None else None
+        self.start_soc = self._optional_float(soc)
 
         self.start_latitude = latitude
         self.start_longitude = longitude
@@ -127,7 +150,7 @@ class Charge:
     ) -> None:
         self.end_time = dt_util.now().isoformat()
 
-        self.end_soc = float(soc) if soc is not None else None
+        self.end_soc = self._optional_float(soc)
 
         self.end_latitude = latitude
         self.end_longitude = longitude
