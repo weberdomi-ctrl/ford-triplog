@@ -71,6 +71,11 @@ Features include:
 - Native Journey sensor
 - Local timezone support
 - Rich dashboard attributes
+- Journey energy balance
+- Start and end battery state
+- Battery energy flow calculation
+- Charging cost summary
+- Average charging price
 
 ------------------------------------------------------------------------
 
@@ -86,6 +91,13 @@ Automatically records every charging session including:
 -   Linked trip (when available)
 -   Journey integration
 -   Charging station recognition
+-   Manual charging cost editor
+-   Seasonal home charging tariffs
+-   Energy billed by charging provider
+-   Charging loss calculation
+-   Energy delivered vs. billed
+-   Detailed charging cost breakdown
+-   Automatic home charging cost calculation
 
 ------------------------------------------------------------------------
 
@@ -131,6 +143,11 @@ Ford Triplog continuously maintains:
 -   Energy consumption
 -   Average efficiency
 -   Native Home Assistant sensors
+-   Journey energy balance
+-   Journey charging costs
+-   Average charging price
+-   Battery energy delta
+-   Total battery energy flow
 
 ------------------------------------------------------------------------
 
@@ -147,6 +164,11 @@ Features include:
 -   Automatic recovery
 -   Journey overview sensor
 -   Rich Journey timeline attributes
+-   Native Last Charge sensor
+-   Native Journey overview sensor
+-   Charging cost attributes
+-   Journey energy attributes
+-   Ready-to-use Markdown dashboard examples
 -   Persistent local storage
 -   HACS support
 
@@ -267,7 +289,15 @@ See the complete installation guide:
   - Charged energy
   - Charging duration
   - SOC before and after charging
+  - Energy billed by charger
+  - Charging losses
+  - Manual charging costs
+  - Seasonal home charging tariffs
+  - Charging cost breakdown
+  - Effective charging price
 - 📊 Journey statistics for Home Assistant dashboards
+- ⚖️ Journey energy balance
+- 💰 Journey charging costs
 - 🗺️ Offline charging station database
 - 🌍 Multi-language support (English, German and Polish)
 - 🔒 Local-first architecture with local JSON storage
@@ -279,6 +309,17 @@ See the complete installation guide:
 ## Dashboard Examples
 
 Ready-to-use Home Assistant dashboard examples are available in:
+
+Examples include:
+
+- Vehicle overview
+- Last Trip
+- Last Charge
+- Last Journey
+- Journey timeline
+- Charging history
+- Charging cost overview
+- Journey energy balance
 
 `docs/examples/`
 
