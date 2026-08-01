@@ -212,21 +212,35 @@
       },
       "charge_cost_edit": {
         "title": "Ladekosten bearbeiten",
-        "description": "**Ladevorgang:** {charge_id}\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Geladene Energie:** {energy_kwh} kWh\n**Ladestand:** {start_soc} % → {end_soc} %\n\n**Bisherige Kosten:** {current_cost} {current_currency}\n**Bisheriger Preis pro kWh:** {current_price_per_kwh}",
+        "description": "**Ladevorgang:** {charge_id}\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Energie im Fahrzeug:** {energy_kwh} kWh\n**Ladestand:** {start_soc} % → {end_soc} %\n\n**Abgerechnete Energie:** {current_energy_billed_kwh} kWh\n**Ladeverlust:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Bisherige Kosten:** {current_cost} {current_currency}\n**Energiepreis pro kWh:** {current_energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Gesamtkosten",
           "currency": "Währung",
-          "action": "Aktion"
+          "action": "Aktion",
+          "energy_billed_kwh": "Abgerechnete Energie",
+          "energy_cost": "Energiekosten",
+          "session_fee": "Start- / Sessiongebühr",
+          "time_fee": "Zeitgebühr",
+          "blocking_fee": "Blockiergebühr",
+          "parking_fee": "Parkgebühr",
+          "other_cost": "Sonstige Kosten"
         },
         "data_description": {
-          "cost_total": "Gesamtbetrag des Ladevorgangs. Der Preis pro kWh wird automatisch berechnet.",
+          "cost_total": "Optionaler Gesamtbetrag für einfache oder ältere Einträge. Wenn Einzelkosten erfasst sind, wird der Gesamtbetrag automatisch berechnet.",
           "currency": "Dreistelliger Währungscode, zum Beispiel CHF oder EUR.",
-          "action": "Kosten speichern oder alle vorhandenen Kosteninformationen löschen."
+          "action": "Kosten speichern oder alle Kosteninformationen löschen.",
+          "energy_billed_kwh": "Energie laut Rechnung, Ladesäule oder Lade-App. Damit können Ladeverluste berechnet werden.",
+          "energy_cost": "Reine Energiekosten ohne zusätzliche Gebühren.",
+          "session_fee": "Einmalige Start- oder Sessiongebühr.",
+          "time_fee": "Zeitabhängige Ladegebühr.",
+          "blocking_fee": "Gebühr für das Blockieren des Ladepunkts.",
+          "parking_fee": "Zusätzliche Parkgebühr.",
+          "other_cost": "Weitere Kosten, die keiner anderen Kategorie entsprechen."
         }
       },
       "charge_cost_result": {
         "title": "Ladekosten aktualisiert",
-        "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Kosten:** {cost_total} {currency}\n**Preis pro kWh:** {price_per_kwh}"
+        "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Abgerechnete Energie:** {energy_billed_kwh} kWh\n**Ladeverlust:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Kosten:** {cost_total} {currency}\n**Energiepreis pro kWh:** {energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {price_per_kwh}"
       }
     },
     "error": {
