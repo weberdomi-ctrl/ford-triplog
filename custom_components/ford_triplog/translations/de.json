@@ -29,14 +29,16 @@
           "import_charging_sites": "Ladeort-Datenbank importieren",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
-          "journey_management": "Tour-Verwaltung"
+          "journey_management": "Tour-Verwaltung",
+          "charge_management": "Ladevorgänge"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "journey_management": "Touren aktualisieren, neu berechnen oder löschen."
+          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
+          "charge_management": "Archivierte Ladevorgänge anzeigen und Ladekosten verwalten."
         }
       },
       "settings": {
@@ -50,7 +52,11 @@
           "soh": "Batteriezustand (SOH)",
           "journey_home_zone": "Tour-Basis",
           "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
-          "journey_max_gap_hours": "Maximale Tour-Pause"
+          "journey_max_gap_hours": "Maximale Tour-Pause",
+          "home_tariff_enabled": "Automatische Heimladekosten",
+          "home_tariff_summer_price": "Sommertarif (1. April bis 30. September)",
+          "home_tariff_winter_price": "Wintertarif (1. Oktober bis 31. März)",
+          "home_tariff_currency": "Währung der Heimtarife"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
@@ -59,7 +65,11 @@
           "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
           "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
           "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
-          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann."
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
+          "home_tariff_enabled": "Berechnet die Kosten für Ladevorgänge in der Tour-Basis automatisch.",
+          "home_tariff_summer_price": "Preis pro kWh für Ladevorgänge vom 1. April bis 30. September.",
+          "home_tariff_winter_price": "Preis pro kWh für Ladevorgänge vom 1. Oktober bis 31. März.",
+          "home_tariff_currency": "Währung für automatisch berechnete Heimladekosten."
         }
       },
       "import_charging_sites": {
@@ -189,6 +199,48 @@
       "journey_result": {
         "title": "Tour-Aktion abgeschlossen",
         "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
+      },
+      "charge_management": {
+        "title": "Ladevorgänge",
+        "description": "Wähle einen der {charge_count} archivierten Ladevorgänge aus.",
+        "data": {
+          "charge_selection": "Ladevorgang"
+        },
+        "data_description": {
+          "charge_selection": "Die Liste zeigt Datum, Ladeort, geladene Energie und bereits erfasste Kosten."
+        }
+      },
+      "charge_cost_edit": {
+        "title": "Ladekosten bearbeiten",
+        "description": "**Ladevorgang:** {charge_id}\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Energie im Fahrzeug:** {energy_kwh} kWh\n**Ladestand:** {start_soc} % → {end_soc} %\n\n**Abgerechnete Energie:** {current_energy_billed_kwh} kWh\n**Ladeverlust:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Bisherige Kosten:** {current_cost} {current_currency}\n**Energiepreis pro kWh:** {current_energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {current_price_per_kwh}",
+        "data": {
+          "cost_total": "Gesamtkosten",
+          "currency": "Währung",
+          "action": "Aktion",
+          "energy_billed_kwh": "Abgerechnete Energie",
+          "energy_cost": "Energiekosten",
+          "session_fee": "Start- / Sessiongebühr",
+          "time_fee": "Zeitgebühr",
+          "blocking_fee": "Blockiergebühr",
+          "parking_fee": "Parkgebühr",
+          "other_cost": "Sonstige Kosten"
+        },
+        "data_description": {
+          "cost_total": "Optionaler Gesamtbetrag für einfache oder ältere Einträge. Wenn Einzelkosten erfasst sind, wird der Gesamtbetrag automatisch berechnet.",
+          "currency": "Dreistelliger Währungscode, zum Beispiel CHF oder EUR.",
+          "action": "Kosten speichern oder alle Kosteninformationen löschen.",
+          "energy_billed_kwh": "Energie laut Rechnung, Ladesäule oder Lade-App. Damit können Ladeverluste berechnet werden.",
+          "energy_cost": "Reine Energiekosten ohne zusätzliche Gebühren.",
+          "session_fee": "Einmalige Start- oder Sessiongebühr.",
+          "time_fee": "Zeitabhängige Ladegebühr.",
+          "blocking_fee": "Gebühr für das Blockieren des Ladepunkts.",
+          "parking_fee": "Zusätzliche Parkgebühr.",
+          "other_cost": "Weitere Kosten, die keiner anderen Kategorie entsprechen."
+        }
+      },
+      "charge_cost_result": {
+        "title": "Ladekosten aktualisiert",
+        "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Abgerechnete Energie:** {energy_billed_kwh} kWh\n**Ladeverlust:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Kosten:** {cost_total} {currency}\n**Energiepreis pro kWh:** {energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {price_per_kwh}"
       }
     },
     "error": {
@@ -199,7 +251,11 @@
       "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
       "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden.",
       "journey_operation_failed": "Die Tour-Aktion konnte nicht ausgeführt werden.",
-      "journey_confirmation_required": "Die Aktion muss bestätigt werden."
+      "journey_confirmation_required": "Die Aktion muss bestätigt werden.",
+      "charge_load_failed": "Die archivierten Ladevorgänge konnten nicht geladen werden.",
+      "charge_none_available": "Es wurden keine archivierten Ladevorgänge gefunden.",
+      "charge_not_found": "Der ausgewählte Ladevorgang wurde nicht gefunden.",
+      "charge_cost_save_failed": "Die Ladekosten konnten nicht gespeichert oder gelöscht werden."
     }
   },
   "entity": {
@@ -362,7 +418,13 @@
     "charging_site_stored_one": "1 eigener Ladeort gespeichert.",
     "charging_site_stored_many": "{count} eigene Ladeorte gespeichert.",
     "charging_site_pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
-    "charging_site_pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden."
+    "charging_site_pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden.",
+    "charge_action_save": "Speichern",
+    "charge_action_clear": "Kosten löschen",
+    "charge_management": "Ladevorgänge",
+    "charge_cost": "Ladekosten",
+    "charge_currency": "Währung",
+    "charge_price_per_kwh": "Preis pro kWh"
   },
   "services": {
     "import_charging_sites": {

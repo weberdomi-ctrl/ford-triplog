@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.7.2
-Release: 1.7.2
+Version: 1.8.0
+Release: 1.8.0 - Step 3
 """
 
 from __future__ import annotations
@@ -24,6 +24,7 @@ PLATFORMS: list[Platform] = [
 ]
 
 from .const import (
+    CONF_BATTERY_CAPACITY,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -40,6 +41,7 @@ from .progress_manager import ProgressManager
 from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
+from .charge_manager import FordTriplogChargeManager
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -112,13 +114,26 @@ async def async_setup_entry(
                 DEFAULT_JOURNEY_MAX_GAP_HOURS,
             )
         ),
+        battery_capacity_kwh=config.get(
+            CONF_BATTERY_CAPACITY
+        ),
     )
 
     await journey_manager.async_setup()
 
+    charge_manager = FordTriplogChargeManager(
+        hass=hass,
+        storage=storage,
+    )
+
+    await charge_manager.async_setup()
+
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,
         journey_storage=journey_storage,
+        battery_capacity_kwh=config.get(
+            CONF_BATTERY_CAPACITY
+        ),
     )
 
     # Issue #15
@@ -146,6 +161,7 @@ async def async_setup_entry(
         "journey_storage": journey_storage,
         "journey_manager": journey_manager,
         "journey_rebuilder": journey_rebuilder,
+        "charge_manager": charge_manager,
     }
 
     entry.async_on_unload(

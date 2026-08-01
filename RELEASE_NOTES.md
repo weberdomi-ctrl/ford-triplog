@@ -1,4 +1,108 @@
-# RELEASE_NOTES
+# Ford Triplog 1.8
+
+## 🚀 Major New Features
+
+### 💰 Comprehensive Charging Cost Management
+
+Ford Triplog now includes complete charging cost tracking.
+
+New capabilities:
+
+- Manual charging cost editor
+- Automatic total cost calculation
+- Energy costs
+- Session fees
+- Time-based fees
+- Blocking fees
+- Parking fees
+- Additional costs
+- Cost verification
+- Receipt support
+- Currency support
+
+### 🏠 Automatic Home Charging Tariffs
+
+Charging sessions inside the configured Home zone can now be priced automatically.
+
+Features include:
+
+- Two configurable seasonal electricity tariffs
+- Configurable summer and winter date ranges
+- Automatic tariff selection based on charging date
+- Automatic charging cost calculation
+
+### ⚡ Advanced Energy Tracking
+
+Charging sessions now distinguish between:
+
+- Energy stored in the battery
+- Energy billed by the charging provider
+- Charging losses
+- Effective charging price
+- Energy source tracking
+
+### 🚗 Extended Journey Statistics
+
+Journeys now provide additional energy and charging information:
+
+- Charging cost total
+- Energy cost
+- Additional charging costs
+- Average charging price
+- Battery energy balance
+- Battery energy delta
+- Total battery energy flow
+- Billed charging energy
+
+### 📊 Improved Dashboard Support
+
+The included Markdown dashboard examples have been extended with:
+
+- Journey charging costs
+- Average charging price
+- Billed charging energy
+- Improved Last Charge dashboard
+- Improved Journey dashboard
+- Unified location display
+
+---
+
+## ✨ Improvements
+
+- Unified charging location display
+- Home Assistant zones now have highest location priority
+- Improved Journey timeline
+- Richer Journey sensor attributes
+- Richer Last Charge sensor attributes
+- Better charging location handling
+- Improved charging cost calculations
+- Cleaner dashboard presentation
+
+---
+
+## 🛠 Fixes
+
+- Correct average charging price calculation using billed energy when available
+- Improved Journey charging cost aggregation
+- Better handling of manually entered charging costs
+- Invalid charging sessions are ignored automatically
+- Improved handling of unavailable SOC values
+- Multiple charging session stability improvements
+
+---
+
+## 🌍 Translations
+
+Updated translations for:
+
+- 🇬🇧 English
+- 🇩🇪 German
+- 🇵🇱 Polish
+
+including all new charging cost management and home tariff functionality.
+
+---
+
 
 # Ford Triplog 1.7.0
 

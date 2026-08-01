@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.7.3
+Version: 1.8.7 - Unified display locations
 """
 
 from __future__ import annotations
@@ -245,6 +245,24 @@ class FordTriplogLastJourneySensor(SensorEntity):
             "end_time": journey.end_time,
             "start_address": journey.start_address,
             "end_address": journey.end_address,
+            "display_start_location": (
+                journey.items[0].start_location
+                if journey.items
+                and journey.items[0].item_type == "trip"
+                and journey.items[0].start_location
+                else journey.start_address
+            ),
+            "display_end_location": (
+                journey.items[-1].end_location
+                if journey.items
+                and journey.items[-1].item_type == "trip"
+                and journey.items[-1].end_location
+                else journey.items[-1].location
+                if journey.items
+                and journey.items[-1].item_type == "charge"
+                and journey.items[-1].location
+                else journey.end_address
+            ),
             "start_latitude": journey.start_latitude,
             "start_longitude": journey.start_longitude,
             "end_latitude": journey.end_latitude,
@@ -265,9 +283,33 @@ class FordTriplogLastJourneySensor(SensorEntity):
             ),
             "energy_used_kwh": journey.energy_used_kwh,
             "energy_charged_kwh": journey.energy_charged_kwh,
+            "start_soc": journey.start_soc,
+            "end_soc": journey.end_soc,
+            "soc_delta": journey.soc_delta,
+            "soc_used": journey.soc_used,
+            "soc_charged": journey.soc_charged,
+            "soc_adjustment": journey.soc_adjustment,
+            "battery_capacity_kwh": journey.battery_capacity_kwh,
+            "battery_energy_delta_kwh": (
+                journey.battery_energy_delta_kwh
+            ),
+            "soc_adjustment_kwh": journey.soc_adjustment_kwh,
+            "battery_energy_balance_kwh": (
+                journey.battery_energy_balance_kwh
+            ),
+            "total_energy_flow_kwh": journey.total_energy_flow_kwh,
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
+            "charging_cost_total": journey.charging_cost_total,
+            "charging_energy_cost": journey.charging_energy_cost,
+            "charging_additional_cost": (
+                journey.charging_additional_cost
+            ),
+            "average_charging_price_per_kwh": (
+                journey.average_charging_price_per_kwh
+            ),
+            "currency": journey.currency,
             "items": [
                 item.to_dict()
                 for item in journey.items
@@ -537,6 +579,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "time": journey.start_time,
                 "time_formatted": self._format_clock(journey.start_time),
                 "location": start_location,
+                "display_location": start_location,
                 "address": self._short_address(journey.start_address),
                 "latitude": journey.start_latitude,
                 "longitude": journey.start_longitude,
@@ -578,6 +621,12 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "duration": format_duration(duration_seconds),
                     "start_location": self._item_start_location(item),
                     "end_location": self._item_end_location(item),
+                    "display_start_location": (
+                        self._item_start_location(item)
+                    ),
+                    "display_end_location": (
+                        self._item_end_location(item)
+                    ),
                     "start_address": self._short_address(
                         getattr(item, "start_address", None)
                     ),
@@ -641,10 +690,33 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
                     **location_details,
+                    "display_location": location_details.get("location"),
                     "start_soc": start_soc,
                     "end_soc": end_soc,
                     "soc_added": self._soc_added(start_soc, end_soc),
                     "energy_charged_kwh": energy_kwh,
+                    "energy_billed_kwh": self._optional_number(
+                        getattr(item, "energy_billed_kwh", None),
+                        2,
+                    ),
+                    "cost_total": self._optional_number(
+                        getattr(item, "cost_total", None),
+                        2,
+                    ),
+                    "energy_cost": self._optional_number(
+                        getattr(item, "energy_cost", None),
+                        2,
+                    ),
+                    "energy_price_per_kwh": self._optional_number(
+                        getattr(item, "energy_price_per_kwh", None),
+                        4,
+                    ),
+                    "effective_price_per_kwh": self._optional_number(
+                        getattr(item, "effective_price_per_kwh", None),
+                        4,
+                    ),
+                    "currency": getattr(item, "currency", None),
+                    "cost_source": getattr(item, "cost_source", None),
                 }
 
             timeline.append(
@@ -702,6 +774,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "time": journey.end_time,
                 "time_formatted": self._format_clock(journey.end_time),
                 "location": end_location,
+                "display_location": end_location,
                 "address": self._short_address(journey.end_address),
                 "latitude": journey.end_latitude,
                 "longitude": journey.end_longitude,
@@ -752,6 +825,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     if first_item is not None
                     else self._short_address(journey.start_address)
                 ),
+                "display_location": (
+                    self._item_start_location(first_item)
+                    if first_item is not None
+                    else self._short_address(journey.start_address)
+                ),
                 "address": self._short_address(journey.start_address),
                 "latitude": journey.start_latitude,
                 "longitude": journey.start_longitude,
@@ -760,6 +838,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "time": journey.end_time,
                 "time_formatted": self._format_clock(journey.end_time),
                 "location": (
+                    self._item_end_location(last_item)
+                    if last_item is not None
+                    else self._short_address(journey.end_address)
+                ),
+                "display_location": (
                     self._item_end_location(last_item)
                     if last_item is not None
                     else self._short_address(journey.end_address)
@@ -785,9 +868,33 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "charge_count": journey.charge_count,
             "energy_used_kwh": journey.energy_used_kwh,
             "energy_charged_kwh": journey.energy_charged_kwh,
+            "start_soc": journey.start_soc,
+            "end_soc": journey.end_soc,
+            "soc_delta": journey.soc_delta,
+            "soc_used": journey.soc_used,
+            "soc_charged": journey.soc_charged,
+            "soc_adjustment": journey.soc_adjustment,
+            "battery_capacity_kwh": journey.battery_capacity_kwh,
+            "battery_energy_delta_kwh": (
+                journey.battery_energy_delta_kwh
+            ),
+            "soc_adjustment_kwh": journey.soc_adjustment_kwh,
+            "battery_energy_balance_kwh": (
+                journey.battery_energy_balance_kwh
+            ),
+            "total_energy_flow_kwh": journey.total_energy_flow_kwh,
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
+            "charging_cost_total": journey.charging_cost_total,
+            "charging_energy_cost": journey.charging_energy_cost,
+            "charging_additional_cost": (
+                journey.charging_additional_cost
+            ),
+            "average_charging_price_per_kwh": (
+                journey.average_charging_price_per_kwh
+            ),
+            "currency": journey.currency,
             "timeline": timeline,
         }
 
@@ -1147,6 +1254,83 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         return timestamp
 
     @staticmethod
+    def _distance_m(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Calculate distance between two coordinates in metres."""
+
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value),
+            math.sqrt(1 - value),
+        )
+
+    def _resolve_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Return the closest matching Home Assistant zone."""
+
+        try:
+            charge_latitude = float(latitude)
+            charge_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone: tuple[float, str] | None = None
+
+        for zone_state in self.hass.states.async_all("zone"):
+            zone_latitude = zone_state.attributes.get("latitude")
+            zone_longitude = zone_state.attributes.get("longitude")
+            zone_radius = zone_state.attributes.get("radius", 100)
+
+            try:
+                distance = self._distance_m(
+                    charge_latitude,
+                    charge_longitude,
+                    float(zone_latitude),
+                    float(zone_longitude),
+                )
+                radius = max(0.0, float(zone_radius))
+            except (TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            zone_name = str(
+                zone_state.attributes.get(
+                    "friendly_name",
+                    zone_state.name,
+                )
+            ).strip()
+
+            if not zone_name:
+                continue
+
+            if matching_zone is None or distance < matching_zone[0]:
+                matching_zone = (distance, zone_name)
+
+        return matching_zone[1] if matching_zone else None
+
+    @staticmethod
     def _duration_seconds(last_charge: dict[str, Any]) -> int | None:
         """Return stored or calculated charging duration."""
 
@@ -1208,12 +1392,23 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         soc_added = self._soc_added(last_charge)
 
         address = format_address_short(last_charge.get("start_address"))
+        latitude = last_charge.get("start_latitude")
+        longitude = last_charge.get("start_longitude")
+        zone_name = self._resolve_zone_name(latitude, longitude)
+
         charging_location = (
             last_charge.get("charging_site_name")
             or last_charge.get("charging_site_brand")
             or last_charge.get("charging_site_operator")
             or last_charge.get("charging_site_network")
             or address
+        )
+
+        display_location = (
+            zone_name
+            or charging_location
+            or address
+            or self.translations["unknown"]
         )
 
         attributes = {
@@ -1236,10 +1431,43 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
                 "energy_added_kwh_calculated"
             ),
             "energy_source": last_charge.get("energy_source"),
+            "energy_billed_kwh": last_charge.get(
+                "energy_billed_kwh"
+            ),
+            "energy_billed_source": last_charge.get(
+                "energy_billed_source"
+            ),
+            "charging_loss_kwh": last_charge.get(
+                "charging_loss_kwh"
+            ),
+            "charging_loss_percent": last_charge.get(
+                "charging_loss_percent"
+            ),
+            "energy_cost": last_charge.get("energy_cost"),
+            "session_fee": last_charge.get("session_fee"),
+            "time_fee": last_charge.get("time_fee"),
+            "blocking_fee": last_charge.get("blocking_fee"),
+            "parking_fee": last_charge.get("parking_fee"),
+            "other_cost": last_charge.get("other_cost"),
+            "cost_total": last_charge.get("cost_total"),
+            "currency": last_charge.get("currency"),
+            "energy_price_per_kwh": last_charge.get(
+                "energy_price_per_kwh"
+            ),
+            "effective_price_per_kwh": last_charge.get(
+                "effective_price_per_kwh"
+            ),
+            "cost_source": last_charge.get("cost_source"),
+            "cost_verified": last_charge.get("cost_verified"),
+            "receipt_filename": last_charge.get(
+                "receipt_filename"
+            ),
+            "display_location": display_location,
+            "zone_name": zone_name,
             "charging_location": charging_location,
             "address": address,
-            "latitude": last_charge.get("start_latitude"),
-            "longitude": last_charge.get("start_longitude"),
+            "latitude": latitude,
+            "longitude": longitude,
             "charging_site_id": last_charge.get("charging_site_id"),
             "charging_site_name": last_charge.get("charging_site_name"),
             "charging_site_brand": last_charge.get("charging_site_brand"),

@@ -3,8 +3,8 @@ Ford Triplog
 
 Charging-site service actions.
 
-Version: 1.6.0
-Release: 1.6c
+Version: 1.8.2
+Release: 1.8.2 - Charge cost actions
 """
 
 from __future__ import annotations
@@ -34,6 +34,7 @@ from .charging_site_lookup import (
 from .const import DOMAIN
 from .countries import COUNTRIES
 from .journey_rebuilder import FordTriplogJourneyRebuilder
+from .charge_manager import FordTriplogChargeManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,12 +43,17 @@ SERVICE_DOWNLOAD_CHARGING_DATABASE = "download_charging_database"
 SERVICE_UPDATE_JOURNEYS = "update_journeys"
 SERVICE_REBUILD_JOURNEYS = "rebuild_journeys"
 SERVICE_DELETE_JOURNEYS = "delete_journeys"
+SERVICE_SET_CHARGE_COST = "set_charge_cost"
+SERVICE_CLEAR_CHARGE_COST = "clear_charge_cost"
 
 ATTR_FILE = "file"
 ATTR_COUNTRY = "country"
 ATTR_ENTRY_ID = "entry_id"
 ATTR_START_DATE = "start_date"
 ATTR_END_DATE = "end_date"
+ATTR_CHARGE_ID = "charge_id"
+ATTR_COST_TOTAL = "cost_total"
+ATTR_CURRENCY = "currency"
 
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
 
@@ -80,6 +86,42 @@ JOURNEY_MAINTENANCE_SCHEMA = vol.Schema(
         ),
         vol.Optional(ATTR_START_DATE): vol.Coerce(date.fromisoformat),
         vol.Optional(ATTR_END_DATE): vol.Coerce(date.fromisoformat),
+    }
+)
+
+
+SET_CHARGE_COST_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
+        vol.Required(ATTR_CHARGE_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
+        vol.Required(ATTR_COST_TOTAL): vol.All(
+            vol.Coerce(float),
+            vol.Range(min=0),
+        ),
+        vol.Required(ATTR_CURRENCY): vol.All(
+            str,
+            str.upper,
+            vol.Length(min=3, max=3),
+        ),
+    }
+)
+
+CLEAR_CHARGE_COST_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
+        vol.Required(ATTR_CHARGE_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
     }
 )
 
@@ -549,6 +591,142 @@ def _resolve_journey_rebuilder(
     return candidates[0][1]
 
 
+def _extract_charge_manager(
+    runtime_data: Any,
+) -> FordTriplogChargeManager | None:
+    """Extract the Charge Manager from runtime data."""
+
+    if isinstance(runtime_data, FordTriplogChargeManager):
+        return runtime_data
+
+    if isinstance(runtime_data, Mapping):
+        candidate = runtime_data.get("charge_manager")
+        if isinstance(candidate, FordTriplogChargeManager):
+            return candidate
+
+    candidate = getattr(runtime_data, "charge_manager", None)
+    if isinstance(candidate, FordTriplogChargeManager):
+        return candidate
+
+    return None
+
+
+def _resolve_charge_manager(
+    hass: HomeAssistant,
+    entry_id: str | None,
+) -> FordTriplogChargeManager:
+    """Resolve the Charge Manager for one config entry."""
+
+    domain_data = hass.data.get(DOMAIN)
+
+    if not isinstance(domain_data, Mapping):
+        raise HomeAssistantError(
+            "Ford Triplog is not initialized"
+        )
+
+    candidates: list[tuple[str, FordTriplogChargeManager]] = []
+
+    for candidate_entry_id, runtime_data in domain_data.items():
+        manager = _extract_charge_manager(runtime_data)
+
+        if manager is not None:
+            candidates.append(
+                (
+                    str(candidate_entry_id),
+                    manager,
+                )
+            )
+
+    if entry_id is not None:
+        normalized_entry_id = str(entry_id).strip()
+
+        for candidate_entry_id, manager in candidates:
+            if candidate_entry_id == normalized_entry_id:
+                return manager
+
+        raise HomeAssistantError(
+            "No Charge Manager exists for config entry "
+            f"{normalized_entry_id}"
+        )
+
+    if not candidates:
+        raise HomeAssistantError(
+            "No initialized Ford Triplog Charge Manager was found"
+        )
+
+    if len(candidates) > 1:
+        raise HomeAssistantError(
+            "Several Ford Triplog config entries are active. "
+            "Specify entry_id."
+        )
+
+    return candidates[0][1]
+
+
+async def _async_set_charge_cost(
+    hass: HomeAssistant,
+    call: ServiceCall,
+) -> dict[str, Any]:
+    """Set manual costs for one archived charging session."""
+
+    manager = _resolve_charge_manager(
+        hass,
+        call.data.get(ATTR_ENTRY_ID),
+    )
+
+    try:
+        result = await manager.async_set_cost(
+            call.data[ATTR_CHARGE_ID],
+            cost_total=call.data[ATTR_COST_TOTAL],
+            currency=call.data[ATTR_CURRENCY],
+        )
+    except ValueError as error:
+        raise ServiceValidationError(str(error)) from error
+
+    if not result.updated:
+        if result.reason == "charge_not_found":
+            raise ServiceValidationError(
+                f"Charging session not found: {result.charge_id}"
+            )
+
+        raise HomeAssistantError(
+            "Charging costs could not be saved"
+        )
+
+    return result.to_dict()
+
+
+async def _async_clear_charge_cost(
+    hass: HomeAssistant,
+    call: ServiceCall,
+) -> dict[str, Any]:
+    """Clear costs from one archived charging session."""
+
+    manager = _resolve_charge_manager(
+        hass,
+        call.data.get(ATTR_ENTRY_ID),
+    )
+
+    try:
+        result = await manager.async_clear_cost(
+            call.data[ATTR_CHARGE_ID],
+        )
+    except ValueError as error:
+        raise ServiceValidationError(str(error)) from error
+
+    if not result.updated:
+        if result.reason == "charge_not_found":
+            raise ServiceValidationError(
+                f"Charging session not found: {result.charge_id}"
+            )
+
+        raise HomeAssistantError(
+            "Charging costs could not be cleared"
+        )
+
+    return result.to_dict()
+
+
 async def _async_execute_journey_maintenance(
     hass: HomeAssistant,
     call: ServiceCall,
@@ -733,5 +911,59 @@ async def async_register_services(hass: HomeAssistant) -> None:
             "Ford Triplog service registered: %s.%s",
             DOMAIN,
             SERVICE_DELETE_JOURNEYS,
+        )
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_SET_CHARGE_COST,
+    ):
+
+        async def handle_set_charge_cost(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_set_charge_cost(
+                hass,
+                call,
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_SET_CHARGE_COST,
+            handle_set_charge_cost,
+            schema=SET_CHARGE_COST_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_SET_CHARGE_COST,
+        )
+
+    if not hass.services.has_service(
+        DOMAIN,
+        SERVICE_CLEAR_CHARGE_COST,
+    ):
+
+        async def handle_clear_charge_cost(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_clear_charge_cost(
+                hass,
+                call,
+            )
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_CLEAR_CHARGE_COST,
+            handle_clear_charge_cost,
+            schema=CLEAR_CHARGE_COST_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_CLEAR_CHARGE_COST,
         )
 
