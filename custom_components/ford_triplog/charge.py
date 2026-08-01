@@ -222,16 +222,26 @@ class Charge:
             and added_energy is not None
             and self.energy_billed_kwh > 0
         ):
-            self.charging_loss_kwh = round(
+            raw_loss = round(
                 self.energy_billed_kwh - added_energy,
                 4,
             )
-            self.charging_loss_percent = round(
-                self.charging_loss_kwh
-                / self.energy_billed_kwh
-                * 100,
-                2,
-            )
+
+            # Ignore small measurement differences and never report
+            # negative charging losses.
+            LOSS_TOLERANCE_KWH = 0.2
+
+            if raw_loss <= LOSS_TOLERANCE_KWH:
+                self.charging_loss_kwh = 0.0
+                self.charging_loss_percent = 0.0
+            else:
+                self.charging_loss_kwh = raw_loss
+                self.charging_loss_percent = round(
+                    raw_loss
+                    / self.energy_billed_kwh
+                    * 100,
+                    2,
+                )
 
         pricing_energy = (
             self.energy_billed_kwh
