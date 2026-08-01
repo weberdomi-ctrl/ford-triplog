@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.4.0
+Version: 1.8.1
 """
 
 from __future__ import annotations
@@ -335,6 +335,123 @@ class FordTriplogStorage:
             return sorted(self.charges_path.rglob("*.json"))
 
         return await self.hass.async_add_executor_job(_list)
+
+
+    async def find_charge_path(
+        self,
+        charge_id: str,
+    ) -> Path | None:
+        """Return the archived file path matching one charge ID."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return None
+
+        for path in reversed(await self.list_charges()):
+            charge = await self.load_charge_file(path)
+
+            if (
+                isinstance(charge, dict)
+                and str(charge.get("charge_id", "")).strip()
+                == normalized_id
+            ):
+                return path
+
+        return None
+
+    async def load_charge_by_id(
+        self,
+        charge_id: str,
+    ) -> tuple[Path, dict[str, Any]] | None:
+        """Return path and data for one archived charging session."""
+
+        path = await self.find_charge_path(charge_id)
+        if path is None:
+            return None
+
+        charge = await self.load_charge_file(path)
+        if not isinstance(charge, dict):
+            return None
+
+        return path, charge
+
+    async def save_charge_file(
+        self,
+        path: Path,
+        data: dict[str, Any],
+    ) -> bool:
+        """Overwrite one existing archived charging-session file."""
+
+        resolved_path = path.resolve()
+        charges_root = self.charges_path.resolve()
+
+        try:
+            resolved_path.relative_to(charges_root)
+        except ValueError:
+            _LOGGER.error(
+                "Refusing to write charge file outside charge storage: %s",
+                resolved_path,
+            )
+            return False
+
+        if resolved_path.suffix.lower() != ".json":
+            _LOGGER.error(
+                "Refusing to write non-JSON charge file: %s",
+                resolved_path,
+            )
+            return False
+
+        if not resolved_path.exists():
+            _LOGGER.error(
+                "Archived charge file does not exist: %s",
+                resolved_path,
+            )
+            return False
+
+        return await self._save_json(
+            resolved_path,
+            data,
+        )
+
+    async def update_charge(
+        self,
+        charge_id: str,
+        data: dict[str, Any],
+    ) -> bool:
+        """Update one existing archived charging session by charge ID."""
+
+        loaded = await self.load_charge_by_id(charge_id)
+        if loaded is None:
+            _LOGGER.warning(
+                "Unable to update missing charging session: %s",
+                charge_id,
+            )
+            return False
+
+        path, existing = loaded
+        updated = dict(existing)
+        updated.update(data)
+
+        normalized_id = str(charge_id).strip()
+        updated["charge_id"] = normalized_id
+
+        saved = await self.save_charge_file(
+            path,
+            updated,
+        )
+
+        if not saved:
+            return False
+
+        last_charge = await self.load_last_charge()
+        if (
+            isinstance(last_charge, dict)
+            and str(last_charge.get("charge_id", "")).strip()
+            == normalized_id
+        ):
+            await self.save_last_charge(updated)
+
+        return True
 
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:
