@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.8.2
-Phase: Charge Manager GUI
+Version: 1.8.3
+Phase: Home charging tariffs
 Build: 01
-Release: 1.8.2
+Release: 1.8.3
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -99,6 +99,11 @@ CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
 CONF_CHARGE_CURRENCY = "currency"
 CONF_CHARGE_ACTION = "action"
+
+CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
+CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
+CONF_HOME_TARIFF_WINTER_PRICE = "home_tariff_winter_price"
+CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
 
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
@@ -2231,6 +2236,65 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 ): selector.EntitySelector(
                     selector.EntitySelectorConfig(
                         domain="zone",
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_HOME_TARIFF_ENABLED,
+                    default=self._options.get(
+                        CONF_HOME_TARIFF_ENABLED,
+                        False,
+                    ),
+                ): selector.BooleanSelector(),
+
+                vol.Optional(
+                    CONF_HOME_TARIFF_SUMMER_PRICE,
+                    default=self._options.get(
+                        CONF_HOME_TARIFF_SUMMER_PRICE,
+                        0.28,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=10,
+                        step=0.001,
+                        unit_of_measurement="/kWh",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_HOME_TARIFF_WINTER_PRICE,
+                    default=self._options.get(
+                        CONF_HOME_TARIFF_WINTER_PRICE,
+                        0.38,
+                    ),
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=0,
+                        max=10,
+                        step=0.001,
+                        unit_of_measurement="/kWh",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_HOME_TARIFF_CURRENCY,
+                    default=self._options.get(
+                        CONF_HOME_TARIFF_CURRENCY,
+                        "CHF",
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            "CHF",
+                            "EUR",
+                            "GBP",
+                            "USD",
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
 

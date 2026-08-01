@@ -52,7 +52,11 @@
           "soh": "Batteriezustand (SOH)",
           "journey_home_zone": "Tour-Basis",
           "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
-          "journey_max_gap_hours": "Maximale Tour-Pause"
+          "journey_max_gap_hours": "Maximale Tour-Pause",
+          "home_tariff_enabled": "Automatische Heimladekosten",
+          "home_tariff_summer_price": "Sommertarif (1. April bis 30. September)",
+          "home_tariff_winter_price": "Wintertarif (1. Oktober bis 31. März)",
+          "home_tariff_currency": "Währung der Heimtarife"
         },
         "data_description": {
           "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
@@ -61,7 +65,11 @@
           "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
           "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
           "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
-          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann."
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
+          "home_tariff_enabled": "Berechnet die Kosten für Ladevorgänge in der Tour-Basis automatisch.",
+          "home_tariff_summer_price": "Preis pro kWh für Ladevorgänge vom 1. April bis 30. September.",
+          "home_tariff_winter_price": "Preis pro kWh für Ladevorgänge vom 1. Oktober bis 31. März.",
+          "home_tariff_currency": "Währung für automatisch berechnete Heimladekosten."
         }
       },
       "import_charging_sites": {
