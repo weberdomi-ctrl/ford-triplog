@@ -379,9 +379,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         currency=user_input[
                             CONF_CHARGE_CURRENCY
                         ],
-                        cost_total=user_input.get(
-                            CONF_CHARGE_COST_TOTAL
-                        ),
+                        cost_total=None,
                         energy_billed_kwh=user_input.get(
                             CONF_CHARGE_ENERGY_BILLED_KWH
                         ),
@@ -474,11 +472,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     self._selected_charge_id = None
                     return await self.async_step_charge_cost_result()
 
-        default_cost = (
-            float(charge.cost_total)
-            if charge.cost_total is not None
-            else 0.0
-        )
         default_currency = str(charge.currency or "CHF").upper()
         default_energy_billed = (
             float(charge.energy_billed_kwh)
@@ -572,17 +565,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         default=float(
                             getattr(charge, "other_cost", None) or 0.0
                         ),
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=0,
-                            max=100000,
-                            step=0.01,
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Optional(
-                        CONF_CHARGE_COST_TOTAL,
-                        default=default_cost,
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
                             min=0,
