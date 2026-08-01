@@ -105,7 +105,12 @@ It records:
 - Start SOC
 - End SOC
 - Charged energy
+- Billed energy
 - Charging duration
+- Charging losses
+- Home tariff calculation
+- Charging cost calculation
+- Cost aggregation
 
 Whenever possible, charging sessions are linked to the previous trip.
 
@@ -125,6 +130,9 @@ Responsibilities include:
 - Journey timeout handling
 - Maximum Journey Gap handling
 - Journey statistics
+- Journey energy balance
+- Journey charging cost aggregation
+- Average charging price calculation
 - Journey rebuild and recovery
 
 A Journey may contain multiple trips and charging sessions, providing a complete view of a driving session.
@@ -430,8 +438,6 @@ The architecture has been designed to support future features without major stru
 Planned extensions include:
 
 - Automatic charging database switching
-- Charging cost calculation
-- Home electricity tariffs
 - Dashboard templates
 - Multi-vehicle support
 - Optional database backend

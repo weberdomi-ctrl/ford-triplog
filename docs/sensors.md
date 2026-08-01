@@ -50,6 +50,12 @@ Attributes include:
 -   Average consumption
 -   Trip IDs
 -   Charging session IDs
+-   Battery energy balance
+-   Battery energy delta
+-   Total battery energy flow
+-   Charging cost summary
+-   Average charging price
+-   Currency
 
 ------------------------------------------------------------------------
 
@@ -78,6 +84,9 @@ Attributes include:
 -   Energy charged
 -   Average consumption
 -   Timeline
+-   Journey charging costs
+-   Average charging price
+-   Battery energy balance
 
 The timeline contains ordered entries for:
 
@@ -448,12 +457,10 @@ because all data is stored locally.
 
 Future releases will introduce additional entities, including:
 
--   Charging costs
--   Home charging costs
 -   Monthly statistics
 -   Yearly statistics
--   Charging efficiency
 -   Vehicle usage summaries
+-   Multi-vehicle sensors
 
 The existing entity names will remain stable whenever possible to avoid
 breaking dashboards and automations.

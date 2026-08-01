@@ -72,11 +72,15 @@ Depending on the available information, the session may include:
 Charging locations are resolved using the following priority.
 
 ```
-FordPass
+Home Assistant Zones
 
 ↓
 
 User Charging Locations
+
+↓
+
+FordPass
 
 ↓
 
@@ -179,6 +183,52 @@ The charging session will still be recorded, typically including:
 You can later convert this location into a permanent user-defined charging location through the integration options.
 
 Future charging sessions at the same place will then be recognized automatically.
+
+
+
+---
+
+# Charging Costs
+
+Ford Triplog supports comprehensive charging cost tracking.
+
+Charging sessions may contain:
+
+- Energy costs
+- Session fees
+- Time-based fees
+- Blocking fees
+- Parking fees
+- Additional costs
+- Total charging cost
+- Effective charging price
+- Manual or automatic cost source
+- Verified costs
+- Receipt reference
+
+---
+
+# Home Charging Tariffs
+
+Charging sessions inside the configured Home zone can be priced automatically.
+
+Supported features:
+
+- Two seasonal tariffs
+- Configurable summer and winter periods
+- Automatic tariff selection
+- Automatic home charging cost calculation
+
+---
+
+# Energy Tracking
+
+Charging sessions distinguish between:
+
+- Energy stored in the battery
+- Energy billed by the charging provider
+- Charging losses
+- Effective charging price
 
 ---
 
