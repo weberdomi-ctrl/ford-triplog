@@ -284,6 +284,16 @@ available in the documentation.
 
 ------------------------------------------------------------------------
 
+## Dashboard Examples
+
+Ready-to-use Home Assistant dashboard examples are available in:
+
+`docs/examples/`
+
+Simply copy the content into a Home Assistant Markdown card and adjust the entity IDs to match your installation.
+
+------------------------------------------------------------------------
+
 # Roadmap
 
 ## Version 1.8
