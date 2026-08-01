@@ -4,8 +4,8 @@ Ford Triplog
 Coordinator
 
 Version: 1.8.5
-Phase: Automatic home charging costs - Phase 1
-Build: 001
+Phase: Automatic home charging costs - Phase 2
+Build: 002
 
 Changes:
 - Automatically rebuilds the affected Journey day after a trip is saved.
@@ -67,8 +67,14 @@ DEFAULT_CHARGING_SITE_COUNTRY = "CH"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
 
 CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
+CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
+CONF_HOME_TARIFF_WINTER_PRICE = "home_tariff_winter_price"
+CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
 
 DEFAULT_HOME_ZONE_ENTITY_ID = "zone.home"
+DEFAULT_HOME_TARIFF_SUMMER_PRICE = 0.28
+DEFAULT_HOME_TARIFF_WINTER_PRICE = 0.38
+DEFAULT_HOME_TARIFF_CURRENCY = "CHF"
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -115,6 +121,31 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             or DEFAULT_HOME_ZONE_ENTITY_ID
         ).strip()
+        self.home_tariff_summer_price = max(
+            0.0,
+            float(
+                config.get(
+                    CONF_HOME_TARIFF_SUMMER_PRICE,
+                    DEFAULT_HOME_TARIFF_SUMMER_PRICE,
+                )
+            ),
+        )
+        self.home_tariff_winter_price = max(
+            0.0,
+            float(
+                config.get(
+                    CONF_HOME_TARIFF_WINTER_PRICE,
+                    DEFAULT_HOME_TARIFF_WINTER_PRICE,
+                )
+            ),
+        )
+        self.home_tariff_currency = str(
+            config.get(
+                CONF_HOME_TARIFF_CURRENCY,
+                DEFAULT_HOME_TARIFF_CURRENCY,
+            )
+            or DEFAULT_HOME_TARIFF_CURRENCY
+        ).strip().upper()
 
         self.smart_trip_timeout = int(
         config.get("smart_trip_timeout", SMART_TRIP_TIMEOUT)
@@ -1478,19 +1509,92 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self,
         charge: Charge,
     ) -> bool:
-        """Prepare automatic home charging costs.
-
-        Phase 1 only validates configuration, location and overwrite
-        protection. Tariff selection and cost calculation follow in Phase 2.
-        """
+        """Apply the configured seasonal tariff to one home charge."""
 
         if not self._can_apply_home_charging_costs(charge):
             return False
 
+        start_time = self._parse_fordpass_datetime(
+            charge.start_time
+        )
+
+        if start_time is None:
+            _LOGGER.warning(
+                "Automatic home charging costs skipped for charge %s: "
+                "invalid start time",
+                charge.charge_id,
+            )
+            return False
+
+        local_start = dt_util.as_local(start_time)
+        month = local_start.month
+
+        if 4 <= month <= 9:
+            tariff_name = "summer"
+            tariff_price = self.home_tariff_summer_price
+        else:
+            tariff_name = "winter"
+            tariff_price = self.home_tariff_winter_price
+
+        energy = None
+        energy_source = None
+
+        if (
+            getattr(charge, "energy_billed_kwh", None) is not None
+            and float(charge.energy_billed_kwh) > 0
+        ):
+            energy = float(charge.energy_billed_kwh)
+            energy_source = "billed"
+        elif (
+            getattr(charge, "energy_added_kwh", None) is not None
+            and float(charge.energy_added_kwh) > 0
+        ):
+            energy = float(charge.energy_added_kwh)
+            energy_source = "added"
+
+        if energy is None:
+            _LOGGER.warning(
+                "Automatic home charging costs skipped for charge %s: "
+                "no usable energy value",
+                charge.charge_id,
+            )
+            return False
+
+        charge.energy_cost = round(
+            energy * tariff_price,
+            4,
+        )
+        charge.session_fee = 0.0
+        charge.time_fee = 0.0
+        charge.blocking_fee = 0.0
+        charge.parking_fee = 0.0
+        charge.other_cost = 0.0
+
+        charge.currency = self.home_tariff_currency
+        charge.cost_source = "home_tariff"
+        charge.cost_verified = True
+
+        # Preserve a manually supplied billed-energy source. Otherwise the
+        # vehicle-derived energy remains the calculation basis.
+        if (
+            getattr(charge, "energy_billed_kwh", None) is None
+            and energy_source == "added"
+        ):
+            charge.energy_billed_source = "estimated"
+
+        charge.recalculate_costs()
+
         _LOGGER.info(
-            "Charging session %s is eligible for automatic home "
-            "charging costs",
+            "Automatic home charging costs applied: charge=%s tariff=%s "
+            "energy=%.2f kWh source=%s price=%.4f %s/kWh total=%.2f %s",
             charge.charge_id,
+            tariff_name,
+            energy,
+            energy_source,
+            tariff_price,
+            self.home_tariff_currency,
+            charge.cost_total or 0.0,
+            self.home_tariff_currency,
         )
 
         return True
