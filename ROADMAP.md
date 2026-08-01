@@ -1,192 +1,113 @@
-# ROADMAP
+# Ford Triplog 1.8
 
-This roadmap provides an overview of planned features for future Ford Triplog releases.
+## 🚀 New Features
 
-The roadmap reflects the current development direction and may change as the project evolves.
+### ⚡ Charging Costs
 
+Ford Triplog now supports comprehensive charging cost tracking.
 
-# Version 1.7
+New capabilities include:
 
-## Planned Features
+- Manual charging cost editor
+- Automatic total cost calculation
+- Energy costs
+- Session fees
+- Time-based fees
+- Blocking fees
+- Parking fees
+- Additional costs
+- Cost verification flag
+- Receipt support
+- Currency support
 
-### Charging Cost Calculation
+### 🏠 Home Charging Tariffs
 
-Automatic charging cost calculations.
+Home charging costs can now be calculated automatically.
 
-Features include:
+Features:
 
-- Public charging costs
-- Home charging costs
-- Seasonal electricity tariffs
-- Configurable electricity prices
-- Cost statistics
-- Cost history
+- Two configurable seasonal tariffs
+- Summer tariff with configurable date range
+- Winter tariff with configurable date range
+- Automatic tariff selection based on charging date
+- Automatic cost calculation for charging sessions inside the configured Home zone
 
----
+### 🔋 Energy Tracking
 
-### Maintenance Tools
+Charging sessions now distinguish between:
 
-A new maintenance section in the integration options.
+- Energy stored in the vehicle
+- Energy billed by the charging provider
+- Charging losses
+- Effective charging price
+- Energy source tracking
 
-Planned actions:
+### 🚗 Journey Enhancements
 
-- Recalculate statistics
-- Rebuild indexes
-- Validate stored data
-- Maintenance utilities
+Journeys now include extended energy and charging statistics.
 
----
+New Journey attributes:
 
-### Additional Statistics
+- Charging cost total
+- Charging energy cost
+- Additional charging cost
+- Average charging price
+- Battery energy balance
+- Total energy flow
+- Battery energy delta
+- Billed charging energy
 
-Examples:
+### 📊 Dashboard Improvements
 
-- Monthly energy
-- Monthly distance
-- Average charging energy
-- Average charging duration
-- Charging frequency
-- Cost statistics
+The supplied Home Assistant dashboard examples have been extended with:
 
----
-
-# Version 1.8
-
-## Planned Features
-
-### Optional Database Backend
-
-Evaluate an optional database backend for large installations.
-
-Potential benefits:
-
-- Faster searches
-- Better scalability
-- Advanced statistics
-- Improved performance for very large histories
-
-JSON storage will remain the default storage method.
-
----
-
-### Advanced Reporting
-
-Potential reports include:
-
-- Monthly reports
-- Annual reports
-- Charging summaries
-- Driving summaries
-- Export functions
+- Journey charging costs
+- Average charging price
+- Billed charging energy
+- Improved Last Charge dashboard
+- Improved Journey dashboard
+- Unified charging location display
 
 ---
 
-# Future Ideas
+## ✨ Improvements
 
-The following ideas are under evaluation.
-
-## Multiple Vehicle Support
-
-Support multiple Ford vehicles within a single Home Assistant installation.
-
----
-
-## Vehicle Comparison
-
-Compare statistics between multiple vehicles.
-
-Examples:
-
-- Consumption
-- Distance
-- Charging costs
+- Unified charging location display
+- Home Assistant zones are preferred over charging site names
+- Improved Journey timeline
+- Improved Last Charge sensor
+- Richer Journey sensor attributes
+- Better charging location handling
+- Improved cost calculations
+- Cleaner dashboard presentation
 
 ---
 
-## Additional Export Formats
+## 🛠 Fixes
 
-Possible export formats:
-
-- CSV
-- JSON
-- Excel
-
----
-
-## Interactive History
-
-Improved history browsing.
-
-Potential features:
-
-- Search
-- Filters
-- Timeline
-- Map view
+- Correct average charging price calculation using billed energy when available
+- Improved Journey cost aggregation
+- Better handling of manually entered charging costs
+- Ignore invalid charging sessions during Journey processing
+- Improved handling of unavailable SOC values
+- Multiple stability improvements in charging session processing
 
 ---
 
-## Maintenance Tracking
+## 🌍 Translations
 
-Vehicle maintenance reminders.
+Updated translations for:
 
-Possible examples:
+- English
+- German
+- Polish
 
-- Tire changes
-- Brake inspections
-- Cabin filter replacement
-- Vehicle inspection
-
----
-
-## Advanced Energy Integration
-
-Closer integration with Home Assistant Energy.
-
-Potential additions:
-
-- Charging cost analysis
-- Energy dashboard enhancements
-- Household energy comparison
+including all charging cost related user interface elements.
 
 ---
 
-## Community Contributions
+## ❤️ Thank You
 
-Community feedback plays an important role in shaping future releases.
+Thank you to everyone testing Ford Triplog and providing ideas and feedback.
 
-Feature requests and suggestions are welcome through GitHub Issues.
-
----
-
-# Development Principles
-
-Future development follows these principles:
-
-- Local-first architecture
-- Privacy by design
-- Native Home Assistant integration
-- Stable entity names
-- Backward compatibility whenever possible
-- Human-readable storage
-- Comprehensive documentation
-
----
-
-# Version Overview
-
-| Version | Status | Focus |
-|---------|--------|-------|
-| 1.5 | Released | Charging locations, Smart Trip, documentation |
-| 1.6 | Planned | Automation, charging database improvements, dashboards |
-| 1.7 | Planned | Charging costs, maintenance, advanced statistics |
-| 1.8 | Planned | Optional database backend, reporting |
-| Future | Research | Multi-vehicle support, exports, maintenance tracking |
-
----
-
-# Disclaimer
-
-The roadmap represents the current development direction of Ford Triplog.
-
-Features, priorities and release versions may change based on community feedback, Home Assistant changes and available development time.
+Your reports and suggestions continue to shape the development of the integration.
