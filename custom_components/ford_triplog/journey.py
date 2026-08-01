@@ -5,8 +5,8 @@ Track your Ford.
 
 Journey data model.
 
-Version: 1.7.3
-Release: 1.7.3
+Version: 1.8.0
+Release: 1.8.0 - Step 1
 """
 
 from __future__ import annotations
@@ -281,6 +281,12 @@ class FordTriplogJourney:
     energy_charged_kwh: float = 0.0
     average_consumption_kwh_100km: float = 0.0
 
+    start_soc: float | None = None
+    end_soc: float | None = None
+    soc_delta: float = 0.0
+    soc_used: float = 0.0
+    soc_charged: float = 0.0
+
     schema: int = JOURNEY_SCHEMA_VERSION
     generator: str = GENERATOR
     version: str = VERSION
@@ -324,6 +330,11 @@ class FordTriplogJourney:
             0.0,
             _as_float(self.energy_charged_kwh),
         )
+        self.start_soc = _as_optional_float(self.start_soc)
+        self.end_soc = _as_optional_float(self.end_soc)
+        self.soc_delta = _as_float(self.soc_delta)
+        self.soc_used = max(0.0, _as_float(self.soc_used))
+        self.soc_charged = max(0.0, _as_float(self.soc_charged))
 
         normalized_items: list[JourneyItem] = []
         for item in self.items:
@@ -499,6 +510,7 @@ class FordTriplogJourney:
 
         self.date = self.date or _date_from_datetime(self.start_time)
 
+        self._recalculate_soc_values()
         self.total_duration_seconds = self._calculate_total_duration()
 
         if self.distance_km > 0:
@@ -512,6 +524,9 @@ class FordTriplogJourney:
         self.distance_km = round(self.distance_km, 3)
         self.energy_used_kwh = round(self.energy_used_kwh, 3)
         self.energy_charged_kwh = round(self.energy_charged_kwh, 3)
+        self.soc_delta = round(self.soc_delta, 3)
+        self.soc_used = round(self.soc_used, 3)
+        self.soc_charged = round(self.soc_charged, 3)
 
     def is_same_day(self) -> bool:
         """Return whether the journey starts and ends on the same date."""
@@ -557,6 +572,11 @@ class FordTriplogJourney:
             "average_consumption_kwh_100km": (
                 self.average_consumption_kwh_100km
             ),
+            "start_soc": self.start_soc,
+            "end_soc": self.end_soc,
+            "soc_delta": self.soc_delta,
+            "soc_used": self.soc_used,
+            "soc_charged": self.soc_charged,
             "generator": self.generator,
             "version": self.version,
         }
@@ -609,6 +629,11 @@ class FordTriplogJourney:
             average_consumption_kwh_100km=_as_float(
                 data.get("average_consumption_kwh_100km")
             ),
+            start_soc=_as_optional_float(data.get("start_soc")),
+            end_soc=_as_optional_float(data.get("end_soc")),
+            soc_delta=_as_float(data.get("soc_delta")),
+            soc_used=_as_float(data.get("soc_used")),
+            soc_charged=_as_float(data.get("soc_charged")),
             generator=str(data.get("generator", GENERATOR)),
             version=str(data.get("version", VERSION)),
         )
@@ -673,6 +698,46 @@ class FordTriplogJourney:
 
         if item.end_time:
             self.end_time = item.end_time
+
+    def _recalculate_soc_values(self) -> None:
+        """Recalculate journey-wide SOC values from ordered items."""
+
+        first_soc: float | None = None
+        last_soc: float | None = None
+        soc_used = 0.0
+        soc_charged = 0.0
+
+        for item in self.items:
+            if first_soc is None:
+                if item.start_soc is not None:
+                    first_soc = item.start_soc
+                elif item.end_soc is not None:
+                    first_soc = item.end_soc
+
+            if item.end_soc is not None:
+                last_soc = item.end_soc
+            elif item.start_soc is not None:
+                last_soc = item.start_soc
+
+            if item.start_soc is None or item.end_soc is None:
+                continue
+
+            soc_change = item.end_soc - item.start_soc
+
+            if item.item_type == _ITEM_TRIP and soc_change < 0:
+                soc_used += abs(soc_change)
+            elif item.item_type == _ITEM_CHARGE and soc_change > 0:
+                soc_charged += soc_change
+
+        self.start_soc = first_soc
+        self.end_soc = last_soc
+        self.soc_used = soc_used
+        self.soc_charged = soc_charged
+
+        if first_soc is not None and last_soc is not None:
+            self.soc_delta = last_soc - first_soc
+        else:
+            self.soc_delta = 0.0
 
     def _calculate_total_duration(self) -> int:
         """Calculate elapsed journey duration from start to end."""
