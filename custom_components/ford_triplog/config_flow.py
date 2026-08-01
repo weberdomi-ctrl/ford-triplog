@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.6.1
-Phase: 4.0
+Version: 1.8.2
+Phase: Charge Manager GUI
 Build: 01
-Release: 1.6.1c
+Release: 1.8.2
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -92,6 +92,14 @@ CONF_USER_CHARGING_SITE_NOTES = "notes"
 CONF_USER_CHARGING_SITE_ACTION = "action"
 USER_CHARGING_SITE_NEW = "__new__"
 USER_CHARGING_SITE_PENDING = "__pending__"
+
+CONF_CHARGE_SELECTION = "charge_selection"
+CONF_CHARGE_COST_TOTAL = "cost_total"
+CONF_CHARGE_CURRENCY = "currency"
+CONF_CHARGE_ACTION = "action"
+
+CHARGE_ACTION_SAVE = "save"
+CHARGE_ACTION_CLEAR = "clear"
 
 
 class FordTriplogConfigFlow(
@@ -189,6 +197,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_pending_charging_site: dict[str, Any] | None = None
         self._charging_site_translations: dict[str, str] | None = None
         self._journey_result: dict[str, str] = {}
+        self._selected_charge_id: str | None = None
+        self._charge_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -203,8 +213,367 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "user_charging_sites",
                 "download_charging_sites",
                 "journey_management",
+                "charge_management",
             ],
         )
+
+
+    def _get_charge_manager(self):
+        """Return the Charge Manager for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        manager = runtime_data.get("charge_manager")
+
+        if manager is None:
+            raise HomeAssistantError(
+                "Charge Manager is not initialized"
+            )
+
+        return manager
+
+    async def async_step_charge_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one archived charging session."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            charges = await self._get_charge_manager().async_get_charges()
+        except (HomeAssistantError, OSError, ValueError):
+            charges = []
+            errors["base"] = "charge_load_failed"
+
+        if not charges and not errors:
+            errors["base"] = "charge_none_available"
+
+        if user_input is not None and not errors:
+            self._selected_charge_id = str(
+                user_input[CONF_CHARGE_SELECTION]
+            ).strip()
+            return await self.async_step_charge_cost_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(charge.charge_id),
+                label=self._format_charge_label(charge),
+            )
+            for charge in charges
+            if charge.charge_id
+        ]
+
+        schema: dict[Any, Any] = {}
+
+        if options:
+            schema[
+                vol.Required(
+                    CONF_CHARGE_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="charge_management",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={
+                "charge_count": str(len(options)),
+            },
+        )
+
+    async def async_step_charge_cost_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Edit manual costs for the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        manager = self._get_charge_manager()
+        charge = await manager.async_get_charge(
+            self._selected_charge_id
+        )
+
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_cost_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            action = str(
+                user_input.get(
+                    CONF_CHARGE_ACTION,
+                    CHARGE_ACTION_SAVE,
+                )
+            )
+
+            try:
+                if action == CHARGE_ACTION_CLEAR:
+                    result = await manager.async_clear_cost(
+                        self._selected_charge_id
+                    )
+                else:
+                    result = await manager.async_set_cost(
+                        self._selected_charge_id,
+                        cost_total=user_input[
+                            CONF_CHARGE_COST_TOTAL
+                        ],
+                        currency=user_input[
+                            CONF_CHARGE_CURRENCY
+                        ],
+                    )
+            except (HomeAssistantError, ValueError):
+                errors["base"] = "charge_cost_save_failed"
+            else:
+                if not result.updated:
+                    errors["base"] = (
+                        "charge_not_found"
+                        if result.reason == "charge_not_found"
+                        else "charge_cost_save_failed"
+                    )
+                else:
+                    saved_charge = result.charge
+                    self._charge_result = {
+                        "charge_id": result.charge_id,
+                        "action": result.action,
+                        "cost_total": self._format_optional_number(
+                            getattr(saved_charge, "cost_total", None),
+                            2,
+                        ),
+                        "currency": str(
+                            getattr(saved_charge, "currency", None) or "—"
+                        ),
+                        "price_per_kwh": self._format_optional_number(
+                            getattr(
+                                saved_charge,
+                                "price_per_kwh",
+                                None,
+                            ),
+                            4,
+                        ),
+                    }
+                    self._selected_charge_id = None
+                    return await self.async_step_charge_cost_result()
+
+        default_cost = (
+            float(charge.cost_total)
+            if charge.cost_total is not None
+            else 0.0
+        )
+        default_currency = str(charge.currency or "CHF").upper()
+
+        return self.async_show_form(
+            step_id="charge_cost_edit",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGE_COST_TOTAL,
+                        default=default_cost,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_CHARGE_CURRENCY,
+                        default=default_currency,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                "CHF",
+                                "EUR",
+                                "GBP",
+                                "USD",
+                            ],
+                            custom_value=True,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_CHARGE_ACTION,
+                        default=CHARGE_ACTION_SAVE,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=CHARGE_ACTION_SAVE,
+                                    label="Save",
+                                ),
+                                selector.SelectOptionDict(
+                                    value=CHARGE_ACTION_CLEAR,
+                                    label="Clear costs",
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_id": str(charge.charge_id or ""),
+                "date": self._format_charge_datetime(
+                    charge.start_time
+                ),
+                "location": self._charge_location(charge),
+                "energy_kwh": self._format_optional_number(
+                    charge.energy_added_kwh,
+                    2,
+                ),
+                "start_soc": self._format_optional_number(
+                    charge.start_soc,
+                    1,
+                ),
+                "end_soc": self._format_optional_number(
+                    charge.end_soc,
+                    1,
+                ),
+                "current_cost": self._format_optional_number(
+                    charge.cost_total,
+                    2,
+                ),
+                "current_currency": str(
+                    charge.currency or "—"
+                ),
+                "current_price_per_kwh": (
+                    self._format_optional_number(
+                        charge.price_per_kwh,
+                        4,
+                    )
+                ),
+            },
+        )
+
+    async def async_step_charge_cost_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the result of a charging-cost operation."""
+
+        if user_input is not None:
+            return await self.async_step_charge_management()
+
+        return self.async_show_form(
+            step_id="charge_cost_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._charge_result,
+        )
+
+    @staticmethod
+    def _format_charge_label(charge: Any) -> str:
+        """Return a compact one-line label for a charging session."""
+
+        date_text = FordTriplogOptionsFlow._format_charge_datetime(
+            getattr(charge, "start_time", None)
+        )
+        location = FordTriplogOptionsFlow._charge_location(charge)
+        energy = FordTriplogOptionsFlow._format_optional_number(
+            getattr(charge, "energy_added_kwh", None),
+            2,
+        )
+
+        cost_total = getattr(charge, "cost_total", None)
+        currency = getattr(charge, "currency", None)
+
+        parts = [
+            date_text,
+            location,
+            f"{energy} kWh" if energy != "—" else None,
+        ]
+
+        if cost_total is not None:
+            parts.append(
+                f"{FordTriplogOptionsFlow._format_optional_number(cost_total, 2)} "
+                f"{currency or ''}".strip()
+            )
+
+        return " · ".join(
+            str(part)
+            for part in parts
+            if part
+        )
+
+    @staticmethod
+    def _format_charge_datetime(value: Any) -> str:
+        """Return a compact local date and time."""
+
+        if not value:
+            return "—"
+
+        try:
+            timestamp = datetime.fromisoformat(
+                str(value).replace("Z", "+00:00")
+            )
+        except (TypeError, ValueError):
+            return str(value)
+
+        return timestamp.astimezone().strftime(
+            "%d.%m.%Y %H:%M"
+        )
+
+    @staticmethod
+    def _charge_location(charge: Any) -> str:
+        """Return the best available charging location label."""
+
+        for attribute in (
+            "charging_site_name",
+            "charging_site_brand",
+            "charging_site_operator",
+            "charging_site_network",
+        ):
+            value = getattr(charge, attribute, None)
+            if value:
+                return str(value)
+
+        address = getattr(charge, "start_address", None)
+
+        if isinstance(address, dict):
+            for key in ("display", "display_name", "formatted"):
+                value = address.get(key)
+                if value:
+                    return str(value)
+
+        if address:
+            return str(address)
+
+        return "Unknown charging location"
+
+    @staticmethod
+    def _format_optional_number(
+        value: Any,
+        digits: int,
+    ) -> str:
+        """Format an optional numeric value."""
+
+        if value is None:
+            return "—"
+
+        try:
+            return f"{float(value):.{digits}f}"
+        except (TypeError, ValueError):
+            return "—"
 
 
     def _get_journey_rebuilder(self):
