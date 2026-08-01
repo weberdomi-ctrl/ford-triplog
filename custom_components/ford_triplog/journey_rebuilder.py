@@ -5,8 +5,8 @@ Track your Ford.
 
 Rebuild and update daily journeys from archived trips and charges.
 
-Version: 1.6.1
-Release: 1.6.1c
+Version: 1.8.0
+Release: 1.8.0 - Step 3
 """
 
 from __future__ import annotations
@@ -137,12 +137,14 @@ class FordTriplogJourneyRebuilder:
         journey_storage: FordTriplogJourneyStorage,
         *,
         progress_callback: ProgressCallback | None = None,
+        battery_capacity_kwh: float | None = None,
     ) -> None:
         """Initialize journey maintenance."""
 
         self.source_storage = source_storage
         self.journey_storage = journey_storage
         self.progress_callback = progress_callback
+        self.battery_capacity_kwh = battery_capacity_kwh
         self.hass = journey_storage.hass
 
         self._lock = asyncio.Lock()
@@ -344,6 +346,7 @@ class FordTriplogJourneyRebuilder:
             manager = FordTriplogJourneyManager(
                 self.source_storage.hass,
                 self.journey_storage,
+                battery_capacity_kwh=self.battery_capacity_kwh,
             )
             await manager.async_setup()
 
