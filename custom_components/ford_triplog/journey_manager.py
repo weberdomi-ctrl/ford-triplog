@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.8.0
-Release: 1.8.0 - Step 3
+Version: 1.8.6
+Release: 1.8.6 - Journey charging costs and filtering
 """
 
 from __future__ import annotations
@@ -389,6 +389,17 @@ class FordTriplogJourneyManager:
             self.current_journey.journey_id if self.current_journey else None,
             self._item_summary(self.current_journey),
         )
+
+        if not self._is_valid_charge_for_journey(data):
+            _LOGGER.info(
+                "Journey ignored empty charging session %s",
+                charge_id,
+            )
+            return JourneyUpdateResult(
+                action="ignored",
+                journey=self.current_journey,
+                reason="invalid_empty_charge",
+            )
 
         self._charge_data[charge_id] = data
 
@@ -1603,6 +1614,47 @@ class FordTriplogJourneyManager:
 
         return str(value).strip() or None
 
+    def _is_valid_charge_for_journey(
+        self,
+        charge: Mapping[str, Any],
+    ) -> bool:
+        """Return whether a charging session contains useful data."""
+
+        energy_added = self._float_value(
+            charge,
+            "energy_added_kwh",
+        )
+        energy_billed = self._float_value(
+            charge,
+            "energy_billed_kwh",
+        )
+        cost_total = self._float_value(
+            charge,
+            "cost_total",
+        )
+
+        start_soc = self._optional_float_value(
+            charge,
+            "start_soc",
+        )
+        end_soc = self._optional_float_value(
+            charge,
+            "end_soc",
+        )
+
+        soc_added = 0.0
+        if start_soc is not None and end_soc is not None:
+            soc_added = max(0.0, end_soc - start_soc)
+
+        return any(
+            (
+                energy_added > 0,
+                energy_billed > 0,
+                cost_total > 0,
+                soc_added > 0,
+            )
+        )
+
     def _add_trip(
         self,
         journey: FordTriplogJourney,
@@ -1696,6 +1748,32 @@ class FordTriplogJourneyManager:
             latitude=latitude,
             longitude=longitude,
             location_source=location_source,
+            cost_total=self._optional_float_value(
+                charge,
+                "cost_total",
+            ),
+            energy_cost=self._optional_float_value(
+                charge,
+                "energy_cost",
+            ),
+            energy_price_per_kwh=self._optional_float_value(
+                charge,
+                "energy_price_per_kwh",
+            ),
+            effective_price_per_kwh=self._optional_float_value(
+                charge,
+                "effective_price_per_kwh",
+            ),
+            currency=(
+                str(charge.get("currency")).strip()
+                if charge.get("currency") is not None
+                else None
+            ),
+            cost_source=(
+                str(charge.get("cost_source")).strip()
+                if charge.get("cost_source") is not None
+                else None
+            ),
         )
 
     def _remove_cached_source_data(
