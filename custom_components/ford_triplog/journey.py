@@ -6,7 +6,7 @@ Track your Ford.
 Journey data model.
 
 Version: 1.8.6
-Release: 1.8.6 - Journey charging costs
+Release: 1.8.6 - Journey billed-energy price fix
 """
 
 from __future__ import annotations
@@ -125,6 +125,7 @@ class JourneyItem:
     longitude: float | None = None
     location_source: str | None = None
 
+    energy_billed_kwh: float | None = None
     cost_total: float | None = None
     energy_cost: float | None = None
     energy_price_per_kwh: float | None = None
@@ -181,6 +182,9 @@ class JourneyItem:
         self.latitude = _as_optional_float(self.latitude)
         self.longitude = _as_optional_float(self.longitude)
 
+        self.energy_billed_kwh = _as_optional_float(
+            self.energy_billed_kwh
+        )
         self.cost_total = _as_optional_float(self.cost_total)
         self.energy_cost = _as_optional_float(self.energy_cost)
         self.energy_price_per_kwh = _as_optional_float(
@@ -220,6 +224,7 @@ class JourneyItem:
             "latitude": self.latitude,
             "longitude": self.longitude,
             "location_source": self.location_source,
+            "energy_billed_kwh": self.energy_billed_kwh,
             "cost_total": self.cost_total,
             "energy_cost": self.energy_cost,
             "energy_price_per_kwh": self.energy_price_per_kwh,
@@ -263,6 +268,7 @@ class JourneyItem:
             latitude=data.get("latitude"),
             longitude=data.get("longitude"),
             location_source=data.get("location_source"),
+            energy_billed_kwh=data.get("energy_billed_kwh"),
             cost_total=data.get("cost_total"),
             energy_cost=data.get("energy_cost"),
             energy_price_per_kwh=data.get(
@@ -536,6 +542,7 @@ class FordTriplogJourney:
         latitude: float | None = None,
         longitude: float | None = None,
         location_source: str | None = None,
+        energy_billed_kwh: float | None = None,
         cost_total: float | None = None,
         energy_cost: float | None = None,
         energy_price_per_kwh: float | None = None,
@@ -570,6 +577,7 @@ class FordTriplogJourney:
                 latitude=latitude,
                 longitude=longitude,
                 location_source=location_source,
+                energy_billed_kwh=energy_billed_kwh,
                 cost_total=cost_total,
                 energy_cost=energy_cost,
                 energy_price_per_kwh=energy_price_per_kwh,
@@ -937,6 +945,7 @@ class FordTriplogJourney:
 
         total_cost = 0.0
         energy_cost = 0.0
+        pricing_energy_kwh = 0.0
         currencies: set[str] = set()
 
         for item in self.items:
@@ -949,6 +958,15 @@ class FordTriplogJourney:
             if item.energy_cost is not None:
                 energy_cost += max(0.0, item.energy_cost)
 
+            if (
+                item.energy_billed_kwh is not None
+                and item.energy_billed_kwh > 0
+            ):
+                pricing_energy_kwh += item.energy_billed_kwh
+            elif item.energy_kwh is not None and item.energy_kwh > 0:
+                # Backward-compatible fallback when no billed energy exists.
+                pricing_energy_kwh += item.energy_kwh
+
             if item.currency:
                 currencies.add(item.currency.upper())
 
@@ -959,9 +977,9 @@ class FordTriplogJourney:
             total_cost - energy_cost,
         )
 
-        if self.energy_charged_kwh > 0:
+        if pricing_energy_kwh > 0:
             self.average_charging_price_per_kwh = (
-                total_cost / self.energy_charged_kwh
+                total_cost / pricing_energy_kwh
             )
         else:
             self.average_charging_price_per_kwh = 0.0
