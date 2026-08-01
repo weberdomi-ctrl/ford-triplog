@@ -6,7 +6,7 @@ Track your Ford.
 Journey data model.
 
 Version: 1.8.0
-Release: 1.8.0 - Step 1.1
+Release: 1.8.0 - Step 2
 """
 
 from __future__ import annotations
@@ -288,6 +288,9 @@ class FordTriplogJourney:
     soc_charged: float = 0.0
     soc_adjustment: float = 0.0
 
+    battery_energy_balance_kwh: float = 0.0
+    total_energy_flow_kwh: float = 0.0
+
     schema: int = JOURNEY_SCHEMA_VERSION
     generator: str = GENERATOR
     version: str = VERSION
@@ -337,6 +340,13 @@ class FordTriplogJourney:
         self.soc_used = max(0.0, _as_float(self.soc_used))
         self.soc_charged = max(0.0, _as_float(self.soc_charged))
         self.soc_adjustment = _as_float(self.soc_adjustment)
+        self.battery_energy_balance_kwh = _as_float(
+            self.battery_energy_balance_kwh
+        )
+        self.total_energy_flow_kwh = max(
+            0.0,
+            _as_float(self.total_energy_flow_kwh),
+        )
 
         normalized_items: list[JourneyItem] = []
         for item in self.items:
@@ -513,6 +523,7 @@ class FordTriplogJourney:
         self.date = self.date or _date_from_datetime(self.start_time)
 
         self._recalculate_soc_values()
+        self._recalculate_energy_balance()
         self.total_duration_seconds = self._calculate_total_duration()
 
         if self.distance_km > 0:
@@ -530,6 +541,14 @@ class FordTriplogJourney:
         self.soc_used = round(self.soc_used, 3)
         self.soc_charged = round(self.soc_charged, 3)
         self.soc_adjustment = round(self.soc_adjustment, 3)
+        self.battery_energy_balance_kwh = round(
+            self.battery_energy_balance_kwh,
+            3,
+        )
+        self.total_energy_flow_kwh = round(
+            self.total_energy_flow_kwh,
+            3,
+        )
 
     def is_same_day(self) -> bool:
         """Return whether the journey starts and ends on the same date."""
@@ -581,6 +600,10 @@ class FordTriplogJourney:
             "soc_used": self.soc_used,
             "soc_charged": self.soc_charged,
             "soc_adjustment": self.soc_adjustment,
+            "battery_energy_balance_kwh": (
+                self.battery_energy_balance_kwh
+            ),
+            "total_energy_flow_kwh": self.total_energy_flow_kwh,
             "generator": self.generator,
             "version": self.version,
         }
@@ -639,6 +662,12 @@ class FordTriplogJourney:
             soc_used=_as_float(data.get("soc_used")),
             soc_charged=_as_float(data.get("soc_charged")),
             soc_adjustment=_as_float(data.get("soc_adjustment")),
+            battery_energy_balance_kwh=_as_float(
+                data.get("battery_energy_balance_kwh")
+            ),
+            total_energy_flow_kwh=_as_float(
+                data.get("total_energy_flow_kwh")
+            ),
             generator=str(data.get("generator", GENERATOR)),
             version=str(data.get("version", VERSION)),
         )
@@ -754,6 +783,16 @@ class FordTriplogJourney:
             self.soc_delta = last_soc - first_soc
         else:
             self.soc_delta = 0.0
+
+    def _recalculate_energy_balance(self) -> None:
+        """Recalculate journey-wide energy flow values."""
+
+        self.battery_energy_balance_kwh = (
+            self.energy_charged_kwh - self.energy_used_kwh
+        )
+        self.total_energy_flow_kwh = (
+            self.energy_charged_kwh + self.energy_used_kwh
+        )
 
     def _calculate_total_duration(self) -> int:
         """Calculate elapsed journey duration from start to end."""
