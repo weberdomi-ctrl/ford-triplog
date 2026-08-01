@@ -3,8 +3,8 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.7.2
-Phase: Issue #15
+Version: 1.8.5
+Phase: Automatic home charging costs - Phase 1
 Build: 001
 
 Changes:
@@ -44,6 +44,7 @@ from .charging_site_lookup import (
 )
 
 from .const import (
+    CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
     DEFAULT_LAST_CHARGE_STABLE_TIME,
@@ -64,6 +65,10 @@ CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
 CHARGING_SITE_GENERATED_DIRECTORY = "generated"
 DEFAULT_CHARGING_SITE_COUNTRY = "CH"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
+
+CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
+
+DEFAULT_HOME_ZONE_ENTITY_ID = "zone.home"
 
 
 class FordTriplogCoordinator(DataUpdateCoordinator):
@@ -98,6 +103,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         # Battery capacity (kWh)
         self.battery_capacity = float(config.get("battery_capacity_kwh", 77))
+
+        # Automatic home charging cost infrastructure.
+        self.home_tariff_enabled = bool(
+            config.get(CONF_HOME_TARIFF_ENABLED, False)
+        )
+        self.home_zone_entity_id = str(
+            config.get(
+                CONF_JOURNEY_HOME_ZONE,
+                DEFAULT_HOME_ZONE_ENTITY_ID,
+            )
+            or DEFAULT_HOME_ZONE_ENTITY_ID
+        ).strip()
 
         self.smart_trip_timeout = int(
         config.get("smart_trip_timeout", SMART_TRIP_TIMEOUT)
@@ -1355,6 +1372,129 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         _LOGGER.info("Trip saved successfully")
 
 
+    def _is_charge_in_home_zone(
+        self,
+        charge: Charge,
+    ) -> bool:
+        """Return whether the charging session is inside the home zone."""
+
+        zone_state = self.hass.states.get(
+            self.home_zone_entity_id
+        )
+
+        if zone_state is None:
+            _LOGGER.warning(
+                "Home charging cost check skipped: zone %s not found",
+                self.home_zone_entity_id,
+            )
+            return False
+
+        zone_latitude = zone_state.attributes.get("latitude")
+        zone_longitude = zone_state.attributes.get("longitude")
+        zone_radius = zone_state.attributes.get("radius", 100)
+
+        charge_latitude = (
+            charge.start_latitude
+            if charge.start_latitude is not None
+            else charge.end_latitude
+        )
+        charge_longitude = (
+            charge.start_longitude
+            if charge.start_longitude is not None
+            else charge.end_longitude
+        )
+
+        if any(
+            value is None
+            for value in (
+                zone_latitude,
+                zone_longitude,
+                charge_latitude,
+                charge_longitude,
+            )
+        ):
+            _LOGGER.debug(
+                "Home charging cost check skipped for charge %s: "
+                "zone or charge coordinates unavailable",
+                charge.charge_id,
+            )
+            return False
+
+        try:
+            distance = self._distance_meters(
+                float(zone_latitude),
+                float(zone_longitude),
+                float(charge_latitude),
+                float(charge_longitude),
+            )
+            radius = max(0.0, float(zone_radius))
+        except (TypeError, ValueError):
+            _LOGGER.warning(
+                "Home charging cost check skipped for charge %s: "
+                "invalid zone or charge coordinates",
+                charge.charge_id,
+            )
+            return False
+
+        is_home = distance <= radius
+
+        _LOGGER.debug(
+            "Home zone check for charge %s: zone=%s distance=%.1fm "
+            "radius=%.1fm result=%s",
+            charge.charge_id,
+            self.home_zone_entity_id,
+            distance,
+            radius,
+            is_home,
+        )
+
+        return is_home
+
+    def _can_apply_home_charging_costs(
+        self,
+        charge: Charge,
+    ) -> bool:
+        """Return whether automatic home costs may be applied."""
+
+        if not self.home_tariff_enabled:
+            return False
+
+        cost_source = str(
+            getattr(charge, "cost_source", "none") or "none"
+        ).strip().lower()
+
+        if cost_source in {"manual", "ocr"}:
+            _LOGGER.info(
+                "Automatic home charging costs skipped for charge %s: "
+                "protected cost source %s",
+                charge.charge_id,
+                cost_source,
+            )
+            return False
+
+        return self._is_charge_in_home_zone(charge)
+
+    async def _apply_home_charging_costs(
+        self,
+        charge: Charge,
+    ) -> bool:
+        """Prepare automatic home charging costs.
+
+        Phase 1 only validates configuration, location and overwrite
+        protection. Tariff selection and cost calculation follow in Phase 2.
+        """
+
+        if not self._can_apply_home_charging_costs(charge):
+            return False
+
+        _LOGGER.info(
+            "Charging session %s is eligible for automatic home "
+            "charging costs",
+            charge.charge_id,
+        )
+
+        return True
+
     async def _finalize_charge(self, state):
         """Finalize and save charging session exactly once."""
 
@@ -1410,6 +1550,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             # from the value shown in the FordPass app.
             charge["energy_added_kwh"] = energy_calculated
             charge["energy_source"] = "calculated"
+
+            # Keep the Charge object synchronized for automatic cost logic.
+            charge_obj.energy_added_kwh_calculated = energy_calculated
+            charge_obj.energy_added_kwh_fordpass = energy_fordpass
+            charge_obj.energy_added_kwh = energy_calculated
+            charge_obj.energy_source = "calculated"
+
+            await self._apply_home_charging_costs(charge_obj)
+            charge = charge_obj.to_dict()
 
             archive_saved = await self.storage.save_charge(charge)
             cache_saved = await self.storage.save_last_charge(charge)
