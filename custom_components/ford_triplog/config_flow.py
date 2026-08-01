@@ -39,6 +39,7 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.util import dt as dt_util
 
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
@@ -484,41 +485,41 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
     @staticmethod
     def _format_charge_label(charge: Any) -> str:
-        """Return a compact one-line label for a charging session."""
+        """Return a short one-line label for a charging session."""
 
         date_text = FordTriplogOptionsFlow._format_charge_datetime(
             getattr(charge, "start_time", None)
         )
         location = FordTriplogOptionsFlow._charge_location(charge)
-        energy = FordTriplogOptionsFlow._format_optional_number(
-            getattr(charge, "energy_added_kwh", None),
-            2,
-        )
-
-        cost_total = getattr(charge, "cost_total", None)
-        currency = getattr(charge, "currency", None)
 
         parts = [
             date_text,
             location,
-            f"{energy} kWh" if energy != "—" else None,
         ]
 
-        if cost_total is not None:
-            parts.append(
-                f"{FordTriplogOptionsFlow._format_optional_number(cost_total, 2)} "
-                f"{currency or ''}".strip()
-            )
+        energy = getattr(charge, "energy_added_kwh", None)
+        try:
+            energy_value = float(energy) if energy is not None else None
+        except (TypeError, ValueError):
+            energy_value = None
 
-        return " · ".join(
-            str(part)
-            for part in parts
-            if part
-        )
+        if energy_value is not None and energy_value > 0:
+            parts.append(f"{energy_value:.2f} kWh")
+
+        cost_total = getattr(charge, "cost_total", None)
+        currency = str(getattr(charge, "currency", None) or "").strip()
+
+        if cost_total is not None:
+            try:
+                parts.append(f"{float(cost_total):.2f} {currency}".strip())
+            except (TypeError, ValueError):
+                pass
+
+        return " · ".join(part for part in parts if part)
 
     @staticmethod
     def _format_charge_datetime(value: Any) -> str:
-        """Return a compact local date and time."""
+        """Return a compact Home Assistant local date and time."""
 
         if not value:
             return "—"
@@ -530,13 +531,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
         except (TypeError, ValueError):
             return str(value)
 
-        return timestamp.astimezone().strftime(
-            "%d.%m.%Y %H:%M"
-        )
+        if timestamp.tzinfo is None:
+            timestamp = dt_util.as_local(
+                timestamp.replace(tzinfo=dt_util.UTC)
+            )
+        else:
+            timestamp = dt_util.as_local(timestamp)
+
+        return timestamp.strftime("%d.%m.%Y %H:%M")
 
     @staticmethod
     def _charge_location(charge: Any) -> str:
-        """Return the best available charging location label."""
+        """Return a short charging location label."""
 
         for attribute in (
             "charging_site_name",
@@ -546,20 +552,53 @@ class FordTriplogOptionsFlow(OptionsFlow):
         ):
             value = getattr(charge, attribute, None)
             if value:
-                return str(value)
+                normalized = str(value).strip()
+                if normalized:
+                    return normalized
 
         address = getattr(charge, "start_address", None)
 
         if isinstance(address, dict):
+            road = str(
+                address.get("road")
+                or address.get("street")
+                or ""
+            ).strip()
+            house_number = str(
+                address.get("house_number")
+                or ""
+            ).strip()
+            city = str(
+                address.get("city")
+                or address.get("town")
+                or address.get("village")
+                or address.get("municipality")
+                or ""
+            ).strip()
+
+            street_line = " ".join(
+                part
+                for part in (road, house_number)
+                if part
+            )
+
+            compact = ", ".join(
+                part
+                for part in (street_line, city)
+                if part
+            )
+            if compact:
+                return compact
+
             for key in ("display", "display_name", "formatted"):
                 value = address.get(key)
                 if value:
-                    return str(value)
+                    return str(value).split(",", 1)[0].strip()
 
         if address:
-            return str(address)
+            return str(address).split(",", 1)[0].strip()
 
-        return "Unknown charging location"
+        return "Unbekannter Ladeort"
 
     @staticmethod
     def _format_optional_number(
