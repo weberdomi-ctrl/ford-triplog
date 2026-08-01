@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.7.3
+Version: 1.8.0 - Step 1
 """
 
 from __future__ import annotations
@@ -265,6 +265,11 @@ class FordTriplogLastJourneySensor(SensorEntity):
             ),
             "energy_used_kwh": journey.energy_used_kwh,
             "energy_charged_kwh": journey.energy_charged_kwh,
+            "start_soc": journey.start_soc,
+            "end_soc": journey.end_soc,
+            "soc_delta": journey.soc_delta,
+            "soc_used": journey.soc_used,
+            "soc_charged": journey.soc_charged,
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
@@ -785,6 +790,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "charge_count": journey.charge_count,
             "energy_used_kwh": journey.energy_used_kwh,
             "energy_charged_kwh": journey.energy_charged_kwh,
+            "start_soc": journey.start_soc,
+            "end_soc": journey.end_soc,
+            "soc_delta": journey.soc_delta,
+            "soc_used": journey.soc_used,
+            "soc_charged": journey.soc_charged,
             "average_consumption_kwh_100km": (
                 journey.average_consumption_kwh_100km
             ),
