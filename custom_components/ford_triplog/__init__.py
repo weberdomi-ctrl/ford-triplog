@@ -41,6 +41,7 @@ from .progress_manager import ProgressManager
 from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
+from .charge_manager import FordTriplogChargeManager
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -120,6 +121,13 @@ async def async_setup_entry(
 
     await journey_manager.async_setup()
 
+    charge_manager = FordTriplogChargeManager(
+        hass=hass,
+        storage=storage,
+    )
+
+    await charge_manager.async_setup()
+
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,
         journey_storage=journey_storage,
@@ -153,6 +161,7 @@ async def async_setup_entry(
         "journey_storage": journey_storage,
         "journey_manager": journey_manager,
         "journey_rebuilder": journey_rebuilder,
+        "charge_manager": charge_manager,
     }
 
     entry.async_on_unload(
