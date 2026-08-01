@@ -3,8 +3,8 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.8.0
-Release: 1.8.0 - Charging costs step 1
+Version: 1.8.4
+Release: 1.8.4 - Detailed charging costs and losses
 """
 
 from __future__ import annotations
@@ -68,10 +68,28 @@ class Charge:
         self.energy_added_kwh_calculated: float | None = None
         self.energy_source: str = "calculated"
 
+        # Billed energy and charging losses
+        self.energy_billed_kwh: float | None = None
+        self.energy_billed_source: str = "none"
+        self.charging_loss_kwh: float | None = None
+        self.charging_loss_percent: float | None = None
+
         # Charging costs
+        self.energy_cost: float | None = None
+        self.session_fee: float | None = None
+        self.time_fee: float | None = None
+        self.blocking_fee: float | None = None
+        self.parking_fee: float | None = None
+        self.other_cost: float | None = None
+
         self.cost_total: float | None = None
         self.currency: str | None = None
+        self.energy_price_per_kwh: float | None = None
+        self.effective_price_per_kwh: float | None = None
+
+        # Backward-compatible alias for effective_price_per_kwh.
         self.price_per_kwh: float | None = None
+
         self.cost_source: str = "none"
         self.cost_verified: bool = False
         self.receipt_filename: str | None = None
@@ -117,20 +135,58 @@ class Charge:
         self.end_address = address
 
     def recalculate_costs(self) -> None:
-        """Recalculate derived charging cost values."""
+        """Recalculate billed energy, charging losses and cost values."""
 
-        if self.cost_total is not None:
-            try:
-                self.cost_total = max(0.0, float(self.cost_total))
-            except (TypeError, ValueError):
-                self.cost_total = None
+        self.energy_billed_kwh = self._optional_non_negative_float(
+            self.energy_billed_kwh
+        )
+        self.energy_billed_source = str(
+            self.energy_billed_source or "none"
+        ).strip().lower()
+        if self.energy_billed_source not in {
+            "none",
+            "manual",
+            "receipt",
+            "ocr",
+            "meter",
+            "estimated",
+        }:
+            self.energy_billed_source = "none"
+
+        self.energy_cost = self._optional_non_negative_float(
+            self.energy_cost
+        )
+        self.session_fee = self._optional_non_negative_float(
+            self.session_fee
+        )
+        self.time_fee = self._optional_non_negative_float(
+            self.time_fee
+        )
+        self.blocking_fee = self._optional_non_negative_float(
+            self.blocking_fee
+        )
+        self.parking_fee = self._optional_non_negative_float(
+            self.parking_fee
+        )
+        self.other_cost = self._optional_non_negative_float(
+            self.other_cost
+        )
+        self.cost_total = self._optional_non_negative_float(
+            self.cost_total
+        )
 
         if self.currency is not None:
             normalized_currency = str(self.currency).strip().upper()
             self.currency = normalized_currency or None
 
         self.cost_source = str(self.cost_source or "none").strip().lower()
-        if self.cost_source not in {"none", "manual", "ocr"}:
+        if self.cost_source not in {
+            "none",
+            "manual",
+            "ocr",
+            "home_tariff",
+            "work_tariff",
+        }:
             self.cost_source = "none"
 
         self.cost_verified = bool(self.cost_verified)
@@ -139,22 +195,84 @@ class Charge:
             normalized_filename = str(self.receipt_filename).strip()
             self.receipt_filename = normalized_filename or None
 
-        self.price_per_kwh = None
+        cost_components = (
+            self.energy_cost,
+            self.session_fee,
+            self.time_fee,
+            self.blocking_fee,
+            self.parking_fee,
+            self.other_cost,
+        )
+
+        if any(value is not None for value in cost_components):
+            self.cost_total = round(
+                sum(value or 0.0 for value in cost_components),
+                4,
+            )
+
+        added_energy = self._optional_non_negative_float(
+            self.energy_added_kwh
+        )
+
+        self.charging_loss_kwh = None
+        self.charging_loss_percent = None
 
         if (
-            self.cost_total is not None
-            and self.energy_added_kwh is not None
+            self.energy_billed_kwh is not None
+            and added_energy is not None
+            and self.energy_billed_kwh > 0
         ):
-            try:
-                energy = float(self.energy_added_kwh)
-            except (TypeError, ValueError):
-                energy = 0.0
+            self.charging_loss_kwh = round(
+                self.energy_billed_kwh - added_energy,
+                4,
+            )
+            self.charging_loss_percent = round(
+                self.charging_loss_kwh
+                / self.energy_billed_kwh
+                * 100,
+                2,
+            )
 
-            if energy > 0:
-                self.price_per_kwh = round(
-                    self.cost_total / energy,
+        pricing_energy = (
+            self.energy_billed_kwh
+            if self.energy_billed_kwh is not None
+            and self.energy_billed_kwh > 0
+            else added_energy
+        )
+
+        self.energy_price_per_kwh = None
+        self.effective_price_per_kwh = None
+        self.price_per_kwh = None
+
+        if pricing_energy is not None and pricing_energy > 0:
+            if self.energy_cost is not None:
+                self.energy_price_per_kwh = round(
+                    self.energy_cost / pricing_energy,
                     4,
                 )
+
+            if self.cost_total is not None:
+                self.effective_price_per_kwh = round(
+                    self.cost_total / pricing_energy,
+                    4,
+                )
+                self.price_per_kwh = self.effective_price_per_kwh
+
+    @staticmethod
+    def _optional_non_negative_float(
+        value: Any,
+    ) -> float | None:
+        """Return one optional non-negative float."""
+
+        if value is None or isinstance(value, bool):
+            return None
+
+        try:
+            normalized = float(value)
+        except (TypeError, ValueError):
+            return None
+
+        return max(0.0, normalized)
 
     def to_dict(self) -> dict[str, Any]:
         """Return the charging session as a serializable dictionary."""
@@ -201,8 +319,20 @@ class Charge:
                 self.energy_added_kwh_calculated
             ),
             "energy_source": self.energy_source,
+            "energy_billed_kwh": self.energy_billed_kwh,
+            "energy_billed_source": self.energy_billed_source,
+            "charging_loss_kwh": self.charging_loss_kwh,
+            "charging_loss_percent": self.charging_loss_percent,
+            "energy_cost": self.energy_cost,
+            "session_fee": self.session_fee,
+            "time_fee": self.time_fee,
+            "blocking_fee": self.blocking_fee,
+            "parking_fee": self.parking_fee,
+            "other_cost": self.other_cost,
             "cost_total": self.cost_total,
             "currency": self.currency,
+            "energy_price_per_kwh": self.energy_price_per_kwh,
+            "effective_price_per_kwh": self.effective_price_per_kwh,
             "price_per_kwh": self.price_per_kwh,
             "cost_source": self.cost_source,
             "cost_verified": self.cost_verified,
@@ -279,8 +409,32 @@ class Charge:
             ),
         )
 
+        charge.energy_billed_kwh = data.get("energy_billed_kwh")
+        charge.energy_billed_source = data.get(
+            "energy_billed_source",
+            "none",
+        )
+        charge.charging_loss_kwh = data.get("charging_loss_kwh")
+        charge.charging_loss_percent = data.get(
+            "charging_loss_percent"
+        )
+
+        charge.energy_cost = data.get("energy_cost")
+        charge.session_fee = data.get("session_fee")
+        charge.time_fee = data.get("time_fee")
+        charge.blocking_fee = data.get("blocking_fee")
+        charge.parking_fee = data.get("parking_fee")
+        charge.other_cost = data.get("other_cost")
+
         charge.cost_total = data.get("cost_total")
         charge.currency = data.get("currency")
+        charge.energy_price_per_kwh = data.get(
+            "energy_price_per_kwh"
+        )
+        charge.effective_price_per_kwh = data.get(
+            "effective_price_per_kwh",
+            data.get("price_per_kwh"),
+        )
         charge.price_per_kwh = data.get("price_per_kwh")
         charge.cost_source = data.get("cost_source", "none")
         charge.cost_verified = bool(
