@@ -36,7 +36,7 @@ Ford Triplog was designed with the following principles:
         └────────────────────┬────────────────────┘
                              │
                              ▼
-                    ExplorerCoordinator
+                        Coordinator
                              │
          ┌───────────────────┼───────────────────┐
          │                   │                   │
