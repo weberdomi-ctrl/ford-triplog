@@ -50,6 +50,7 @@ from .icons import (
 
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
+from .journey import build_pause_id
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -745,8 +746,16 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 endpoint="end",
             )
 
+            pause_id = build_pause_id(item.item_id, next_item.item_id)
+            override = getattr(journey, "pause_overrides", {}).get(
+                pause_id, {}
+            )
+            if not isinstance(override, dict):
+                override = {}
+
             pause_entry = {
                 "type": "pause",
+                "id": pause_id,
                 "start_time": item.end_time,
                 "end_time": next_item.start_time,
                 "start_time_formatted": self._format_clock(item.end_time),
@@ -758,7 +767,20 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "after": item.item_type,
                 "before": next_item.item_type,
                 **pause_location,
+                "category": override.get("category"),
+                "title": override.get("title"),
+                "note": override.get("note"),
+                "cost_total": override.get("cost_total"),
+                "currency": override.get("currency"),
+                "edited": bool(override),
+                "updated_at": override.get("updated_at"),
             }
+
+            manual_location = override.get("location")
+            if manual_location:
+                pause_entry["location"] = manual_location
+                pause_entry["display_location"] = manual_location
+                pause_entry["location_source"] = "manual"
 
             timeline.append(
                 {

@@ -18,7 +18,7 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "1.8.0"
+VERSION: Final = "1.9.0"
 
 #
 # Storage
@@ -50,7 +50,7 @@ DIAGNOSTICS_FILE: Final = "diagnostics.json"
 # Journey
 #
 
-JOURNEY_SCHEMA_VERSION: Final = 1
+JOURNEY_SCHEMA_VERSION: Final = 2
 
 JOURNEYS_DIR: Final = "journeys"
 

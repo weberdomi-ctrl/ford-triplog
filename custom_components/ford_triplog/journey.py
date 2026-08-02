@@ -15,6 +15,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Final, Literal
 from uuid import uuid4
+from hashlib import sha256
 
 from .const import GENERATOR, JOURNEY_SCHEMA_VERSION, VERSION
 
@@ -23,6 +24,16 @@ JourneyItemType = Literal["trip", "charge"]
 _ITEM_TRIP: Final = "trip"
 _ITEM_CHARGE: Final = "charge"
 _VALID_ITEM_TYPES: Final = {_ITEM_TRIP, _ITEM_CHARGE}
+
+
+
+
+def build_pause_id(after_item_id: str, before_item_id: str) -> str:
+    """Return a stable identifier for a pause between two journey items."""
+
+    value = f"{str(after_item_id).strip()}|{str(before_item_id).strip()}"
+    digest = sha256(value.encode("utf-8")).hexdigest()[:16]
+    return f"pause_{digest}"
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:
@@ -308,6 +319,7 @@ class FordTriplogJourney:
     trip_ids: list[str] = field(default_factory=list)
     charge_ids: list[str] = field(default_factory=list)
     items: list[JourneyItem] = field(default_factory=list)
+    pause_overrides: dict[str, dict[str, Any]] = field(default_factory=dict)
 
     trip_count: int = 0
     charge_count: int = 0
@@ -441,6 +453,13 @@ class FordTriplogJourney:
                 )
 
         self.items = normalized_items
+        normalized_pause_overrides: dict[str, dict[str, Any]] = {}
+        if isinstance(self.pause_overrides, dict):
+            for pause_id, override in self.pause_overrides.items():
+                normalized_id = str(pause_id).strip()
+                if normalized_id and isinstance(override, dict):
+                    normalized_pause_overrides[normalized_id] = dict(override)
+        self.pause_overrides = normalized_pause_overrides
         self._rebuild_references()
         self.recalculate()
 
@@ -705,6 +724,7 @@ class FordTriplogJourney:
             "trip_ids": list(self.trip_ids),
             "charge_ids": list(self.charge_ids),
             "items": [item.to_dict() for item in self.items],
+            "pause_overrides": dict(self.pause_overrides),
             "trip_count": self.trip_count,
             "charge_count": self.charge_count,
             "distance_km": self.distance_km,
@@ -771,6 +791,11 @@ class FordTriplogJourney:
             trip_ids=list(data.get("trip_ids", [])),
             charge_ids=list(data.get("charge_ids", [])),
             items=items,
+            pause_overrides=(
+                dict(data.get("pause_overrides", {}))
+                if isinstance(data.get("pause_overrides"), dict)
+                else {}
+            ),
             trip_count=_as_int(data.get("trip_count")),
             charge_count=_as_int(data.get("charge_count")),
             distance_km=_as_float(data.get("distance_km")),

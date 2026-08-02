@@ -11,5 +11,5 @@
   "issue_tracker": "https://github.com/weberdomi-ctrl/ford-triplog/issues",
   "loggers": ["custom_components.ford_triplog"],
   "requirements": [],
-  "version": "1.8.0"
+  "version": "1.9.0"
 }

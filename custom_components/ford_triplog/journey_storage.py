@@ -237,6 +237,28 @@ class FordTriplogJourneyStorage:
 
         return journeys
 
+    async def load_journey_by_id(
+        self,
+        journey_id: str,
+    ) -> FordTriplogJourney | None:
+        """Load an archived journey by its identifier."""
+
+        normalized_id = str(journey_id).strip()
+        if not normalized_id:
+            return None
+
+        path = self._journeys_directory / f"{self._safe_filename(normalized_id)}.json"
+        return await self.load_journey_file(path)
+
+    async def save_archived_journey(
+        self,
+        journey: FordTriplogJourney | dict[str, Any],
+    ) -> Path:
+        """Replace one archived journey and refresh the last-journey cache when needed."""
+
+        path = await self.save_completed_journey(journey)
+        return path
+
     async def delete_journey(
         self,
         journey_id: str,

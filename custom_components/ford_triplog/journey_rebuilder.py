@@ -20,7 +20,7 @@ from typing import Any, Awaitable, Callable, Final, Literal, Mapping
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
-from .journey import FordTriplogJourney
+from .journey import FordTriplogJourney, build_pause_id
 from .journey_manager import FordTriplogJourneyManager
 from .journey_storage import FordTriplogJourneyStorage
 from .storage import FordTriplogStorage
@@ -311,6 +311,13 @@ class FordTriplogJourneyRebuilder:
                 )
             }
 
+            preserved_pause_overrides = {
+                pause_id: dict(override)
+                for journey in existing_journeys
+                if self._journey_date(journey) in affected_dates
+                for pause_id, override in journey.pause_overrides.items()
+            }
+
             journeys_deleted = await self._delete_journeys_for_dates(
                 existing_journeys,
                 affected_dates,
@@ -397,6 +404,25 @@ class FordTriplogJourneyRebuilder:
                 journeys_created += 1
 
             await self.journey_storage.clear_current_journey()
+            if preserved_pause_overrides:
+                rebuilt_journeys = await self.journey_storage.get_all_journeys()
+                for rebuilt_journey in rebuilt_journeys:
+                    valid_pause_ids = {
+                        build_pause_id(current.item_id, following.item_id)
+                        for current, following in zip(
+                            rebuilt_journey.items, rebuilt_journey.items[1:]
+                        )
+                    }
+                    matching = {
+                        pause_id: override
+                        for pause_id, override in preserved_pause_overrides.items()
+                        if pause_id in valid_pause_ids
+                    }
+                    if matching:
+                        rebuilt_journey.pause_overrides.update(matching)
+                        await self.journey_storage.save_archived_journey(
+                            rebuilt_journey
+                        )
             await self._synchronize_last_journey()
             async_dispatcher_send(
                 self.hass,

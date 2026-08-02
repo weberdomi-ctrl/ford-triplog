@@ -141,3 +141,69 @@ clear_charge_cost:
       example: "20260731T072339"
       selector:
         text:
+
+edit_pause:
+  name: Edit journey pause
+  description: Add or replace manually maintained data for a pause in an archived journey.
+  fields:
+    entry_id:
+      name: Config entry
+      selector:
+        text:
+    journey_id:
+      name: Journey ID
+      required: true
+      selector:
+        text:
+    pause_id:
+      name: Pause ID
+      required: true
+      selector:
+        text:
+    category:
+      name: Category
+      selector:
+        text:
+    title:
+      name: Title
+      selector:
+        text:
+    note:
+      name: Note
+      selector:
+        text:
+          multiline: true
+    location:
+      name: Location
+      selector:
+        text:
+    cost_total:
+      name: Cost
+      selector:
+        number:
+          min: 0
+          step: 0.01
+          mode: box
+    currency:
+      name: Currency
+      selector:
+        text:
+
+clear_pause_edit:
+  name: Clear journey pause edit
+  description: Remove all manually maintained data from a pause.
+  fields:
+    entry_id:
+      name: Config entry
+      selector:
+        text:
+    journey_id:
+      name: Journey ID
+      required: true
+      selector:
+        text:
+    pause_id:
+      name: Pause ID
+      required: true
+      selector:
+        text:
