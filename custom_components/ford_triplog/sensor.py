@@ -824,6 +824,35 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if not isinstance(override, dict):
                 override = {}
 
+            pause_soc_start = self._optional_number(
+                getattr(item, "end_soc", None),
+                1,
+            )
+            pause_soc_end = self._optional_number(
+                getattr(next_item, "start_soc", None),
+                1,
+            )
+            pause_soc_delta = None
+            battery_energy_change_kwh = None
+
+            if pause_soc_start is not None and pause_soc_end is not None:
+                pause_soc_delta = round(
+                    pause_soc_end - pause_soc_start,
+                    1,
+                )
+
+                battery_capacity_kwh = self._optional_number(
+                    getattr(journey, "battery_capacity_kwh", None),
+                    2,
+                )
+                if battery_capacity_kwh is not None:
+                    battery_energy_change_kwh = round(
+                        pause_soc_delta
+                        / 100.0
+                        * battery_capacity_kwh,
+                        2,
+                    )
+
             pause_entry = {
                 "type": "pause",
                 "id": pause_id,
@@ -838,6 +867,12 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "after": item.item_type,
                 "before": next_item.item_type,
                 **pause_location,
+                "soc_start": pause_soc_start,
+                "soc_end": pause_soc_end,
+                "soc_delta": pause_soc_delta,
+                "battery_energy_change_kwh": (
+                    battery_energy_change_kwh
+                ),
                 "category": override.get("category"),
                 "title": override.get("title"),
                 "note": override.get("note"),
