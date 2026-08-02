@@ -253,12 +253,15 @@
           "receipt_import_type": "Dodaj paragon",
           "receipt_list": "Pokaż paragony",
           "receipt_delete": "Usuń paragon",
-          "receipt_ocr": "Uruchom OCR"
+          "receipt_ocr": "Uruchom OCR",
+          "ocr_settings": "Połączenie OCR"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Prześlij PDF lub obraz i przypisz go do postoju albo sesji ładowania.",
           "receipt_list": "Pokaż zapisane paragony wraz z przypisaniem i informacjami o pliku.",
-          "receipt_delete": "Trwale usuń plik paragonu i jego metadane."
+          "receipt_delete": "Trwale usuń plik paragonu i jego metadane.",
+          "ocr_settings": "Skonfiguruj i przetestuj opcjonalną lokalną usługę OCR.",
+          "receipt_ocr": "Wyślij zapisany paragon do skonfigurowanej usługi OCR."
         }
       },
       "receipt_import_type": {
@@ -327,15 +330,15 @@
         "description": "Akcja **{action}** dla postoju **{pause_id}** w podróży **{journey_id}** została zakończona."
       },
       "receipt_ocr": {
-        "title": "Analizuj paragon",
-        "description": "Wybierz zapisany paragon. Lokalny OCR rozpoznaje tekst i proponuje sprzedawcę, datę, godzinę, kwotę oraz walutę.",
+        "title": "Analizuj paragon przez OCR",
+        "description": "Wybierz zapisany paragon. Plik zostanie wysłany do skonfigurowanej lokalnej usługi OCR, a pełny rozpoznany tekst zostanie trwale zapisany przy paragonie.",
         "data": {
           "receipt_ocr_selection": "Paragon"
         }
       },
       "receipt_ocr_result": {
-        "title": "OCR zakończony",
-        "description": "**Plik:** {filename}\n\n**Rozpoznane propozycje**\n- Sprzedawca: **{merchant}**\n- Data: **{date}**\n- Godzina: **{time}**\n- Kwota: **{amount} {currency}**\n- Średnia pewność: **{confidence}**\n\n**Rozpoznany tekst**\n\n{raw_text}"
+        "title": "OCR zakończone",
+        "description": "**Dokument:** {document}\n\n**Silnik:** {engine}\n**Wersja usługi:** {service_version}\n**Czas przetwarzania:** {elapsed}\n**Średnia pewność:** {confidence}\n**Strona PDF:** {page}\n**Rozpoznane znaki:** {character_count}\n\n**Rozpoznany tekst**\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Szczegóły paragonu",
@@ -347,6 +350,26 @@
       "receipt_open": {
         "title": "Otwórz paragon",
         "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon w nowym oknie lub karcie przeglądarki."
+      },
+      "ocr_settings": {
+        "title": "Połączenie OCR",
+        "description": "Ford Triplog może opcjonalnie analizować paragony przez zewnętrzną lokalną usługę OCR. Po wyłączeniu OCR wszystkie pozostałe funkcje są nadal dostępne.\n\nPodczas zapisywania połączenie jest testowane przez `/health`.",
+        "data": {
+          "ocr_enabled": "Włącz OCR",
+          "ocr_url": "Adres usługi OCR",
+          "ocr_api_key": "Klucz API",
+          "ocr_timeout": "Limit czasu"
+        },
+        "data_description": {
+          "ocr_enabled": "Włącza połączenie z zewnętrzną usługą OCR.",
+          "ocr_url": "Na przykład http://192.168.1.20:9080",
+          "ocr_api_key": "Musi odpowiadać OCR_API_KEY kontenera.",
+          "ocr_timeout": "Maksymalny czas oczekiwania na test i późniejsze żądania OCR."
+        }
+      },
+      "ocr_connection_result": {
+        "title": "Połączenie OCR zapisane",
+        "description": "**Status:** Połączenie udane\n\n**Usługa:** {service}\n**Wersja:** {version}\n**Silnik:** {engine}\n**Adres:** {url}\n**Maksymalny rozmiar pliku:** {max_file_mb} MB\n**Obsługa PDF:** {pdf_mode}"
       }
     },
     "error": {
@@ -374,7 +397,13 @@
       "pause_invalid_selection": "Wybrany postój jest nieprawidłowy.",
       "pause_journey_not_found": "Nie znaleziono powiązanej podróży.",
       "pause_save_failed": "Nie udało się zapisać postoju.",
-      "receipt_ocr_failed": "Nie udało się przeanalizować paragonu. Sprawdź dziennik Home Assistant."
+      "receipt_ocr_failed": "Nie udało się przeanalizować paragonu. Sprawdź dzienniki Home Assistant i kontenera OCR.",
+      "ocr_invalid_url": "Adres OCR jest nieprawidłowy. Użyj pełnego adresu HTTP lub HTTPS.",
+      "ocr_authentication_failed": "Usługa OCR odrzuciła klucz API.",
+      "ocr_connection_failed": "Usługa OCR jest niedostępna. Sprawdź adres, port, kontener i sieć.",
+      "ocr_invalid_response": "Usługa OCR nie zwróciła prawidłowej odpowiedzi health.",
+      "ocr_not_configured": "OCR jest wyłączone lub nie zostało skonfigurowane.",
+      "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie."
     },
     "menu": {
       "receipt_management": "Zarządzanie paragonami",

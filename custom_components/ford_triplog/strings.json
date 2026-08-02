@@ -253,12 +253,15 @@
           "receipt_import_type": "Import receipt",
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
-          "receipt_ocr": "OCR ausführen"
+          "receipt_ocr": "OCR ausführen",
+          "ocr_settings": "OCR-Verbindung"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
           "receipt_list": "View stored receipts with assignment and file information.",
-          "receipt_delete": "Permanently delete a receipt file and its metadata."
+          "receipt_delete": "Permanently delete a receipt file and its metadata.",
+          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
+          "receipt_ocr": "Einen gespeicherten Beleg an den konfigurierten OCR-Dienst senden."
         }
       },
       "receipt_import_type": {
@@ -327,15 +330,15 @@
         "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
       },
       "receipt_ocr": {
-        "title": "Beleg analysieren",
-        "description": "Wähle einen gespeicherten Beleg aus. Die lokale OCR erkennt Text und schlägt Händler, Datum, Uhrzeit, Betrag und Währung vor.",
+        "title": "Beleg per OCR analysieren",
+        "description": "Wähle einen gespeicherten Beleg aus. Die Datei wird an den konfigurierten lokalen OCR-Dienst gesendet. Der vollständige erkannte Text wird anschließend dauerhaft beim Beleg gespeichert.",
         "data": {
           "receipt_ocr_selection": "Beleg"
         }
       },
       "receipt_ocr_result": {
         "title": "OCR abgeschlossen",
-        "description": "**Datei:** {filename}\n\n**Erkannte Vorschläge**\n- Händler: **{merchant}**\n- Datum: **{date}**\n- Uhrzeit: **{time}**\n- Betrag: **{amount} {currency}**\n- Durchschnittliche Sicherheit: **{confidence}**\n\n**Erkannter Text**\n\n{raw_text}"
+        "description": "**Dokument:** {document}\n\n**Engine:** {engine}\n**Dienstversion:** {service_version}\n**Verarbeitungsdauer:** {elapsed}\n**Durchschnittliche Sicherheit:** {confidence}\n**PDF-Seite:** {page}\n**Erkannte Zeichen:** {character_count}\n\n**Erkannter Text**\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Belegdetails",
@@ -347,6 +350,26 @@
       "receipt_open": {
         "title": "Beleg öffnen",
         "description": "Klicke auf „Website öffnen“, um den ausgewählten Beleg in einem neuen Browserfenster oder Tab anzuzeigen."
+      },
+      "ocr_settings": {
+        "title": "OCR-Verbindung",
+        "description": "Ford Triplog kann Belege optional über einen externen lokalen OCR-Dienst analysieren. Ohne aktivierte OCR-Verbindung bleiben alle anderen Funktionen uneingeschränkt verfügbar.\n\nBeim Speichern wird die Verbindung über den Endpunkt `/health` geprüft.",
+        "data": {
+          "ocr_enabled": "OCR aktivieren",
+          "ocr_url": "OCR-Dienst URL",
+          "ocr_api_key": "API-Key",
+          "ocr_timeout": "Zeitüberschreitung"
+        },
+        "data_description": {
+          "ocr_enabled": "Aktiviert die Verbindung zum externen OCR-Dienst.",
+          "ocr_url": "Zum Beispiel http://192.168.1.20:9080",
+          "ocr_api_key": "Muss dem OCR_API_KEY des Containers entsprechen.",
+          "ocr_timeout": "Maximale Wartezeit für Verbindungstests und spätere OCR-Anfragen."
+        }
+      },
+      "ocr_connection_result": {
+        "title": "OCR-Verbindung gespeichert",
+        "description": "**Status:** Verbindung erfolgreich\n\n**Dienst:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Adresse:** {url}\n**Maximale Dateigröße:** {max_file_mb} MB\n**PDF-Verarbeitung:** {pdf_mode}"
       }
     },
     "error": {
@@ -374,7 +397,13 @@
       "pause_invalid_selection": "The selected pause is invalid.",
       "pause_journey_not_found": "The related journey was not found.",
       "pause_save_failed": "The pause could not be saved.",
-      "receipt_ocr_failed": "Der Beleg konnte nicht analysiert werden. Prüfe das Home-Assistant-Protokoll."
+      "receipt_ocr_failed": "Der Beleg konnte nicht analysiert werden. Prüfe das Home-Assistant- und OCR-Container-Protokoll.",
+      "ocr_invalid_url": "Die OCR-Adresse ist ungültig. Verwende eine vollständige HTTP- oder HTTPS-Adresse.",
+      "ocr_authentication_failed": "Der OCR-Dienst hat den API-Key abgelehnt.",
+      "ocr_connection_failed": "Der OCR-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
+      "ocr_invalid_response": "Der OCR-Dienst hat keine gültige Health-Antwort geliefert.",
+      "ocr_not_configured": "OCR ist nicht aktiviert oder noch nicht konfiguriert.",
+      "receipt_ocr_response_failed": "Der OCR-Dienst hat die Datei oder die Anfrage abgelehnt."
     },
     "menu": {
       "receipt_management": "Receipt management",

@@ -8,7 +8,7 @@ import os
 import shutil
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 from uuid import uuid4
 
 from aiohttp import web
@@ -18,7 +18,10 @@ from homeassistant.core import HomeAssistant
 
 from .const import RECEIPTS_DIR, RECEIPT_MAX_SIZE_BYTES, STORAGE_DIR
 from .metadata_storage import FordTriplogMetadataStorage
-from .ocr import FordTriplogReceiptOCR
+
+
+if TYPE_CHECKING:
+    from .ocr_client import FordTriplogOCRClient
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -33,7 +36,6 @@ class FordTriplogReceiptStorage:
         self.hass = hass
         self._directory = Path(hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR))
         self._metadata = FordTriplogMetadataStorage(hass)
-        self._ocr = FordTriplogReceiptOCR(hass)
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(
@@ -96,13 +98,12 @@ class FordTriplogReceiptStorage:
     async def async_list(self) -> list[dict[str, Any]]:
         return await self._metadata.get_all_receipts()
 
-    async def async_get(self, receipt_id: str) -> dict[str, Any] | None:
-        """Return one stored receipt."""
-
-        return await self._metadata.get_receipt(str(receipt_id).strip())
-
-    async def async_analyze(self, receipt_id: str) -> dict[str, Any]:
-        """Run local OCR and persist status and result metadata."""
+    async def async_analyze(
+        self,
+        receipt_id: str,
+        client: "FordTriplogOCRClient",
+    ) -> dict[str, Any]:
+        """Run external OCR and persist status and complete raw result."""
 
         normalized_id = str(receipt_id).strip()
         receipt = await self._metadata.get_receipt(normalized_id)
@@ -112,7 +113,10 @@ class FordTriplogReceiptStorage:
         filename = str(receipt.get("filename") or "").strip()
         if not filename:
             raise ValueError("Receipt filename is missing")
+
         path = self._directory / Path(filename).name
+        if not await self.hass.async_add_executor_job(path.is_file):
+            raise ValueError("Receipt file was not found")
 
         await self._metadata.update_receipt(
             normalized_id,
@@ -121,8 +125,21 @@ class FordTriplogReceiptStorage:
                 "ocr_error": None,
             },
         )
+
         try:
-            result = await self._ocr.async_analyze(path)
+            content = await self.hass.async_add_executor_job(path.read_bytes)
+            result = await client.async_analyze(
+                filename=str(
+                    receipt.get("original_filename")
+                    or path.name
+                ),
+                media_type=str(
+                    receipt.get("media_type")
+                    or mimetypes.guess_type(path.name)[0]
+                    or "application/octet-stream"
+                ),
+                content=content,
+            )
         except Exception as err:
             await self._metadata.update_receipt(
                 normalized_id,
@@ -132,6 +149,9 @@ class FordTriplogReceiptStorage:
                 },
             )
             raise
+
+        completed_at = datetime.now(timezone.utc).isoformat()
+        result["completed_at"] = completed_at
 
         updated = await self._metadata.update_receipt(
             normalized_id,

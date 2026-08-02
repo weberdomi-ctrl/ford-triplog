@@ -253,12 +253,15 @@
           "receipt_import_type": "Import receipt",
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
-          "receipt_ocr": "Run OCR"
+          "receipt_ocr": "Run OCR",
+          "ocr_settings": "OCR connection"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
           "receipt_list": "View stored receipts with assignment and file information.",
-          "receipt_delete": "Permanently delete a receipt file and its metadata."
+          "receipt_delete": "Permanently delete a receipt file and its metadata.",
+          "ocr_settings": "Configure and test the optional local OCR service.",
+          "receipt_ocr": "Send a stored receipt to the configured OCR service."
         }
       },
       "receipt_import_type": {
@@ -327,15 +330,15 @@
         "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
       },
       "receipt_ocr": {
-        "title": "Analyze receipt",
-        "description": "Select a stored receipt. Local OCR recognizes text and suggests merchant, date, time, amount and currency.",
+        "title": "Analyze receipt with OCR",
+        "description": "Select a stored receipt. The file is sent to the configured local OCR service. The complete recognized text is then stored permanently with the receipt.",
         "data": {
           "receipt_ocr_selection": "Receipt"
         }
       },
       "receipt_ocr_result": {
         "title": "OCR completed",
-        "description": "**File:** {filename}\n\n**Detected suggestions**\n- Merchant: **{merchant}**\n- Date: **{date}**\n- Time: **{time}**\n- Amount: **{amount} {currency}**\n- Average confidence: **{confidence}**\n\n**Recognized text**\n\n{raw_text}"
+        "description": "**Document:** {document}\n\n**Engine:** {engine}\n**Service version:** {service_version}\n**Processing time:** {elapsed}\n**Average confidence:** {confidence}\n**PDF page:** {page}\n**Recognized characters:** {character_count}\n\n**Recognized text**\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Receipt details",
@@ -347,6 +350,26 @@
       "receipt_open": {
         "title": "Open receipt",
         "description": "Select “Open website” to display the selected receipt in a new browser window or tab."
+      },
+      "ocr_settings": {
+        "title": "OCR connection",
+        "description": "Ford Triplog can optionally analyze receipts through an external local OCR service. All other features remain available when OCR is disabled.\n\nSaving tests the connection using the `/health` endpoint.",
+        "data": {
+          "ocr_enabled": "Enable OCR",
+          "ocr_url": "OCR service URL",
+          "ocr_api_key": "API key",
+          "ocr_timeout": "Timeout"
+        },
+        "data_description": {
+          "ocr_enabled": "Enables the connection to the external OCR service.",
+          "ocr_url": "For example http://192.168.1.20:9080",
+          "ocr_api_key": "Must match the container OCR_API_KEY.",
+          "ocr_timeout": "Maximum wait time for connection tests and later OCR requests."
+        }
+      },
+      "ocr_connection_result": {
+        "title": "OCR connection saved",
+        "description": "**Status:** Connection successful\n\n**Service:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Address:** {url}\n**Maximum file size:** {max_file_mb} MB\n**PDF processing:** {pdf_mode}"
       }
     },
     "error": {
@@ -374,7 +397,13 @@
       "pause_invalid_selection": "The selected pause is invalid.",
       "pause_journey_not_found": "The related journey was not found.",
       "pause_save_failed": "The pause could not be saved.",
-      "receipt_ocr_failed": "The receipt could not be analyzed. Check the Home Assistant log."
+      "receipt_ocr_failed": "The receipt could not be analyzed. Check the Home Assistant and OCR container logs.",
+      "ocr_invalid_url": "The OCR address is invalid. Use a complete HTTP or HTTPS address.",
+      "ocr_authentication_failed": "The OCR service rejected the API key.",
+      "ocr_connection_failed": "The OCR service is unreachable. Check the address, port, container and network.",
+      "ocr_invalid_response": "The OCR service did not return a valid health response.",
+      "ocr_not_configured": "OCR is disabled or has not been configured.",
+      "receipt_ocr_response_failed": "The OCR service rejected the file or request."
     },
     "menu": {
       "receipt_management": "Receipt management",

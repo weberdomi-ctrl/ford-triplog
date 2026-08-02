@@ -23,10 +23,10 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
-from pathlib import Path
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -40,6 +40,7 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
@@ -48,6 +49,12 @@ from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
 from .receipt_storage import FordTriplogReceiptStorage
+from .ocr_client import (
+    FordTriplogOCRAuthenticationError,
+    FordTriplogOCRClient,
+    FordTriplogOCRConnectionError,
+    FordTriplogOCRResponseError,
+)
 
 from .services import (
     async_download_charging_database,
@@ -137,6 +144,10 @@ CONF_RECEIPT_FILE = "receipt_file"
 CONF_RECEIPT_NOTE = "note"
 CONF_RECEIPT_SELECTION = "receipt_selection"
 CONF_RECEIPT_OCR_SELECTION = "receipt_ocr_selection"
+CONF_OCR_ENABLED = "ocr_enabled"
+CONF_OCR_URL = "ocr_url"
+CONF_OCR_API_KEY = "ocr_api_key"
+CONF_OCR_TIMEOUT = "ocr_timeout"
 CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
 RECEIPT_DETAIL_OPEN = "open"
 RECEIPT_DETAIL_BACK = "back"
@@ -251,6 +262,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_receipt_id: str | None = None
         self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
+        self._ocr_connection_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -1252,9 +1264,177 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show receipt management actions."""
 
+        menu_options = ["ocr_settings"]
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+            menu_options.append("receipt_ocr")
+        menu_options.extend(
+            [
+                "receipt_import_type",
+                "receipt_list",
+                "receipt_delete",
+            ]
+        )
+
         return self.async_show_menu(
             step_id="receipt_management",
-            menu_options=["receipt_import_type", "receipt_list", "receipt_delete"],
+            menu_options=menu_options,
+        )
+
+    async def async_step_ocr_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure and test the optional external OCR service."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            enabled = bool(user_input.get(CONF_OCR_ENABLED, False))
+            url = str(user_input.get(CONF_OCR_URL) or "").strip().rstrip("/")
+            api_key = str(user_input.get(CONF_OCR_API_KEY) or "").strip()
+            timeout_seconds = int(user_input.get(CONF_OCR_TIMEOUT, 15))
+
+            if enabled:
+                try:
+                    client = FordTriplogOCRClient(
+                        async_get_clientsession(self.hass),
+                        url,
+                        api_key,
+                        timeout_seconds,
+                    )
+                    health = await client.async_health()
+                except ValueError:
+                    errors["base"] = "ocr_invalid_url"
+                except FordTriplogOCRAuthenticationError:
+                    errors["base"] = "ocr_authentication_failed"
+                except FordTriplogOCRConnectionError:
+                    errors["base"] = "ocr_connection_failed"
+                except FordTriplogOCRResponseError:
+                    errors["base"] = "ocr_invalid_response"
+                else:
+                    updated_options = dict(self._config_entry.options)
+                    updated_options.update(
+                        {
+                            CONF_OCR_ENABLED: True,
+                            CONF_OCR_URL: client.base_url,
+                            CONF_OCR_API_KEY: api_key,
+                            CONF_OCR_TIMEOUT: timeout_seconds,
+                        }
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        options=updated_options,
+                    )
+                    self._options.update(updated_options)
+                    self._ocr_connection_result = {
+                        "service": health.service,
+                        "version": health.version,
+                        "engine": health.engine,
+                        "url": client.base_url,
+                        "max_file_mb": (
+                            str(health.max_file_mb)
+                            if health.max_file_mb is not None
+                            else "—"
+                        ),
+                        "pdf_mode": (
+                            "Nur erste Seite"
+                            if health.pdf_first_page_only
+                            else "Alle Seiten / nicht angegeben"
+                        ),
+                    }
+                    return await self.async_step_ocr_connection_result()
+            else:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(
+                    {
+                        CONF_OCR_ENABLED: False,
+                        CONF_OCR_URL: url,
+                        CONF_OCR_API_KEY: api_key,
+                        CONF_OCR_TIMEOUT: timeout_seconds,
+                    }
+                )
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._ocr_connection_result = {
+                    "service": "OCR deaktiviert",
+                    "version": "—",
+                    "engine": "—",
+                    "url": url or "—",
+                    "max_file_mb": "—",
+                    "pdf_mode": "—",
+                }
+                return await self.async_step_ocr_connection_result()
+
+        current_enabled = bool(
+            self._options.get(CONF_OCR_ENABLED, False)
+        )
+        current_url = str(
+            self._options.get(CONF_OCR_URL, "http://")
+        )
+        current_api_key = str(
+            self._options.get(CONF_OCR_API_KEY, "")
+        )
+        current_timeout = int(
+            self._options.get(CONF_OCR_TIMEOUT, 15)
+        )
+
+        return self.async_show_form(
+            step_id="ocr_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_OCR_ENABLED,
+                        default=current_enabled,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_OCR_URL,
+                        default=current_url,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.URL,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_OCR_API_KEY,
+                        default=current_api_key,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OCR_TIMEOUT,
+                        default=current_timeout,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=3,
+                            max=120,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_ocr_connection_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the external OCR connection result."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        return self.async_show_form(
+            step_id="ocr_connection_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._ocr_connection_result,
         )
 
     async def async_step_receipt_import_type(
@@ -1654,6 +1834,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "energy": str(receipt.get("display_energy") or "—"),
                 "cost": str(receipt.get("display_cost") or "—"),
                 "document_type": document_type,
+                "filename": document_type,
                 "size": size_text,
                 "ocr_status": self._format_receipt_ocr_status(
                     receipt.get("ocr_status")
@@ -1675,15 +1856,36 @@ class FordTriplogOptionsFlow(OptionsFlow):
             url=self._selected_receipt_url,
         )
 
+    def _get_ocr_client(self) -> FordTriplogOCRClient:
+        """Return a configured client for the external OCR service."""
+
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+            raise HomeAssistantError("OCR is not enabled")
+
+        return FordTriplogOCRClient(
+            async_get_clientsession(self.hass),
+            str(self._options.get(CONF_OCR_URL) or ""),
+            str(self._options.get(CONF_OCR_API_KEY) or ""),
+            int(self._options.get(CONF_OCR_TIMEOUT, 15)),
+        )
+
     async def async_step_receipt_ocr(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Select a stored receipt and run local OCR."""
+        """Select a stored receipt and run external OCR."""
 
         errors: dict[str, str] = {}
+
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+            return self.async_show_form(
+                step_id="receipt_ocr",
+                data_schema=vol.Schema({}),
+                errors={"base": "ocr_not_configured"},
+            )
+
         try:
-            receipts = await self._get_receipt_storage().async_list()
+            receipts = await self._async_receipt_contexts()
         except (HomeAssistantError, OSError, RuntimeError, ValueError):
             receipts = []
             errors["base"] = "receipt_load_failed"
@@ -1691,47 +1893,77 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
-                label=self._format_receipt_label(receipt),
+                label=str(
+                    receipt.get("display_label")
+                    or receipt.get("receipt_id")
+                ),
             )
             for receipt in receipts
             if receipt.get("receipt_id")
         ]
+
         if not options and not errors:
             errors["base"] = "receipt_none_available"
 
         if user_input is not None and not errors:
             receipt_id = str(user_input[CONF_RECEIPT_OCR_SELECTION])
+
             try:
-                receipt = await self._get_receipt_storage().async_analyze(receipt_id)
+                receipt = await self._get_receipt_storage().async_analyze(
+                    receipt_id,
+                    self._get_ocr_client(),
+                )
+            except FordTriplogOCRAuthenticationError:
+                errors["base"] = "ocr_authentication_failed"
+            except FordTriplogOCRConnectionError:
+                errors["base"] = "ocr_connection_failed"
+            except FordTriplogOCRResponseError:
+                errors["base"] = "receipt_ocr_response_failed"
             except (HomeAssistantError, OSError, RuntimeError, ValueError):
                 errors["base"] = "receipt_ocr_failed"
             else:
                 ocr_result = receipt.get("ocr_result", {})
                 if not isinstance(ocr_result, dict):
                     ocr_result = {}
-                suggestions = ocr_result.get("suggestions", {})
-                if not isinstance(suggestions, dict):
-                    suggestions = {}
+
                 raw_text = str(ocr_result.get("raw_text") or "").strip()
-                if len(raw_text) > 3000:
-                    raw_text = raw_text[:3000] + "…"
+                display_text = raw_text
+                if len(display_text) > 5000:
+                    display_text = display_text[:5000] + "\n…"
+
                 confidence = ocr_result.get("confidence")
                 confidence_text = "—"
                 if isinstance(confidence, (int, float)):
                     confidence_text = f"{float(confidence) * 100:.1f} %"
+
+                elapsed = ocr_result.get("elapsed_seconds")
+                elapsed_text = "—"
+                if isinstance(elapsed, (int, float)):
+                    elapsed_text = f"{float(elapsed):.3f} s"
+
+                source_page = ocr_result.get("source_page")
+                page_text = (
+                    str(source_page)
+                    if source_page is not None
+                    else "—"
+                )
+
                 self._receipt_ocr_result = {
-                    "filename": str(
+                    "document": str(
                         receipt.get("original_filename")
-                        or receipt.get("filename")
-                        or "—"
+                        or "Beleg"
                     ),
-                    "merchant": str(suggestions.get("merchant") or "—"),
-                    "date": str(suggestions.get("date") or "—"),
-                    "time": str(suggestions.get("time") or "—"),
-                    "amount": str(suggestions.get("amount") or "—"),
-                    "currency": str(suggestions.get("currency") or "—"),
+                    "engine": str(
+                        ocr_result.get("engine") or "—"
+                    ),
+                    "service_version": str(
+                        ocr_result.get("service_version") or "—"
+                    ),
+                    "elapsed": elapsed_text,
                     "confidence": confidence_text,
-                    "raw_text": raw_text or "—",
+                    "page": page_text,
+                    "character_count": str(len(raw_text)),
+                    "raw_text": display_text or "Kein Text erkannt.",
                 }
                 return await self.async_step_receipt_ocr_result()
 
@@ -1759,10 +1991,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show OCR text and extracted suggestions."""
+        """Show the stored external OCR result."""
 
         if user_input is not None:
             return await self.async_step_receipt_management()
+
         return self.async_show_form(
             step_id="receipt_ocr_result",
             data_schema=vol.Schema({}),
