@@ -946,6 +946,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 if duration_seconds <= 0:
                     continue
 
+                # Short gaps of up to three minutes directly before or after
+                # a charging session are charging buffers, not editable
+                # Journey pauses. Keep the Pause Editor consistent with the
+                # Journey timeline and hide these entries here as well.
+                if (
+                    duration_seconds <= 180
+                    and (
+                        current.item_type == "charge"
+                        or following.item_type == "charge"
+                    )
+                ):
+                    continue
+
                 pause_id = build_pause_id(current.item_id, following.item_id)
                 override = dict(journey.pause_overrides.get(pause_id, {}))
                 location = override.get("location") or self._pause_location(
