@@ -26,6 +26,7 @@ from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Any
 
+from pathlib import Path
 import voluptuous as vol
 
 from homeassistant import config_entries
@@ -1632,7 +1633,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             options=[
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_OPEN,
-                                    label="Im Browser öffnen",
+                                    label="Beleg im Browser öffnen",
                                 ),
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_BACK,

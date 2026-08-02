@@ -339,14 +339,14 @@
       },
       "receipt_detail": {
         "title": "Belegdetails",
-        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n**OCR-Analyse:** {ocr_status}",
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n**OCR-Analyse:** {ocr_status}\n\n**Hinweis:** Nach der Auswahl von „Beleg im Browser öffnen“ zeigt Home Assistant einen separaten Dialog. Dort auf „Website öffnen“ klicken, um das Dokument anzuzeigen.",
         "data": {
           "receipt_detail_action": "Aktion"
         }
       },
       "receipt_open": {
-        "title": "Beleg im Browser öffnen",
-        "description": "Öffne den Beleg über den folgenden Home-Assistant-Dialog in einem separaten Browserfenster."
+        "title": "Beleg öffnen",
+        "description": "Klicke auf „Website öffnen“, um den ausgewählten Beleg in einem neuen Browserfenster oder Tab anzuzeigen."
       }
     },
     "error": {

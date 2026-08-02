@@ -339,14 +339,14 @@
       },
       "receipt_detail": {
         "title": "Szczegóły paragonu",
-        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Miejsce:** {location}\n\n**Poziom naładowania:** {soc}\n**Energia:** {energy}\n**Koszt:** {cost}\n\n**Plik:** {document_type} ({size})\n**Analiza OCR:** {ocr_status}",
+        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Miejsce:** {location}\n\n**Poziom naładowania:** {soc}\n**Energia:** {energy}\n**Koszt:** {cost}\n\n**Plik:** {document_type} ({size})\n**Analiza OCR:** {ocr_status}\n\n**Uwaga:** Po wybraniu „Otwórz paragon w przeglądarce” Home Assistant pokaże osobne okno. Wybierz w nim „Otwórz witrynę”, aby wyświetlić dokument.",
         "data": {
           "receipt_detail_action": "Akcja"
         }
       },
       "receipt_open": {
-        "title": "Otwórz paragon w przeglądarce",
-        "description": "Otwórz paragon w osobnym oknie przeglądarki za pomocą okna Home Assistant."
+        "title": "Otwórz paragon",
+        "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon w nowym oknie lub karcie przeglądarki."
       }
     },
     "error": {

@@ -339,14 +339,14 @@
       },
       "receipt_detail": {
         "title": "Receipt details",
-        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {document_type} ({size})\n**OCR analysis:** {ocr_status}",
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {document_type} ({size})\n**OCR analysis:** {ocr_status}\n\n**Note:** After selecting “Open receipt in browser”, Home Assistant shows a separate dialog. Select “Open website” there to display the document.",
         "data": {
           "receipt_detail_action": "Action"
         }
       },
       "receipt_open": {
-        "title": "Open receipt in browser",
-        "description": "Open the receipt in a separate browser window using the Home Assistant dialog."
+        "title": "Open receipt",
+        "description": "Select “Open website” to display the selected receipt in a new browser window or tab."
       }
     },
     "error": {
