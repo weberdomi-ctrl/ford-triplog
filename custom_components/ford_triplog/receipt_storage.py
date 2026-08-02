@@ -96,11 +96,6 @@ class FordTriplogReceiptStorage:
     async def async_list(self) -> list[dict[str, Any]]:
         return await self._metadata.get_all_receipts()
 
-    async def async_get(self, receipt_id: str) -> dict[str, Any] | None:
-        """Return one stored receipt."""
-
-        return await self._metadata.get_receipt(str(receipt_id).strip())
-
     async def async_analyze(self, receipt_id: str) -> dict[str, Any]:
         """Run local OCR and persist status and result metadata."""
 

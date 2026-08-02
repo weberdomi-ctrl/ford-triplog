@@ -39,6 +39,7 @@ from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
 from homeassistant.helpers.translation import async_get_translations
+from homeassistant.helpers.network import get_url
 from homeassistant.util import dt as dt_util
 
 from .countries import COUNTRIES
@@ -1567,9 +1568,23 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "filename": filename,
                 "size": size_text,
                 "ocr_status": str(receipt.get("ocr_status") or "not_started"),
-                "receipt_url": f"/api/ford_triplog/receipts/{receipt_id}",
+                "receipt_url": self._build_receipt_url(receipt_id),
             },
         )
+
+    def _build_receipt_url(self, receipt_id: str) -> str:
+        """Return an absolute authenticated Home Assistant receipt URL."""
+
+        try:
+            base_url = get_url(
+                self.hass,
+                prefer_external=False,
+            ).rstrip("/")
+        except Exception:  # Home Assistant has no configured reachable URL.
+            base_url = ""
+
+        path = f"/api/ford_triplog/receipts/{receipt_id}"
+        return f"{base_url}{path}" if base_url else path
 
     async def async_step_receipt_ocr(
         self,
