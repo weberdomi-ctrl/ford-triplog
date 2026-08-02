@@ -290,7 +290,7 @@
       },
       "receipt_list": {
         "title": "Stored receipts",
-        "description": "{receipt_count} receipt(s) are stored. Select an entry to view filename, date, size and assignment.",
+        "description": "{receipt_count} receipt(s) are stored. Select a pause or charging session; the internal filename is shown only in the detail view.",
         "data": {
           "receipt_selection": "Receipt"
         }
@@ -336,6 +336,10 @@
       "receipt_ocr_result": {
         "title": "OCR completed",
         "description": "**File:** {filename}\n\n**Detected suggestions**\n- Merchant: **{merchant}**\n- Date: **{date}**\n- Time: **{time}**\n- Amount: **{amount} {currency}**\n- Average confidence: **{confidence}**\n\n**Recognized text**\n\n{raw_text}"
+      },
+      "receipt_detail": {
+        "title": "Receipt details",
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Open receipt]({receipt_url})"
       }
     },
     "error": {

@@ -42,7 +42,7 @@ from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
 from .charge_manager import FordTriplogChargeManager
-from .receipt_storage import FordTriplogReceiptStorage
+from .receipt_storage import FordTriplogReceiptStorage, FordTriplogReceiptView
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -131,6 +131,10 @@ async def async_setup_entry(
 
     receipt_storage = FordTriplogReceiptStorage(hass)
     await receipt_storage.async_setup()
+
+    if not hass.data.setdefault(DOMAIN, {}).get("receipt_view_registered"):
+        hass.http.register_view(FordTriplogReceiptView())
+        hass.data[DOMAIN]["receipt_view_registered"] = True
 
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,

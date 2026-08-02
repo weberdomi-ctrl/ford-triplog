@@ -290,7 +290,7 @@
       },
       "receipt_list": {
         "title": "Zapisane paragony",
-        "description": "Zapisano {receipt_count} paragonów. Wybór pokazuje nazwę pliku, datę, rozmiar i przypisanie.",
+        "description": "Zapisano {receipt_count} paragonów. Wybierz postój lub sesję ładowania; nazwa pliku jest widoczna dopiero w szczegółach.",
         "data": {
           "receipt_selection": "Paragon"
         }
@@ -336,6 +336,10 @@
       "receipt_ocr_result": {
         "title": "OCR zakończony",
         "description": "**Plik:** {filename}\n\n**Rozpoznane propozycje**\n- Sprzedawca: **{merchant}**\n- Data: **{date}**\n- Godzina: **{time}**\n- Kwota: **{amount} {currency}**\n- Średnia pewność: **{confidence}**\n\n**Rozpoznany tekst**\n\n{raw_text}"
+      },
+      "receipt_detail": {
+        "title": "Szczegóły paragonu",
+        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Miejsce:** {location}\n\n**Poziom naładowania:** {soc}\n**Energia:** {energy}\n**Koszt:** {cost}\n\n**Plik:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Otwórz paragon]({receipt_url})"
       }
     },
     "error": {

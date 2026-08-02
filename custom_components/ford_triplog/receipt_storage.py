@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
 
+from aiohttp import web
+
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
 from .const import RECEIPTS_DIR, RECEIPT_MAX_SIZE_BYTES, STORAGE_DIR
@@ -143,6 +146,29 @@ class FordTriplogReceiptStorage:
             raise ValueError("Receipt disappeared while OCR was running")
         return updated
 
+
+    async def async_get(self, receipt_id: str) -> dict[str, Any] | None:
+        """Return one receipt by its stable ID."""
+
+        normalized = str(receipt_id).strip()
+        for receipt in await self.async_list():
+            if str(receipt.get("receipt_id") or "") == normalized:
+                return receipt
+        return None
+
+    def get_managed_path(self, receipt: dict[str, Any]) -> Path | None:
+        """Return the validated managed path for one receipt."""
+
+        filename = Path(str(receipt.get("filename") or "")).name
+        if not filename:
+            return None
+        path = self._directory / filename
+        try:
+            path.resolve().relative_to(self._directory.resolve())
+        except ValueError:
+            return None
+        return path
+
     async def async_remove(self, receipt_id: str) -> dict[str, Any] | None:
         """Remove metadata and the corresponding managed file."""
 
@@ -183,3 +209,48 @@ class FordTriplogReceiptStorage:
         except Exception:
             temporary.unlink(missing_ok=True)
             raise
+
+
+class FordTriplogReceiptView(HomeAssistantView):
+    """Authenticated HTTP view for opening a managed receipt."""
+
+    url = "/api/ford_triplog/receipts/{receipt_id}"
+    name = "api:ford_triplog:receipt"
+    requires_auth = True
+
+    async def get(self, request: web.Request, receipt_id: str) -> web.StreamResponse:
+        """Return a PDF or image inline in the browser."""
+
+        hass: HomeAssistant = request.app["hass"]
+        domain_data = hass.data.get("ford_triplog", {})
+        receipt: dict[str, Any] | None = None
+        storage: FordTriplogReceiptStorage | None = None
+
+        for runtime in domain_data.values():
+            if not isinstance(runtime, dict):
+                continue
+            candidate = runtime.get("receipt_storage")
+            if not isinstance(candidate, FordTriplogReceiptStorage):
+                continue
+            found = await candidate.async_get(receipt_id)
+            if found is not None:
+                receipt = found
+                storage = candidate
+                break
+
+        if receipt is None or storage is None:
+            raise web.HTTPNotFound()
+
+        path = storage.get_managed_path(receipt)
+        if path is None or not await hass.async_add_executor_job(path.is_file):
+            raise web.HTTPNotFound()
+
+        original_name = Path(
+            str(receipt.get("original_filename") or path.name)
+        ).name.replace('"', "")
+        response = web.FileResponse(path)
+        response.headers["Content-Disposition"] = (
+            f'inline; filename="{original_name}"'
+        )
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        return response

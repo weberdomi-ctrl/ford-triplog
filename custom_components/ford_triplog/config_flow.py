@@ -242,6 +242,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._pause_translations: dict[str, str] | None = None
         self._receipt_target_type: str | None = None
         self._receipt_result: dict[str, str] = {}
+        self._selected_receipt_id: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
 
     async def async_step_init(
@@ -996,6 +997,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "label": " · ".join(label_parts),
                         "journey_id": journey.journey_id,
                         "pause_id": pause_id,
+                        "date": date_text,
+                        "start_time": self._pause_time(current.end_time),
+                        "title": str(title or ""),
+                        "location": str(location or "—"),
+                        "cost_total": override.get("cost_total"),
+                        "currency": str(override.get("currency") or ""),
                     }
                 )
 
@@ -1240,7 +1247,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return self.async_show_menu(
             step_id="receipt_management",
-            menu_options=["receipt_import_type", "receipt_ocr", "receipt_list", "receipt_delete"],
+            menu_options=["receipt_import_type", "receipt_list", "receipt_delete"],
         )
 
     async def async_step_receipt_import_type(
@@ -1382,39 +1389,94 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors=errors,
         )
 
-    @staticmethod
-    def _format_receipt_label(receipt: dict[str, Any]) -> str:
-        """Return compact receipt information for selection lists."""
+    async def _async_receipt_contexts(self) -> list[dict[str, Any]]:
+        """Return receipts enriched with their pause or charge context."""
 
-        filename = str(
-            receipt.get("original_filename")
-            or receipt.get("filename")
-            or "Receipt"
+        receipts = await self._get_receipt_storage().async_list()
+        pauses = {
+            str(entry["pause_id"]): entry
+            for entry in await self._async_get_pause_entries()
+        }
+        charges = {
+            str(charge.charge_id): charge
+            for charge in await self._get_charge_manager().async_get_charges()
+            if charge.charge_id
+        }
+
+        enriched: list[dict[str, Any]] = []
+        for receipt in receipts:
+            item = dict(receipt)
+            target_type = str(item.get("target_type") or "")
+            target_id = str(item.get("target_id") or "")
+
+            if target_type == RECEIPT_TARGET_PAUSE:
+                pause = pauses.get(target_id, {})
+                date_text = str(pause.get("date") or "—")
+                time_text = str(pause.get("start_time") or "—")
+                title = str(pause.get("title") or "Pause")
+                location = str(pause.get("location") or "—")
+                amount = pause.get("cost_total")
+                currency = str(pause.get("currency") or "")
+                label = f"⏸️ {date_text} {time_text} · {title} · {location}"
+                kind = "Pause"
+                soc = "—"
+                energy = "—"
+            else:
+                charge = charges.get(target_id)
+                date_text = self._format_charge_datetime(
+                    getattr(charge, "start_time", None)
+                ) if charge else "—"
+                time_text = ""
+                location = self._charge_location(charge) if charge else "—"
+                title = location
+                amount = getattr(charge, "cost_total", None) if charge else None
+                currency = str(getattr(charge, "currency", None) or "") if charge else ""
+                start_soc = getattr(charge, "start_soc", None) if charge else None
+                end_soc = getattr(charge, "end_soc", None) if charge else None
+                soc = (
+                    f"{self._format_optional_number(start_soc, 0)} % → "
+                    f"{self._format_optional_number(end_soc, 0)} %"
+                )
+                energy = (
+                    f"{self._format_optional_number(getattr(charge, 'energy_added_kwh', None), 2)} kWh"
+                    if charge else "—"
+                )
+                label = f"⚡ {date_text} · {location}"
+                kind = "Ladevorgang"
+
+            try:
+                cost = f"{float(amount):.2f} {currency}".strip() if amount is not None else "—"
+            except (TypeError, ValueError):
+                cost = "—"
+
+            item.update({
+                "display_label": label,
+                "display_type": kind,
+                "display_date": date_text,
+                "display_time": time_text,
+                "display_title": title,
+                "display_location": location,
+                "display_cost": cost,
+                "display_soc": soc,
+                "display_energy": energy,
+            })
+            enriched.append(item)
+
+        enriched.sort(
+            key=lambda value: str(value.get("created_at") or ""),
+            reverse=True,
         )
-        target_type = str(receipt.get("target_type") or "")
-        target_id = str(receipt.get("target_id") or "")
-        created_at = str(receipt.get("created_at") or "")
-        date_text = created_at[:10] if created_at else "—"
-        size_bytes = int(receipt.get("size_bytes") or 0)
-        size_text = (
-            f"{size_bytes / 1024 / 1024:.1f} MB"
-            if size_bytes >= 1024 * 1024
-            else f"{max(1, round(size_bytes / 1024))} KB"
-        )
-        return f"{filename} · {date_text} · {size_text} · {target_type} · {target_id}"
+        return enriched
 
     async def async_step_receipt_list(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """List stored receipt metadata."""
-
-        if user_input is not None:
-            return await self.async_step_receipt_management()
+        """Select a receipt using its associated trip context."""
 
         errors: dict[str, str] = {}
         try:
-            receipts = await self._get_receipt_storage().async_list()
+            receipts = await self._async_receipt_contexts()
         except (HomeAssistantError, OSError, ValueError):
             receipts = []
             errors["base"] = "receipt_load_failed"
@@ -1422,7 +1484,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
-                label=self._format_receipt_label(receipt),
+                label=str(receipt.get("display_label")),
             )
             for receipt in receipts
             if receipt.get("receipt_id")
@@ -1430,10 +1492,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not options and not errors:
             errors["base"] = "receipt_none_available"
 
+        if user_input is not None and not errors:
+            self._selected_receipt_id = str(
+                user_input[CONF_RECEIPT_SELECTION]
+            )
+            return await self.async_step_receipt_detail()
+
         schema: dict[Any, Any] = {}
         if options:
             schema[
-                vol.Optional(
+                vol.Required(
                     CONF_RECEIPT_SELECTION,
                     default=options[0]["value"],
                 )
@@ -1449,6 +1517,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"receipt_count": str(len(options))},
+        )
+
+    async def async_step_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show human-readable receipt details and an authenticated file link."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_list()
+
+        receipt_id = str(self._selected_receipt_id or "")
+        receipts = await self._async_receipt_contexts()
+        receipt = next(
+            (item for item in receipts if str(item.get("receipt_id")) == receipt_id),
+            None,
+        )
+        if receipt is None:
+            return self.async_show_form(
+                step_id="receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        size_bytes = int(receipt.get("size_bytes") or 0)
+        size_text = (
+            f"{size_bytes / 1024 / 1024:.1f} MB"
+            if size_bytes >= 1024 * 1024
+            else f"{max(1, round(size_bytes / 1024))} KB"
+        )
+        filename = str(
+            receipt.get("original_filename")
+            or receipt.get("filename")
+            or "—"
+        )
+
+        return self.async_show_form(
+            step_id="receipt_detail",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "type": str(receipt.get("display_type") or "—"),
+                "date": str(receipt.get("display_date") or "—"),
+                "title": str(receipt.get("display_title") or "—"),
+                "location": str(receipt.get("display_location") or "—"),
+                "soc": str(receipt.get("display_soc") or "—"),
+                "energy": str(receipt.get("display_energy") or "—"),
+                "cost": str(receipt.get("display_cost") or "—"),
+                "filename": filename,
+                "size": size_text,
+                "ocr_status": str(receipt.get("ocr_status") or "not_started"),
+                "receipt_url": f"/api/ford_triplog/receipts/{receipt_id}",
+            },
         )
 
     async def async_step_receipt_ocr(
@@ -1553,7 +1673,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
         try:
-            receipts = await self._get_receipt_storage().async_list()
+            receipts = await self._async_receipt_contexts()
         except (HomeAssistantError, OSError, ValueError):
             receipts = []
             errors["base"] = "receipt_load_failed"
@@ -1561,7 +1681,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
-                label=self._format_receipt_label(receipt),
+                label=str(receipt.get("display_label") or receipt.get("receipt_id")),
             )
             for receipt in receipts
             if receipt.get("receipt_id")

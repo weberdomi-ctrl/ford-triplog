@@ -290,7 +290,7 @@
       },
       "receipt_list": {
         "title": "Gespeicherte Belege",
-        "description": "Es sind {receipt_count} Beleg(e) gespeichert. Die Auswahl zeigt Dateiname, Datum, Größe und Zuordnung.",
+        "description": "Es sind {receipt_count} Beleg(e) gespeichert. Wähle eine Pause oder einen Ladevorgang aus; der interne Dateiname wird nur in der Detailansicht angezeigt.",
         "data": {
           "receipt_selection": "Beleg"
         }
@@ -336,6 +336,10 @@
       "receipt_ocr_result": {
         "title": "OCR abgeschlossen",
         "description": "**Datei:** {filename}\n\n**Erkannte Vorschläge**\n- Händler: **{merchant}**\n- Datum: **{date}**\n- Uhrzeit: **{time}**\n- Betrag: **{amount} {currency}**\n- Durchschnittliche Sicherheit: **{confidence}**\n\n**Erkannter Text**\n\n{raw_text}"
+      },
+      "receipt_detail": {
+        "title": "Belegdetails",
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Beleg öffnen]({receipt_url})"
       }
     },
     "error": {
