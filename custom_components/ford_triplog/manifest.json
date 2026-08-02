@@ -14,13 +14,8 @@
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/weberdomi-ctrl/ford-triplog/issues",
   "loggers": [
-    "custom_components.ford_triplog",
-    "rapidocr"
+    "custom_components.ford_triplog"
   ],
-  "requirements": [
-    "rapidocr==3.9.2",
-    "onnxruntime==1.28.0",
-    "PyMuPDF==1.26.4"
-  ],
+  "requirements": [],
   "version": "1.9.0"
 }
