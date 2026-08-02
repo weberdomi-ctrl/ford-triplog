@@ -30,7 +30,8 @@
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Sesje ładowania"
+          "charge_management": "Sesje ładowania",
+          "pause_management": "Edytuj postoje"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
@@ -38,7 +39,8 @@
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami."
+          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami.",
+          "pause_management": "Wybierz i uzupełnij postoje z zapisanych podróży."
         }
       },
       "settings": {
@@ -241,6 +243,37 @@
       "charge_cost_result": {
         "title": "Koszty ładowania zaktualizowane",
         "description": "**Akcja:** {action}\n\n**Sesja ładowania:** {charge_id}\n**Rozliczona energia:** {energy_billed_kwh} kWh\n**Strata ładowania:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Koszt:** {cost_total} {currency}\n**Cena energii za kWh:** {energy_price_per_kwh}\n**Efektywna cena za kWh:** {price_per_kwh}"
+      },
+      "pause_management": {
+        "title": "Edytuj postoje",
+        "description": "Wybierz jeden z {pause_count} wykrytych postojów.",
+        "data": {
+          "pause_selection": "Postój"
+        },
+        "data_description": {
+          "pause_selection": "Lista pokazuje datę, czas, długość i miejsce."
+        }
+      },
+      "pause_edit": {
+        "title": "Edytuj postój",
+        "description": "**Podróż:** {journey_id}\n\n**Postój:** {pause_id}\n**Aktualny tytuł:** {current_title}",
+        "data": {
+          "category": "Kategoria",
+          "title": "Tytuł",
+          "note": "Notatka",
+          "location": "Miejsce",
+          "cost_total": "Koszt",
+          "currency": "Waluta",
+          "action": "Akcja"
+        },
+        "data_description": {
+          "category": "Na przykład food, shopping, leisure, work, parking, overnight lub other.",
+          "action": "Zapisz zmiany lub usuń wszystkie ręcznie wprowadzone dane postoju."
+        }
+      },
+      "pause_result": {
+        "title": "Postój zapisany",
+        "description": "Akcja **{action}** dla postoju **{pause_id}** w podróży **{journey_id}** została zakończona."
       }
     },
     "error": {
@@ -255,7 +288,12 @@
       "charge_load_failed": "Nie udało się wczytać zapisanych sesji ładowania.",
       "charge_none_available": "Nie znaleziono zapisanych sesji ładowania.",
       "charge_not_found": "Wybrana sesja ładowania nie została znaleziona.",
-      "charge_cost_save_failed": "Nie udało się zapisać lub usunąć kosztów ładowania."
+      "charge_cost_save_failed": "Nie udało się zapisać lub usunąć kosztów ładowania.",
+      "pause_load_failed": "Nie udało się wczytać postojów.",
+      "pause_none_available": "Brak postojów możliwych do edycji.",
+      "pause_invalid_selection": "Wybrany postój jest nieprawidłowy.",
+      "pause_journey_not_found": "Nie znaleziono powiązanej podróży.",
+      "pause_save_failed": "Nie udało się zapisać postoju."
     }
   },
   "entity": {

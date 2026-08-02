@@ -30,7 +30,8 @@
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Charging sessions"
+          "charge_management": "Charging sessions",
+          "pause_management": "Edit pauses"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
@@ -38,7 +39,8 @@
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "View archived charging sessions and manage charging costs."
+          "charge_management": "View archived charging sessions and manage charging costs.",
+          "pause_management": "Select and maintain archived journey pauses."
         }
       },
       "settings": {
@@ -241,6 +243,37 @@
       "charge_cost_result": {
         "title": "Charging costs updated",
         "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Billed energy:** {energy_billed_kwh} kWh\n**Charging loss:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Cost:** {cost_total} {currency}\n**Energy price per kWh:** {energy_price_per_kwh}\n**Effective price per kWh:** {price_per_kwh}"
+      },
+      "pause_management": {
+        "title": "Edit pauses",
+        "description": "Select one of {pause_count} detected pauses.",
+        "data": {
+          "pause_selection": "Pause"
+        },
+        "data_description": {
+          "pause_selection": "The list shows date, time, duration and location."
+        }
+      },
+      "pause_edit": {
+        "title": "Edit pause",
+        "description": "**Journey:** {journey_id}\n\n**Pause:** {pause_id}\n**Current title:** {current_title}",
+        "data": {
+          "category": "Category",
+          "title": "Title",
+          "note": "Note",
+          "location": "Location",
+          "cost_total": "Cost",
+          "currency": "Currency",
+          "action": "Action"
+        },
+        "data_description": {
+          "category": "For example food, shopping, leisure, work, parking, overnight or other.",
+          "action": "Save changes or clear all manually maintained data for this pause."
+        }
+      },
+      "pause_result": {
+        "title": "Pause updated",
+        "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
       }
     },
     "error": {
@@ -255,7 +288,12 @@
       "charge_load_failed": "Unable to load archived charging sessions.",
       "charge_none_available": "No archived charging sessions were found.",
       "charge_not_found": "The selected charging session was not found.",
-      "charge_cost_save_failed": "Charging costs could not be saved or cleared."
+      "charge_cost_save_failed": "Charging costs could not be saved or cleared.",
+      "pause_load_failed": "Pauses could not be loaded.",
+      "pause_none_available": "No editable pauses are available.",
+      "pause_invalid_selection": "The selected pause is invalid.",
+      "pause_journey_not_found": "The related journey was not found.",
+      "pause_save_failed": "The pause could not be saved."
     }
   },
   "entity": {

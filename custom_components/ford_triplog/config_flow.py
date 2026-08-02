@@ -115,6 +115,18 @@ CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
 
+CONF_PAUSE_SELECTION = "pause_selection"
+CONF_PAUSE_CATEGORY = "category"
+CONF_PAUSE_TITLE = "title"
+CONF_PAUSE_NOTE = "note"
+CONF_PAUSE_LOCATION = "location"
+CONF_PAUSE_COST_TOTAL = "cost_total"
+CONF_PAUSE_CURRENCY = "currency"
+CONF_PAUSE_ACTION = "action"
+
+PAUSE_ACTION_SAVE = "save"
+PAUSE_ACTION_CLEAR = "clear"
+
 
 class FordTriplogConfigFlow(
     config_entries.ConfigFlow,
@@ -214,6 +226,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_charge_id: str | None = None
         self._charge_result: dict[str, str] = {}
         self._charge_translations: dict[str, str] | None = None
+        self._selected_pause_journey_id: str | None = None
+        self._selected_pause_id: str | None = None
+        self._pause_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -228,6 +243,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "user_charging_sites",
                 "download_charging_sites",
                 "journey_management",
+                "pause_management",
                 "charge_management",
             ],
         )
@@ -834,6 +850,311 @@ class FordTriplogOptionsFlow(OptionsFlow):
         except (TypeError, ValueError):
             return "—"
 
+
+    def _get_journey_storage(self):
+        """Return Journey storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("journey_storage")
+
+        if storage is None:
+            raise HomeAssistantError(
+                "Journey storage is not initialized"
+            )
+
+        return storage
+
+    @staticmethod
+    def _pause_location(current: Any, following: Any) -> str:
+        """Return the most useful automatic location for a pause."""
+
+        return str(
+            getattr(current, "end_location", None)
+            or getattr(current, "end_address", None)
+            or getattr(following, "start_location", None)
+            or getattr(following, "start_address", None)
+            or "—"
+        )
+
+    @staticmethod
+    def _pause_time(value: Any) -> str:
+        """Format one ISO timestamp for a compact selection label."""
+
+        if not value:
+            return "—"
+
+        try:
+            return datetime.fromisoformat(str(value)).strftime("%H:%M")
+        except ValueError:
+            return str(value)
+
+    async def _async_get_pause_entries(self) -> list[dict[str, Any]]:
+        """Return editable pauses from all archived journeys."""
+
+        from .journey import build_pause_id
+
+        entries: list[dict[str, Any]] = []
+        journeys = await self._get_journey_storage().get_all_journeys()
+
+        for journey in reversed(journeys):
+            for current, following in zip(journey.items, journey.items[1:]):
+                if not current.end_time or not following.start_time:
+                    continue
+
+                try:
+                    start = datetime.fromisoformat(current.end_time)
+                    end = datetime.fromisoformat(following.start_time)
+                    duration_seconds = max(0, int((end - start).total_seconds()))
+                except ValueError:
+                    duration_seconds = 0
+
+                if duration_seconds <= 0:
+                    continue
+
+                pause_id = build_pause_id(current.item_id, following.item_id)
+                override = dict(journey.pause_overrides.get(pause_id, {}))
+                location = override.get("location") or self._pause_location(
+                    current,
+                    following,
+                )
+                title = override.get("title")
+                date_text = str(journey.date or "—")
+                time_text = (
+                    f"{self._pause_time(current.end_time)}–"
+                    f"{self._pause_time(following.start_time)}"
+                )
+                minutes = round(duration_seconds / 60)
+                label_parts = [date_text, time_text, f"{minutes} min", str(location)]
+                if title:
+                    label_parts.append(str(title))
+
+                entries.append(
+                    {
+                        "value": f"{journey.journey_id}::{pause_id}",
+                        "label": " · ".join(label_parts),
+                        "journey_id": journey.journey_id,
+                        "pause_id": pause_id,
+                    }
+                )
+
+        return entries
+
+    async def async_step_pause_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one archived Journey pause."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            pauses = await self._async_get_pause_entries()
+        except (HomeAssistantError, OSError, ValueError):
+            pauses = []
+            errors["base"] = "pause_load_failed"
+
+        if not pauses and not errors:
+            errors["base"] = "pause_none_available"
+
+        if user_input is not None and not errors:
+            selection = str(user_input[CONF_PAUSE_SELECTION])
+            try:
+                journey_id, pause_id = selection.split("::", 1)
+            except ValueError:
+                errors["base"] = "pause_invalid_selection"
+            else:
+                self._selected_pause_journey_id = journey_id
+                self._selected_pause_id = pause_id
+                return await self.async_step_pause_edit()
+
+        schema: dict[Any, Any] = {}
+        if pauses:
+            options = [
+                selector.SelectOptionDict(
+                    value=pause["value"],
+                    label=pause["label"],
+                )
+                for pause in pauses
+            ]
+            schema[
+                vol.Required(
+                    CONF_PAUSE_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="pause_management",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"pause_count": str(len(pauses))},
+        )
+
+    async def async_step_pause_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Edit one Journey pause."""
+
+        if not self._selected_pause_journey_id or not self._selected_pause_id:
+            return await self.async_step_pause_management()
+
+        errors: dict[str, str] = {}
+        journey = await self._get_journey_storage().load_journey_by_id(
+            self._selected_pause_journey_id
+        )
+        if journey is None:
+            errors["base"] = "pause_journey_not_found"
+            return self.async_show_form(
+                step_id="pause_edit",
+                data_schema=vol.Schema({}),
+                errors=errors,
+            )
+
+        override = dict(
+            journey.pause_overrides.get(self._selected_pause_id, {})
+        )
+
+        if user_input is not None:
+            action = user_input.get(CONF_PAUSE_ACTION, PAUSE_ACTION_SAVE)
+            service = "clear_pause_edit" if action == PAUSE_ACTION_CLEAR else "edit_pause"
+            service_data: dict[str, Any] = {
+                "entry_id": self._config_entry.entry_id,
+                "journey_id": self._selected_pause_journey_id,
+                "pause_id": self._selected_pause_id,
+            }
+
+            if action == PAUSE_ACTION_SAVE:
+                service_data.update(
+                    {
+                        "category": user_input.get(CONF_PAUSE_CATEGORY, ""),
+                        "title": user_input.get(CONF_PAUSE_TITLE, ""),
+                        "note": user_input.get(CONF_PAUSE_NOTE, ""),
+                        "location": user_input.get(CONF_PAUSE_LOCATION, ""),
+                        "cost_total": user_input.get(CONF_PAUSE_COST_TOTAL),
+                        "currency": user_input.get(CONF_PAUSE_CURRENCY, "CHF"),
+                    }
+                )
+
+            try:
+                await self.hass.services.async_call(
+                    DOMAIN,
+                    service,
+                    service_data,
+                    blocking=True,
+                    return_response=True,
+                )
+            except (HomeAssistantError, ValueError):
+                errors["base"] = "pause_save_failed"
+            else:
+                self._pause_result = {
+                    "journey_id": self._selected_pause_journey_id,
+                    "pause_id": self._selected_pause_id,
+                    "action": action,
+                }
+                return await self.async_step_pause_result()
+
+        fields: dict[Any, Any] = {
+            vol.Optional(
+                CONF_PAUSE_CATEGORY,
+                default=str(override.get("category") or "other"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        "food",
+                        "shopping",
+                        "leisure",
+                        "work",
+                        "parking",
+                        "overnight",
+                        "other",
+                    ],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_PAUSE_TITLE,
+                default=str(override.get("title") or ""),
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_PAUSE_NOTE,
+                default=str(override.get("note") or ""),
+            ): selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            ),
+            vol.Optional(
+                CONF_PAUSE_LOCATION,
+                default=str(override.get("location") or ""),
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_PAUSE_COST_TOTAL,
+                default=override.get("cost_total", 0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    step=0.01,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_PAUSE_CURRENCY,
+                default=str(override.get("currency") or "CHF"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["CHF", "EUR", "GBP", "USD"],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required(
+                CONF_PAUSE_ACTION,
+                default=PAUSE_ACTION_SAVE,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[PAUSE_ACTION_SAVE, PAUSE_ACTION_CLEAR],
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="pause_edit",
+            data_schema=vol.Schema(fields),
+            errors=errors,
+            description_placeholders={
+                "journey_id": self._selected_pause_journey_id,
+                "pause_id": self._selected_pause_id,
+                "current_title": str(override.get("title") or "—"),
+            },
+        )
+
+    async def async_step_pause_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the result of a pause edit."""
+
+        if user_input is not None:
+            return await self.async_step_pause_management()
+
+        return self.async_show_form(
+            step_id="pause_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._pause_result,
+        )
 
     def _get_journey_rebuilder(self):
         """Return the Journey rebuilder for this config entry."""
