@@ -26,6 +26,7 @@ from .const import (
     STORAGE_DIR,
 )
 from .journey import FordTriplogJourney, build_pause_id
+from .metadata_storage import FordTriplogMetadataStorage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class FordTriplogJourneyStorage:
         self._last_journey_path = (
             self._base_directory / LAST_JOURNEY_FILE
         )
+        self._metadata_storage = FordTriplogMetadataStorage(hass)
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
@@ -63,6 +65,8 @@ class FordTriplogJourneyStorage:
             True,
             True,
         )
+        await self._metadata_storage.async_setup()
+        await self._migrate_pause_overrides_to_metadata()
 
     async def save_current_journey(
         self,
@@ -286,38 +290,65 @@ class FordTriplogJourneyStorage:
         self,
         data: dict[str, Any],
     ) -> dict[str, Any]:
-        """Return journey data enriched with matching archived pause edits."""
+        """Apply persistent pause metadata to a generated journey."""
 
         valid_pause_ids = self._pause_ids_from_data(data)
-        if not valid_pause_ids:
-            return data
-
-        journey_date = str(data.get("date", "")).strip()
-        journey_id = str(data.get("journey_id", "")).strip()
-        inherited: dict[str, dict[str, Any]] = {}
-
-        for existing in await self.get_all_journeys():
-            if existing.journey_id == journey_id:
-                continue
-            if str(existing.date or "").strip() != journey_date:
-                continue
-
-            for pause_id, override in existing.pause_overrides.items():
-                if pause_id in valid_pause_ids and isinstance(override, dict):
-                    inherited[pause_id] = dict(override)
-
+        persistent = await self._metadata_storage.get_pause_overrides()
         current = data.get("pause_overrides")
+        merged: dict[str, dict[str, Any]] = {
+            pause_id: dict(persistent[pause_id])
+            for pause_id in valid_pause_ids
+            if pause_id in persistent
+        }
         if isinstance(current, dict):
-            inherited.update(
+            merged.update(
                 {
                     str(pause_id): dict(override)
                     for pause_id, override in current.items()
-                    if isinstance(override, dict)
+                    if str(pause_id) in valid_pause_ids
+                    and isinstance(override, dict)
                 }
             )
-
-        data["pause_overrides"] = inherited
+        data["pause_overrides"] = merged
         return data
+
+    async def _migrate_pause_overrides_to_metadata(self) -> None:
+        """Import legacy journey-embedded overrides into metadata.json."""
+
+        collected: dict[str, dict[str, Any]] = {}
+
+        for path in await self.list_journey_files():
+            journey = await self.load_journey_file(path)
+            if journey is not None:
+                collected.update(
+                    {
+                        pause_id: dict(value)
+                        for pause_id, value in journey.pause_overrides.items()
+                        if isinstance(value, dict)
+                    }
+                )
+
+        for cache_path in (self._current_journey_path, self._last_journey_path):
+            cache_data = await self._async_load_json(cache_path)
+            if not isinstance(cache_data, dict):
+                continue
+            overrides = cache_data.get("pause_overrides")
+            if isinstance(overrides, dict):
+                collected.update(
+                    {
+                        str(pause_id): dict(value)
+                        for pause_id, value in overrides.items()
+                        if isinstance(value, dict)
+                    }
+                )
+
+        if collected:
+            changed = await self._metadata_storage.import_legacy_pause_overrides(collected)
+            if changed:
+                _LOGGER.info(
+                    "Migrated %d pause override(s) to persistent metadata",
+                    len(collected),
+                )
 
     async def _synchronize_pause_overrides(
         self,
@@ -332,7 +363,19 @@ class FordTriplogJourneyStorage:
         if not isinstance(authoritative_overrides, dict):
             authoritative_overrides = {}
 
-        if not journey_date or not authoritative_ids:
+        if not authoritative_ids:
+            return
+
+        await self._metadata_storage.synchronize_pause_overrides(
+            authoritative_ids,
+            {
+                str(pause_id): dict(value)
+                for pause_id, value in authoritative_overrides.items()
+                if isinstance(value, dict)
+            },
+        )
+
+        if not journey_date:
             return
 
         for path in await self.list_journey_files():

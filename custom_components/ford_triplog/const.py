@@ -56,6 +56,8 @@ JOURNEYS_DIR: Final = "journeys"
 
 CURRENT_JOURNEY_FILE: Final = "current_journey.json"
 LAST_JOURNEY_FILE: Final = "last_journey.json"
+METADATA_FILE: Final = "metadata.json"
+METADATA_SCHEMA_VERSION: Final = 1
 
 #
 # Config Flow
