@@ -1,0 +1,90 @@
+{
+  "schema": 1,
+  "profile_id": "electra_invoice_v1",
+  "name": "Electra Rechnung",
+  "version": "1.0",
+  "priority": 100,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "ELECTRA",
+      "Gesamtenergie"
+    ],
+    "optional_contains": [
+      "Electra SAS",
+      "Total (incl. tax)",
+      "go-electra.com"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "Electra"
+    },
+    "invoice_number": {
+      "patterns": [
+        "Rechnungsnummer\\s*(UN\\d{8}-?)\\s*\\n?\\s*(\\d+)"
+      ],
+      "join_groups": true,
+      "transform": "remove_whitespace"
+    },
+    "receipt_date": {
+      "patterns": [
+        "Rechnungsdatum\\s*(\\d{2}/\\d{2}/\\d{4})"
+      ],
+      "transform": "date_slash_dmy4"
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Gesamtenergie.*?([\\d.,]+)\\s*kWh"
+      ],
+      "transform": "decimal",
+      "dotall": true,
+      "required": true
+    },
+    "subtotal": {
+      "patterns": [
+        "Gesamtbetrag \\(exkl\\. Steuern\\).*?\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "dotall": true
+    },
+    "vat": {
+      "patterns": [
+        "MwSt\\.\\s*8,1%.*?\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "dotall": true
+    },
+    "total": {
+      "patterns": [
+        "Gesamtbetrag \\(inkl\\. Steuern\\).*?\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "dotall": true,
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "charging_start": {
+      "patterns": [
+        "(\\d{2}/\\d{2}/\\d{4})\\s+à\\s+(\\d{2}:\\d{2})\\s*-\\s*\\d{2}:\\d{2}"
+      ],
+      "join_groups": true,
+      "transform": [
+        "remove_whitespace"
+      ]
+    },
+    "station": {
+      "patterns": [
+        "\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2}\\s*-\\s*\\d{2}:\\d{2}\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    }
+  }
+}

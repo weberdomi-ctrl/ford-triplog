@@ -1856,6 +1856,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
             url=self._selected_receipt_url,
         )
 
+    @staticmethod
+    def _format_receipt_processing_status(
+        receipt: dict[str, Any],
+    ) -> str:
+        """Return one compact OCR/parser status label."""
+
+        ocr_status = str(
+            receipt.get("ocr_status") or "not_started"
+        ).lower()
+        parse_status = str(
+            receipt.get("parse_status") or ""
+        ).lower()
+
+        if ocr_status == "failed":
+            return "⚠ OCR fehlgeschlagen"
+        if ocr_status == "running":
+            return "⏳ OCR läuft"
+        if ocr_status != "completed":
+            return "⬜ Noch nicht gelesen"
+        if parse_status == "parsed":
+            profile = str(
+                receipt.get("parser_profile") or "Profil"
+            )
+            return f"🧾 Werte erkannt · {profile}"
+        if parse_status == "no_match":
+            return "✅ OCR abgeschlossen · kein Profil"
+        return "✅ OCR abgeschlossen"
+
     def _get_ocr_client(self) -> FordTriplogOCRClient:
         """Return a configured client for the external OCR service."""
 
@@ -1893,9 +1921,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
-                label=str(
-                    receipt.get("display_label")
-                    or receipt.get("receipt_id")
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('display_label') or receipt.get('receipt_id')}"
                 ),
             )
             for receipt in receipts
@@ -1948,11 +1976,33 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     else "—"
                 )
 
+                document_name = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+
+                parser_result = receipt.get("parser_result", {})
+                if not isinstance(parser_result, dict):
+                    parser_result = {}
+                parsed_fields = parser_result.get("fields", {})
+                if not isinstance(parsed_fields, dict):
+                    parsed_fields = {}
+
+                parser_name = str(
+                    parser_result.get("profile_name")
+                    or "Kein passendes Profil"
+                )
+                parser_confidence = parser_result.get("confidence")
+                parser_confidence_text = "—"
+                if isinstance(parser_confidence, (int, float)):
+                    parser_confidence_text = (
+                        f"{float(parser_confidence) * 100:.1f} %"
+                    )
+
                 self._receipt_ocr_result = {
-                    "document": str(
-                        receipt.get("original_filename")
-                        or "Beleg"
-                    ),
+                    # Current dev21 placeholders.
+                    "document": document_name,
                     "engine": str(
                         ocr_result.get("engine") or "—"
                     ),
@@ -1963,7 +2013,44 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "confidence": confidence_text,
                     "page": page_text,
                     "character_count": str(len(raw_text)),
+                    "parser_profile": parser_name,
+                    "parser_confidence": parser_confidence_text,
+                    "parsed_merchant": str(
+                        parsed_fields.get("merchant")
+                        or parsed_fields.get("provider")
+                        or "—"
+                    ),
+                    "parsed_station": str(
+                        parsed_fields.get("station") or "—"
+                    ),
+                    "parsed_start": str(
+                        parsed_fields.get("charging_start") or "—"
+                    ),
+                    "parsed_end": str(
+                        parsed_fields.get("charging_end") or "—"
+                    ),
+                    "parsed_energy": str(
+                        parsed_fields.get("energy_kwh") or "—"
+                    ),
+                    "parsed_price": str(
+                        parsed_fields.get("price_per_kwh") or "—"
+                    ),
+                    "parsed_total": str(
+                        parsed_fields.get("total") or "—"
+                    ),
+                    "parsed_currency": str(
+                        parsed_fields.get("currency") or ""
+                    ),
                     "raw_text": display_text or "Kein Text erkannt.",
+
+                    # Backward compatibility for cached dev12/dev19
+                    # translations that still expect parser placeholders.
+                    "filename": document_name,
+                    "merchant": "Noch nicht ausgewertet",
+                    "date": "Noch nicht ausgewertet",
+                    "time": "Noch nicht ausgewertet",
+                    "amount": "Noch nicht ausgewertet",
+                    "currency": "",
                 }
                 return await self.async_step_receipt_ocr_result()
 

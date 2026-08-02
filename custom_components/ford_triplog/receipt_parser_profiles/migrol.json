@@ -1,0 +1,96 @@
+{
+  "schema": 1,
+  "profile_id": "migrol_delivery_note_v1",
+  "name": "Migrol Ladevorgang",
+  "version": "1.0",
+  "priority": 100,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "MIGROL",
+      "Energiebezug"
+    ],
+    "optional_contains": [
+      "MIGROLCARD",
+      "PricePerKWh",
+      "Ladevorgang - Lieferschein"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "Migrol"
+    },
+    "invoice_number": {
+      "patterns": [
+        "Lieferschein Nr\\.\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "station": {
+      "patterns": [
+        "Ladepunkt\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ],
+      "required": true
+    },
+    "charging_start": {
+      "patterns": [
+        "Start\\s*\\n(\\d{2}\\.\\d{2}\\.\\d{4}\\s+\\d{2}:\\d{2})\\s*Uhr"
+      ],
+      "transform": "datetime_dmy4_space",
+      "required": true
+    },
+    "charging_end": {
+      "patterns": [
+        "Ende\\s*\\n(\\d{2}\\.\\d{2}\\.\\d{4}\\s*\\d{2}:\\d{2})\\s*Uhr"
+      ],
+      "transform": "datetime_dmy4_space"
+    },
+    "duration_minutes": {
+      "patterns": [
+        "Dauer\\s*\\n(\\d+)\\s*Min"
+      ],
+      "transform": "integer"
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Energiebezug\\s*\\n([\\d.,]+)\\s*kWh"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "price_per_kwh": {
+      "patterns": [
+        "PricePerKWh\\(\"([\\d.,]+)\"\\)"
+      ],
+      "transform": "decimal"
+    },
+    "total": {
+      "patterns": [
+        "Brutto-Summe\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "payment_method": {
+      "patterns": [
+        "Zahlungsmittel\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    }
+  }
+}

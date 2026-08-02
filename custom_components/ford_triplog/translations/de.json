@@ -331,14 +331,14 @@
       },
       "receipt_ocr": {
         "title": "Beleg per OCR analysieren",
-        "description": "Wähle einen gespeicherten Beleg aus. Die Datei wird an den konfigurierten lokalen OCR-Dienst gesendet. Der vollständige erkannte Text wird anschließend dauerhaft beim Beleg gespeichert.",
+        "description": "Wähle einen gespeicherten Beleg aus. Der Status am Anfang jeder Zeile zeigt, ob der Beleg bereits gelesen und mit einem Parser-Profil ausgewertet wurde. Eine erneute OCR ist weiterhin möglich.",
         "data": {
           "receipt_ocr_selection": "Beleg"
         }
       },
       "receipt_ocr_result": {
         "title": "OCR abgeschlossen",
-        "description": "**Dokument:** {document}\n\n**Engine:** {engine}\n**Dienstversion:** {service_version}\n**Verarbeitungsdauer:** {elapsed}\n**Durchschnittliche Sicherheit:** {confidence}\n**PDF-Seite:** {page}\n**Erkannte Zeichen:** {character_count}\n\n**Erkannter Text**\n\n{raw_text}"
+        "description": "**Dokument:** {document}\n\n**Engine:** {engine}\n**Dienstversion:** {service_version}\n**Verarbeitungsdauer:** {elapsed}\n**Durchschnittliche Sicherheit:** {confidence}\n**PDF-Seite:** {page}\n**Erkannte Zeichen:** {character_count}\n\n## Parser-Ergebnis\n\n**Profil:** {parser_profile}\n**Parser-Sicherheit:** {parser_confidence}\n**Anbieter:** {parsed_merchant}\n**Ladeort:** {parsed_station}\n**Start:** {parsed_start}\n**Ende:** {parsed_end}\n**Energie:** {parsed_energy} kWh\n**Preis pro kWh:** {parsed_price} {parsed_currency}\n**Gesamt:** {parsed_total} {parsed_currency}\n\n## Erkannter Text\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Belegdetails",

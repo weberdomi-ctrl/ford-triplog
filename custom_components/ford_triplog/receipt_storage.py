@@ -18,6 +18,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import RECEIPTS_DIR, RECEIPT_MAX_SIZE_BYTES, STORAGE_DIR
 from .metadata_storage import FordTriplogMetadataStorage
+from .receipt_parser import ReceiptParserEngine
 
 
 if TYPE_CHECKING:
@@ -36,12 +37,16 @@ class FordTriplogReceiptStorage:
         self.hass = hass
         self._directory = Path(hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR))
         self._metadata = FordTriplogMetadataStorage(hass)
+        self._parser = ReceiptParserEngine(
+            Path(__file__).parent / "receipt_parser_profiles"
+        )
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(
             self._directory.mkdir, 0o755, True, True
         )
         await self._metadata.async_setup()
+        await self.hass.async_add_executor_job(self._parser.load)
 
     async def async_import(
         self,
@@ -153,6 +158,11 @@ class FordTriplogReceiptStorage:
         completed_at = datetime.now(timezone.utc).isoformat()
         result["completed_at"] = completed_at
 
+        parse_result = self._parser.parse(
+            str(result.get("raw_text") or "")
+        )
+        parse_data = parse_result.as_dict()
+
         updated = await self._metadata.update_receipt(
             normalized_id,
             {
@@ -160,6 +170,10 @@ class FordTriplogReceiptStorage:
                 "ocr_error": None,
                 "ocr_result": result,
                 "ocr_confirmed": False,
+                "parse_status": parse_result.status,
+                "parser_profile": parse_result.profile_id,
+                "parser_result": parse_data,
+                "parser_confirmed": False,
             },
         )
         if updated is None:

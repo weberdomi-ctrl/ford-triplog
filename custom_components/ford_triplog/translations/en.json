@@ -331,14 +331,14 @@
       },
       "receipt_ocr": {
         "title": "Analyze receipt with OCR",
-        "description": "Select a stored receipt. The file is sent to the configured local OCR service. The complete recognized text is then stored permanently with the receipt.",
+        "description": "Select a stored receipt. The status at the beginning of each row shows whether it has already been read and evaluated by a parser profile. OCR can still be run again.",
         "data": {
           "receipt_ocr_selection": "Receipt"
         }
       },
       "receipt_ocr_result": {
         "title": "OCR completed",
-        "description": "**Document:** {document}\n\n**Engine:** {engine}\n**Service version:** {service_version}\n**Processing time:** {elapsed}\n**Average confidence:** {confidence}\n**PDF page:** {page}\n**Recognized characters:** {character_count}\n\n**Recognized text**\n\n{raw_text}"
+        "description": "**Document:** {document}\n\n**Engine:** {engine}\n**Service version:** {service_version}\n**Processing time:** {elapsed}\n**Average confidence:** {confidence}\n**PDF page:** {page}\n**Recognized characters:** {character_count}\n\n## Parser result\n\n**Profile:** {parser_profile}\n**Parser confidence:** {parser_confidence}\n**Provider:** {parsed_merchant}\n**Charging location:** {parsed_station}\n**Start:** {parsed_start}\n**End:** {parsed_end}\n**Energy:** {parsed_energy} kWh\n**Price per kWh:** {parsed_price} {parsed_currency}\n**Total:** {parsed_total} {parsed_currency}\n\n## Recognized text\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Receipt details",

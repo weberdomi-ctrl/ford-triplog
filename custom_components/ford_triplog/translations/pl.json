@@ -331,14 +331,14 @@
       },
       "receipt_ocr": {
         "title": "Analizuj paragon przez OCR",
-        "description": "Wybierz zapisany paragon. Plik zostanie wysłany do skonfigurowanej lokalnej usługi OCR, a pełny rozpoznany tekst zostanie trwale zapisany przy paragonie.",
+        "description": "Wybierz zapisany paragon. Status na początku każdego wiersza pokazuje, czy dokument został już odczytany i przetworzony przez profil parsera. OCR można uruchomić ponownie.",
         "data": {
           "receipt_ocr_selection": "Paragon"
         }
       },
       "receipt_ocr_result": {
         "title": "OCR zakończone",
-        "description": "**Dokument:** {document}\n\n**Silnik:** {engine}\n**Wersja usługi:** {service_version}\n**Czas przetwarzania:** {elapsed}\n**Średnia pewność:** {confidence}\n**Strona PDF:** {page}\n**Rozpoznane znaki:** {character_count}\n\n**Rozpoznany tekst**\n\n{raw_text}"
+        "description": "**Dokument:** {document}\n\n**Silnik:** {engine}\n**Wersja usługi:** {service_version}\n**Czas przetwarzania:** {elapsed}\n**Średnia pewność:** {confidence}\n**Strona PDF:** {page}\n**Rozpoznane znaki:** {character_count}\n\n## Wynik parsera\n\n**Profil:** {parser_profile}\n**Pewność parsera:** {parser_confidence}\n**Dostawca:** {parsed_merchant}\n**Lokalizacja ładowania:** {parsed_station}\n**Początek:** {parsed_start}\n**Koniec:** {parsed_end}\n**Energia:** {parsed_energy} kWh\n**Cena za kWh:** {parsed_price} {parsed_currency}\n**Razem:** {parsed_total} {parsed_currency}\n\n## Rozpoznany tekst\n\n{raw_text}"
       },
       "receipt_detail": {
         "title": "Szczegóły paragonu",
