@@ -22,7 +22,7 @@ Changes:
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
 from time import perf_counter
 from typing import Any
 
@@ -30,6 +30,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components.file_upload import process_uploaded_file
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlowResult,
@@ -38,8 +39,8 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.translation import async_get_translations
-from homeassistant.helpers.network import get_url
 from homeassistant.util import dt as dt_util
 
 from .countries import COUNTRIES
@@ -1554,6 +1555,26 @@ class FordTriplogOptionsFlow(OptionsFlow):
             or "—"
         )
 
+        receipt_path = f"/api/ford_triplog/receipts/{receipt_id}"
+        signed_path = async_sign_path(
+            self.hass,
+            receipt_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=False,
+            ).rstrip("/")
+            receipt_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            receipt_url = signed_path
+
         return self.async_show_form(
             step_id="receipt_detail",
             data_schema=vol.Schema({}),
@@ -1568,23 +1589,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "filename": filename,
                 "size": size_text,
                 "ocr_status": str(receipt.get("ocr_status") or "not_started"),
-                "receipt_url": self._build_receipt_url(receipt_id),
+                "receipt_url": receipt_url,
             },
         )
-
-    def _build_receipt_url(self, receipt_id: str) -> str:
-        """Return an absolute authenticated Home Assistant receipt URL."""
-
-        try:
-            base_url = get_url(
-                self.hass,
-                prefer_external=False,
-            ).rstrip("/")
-        except Exception:  # Home Assistant has no configured reachable URL.
-            base_url = ""
-
-        path = f"/api/ford_triplog/receipts/{receipt_id}"
-        return f"{base_url}{path}" if base_url else path
 
     async def async_step_receipt_ocr(
         self,
