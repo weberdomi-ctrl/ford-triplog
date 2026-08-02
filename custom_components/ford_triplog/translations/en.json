@@ -92,7 +92,7 @@
       },
       "download_charging_sites": {
         "title": "Ladeort-Datenbank herunterladen",
-        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert. Der Vorgang kann einige Sekunden oder Minuten dauern.",
+        "description": "Select the country whose charging locations should be downloaded directly from OpenStreetMap. The existing database is backed up before activation.\n\n**Note:** After the download, the charging locations are processed and optimized locally. Depending on the database size and hardware, this step may take several minutes. During this time, the progress bar may temporarily remain unchanged.",
         "data": {
           "charging_site_country": "Land"
         },
@@ -339,7 +339,14 @@
       },
       "receipt_detail": {
         "title": "Receipt details",
-        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Open receipt]({receipt_url})"
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {document_type} ({size})\n**OCR analysis:** {ocr_status}",
+        "data": {
+          "receipt_detail_action": "Action"
+        }
+      },
+      "receipt_open": {
+        "title": "Open receipt in browser",
+        "description": "Open the receipt in a separate browser window using the Home Assistant dialog."
       }
     },
     "error": {

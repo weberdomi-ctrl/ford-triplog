@@ -92,7 +92,7 @@
       },
       "download_charging_sites": {
         "title": "Ladeort-Datenbank herunterladen",
-        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert. Der Vorgang kann einige Sekunden oder Minuten dauern.",
+        "description": "Wybierz kraj, którego lokalizacje ładowania mają zostać pobrane bezpośrednio z OpenStreetMap. Przed aktywacją istniejąca baza danych zostanie automatycznie zabezpieczona.\n\n**Uwaga:** Po pobraniu lokalizacje ładowania są przetwarzane i optymalizowane lokalnie. W zależności od wielkości bazy danych i sprzętu ten etap może potrwać kilka minut. W tym czasie pasek postępu może chwilowo pozostać bez zmian.",
         "data": {
           "charging_site_country": "Land"
         },
@@ -339,7 +339,14 @@
       },
       "receipt_detail": {
         "title": "Szczegóły paragonu",
-        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Miejsce:** {location}\n\n**Poziom naładowania:** {soc}\n**Energia:** {energy}\n**Koszt:** {cost}\n\n**Plik:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Otwórz paragon]({receipt_url})"
+        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Miejsce:** {location}\n\n**Poziom naładowania:** {soc}\n**Energia:** {energy}\n**Koszt:** {cost}\n\n**Plik:** {document_type} ({size})\n**Analiza OCR:** {ocr_status}",
+        "data": {
+          "receipt_detail_action": "Akcja"
+        }
+      },
+      "receipt_open": {
+        "title": "Otwórz paragon w przeglądarce",
+        "description": "Otwórz paragon w osobnym oknie przeglądarki za pomocą okna Home Assistant."
       }
     },
     "error": {

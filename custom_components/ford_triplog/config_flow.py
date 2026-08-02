@@ -136,6 +136,9 @@ CONF_RECEIPT_FILE = "receipt_file"
 CONF_RECEIPT_NOTE = "note"
 CONF_RECEIPT_SELECTION = "receipt_selection"
 CONF_RECEIPT_OCR_SELECTION = "receipt_ocr_selection"
+CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
+RECEIPT_DETAIL_OPEN = "open"
+RECEIPT_DETAIL_BACK = "back"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
 
@@ -245,6 +248,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._receipt_target_type: str | None = None
         self._receipt_result: dict[str, str] = {}
         self._selected_receipt_id: str | None = None
+        self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
 
     async def async_step_init(
@@ -1521,19 +1525,46 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={"receipt_count": str(len(options))},
         )
 
+    @staticmethod
+    def _format_receipt_ocr_status(value: Any) -> str:
+        """Return a translated-friendly OCR status label."""
+
+        status = str(value or "not_started").strip().lower()
+        labels = {
+            "not_started": "Noch nicht ausgeführt",
+            "queued": "Wartet",
+            "running": "Wird verarbeitet",
+            "completed": "Abgeschlossen",
+            "failed": "Fehlgeschlagen",
+        }
+        return labels.get(status, status or "—")
+
     async def async_step_receipt_detail(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show human-readable receipt details and an authenticated file link."""
+        """Show receipt details and offer an external browser step."""
 
         if user_input is not None:
-            return await self.async_step_receipt_list()
+            action = str(
+                user_input.get(
+                    CONF_RECEIPT_DETAIL_ACTION,
+                    RECEIPT_DETAIL_OPEN,
+                )
+            )
+            if action == RECEIPT_DETAIL_BACK:
+                self._selected_receipt_url = None
+                return await self.async_step_receipt_list()
+            return await self.async_step_receipt_open()
 
         receipt_id = str(self._selected_receipt_id or "")
         receipts = await self._async_receipt_contexts()
         receipt = next(
-            (item for item in receipts if str(item.get("receipt_id")) == receipt_id),
+            (
+                item
+                for item in receipts
+                if str(item.get("receipt_id")) == receipt_id
+            ),
             None,
         )
         if receipt is None:
@@ -1549,11 +1580,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if size_bytes >= 1024 * 1024
             else f"{max(1, round(size_bytes / 1024))} KB"
         )
-        filename = str(
+        media_type = str(receipt.get("media_type") or "").lower()
+        original_filename = str(
             receipt.get("original_filename")
             or receipt.get("filename")
-            or "—"
+            or ""
         )
+        suffix = Path(original_filename).suffix.lower()
+
+        if media_type == "application/pdf" or suffix == ".pdf":
+            document_type = "PDF-Dokument"
+        elif media_type.startswith("image/") or suffix in {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+        }:
+            document_type = "Bilddatei"
+        else:
+            document_type = "Dokument"
 
         receipt_path = f"/api/ford_triplog/receipts/{receipt_id}"
         signed_path = async_sign_path(
@@ -1571,13 +1616,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 allow_ip=True,
                 prefer_external=False,
             ).rstrip("/")
-            receipt_url = f"{base_url}{signed_path}"
+            self._selected_receipt_url = f"{base_url}{signed_path}"
         except NoURLAvailableError:
-            receipt_url = signed_path
+            self._selected_receipt_url = signed_path
 
         return self.async_show_form(
             step_id="receipt_detail",
-            data_schema=vol.Schema({}),
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_DETAIL_ACTION,
+                        default=RECEIPT_DETAIL_OPEN,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=RECEIPT_DETAIL_OPEN,
+                                    label="Im Browser öffnen",
+                                ),
+                                selector.SelectOptionDict(
+                                    value=RECEIPT_DETAIL_BACK,
+                                    label="Zurück zur Belegliste",
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
             description_placeholders={
                 "type": str(receipt.get("display_type") or "—"),
                 "date": str(receipt.get("display_date") or "—"),
@@ -1586,11 +1652,26 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "soc": str(receipt.get("display_soc") or "—"),
                 "energy": str(receipt.get("display_energy") or "—"),
                 "cost": str(receipt.get("display_cost") or "—"),
-                "filename": filename,
+                "document_type": document_type,
                 "size": size_text,
-                "ocr_status": str(receipt.get("ocr_status") or "not_started"),
-                "receipt_url": receipt_url,
+                "ocr_status": self._format_receipt_ocr_status(
+                    receipt.get("ocr_status")
+                ),
             },
+        )
+
+    async def async_step_receipt_open(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Open the signed receipt URL using a Home Assistant external step."""
+
+        if not self._selected_receipt_url:
+            return await self.async_step_receipt_list()
+
+        return self.async_external_step(
+            step_id="receipt_open",
+            url=self._selected_receipt_url,
         )
 
     async def async_step_receipt_ocr(

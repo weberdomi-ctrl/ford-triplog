@@ -92,7 +92,7 @@
       },
       "download_charging_sites": {
         "title": "Ladeort-Datenbank herunterladen",
-        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert. Der Vorgang kann einige Sekunden oder Minuten dauern.",
+        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert.\n\n**Hinweis:** Nach dem Download werden die Ladestandorte lokal verarbeitet und optimiert. Dieser Schritt kann je nach Datenbankgröße und Hardware einige Minuten in Anspruch nehmen. Währenddessen kann der Fortschrittsbalken vorübergehend unverändert bleiben.",
         "data": {
           "charging_site_country": "Land"
         },
@@ -339,7 +339,14 @@
       },
       "receipt_detail": {
         "title": "Belegdetails",
-        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {filename} ({size})\n**OCR:** {ocr_status}\n\n[📄 Beleg öffnen]({receipt_url})"
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n**OCR-Analyse:** {ocr_status}",
+        "data": {
+          "receipt_detail_action": "Aktion"
+        }
+      },
+      "receipt_open": {
+        "title": "Beleg im Browser öffnen",
+        "description": "Öffne den Beleg über den folgenden Home-Assistant-Dialog in einem separaten Browserfenster."
       }
     },
     "error": {
