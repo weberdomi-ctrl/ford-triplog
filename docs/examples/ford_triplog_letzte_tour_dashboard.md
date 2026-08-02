@@ -1,4 +1,3 @@
-
 {% set s = 'sensor.garage_ford_triplog_letzte_tour_ubersicht' %}
 {% set timeline = state_attr(s, 'timeline') or [] %}
 
@@ -66,6 +65,7 @@
 {% if item.type == "start" %}
 
 ### 🟢 {{ item.time_formatted }}
+
 📍 **{{ item.location }}**
 
 ---
@@ -87,8 +87,7 @@
 ⚡ {{ item.energy_used_kwh | float(0) | round(1) }} kWh
 {% endif %}
 
-{% if item.distance_km | float(0) >= 3
-      and item.consumption_kwh_100km is defined %}
+{% if item.distance_km | float(0) >= 3 and item.consumption_kwh_100km is defined %}
 📈 {{ item.consumption_kwh_100km | float(0) | round(1) }} kWh/100 km
 {% endif %}
 
@@ -103,7 +102,7 @@
 
 ⏱️ {{ item.duration }}
 
-{% if item.title is defined and item.title %}
+{% if item.title %}
 {% set category = item.category | default('', true) %}
 {% if category == 'food' %}
 🍽️ **{{ item.title }}**
@@ -120,11 +119,11 @@
 {% elif category == 'break' %}
 🪑 **{{ item.title }}**
 {% else %}
-📍 **{{ item.title }}**
+📌 **{{ item.title }}**
 {% endif %}
 {% endif %}
 
-{% if item.category is defined and item.category %}
+{% if item.category %}
 {% if item.category == 'food' %}
 🏷️ Essen
 {% elif item.category == 'coffee' %}
@@ -146,23 +145,20 @@
 {% endif %}
 {% endif %}
 
-{% if item.location is defined and item.location %}
+{% if item.location %}
 📍 {{ item.location }}
 {% endif %}
 
-{% if item.note is defined and item.note %}
+{% if item.note %}
 📝 {{ item.note }}
 {% endif %}
 
 {% if item.soc_start is defined and item.soc_end is defined %}
-🔋 {{ item.soc_start | int }} → {{ item.soc_end | int }} %
-{% if item.soc_delta is defined %}
-({% if item.soc_delta | float(0) > 0 %}+{% endif %}{{ item.soc_delta | float(0) | round(1) }} %)
-{% endif %}
+🔋 {{ item.soc_start | int }} → {{ item.soc_end | int }} %{% if item.soc_delta is defined %} ({% if item.soc_delta | float(0) > 0 %}+{% endif %}{{ item.soc_delta | int }} %){% endif %}
 {% endif %}
 
-{% if item.energy_delta_kwh is defined %}
-⚡ {% if item.energy_delta_kwh | float(0) > 0 %}+{% endif %}{{ item.energy_delta_kwh | float(0) | round(2) }} kWh
+{% if item.battery_energy_change_kwh is defined %}
+⚡ Batterie: **{% if item.battery_energy_change_kwh | float(0) > 0 %}+{% endif %}{{ item.battery_energy_change_kwh | float(0) | round(2) }} kWh**
 {% endif %}
 
 {% if item.cost_total is defined %}
@@ -226,7 +222,7 @@
 🗂️ Quelle: **{{ item.cost_source }}**
 {% endif %}
 
-{% if item.location is defined and item.location %}
+{% if item.location %}
 📍 {{ item.location }}
 {% endif %}
 
@@ -241,4 +237,3 @@
 {% endif %}
 
 {% endfor %}
-```
