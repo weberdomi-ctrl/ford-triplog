@@ -560,6 +560,33 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         total_pause_seconds = 0
         items = list(journey.items)
 
+        # Short gaps directly before or after a charging session are
+        # operational buffers (parking, plugging in, unplugging, departure),
+        # not separate Journey pauses. Keep the real charging duration
+        # unchanged and expose the buffers on the charge timeline entry.
+        charge_buffers: dict[int, dict[str, int]] = {}
+        charging_buffer_limit_seconds = 180
+
+        for gap_index in range(len(items) - 1):
+            current_item = items[gap_index]
+            following_item = items[gap_index + 1]
+            gap_seconds = self._seconds_between(
+                current_item.end_time,
+                following_item.start_time,
+            )
+
+            if gap_seconds <= 0 or gap_seconds > charging_buffer_limit_seconds:
+                continue
+
+            if following_item.item_type == "charge":
+                charge_buffers.setdefault(gap_index + 1, {})[
+                    "arrival_buffer_seconds"
+                ] = gap_seconds
+            elif current_item.item_type == "charge":
+                charge_buffers.setdefault(gap_index, {})[
+                    "departure_buffer_seconds"
+                ] = gap_seconds
+
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
@@ -681,6 +708,19 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     2,
                 )
 
+                buffers = charge_buffers.get(index, {})
+                arrival_buffer_seconds = buffers.get(
+                    "arrival_buffer_seconds", 0
+                )
+                departure_buffer_seconds = buffers.get(
+                    "departure_buffer_seconds", 0
+                )
+                total_stop_duration_seconds = (
+                    duration_seconds
+                    + arrival_buffer_seconds
+                    + departure_buffer_seconds
+                )
+
                 entry = {
                     "type": "charge",
                     "id": item.item_id,
@@ -690,6 +730,26 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
+                    "arrival_buffer_seconds": arrival_buffer_seconds or None,
+                    "arrival_buffer": (
+                        format_duration(arrival_buffer_seconds)
+                        if arrival_buffer_seconds
+                        else None
+                    ),
+                    "departure_buffer_seconds": (
+                        departure_buffer_seconds or None
+                    ),
+                    "departure_buffer": (
+                        format_duration(departure_buffer_seconds)
+                        if departure_buffer_seconds
+                        else None
+                    ),
+                    "total_stop_duration_seconds": (
+                        total_stop_duration_seconds
+                    ),
+                    "total_stop_duration": format_duration(
+                        total_stop_duration_seconds
+                    ),
                     **location_details,
                     "display_location": location_details.get("location"),
                     "start_soc": start_soc,
@@ -738,6 +798,17 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             )
 
             if pause_seconds <= 0:
+                continue
+
+            # Gaps up to three minutes adjacent to a charge were already
+            # assigned to that charging entry as arrival/departure buffers.
+            if (
+                pause_seconds <= charging_buffer_limit_seconds
+                and (
+                    item.item_type == "charge"
+                    or next_item.item_type == "charge"
+                )
+            ):
                 continue
 
             total_pause_seconds += pause_seconds
