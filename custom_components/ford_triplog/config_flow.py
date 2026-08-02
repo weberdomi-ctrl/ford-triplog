@@ -133,6 +133,7 @@ CONF_RECEIPT_TARGET = "target"
 CONF_RECEIPT_FILE = "receipt_file"
 CONF_RECEIPT_NOTE = "note"
 CONF_RECEIPT_SELECTION = "receipt_selection"
+CONF_RECEIPT_OCR_SELECTION = "receipt_ocr_selection"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
 
@@ -241,6 +242,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._pause_translations: dict[str, str] | None = None
         self._receipt_target_type: str | None = None
         self._receipt_result: dict[str, str] = {}
+        self._receipt_ocr_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -1238,7 +1240,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return self.async_show_menu(
             step_id="receipt_management",
-            menu_options=["receipt_import_type", "receipt_list", "receipt_delete"],
+            menu_options=["receipt_import_type", "receipt_ocr", "receipt_list", "receipt_delete"],
         )
 
     async def async_step_receipt_import_type(
@@ -1447,6 +1449,100 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"receipt_count": str(len(options))},
+        )
+
+    async def async_step_receipt_ocr(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a stored receipt and run local OCR."""
+
+        errors: dict[str, str] = {}
+        try:
+            receipts = await self._get_receipt_storage().async_list()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=self._format_receipt_label(receipt),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            receipt_id = str(user_input[CONF_RECEIPT_OCR_SELECTION])
+            try:
+                receipt = await self._get_receipt_storage().async_analyze(receipt_id)
+            except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                errors["base"] = "receipt_ocr_failed"
+            else:
+                ocr_result = receipt.get("ocr_result", {})
+                if not isinstance(ocr_result, dict):
+                    ocr_result = {}
+                suggestions = ocr_result.get("suggestions", {})
+                if not isinstance(suggestions, dict):
+                    suggestions = {}
+                raw_text = str(ocr_result.get("raw_text") or "").strip()
+                if len(raw_text) > 3000:
+                    raw_text = raw_text[:3000] + "…"
+                confidence = ocr_result.get("confidence")
+                confidence_text = "—"
+                if isinstance(confidence, (int, float)):
+                    confidence_text = f"{float(confidence) * 100:.1f} %"
+                self._receipt_ocr_result = {
+                    "filename": str(
+                        receipt.get("original_filename")
+                        or receipt.get("filename")
+                        or "—"
+                    ),
+                    "merchant": str(suggestions.get("merchant") or "—"),
+                    "date": str(suggestions.get("date") or "—"),
+                    "time": str(suggestions.get("time") or "—"),
+                    "amount": str(suggestions.get("amount") or "—"),
+                    "currency": str(suggestions.get("currency") or "—"),
+                    "confidence": confidence_text,
+                    "raw_text": raw_text or "—",
+                }
+                return await self.async_step_receipt_ocr_result()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_OCR_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_ocr",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_ocr_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show OCR text and extracted suggestions."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+        return self.async_show_form(
+            step_id="receipt_ocr_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_ocr_result,
         )
 
     async def async_step_receipt_delete(

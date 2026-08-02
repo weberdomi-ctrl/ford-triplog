@@ -244,6 +244,72 @@ class FordTriplogMetadataStorage:
                         return removed
         return None
 
+    async def get_receipt(self, receipt_id: str) -> dict[str, Any] | None:
+        """Return one receipt including its target metadata."""
+
+        normalized_id = str(receipt_id).strip()
+        if not normalized_id:
+            return None
+        data = await self.async_load() or self._empty_data()
+        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+            for target_id, metadata in items.items():
+                if not isinstance(metadata, dict):
+                    continue
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+                for receipt in receipts:
+                    if (
+                        isinstance(receipt, dict)
+                        and str(receipt.get("receipt_id") or "") == normalized_id
+                    ):
+                        value = dict(receipt)
+                        value["target_type"] = target_type
+                        value["target_id"] = str(target_id)
+                        return value
+        return None
+
+    async def update_receipt(
+        self,
+        receipt_id: str,
+        updates: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Update one receipt in-place and return the resulting record."""
+
+        normalized_id = str(receipt_id).strip()
+        if not normalized_id:
+            return None
+        data = await self.async_load() or self._empty_data()
+        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+            for target_id, metadata in items.items():
+                if not isinstance(metadata, dict):
+                    continue
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+                for receipt in receipts:
+                    if (
+                        isinstance(receipt, dict)
+                        and str(receipt.get("receipt_id") or "") == normalized_id
+                    ):
+                        for key, value in updates.items():
+                            if value is None:
+                                receipt.pop(str(key), None)
+                            else:
+                                receipt[str(key)] = value
+                        await self.async_save(data)
+                        result = dict(receipt)
+                        result["target_type"] = target_type
+                        result["target_id"] = str(target_id)
+                        return result
+        return None
+
     @staticmethod
     def _receipt_section(target_type: str) -> str:
         if target_type == "pause":

@@ -252,7 +252,8 @@
         "menu_options": {
           "receipt_import_type": "Beleg hinterlegen",
           "receipt_list": "Belege anzeigen",
-          "receipt_delete": "Beleg löschen"
+          "receipt_delete": "Beleg löschen",
+          "receipt_ocr": "OCR ausführen"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "PDF oder Bild hochladen und einer Pause oder einem Ladevorgang zuordnen.",
@@ -324,6 +325,17 @@
       "pause_result": {
         "title": "Pause gespeichert",
         "description": "Aktion **{action}** für Pause **{pause_id}** in Tour **{journey_id}** abgeschlossen."
+      },
+      "receipt_ocr": {
+        "title": "Beleg analysieren",
+        "description": "Wähle einen gespeicherten Beleg aus. Die lokale OCR erkennt Text und schlägt Händler, Datum, Uhrzeit, Betrag und Währung vor.",
+        "data": {
+          "receipt_ocr_selection": "Beleg"
+        }
+      },
+      "receipt_ocr_result": {
+        "title": "OCR abgeschlossen",
+        "description": "**Datei:** {filename}\n\n**Erkannte Vorschläge**\n- Händler: **{merchant}**\n- Datum: **{date}**\n- Uhrzeit: **{time}**\n- Betrag: **{amount} {currency}**\n- Durchschnittliche Sicherheit: **{confidence}**\n\n**Erkannter Text**\n\n{raw_text}"
       }
     },
     "error": {
@@ -350,13 +362,15 @@
       "pause_none_available": "Es sind keine bearbeitbaren Pausen vorhanden.",
       "pause_invalid_selection": "Die ausgewählte Pause ist ungültig.",
       "pause_journey_not_found": "Die zugehörige Tour wurde nicht gefunden.",
-      "pause_save_failed": "Die Pause konnte nicht gespeichert werden."
+      "pause_save_failed": "Die Pause konnte nicht gespeichert werden.",
+      "receipt_ocr_failed": "Der Beleg konnte nicht analysiert werden. Prüfe das Home-Assistant-Protokoll."
     },
     "menu": {
       "receipt_management": "Belegverwaltung",
       "receipt_import_type": "Beleg hinterlegen",
       "receipt_list": "Belege anzeigen",
-      "receipt_delete": "Beleg löschen"
+      "receipt_delete": "Beleg löschen",
+      "receipt_ocr": "OCR ausführen"
     }
   },
   "entity": {

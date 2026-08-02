@@ -252,7 +252,8 @@
         "menu_options": {
           "receipt_import_type": "Import receipt",
           "receipt_list": "View receipts",
-          "receipt_delete": "Delete receipt"
+          "receipt_delete": "Delete receipt",
+          "receipt_ocr": "Run OCR"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
@@ -324,6 +325,17 @@
       "pause_result": {
         "title": "Pause updated",
         "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
+      },
+      "receipt_ocr": {
+        "title": "Analyze receipt",
+        "description": "Select a stored receipt. Local OCR recognizes text and suggests merchant, date, time, amount and currency.",
+        "data": {
+          "receipt_ocr_selection": "Receipt"
+        }
+      },
+      "receipt_ocr_result": {
+        "title": "OCR completed",
+        "description": "**File:** {filename}\n\n**Detected suggestions**\n- Merchant: **{merchant}**\n- Date: **{date}**\n- Time: **{time}**\n- Amount: **{amount} {currency}**\n- Average confidence: **{confidence}**\n\n**Recognized text**\n\n{raw_text}"
       }
     },
     "error": {
@@ -350,13 +362,15 @@
       "pause_none_available": "No editable pauses are available.",
       "pause_invalid_selection": "The selected pause is invalid.",
       "pause_journey_not_found": "The related journey was not found.",
-      "pause_save_failed": "The pause could not be saved."
+      "pause_save_failed": "The pause could not be saved.",
+      "receipt_ocr_failed": "The receipt could not be analyzed. Check the Home Assistant log."
     },
     "menu": {
       "receipt_management": "Receipt management",
       "receipt_import_type": "Import receipt",
       "receipt_list": "View receipts",
-      "receipt_delete": "Delete receipt"
+      "receipt_delete": "Delete receipt",
+      "receipt_ocr": "Run OCR"
     }
   },
   "entity": {

@@ -252,7 +252,8 @@
         "menu_options": {
           "receipt_import_type": "Dodaj paragon",
           "receipt_list": "Pokaż paragony",
-          "receipt_delete": "Usuń paragon"
+          "receipt_delete": "Usuń paragon",
+          "receipt_ocr": "Uruchom OCR"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Prześlij PDF lub obraz i przypisz go do postoju albo sesji ładowania.",
@@ -324,6 +325,17 @@
       "pause_result": {
         "title": "Postój zapisany",
         "description": "Akcja **{action}** dla postoju **{pause_id}** w podróży **{journey_id}** została zakończona."
+      },
+      "receipt_ocr": {
+        "title": "Analizuj paragon",
+        "description": "Wybierz zapisany paragon. Lokalny OCR rozpoznaje tekst i proponuje sprzedawcę, datę, godzinę, kwotę oraz walutę.",
+        "data": {
+          "receipt_ocr_selection": "Paragon"
+        }
+      },
+      "receipt_ocr_result": {
+        "title": "OCR zakończony",
+        "description": "**Plik:** {filename}\n\n**Rozpoznane propozycje**\n- Sprzedawca: **{merchant}**\n- Data: **{date}**\n- Godzina: **{time}**\n- Kwota: **{amount} {currency}**\n- Średnia pewność: **{confidence}**\n\n**Rozpoznany tekst**\n\n{raw_text}"
       }
     },
     "error": {
@@ -350,13 +362,15 @@
       "pause_none_available": "Brak postojów możliwych do edycji.",
       "pause_invalid_selection": "Wybrany postój jest nieprawidłowy.",
       "pause_journey_not_found": "Nie znaleziono powiązanej podróży.",
-      "pause_save_failed": "Nie udało się zapisać postoju."
+      "pause_save_failed": "Nie udało się zapisać postoju.",
+      "receipt_ocr_failed": "Nie udało się przeanalizować paragonu. Sprawdź dziennik Home Assistant."
     },
     "menu": {
       "receipt_management": "Zarządzanie paragonami",
       "receipt_import_type": "Dodaj paragon",
       "receipt_list": "Pokaż paragony",
-      "receipt_delete": "Usuń paragon"
+      "receipt_delete": "Usuń paragon",
+      "receipt_ocr": "Uruchom OCR"
     }
   },
   "entity": {

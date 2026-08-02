@@ -15,6 +15,7 @@ from homeassistant.core import HomeAssistant
 
 from .const import RECEIPTS_DIR, RECEIPT_MAX_SIZE_BYTES, STORAGE_DIR
 from .metadata_storage import FordTriplogMetadataStorage
+from .ocr import FordTriplogReceiptOCR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -29,6 +30,7 @@ class FordTriplogReceiptStorage:
         self.hass = hass
         self._directory = Path(hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR))
         self._metadata = FordTriplogMetadataStorage(hass)
+        self._ocr = FordTriplogReceiptOCR(hass)
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(
@@ -90,6 +92,56 @@ class FordTriplogReceiptStorage:
 
     async def async_list(self) -> list[dict[str, Any]]:
         return await self._metadata.get_all_receipts()
+
+    async def async_get(self, receipt_id: str) -> dict[str, Any] | None:
+        """Return one stored receipt."""
+
+        return await self._metadata.get_receipt(str(receipt_id).strip())
+
+    async def async_analyze(self, receipt_id: str) -> dict[str, Any]:
+        """Run local OCR and persist status and result metadata."""
+
+        normalized_id = str(receipt_id).strip()
+        receipt = await self._metadata.get_receipt(normalized_id)
+        if receipt is None:
+            raise ValueError("Receipt was not found")
+
+        filename = str(receipt.get("filename") or "").strip()
+        if not filename:
+            raise ValueError("Receipt filename is missing")
+        path = self._directory / Path(filename).name
+
+        await self._metadata.update_receipt(
+            normalized_id,
+            {
+                "ocr_status": "running",
+                "ocr_error": None,
+            },
+        )
+        try:
+            result = await self._ocr.async_analyze(path)
+        except Exception as err:
+            await self._metadata.update_receipt(
+                normalized_id,
+                {
+                    "ocr_status": "failed",
+                    "ocr_error": str(err)[:500],
+                },
+            )
+            raise
+
+        updated = await self._metadata.update_receipt(
+            normalized_id,
+            {
+                "ocr_status": "completed",
+                "ocr_error": None,
+                "ocr_result": result,
+                "ocr_confirmed": False,
+            },
+        )
+        if updated is None:
+            raise ValueError("Receipt disappeared while OCR was running")
+        return updated
 
     async def async_remove(self, receipt_id: str) -> dict[str, Any] | None:
         """Remove metadata and the corresponding managed file."""
