@@ -42,6 +42,7 @@ from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
 from .charge_manager import FordTriplogChargeManager
+from .receipt_storage import FordTriplogReceiptStorage
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -128,6 +129,9 @@ async def async_setup_entry(
 
     await charge_manager.async_setup()
 
+    receipt_storage = FordTriplogReceiptStorage(hass)
+    await receipt_storage.async_setup()
+
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,
         journey_storage=journey_storage,
@@ -162,6 +166,7 @@ async def async_setup_entry(
         "journey_manager": journey_manager,
         "journey_rebuilder": journey_rebuilder,
         "charge_manager": charge_manager,
+        "receipt_storage": receipt_storage,
     }
 
     entry.async_on_unload(

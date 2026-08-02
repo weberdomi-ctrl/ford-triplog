@@ -30,8 +30,7 @@
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Ladevorgänge",
-          "pause_management": "Pausen bearbeiten"
+          "charge_management": "Ladevorgänge"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
@@ -39,8 +38,7 @@
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "Archivierte Ladevorgänge anzeigen und Ladekosten verwalten.",
-          "pause_management": "Archivierte Tour-Pausen auswählen und ergänzen."
+          "charge_management": "Archivierte Ladevorgänge anzeigen und Ladekosten verwalten."
         }
       },
       "settings": {
@@ -244,36 +242,43 @@
         "title": "Ladekosten aktualisiert",
         "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Abgerechnete Energie:** {energy_billed_kwh} kWh\n**Ladeverlust:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Kosten:** {cost_total} {currency}\n**Energiepreis pro kWh:** {energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {price_per_kwh}"
       },
-      "pause_management": {
-        "title": "Pausen bearbeiten",
-        "description": "Wähle eine der {pause_count} erkannten Pausen aus.",
+      "receipt_management": {
+        "title": "Belege",
+        "description": "Belege hinterlegen oder löschen."
+      },
+      "receipt_import_type": {
+        "title": "Beleg hinterlegen",
+        "description": "Wähle, ob der Beleg zu einer Pause oder einem Ladevorgang gehört.",
         "data": {
-          "pause_selection": "Pause"
-        },
-        "data_description": {
-          "pause_selection": "Die Liste zeigt Datum, Uhrzeit, Dauer und Ort."
+          "target_type": "Zuordnung"
         }
       },
-      "pause_edit": {
-        "title": "Pause bearbeiten",
-        "description": "**Tour:** {journey_id}\n\n**Pause:** {pause_id}\n**Bisheriger Titel:** {current_title}",
+      "receipt_import": {
+        "title": "Beleg hinterlegen",
+        "description": "PDF oder Bild hochladen und dem ausgewählten Eintrag zuordnen.",
         "data": {
-          "category": "Kategorie",
-          "title": "Titel",
-          "note": "Notiz",
-          "location": "Ort",
-          "cost_total": "Kosten",
-          "currency": "Währung",
-          "action": "Aktion"
-        },
-        "data_description": {
-          "category": "Zum Beispiel food, shopping, leisure, work, parking, overnight oder other.",
-          "action": "Änderungen speichern oder alle manuellen Angaben dieser Pause zurücksetzen."
+          "target": "Pause oder Ladevorgang",
+          "receipt_file": "Belegdatei",
+          "note": "Notiz"
         }
       },
-      "pause_result": {
-        "title": "Pause gespeichert",
-        "description": "Aktion **{action}** für Pause **{pause_id}** in Tour **{journey_id}** abgeschlossen."
+      "receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Die ausgewählte Belegdatei und ihre Metadaten werden dauerhaft gelöscht.",
+        "data": {
+          "receipt_selection": "Beleg"
+        }
+      },
+      "receipt_result": {
+        "title": "Beleg aktualisiert",
+        "description": "Der Vorgang wurde abgeschlossen. Datei: {filename}"
+      },
+      "receipt_list": {
+        "title": "Gespeicherte Belege",
+        "description": "Es sind {receipt_count} Beleg(e) gespeichert. Die Auswahl zeigt Dateiname, Datum, Größe und Zuordnung.",
+        "data": {
+          "receipt_selection": "Beleg"
+        }
       }
     },
     "error": {
@@ -289,11 +294,19 @@
       "charge_none_available": "Es wurden keine archivierten Ladevorgänge gefunden.",
       "charge_not_found": "Der ausgewählte Ladevorgang wurde nicht gefunden.",
       "charge_cost_save_failed": "Die Ladekosten konnten nicht gespeichert oder gelöscht werden.",
-      "pause_load_failed": "Pausen konnten nicht geladen werden.",
-      "pause_none_available": "Es sind keine bearbeitbaren Pausen vorhanden.",
-      "pause_invalid_selection": "Die ausgewählte Pause ist ungültig.",
-      "pause_journey_not_found": "Die zugehörige Tour wurde nicht gefunden.",
-      "pause_save_failed": "Die Pause konnte nicht gespeichert werden."
+      "receipt_target_load_failed": "Pausen oder Ladevorgänge konnten nicht geladen werden.",
+      "receipt_no_targets": "Es sind keine geeigneten Pausen oder Ladevorgänge vorhanden.",
+      "receipt_import_failed": "Der Beleg konnte nicht importiert werden. Erlaubt sind PDF, JPG, PNG oder WEBP bis 20 MB.",
+      "receipt_load_failed": "Die Belege konnten nicht geladen werden.",
+      "receipt_none_available": "Es sind keine Belege gespeichert.",
+      "receipt_delete_failed": "Der Beleg konnte nicht gelöscht werden.",
+      "receipt_not_found": "Der Beleg ist nicht mehr vorhanden."
+    },
+    "menu": {
+      "receipt_management": "Belege",
+      "receipt_import_type": "Beleg hinterlegen",
+      "receipt_delete": "Beleg löschen",
+      "receipt_list": "Belege anzeigen"
     }
   },
   "entity": {
@@ -462,9 +475,7 @@
     "charge_management": "Ladevorgänge",
     "charge_cost": "Ladekosten",
     "charge_currency": "Währung",
-    "charge_price_per_kwh": "Preis pro kWh",
-    "pause_action_save": "Speichern",
-    "pause_action_clear": "Manuelle Angaben löschen"
+    "charge_price_per_kwh": "Preis pro kWh"
   },
   "services": {
     "import_charging_sites": {
@@ -533,6 +544,14 @@
     },
     "database_generation_failed": {
       "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
+    }
+  },
+  "selector": {
+    "receipt_target_type": {
+      "options": {
+        "pause": "Pause",
+        "charge": "Ladevorgang"
+      }
     }
   }
 }

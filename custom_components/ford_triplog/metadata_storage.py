@@ -51,7 +51,11 @@ class FordTriplogMetadataStorage:
         if not isinstance(pauses, dict):
             return {}
         return {
-            str(pause_id): dict(value)
+            str(pause_id): {
+                key: item
+                for key, item in value.items()
+                if key != "receipts"
+            }
             for pause_id, value in pauses.items()
             if isinstance(value, dict)
         }
@@ -79,7 +83,16 @@ class FordTriplogMetadataStorage:
             normalized_id = str(pause_id).strip()
             if not normalized_id or not isinstance(value, dict):
                 continue
+            existing = pauses.get(normalized_id)
+            existing_receipts = (
+                existing.get("receipts")
+                if isinstance(existing, dict)
+                and isinstance(existing.get("receipts"), list)
+                else None
+            )
             normalized_value = dict(value)
+            if existing_receipts:
+                normalized_value["receipts"] = existing_receipts
             if pauses.get(normalized_id) != normalized_value:
                 pauses[normalized_id] = normalized_value
                 changed = True
@@ -112,16 +125,132 @@ class FordTriplogMetadataStorage:
         for pause_id in valid_pause_ids:
             value = authoritative_overrides.get(pause_id)
             if isinstance(value, dict) and value:
+                existing = pauses.get(pause_id)
+                existing_receipts = (
+                    existing.get("receipts")
+                    if isinstance(existing, dict)
+                    and isinstance(existing.get("receipts"), list)
+                    else None
+                )
                 normalized_value = dict(value)
+                if existing_receipts:
+                    normalized_value["receipts"] = existing_receipts
                 if pauses.get(pause_id) != normalized_value:
                     pauses[pause_id] = normalized_value
                     changed = True
             elif pause_id in pauses:
-                pauses.pop(pause_id, None)
-                changed = True
+                existing = pauses.get(pause_id)
+                if isinstance(existing, dict) and existing.get("receipts"):
+                    receipts = existing.get("receipts")
+                    pauses[pause_id] = {"receipts": receipts}
+                    changed = True
+                else:
+                    pauses.pop(pause_id, None)
+                    changed = True
 
         if changed:
             await self.async_save(data)
+
+
+    async def add_receipt(
+        self,
+        target_type: str,
+        target_id: str,
+        receipt: dict[str, Any],
+    ) -> None:
+        """Attach one receipt to a pause or charging session."""
+
+        section = self._receipt_section(target_type)
+        normalized_target_id = str(target_id).strip()
+        if not normalized_target_id:
+            raise ValueError("Receipt target ID is required")
+
+        data = await self.async_load() or self._empty_data()
+        items = data.setdefault(section, {})
+        if not isinstance(items, dict):
+            items = {}
+            data[section] = items
+        metadata = items.setdefault(normalized_target_id, {})
+        if not isinstance(metadata, dict):
+            metadata = {}
+            items[normalized_target_id] = metadata
+        receipts = metadata.setdefault("receipts", [])
+        if not isinstance(receipts, list):
+            receipts = []
+            metadata["receipts"] = receipts
+
+        receipt_id = str(receipt.get("receipt_id") or "").strip()
+        if not receipt_id:
+            raise ValueError("Receipt ID is required")
+        receipts[:] = [
+            item for item in receipts
+            if not isinstance(item, dict)
+            or str(item.get("receipt_id") or "") != receipt_id
+        ]
+        receipts.append(dict(receipt))
+        await self.async_save(data)
+
+    async def get_all_receipts(self) -> list[dict[str, Any]]:
+        """Return receipts from all supported metadata sections."""
+
+        data = await self.async_load() or self._empty_data()
+        result: list[dict[str, Any]] = []
+        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+            for target_id, metadata in items.items():
+                if not isinstance(metadata, dict):
+                    continue
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+                for receipt in receipts:
+                    if isinstance(receipt, dict):
+                        value = dict(receipt)
+                        value["target_type"] = target_type
+                        value["target_id"] = str(target_id)
+                        result.append(value)
+        result.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        return result
+
+    async def remove_receipt(self, receipt_id: str) -> dict[str, Any] | None:
+        """Remove one receipt from metadata and return its record."""
+
+        normalized_id = str(receipt_id).strip()
+        if not normalized_id:
+            return None
+        data = await self.async_load() or self._empty_data()
+        for section in ("pauses", "charges"):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+            for metadata in items.values():
+                if not isinstance(metadata, dict):
+                    continue
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+                for index, receipt in enumerate(receipts):
+                    if (
+                        isinstance(receipt, dict)
+                        and str(receipt.get("receipt_id") or "") == normalized_id
+                    ):
+                        removed = dict(receipt)
+                        receipts.pop(index)
+                        if not receipts:
+                            metadata.pop("receipts", None)
+                        await self.async_save(data)
+                        return removed
+        return None
+
+    @staticmethod
+    def _receipt_section(target_type: str) -> str:
+        if target_type == "pause":
+            return "pauses"
+        if target_type == "charge":
+            return "charges"
+        raise ValueError("Unsupported receipt target type")
 
     @staticmethod
     def _empty_data() -> dict[str, Any]:

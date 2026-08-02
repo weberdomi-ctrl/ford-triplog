@@ -44,6 +44,7 @@ from homeassistant.util import dt as dt_util
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
+from .receipt_storage import FordTriplogReceiptStorage
 
 from .services import (
     async_download_charging_database,
@@ -126,6 +127,14 @@ CONF_PAUSE_ACTION = "action"
 
 PAUSE_ACTION_SAVE = "save"
 PAUSE_ACTION_CLEAR = "clear"
+
+CONF_RECEIPT_TARGET_TYPE = "target_type"
+CONF_RECEIPT_TARGET = "target"
+CONF_RECEIPT_FILE = "receipt_file"
+CONF_RECEIPT_NOTE = "note"
+CONF_RECEIPT_SELECTION = "receipt_selection"
+RECEIPT_TARGET_PAUSE = "pause"
+RECEIPT_TARGET_CHARGE = "charge"
 
 
 class FordTriplogConfigFlow(
@@ -230,6 +239,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_pause_id: str | None = None
         self._pause_result: dict[str, str] = {}
         self._pause_translations: dict[str, str] | None = None
+        self._receipt_target_type: str | None = None
+        self._receipt_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -246,6 +257,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_management",
                 "pause_management",
                 "charge_management",
+                "receipt_management",
             ],
         )
 
@@ -1205,6 +1217,310 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="pause_result",
             data_schema=vol.Schema({}),
             description_placeholders=self._pause_result,
+        )
+
+    def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
+        """Return initialized receipt storage for this config entry."""
+
+        runtime_data = self.hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id, {}
+        )
+        storage = runtime_data.get("receipt_storage")
+        if storage is None:
+            raise HomeAssistantError("Receipt storage is not initialized")
+        return storage
+
+    async def async_step_receipt_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt management actions."""
+
+        return self.async_show_menu(
+            step_id="receipt_management",
+            menu_options=["receipt_import_type", "receipt_list", "receipt_delete"],
+        )
+
+    async def async_step_receipt_import_type(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Choose whether a receipt belongs to a pause or charge."""
+
+        if user_input is not None:
+            self._receipt_target_type = str(
+                user_input[CONF_RECEIPT_TARGET_TYPE]
+            )
+            return await self.async_step_receipt_import()
+
+        return self.async_show_form(
+            step_id="receipt_import_type",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_TARGET_TYPE,
+                        default=RECEIPT_TARGET_PAUSE,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                RECEIPT_TARGET_PAUSE,
+                                RECEIPT_TARGET_CHARGE,
+                            ],
+                            translation_key="receipt_target_type",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def _async_get_receipt_target_options(
+        self,
+    ) -> list[selector.SelectOptionDict]:
+        """Return selectable receipt targets."""
+
+        if self._receipt_target_type == RECEIPT_TARGET_PAUSE:
+            entries = await self._async_get_pause_entries()
+            return [
+                selector.SelectOptionDict(
+                    value=str(entry["pause_id"]),
+                    label=str(entry["label"]),
+                )
+                for entry in entries
+            ]
+
+        if self._receipt_target_type == RECEIPT_TARGET_CHARGE:
+            charges = await self._get_charge_manager().async_get_charges()
+            return [
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=self._format_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ]
+
+        return []
+
+    async def async_step_receipt_import(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Upload and attach one receipt."""
+
+        if self._receipt_target_type not in (
+            RECEIPT_TARGET_PAUSE,
+            RECEIPT_TARGET_CHARGE,
+        ):
+            return await self.async_step_receipt_import_type()
+
+        errors: dict[str, str] = {}
+        try:
+            targets = await self._async_get_receipt_target_options()
+        except (HomeAssistantError, OSError, ValueError):
+            targets = []
+            errors["base"] = "receipt_target_load_failed"
+
+        if not targets and not errors:
+            errors["base"] = "receipt_no_targets"
+
+        if user_input is not None and not errors:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            target_id = str(user_input[CONF_RECEIPT_TARGET])
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=self._receipt_target_type,
+                        target_id=target_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_import_failed"
+            else:
+                self._receipt_result = {
+                    "filename": str(receipt.get("original_filename") or receipt.get("filename") or ""),
+                    "target_id": target_id,
+                }
+                return await self.async_step_receipt_result()
+
+        schema: dict[Any, Any] = {}
+        if targets:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_TARGET,
+                    default=targets[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=targets,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            schema[
+                vol.Required(CONF_RECEIPT_FILE)
+            ] = selector.FileSelector(
+                selector.FileSelectorConfig(
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                )
+            )
+            schema[
+                vol.Optional(CONF_RECEIPT_NOTE, default="")
+            ] = selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            )
+
+        return self.async_show_form(
+            step_id="receipt_import",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    @staticmethod
+    def _format_receipt_label(receipt: dict[str, Any]) -> str:
+        """Return compact receipt information for selection lists."""
+
+        filename = str(
+            receipt.get("original_filename")
+            or receipt.get("filename")
+            or "Receipt"
+        )
+        target_type = str(receipt.get("target_type") or "")
+        target_id = str(receipt.get("target_id") or "")
+        created_at = str(receipt.get("created_at") or "")
+        date_text = created_at[:10] if created_at else "—"
+        size_bytes = int(receipt.get("size_bytes") or 0)
+        size_text = (
+            f"{size_bytes / 1024 / 1024:.1f} MB"
+            if size_bytes >= 1024 * 1024
+            else f"{max(1, round(size_bytes / 1024))} KB"
+        )
+        return f"{filename} · {date_text} · {size_text} · {target_type} · {target_id}"
+
+    async def async_step_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """List stored receipt metadata."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        errors: dict[str, str] = {}
+        try:
+            receipts = await self._get_receipt_storage().async_list()
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=self._format_receipt_label(receipt),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Optional(
+                    CONF_RECEIPT_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_list",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"receipt_count": str(len(options))},
+        )
+
+    async def async_step_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select and permanently remove one receipt."""
+
+        errors: dict[str, str] = {}
+        try:
+            receipts = await self._get_receipt_storage().async_list()
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=self._format_receipt_label(receipt),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            receipt_id = str(user_input[CONF_RECEIPT_SELECTION])
+            try:
+                removed = await self._get_receipt_storage().async_remove(receipt_id)
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if removed is None:
+                    errors["base"] = "receipt_not_found"
+                else:
+                    self._receipt_result = {
+                        "filename": str(removed.get("original_filename") or removed.get("filename") or ""),
+                        "target_id": "",
+                    }
+                    return await self.async_step_receipt_result()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_delete",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt operation result."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+        return self.async_show_form(
+            step_id="receipt_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_result,
         )
 
     def _get_journey_rebuilder(self):

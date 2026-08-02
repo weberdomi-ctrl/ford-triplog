@@ -30,8 +30,7 @@
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Charging sessions",
-          "pause_management": "Edit pauses"
+          "charge_management": "Charging sessions"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
@@ -39,8 +38,7 @@
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "View archived charging sessions and manage charging costs.",
-          "pause_management": "Select and maintain archived journey pauses."
+          "charge_management": "View archived charging sessions and manage charging costs."
         }
       },
       "settings": {
@@ -244,36 +242,43 @@
         "title": "Charging costs updated",
         "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Billed energy:** {energy_billed_kwh} kWh\n**Charging loss:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Cost:** {cost_total} {currency}\n**Energy price per kWh:** {energy_price_per_kwh}\n**Effective price per kWh:** {price_per_kwh}"
       },
-      "pause_management": {
-        "title": "Edit pauses",
-        "description": "Select one of {pause_count} detected pauses.",
+      "receipt_management": {
+        "title": "Receipts",
+        "description": "Import or delete receipts."
+      },
+      "receipt_import_type": {
+        "title": "Import receipt",
+        "description": "Select whether the receipt belongs to a pause or charging session.",
         "data": {
-          "pause_selection": "Pause"
-        },
-        "data_description": {
-          "pause_selection": "The list shows date, time, duration and location."
+          "target_type": "Assignment"
         }
       },
-      "pause_edit": {
-        "title": "Edit pause",
-        "description": "**Journey:** {journey_id}\n\n**Pause:** {pause_id}\n**Current title:** {current_title}",
+      "receipt_import": {
+        "title": "Import receipt",
+        "description": "Upload a PDF or image and assign it to the selected item.",
         "data": {
-          "category": "Category",
-          "title": "Title",
-          "note": "Note",
-          "location": "Location",
-          "cost_total": "Cost",
-          "currency": "Currency",
-          "action": "Action"
-        },
-        "data_description": {
-          "category": "For example food, shopping, leisure, work, parking, overnight or other.",
-          "action": "Save changes or clear all manually maintained data for this pause."
+          "target": "Pause or charging session",
+          "receipt_file": "Receipt file",
+          "note": "Note"
         }
       },
-      "pause_result": {
-        "title": "Pause updated",
-        "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
+      "receipt_delete": {
+        "title": "Delete receipt",
+        "description": "The selected receipt file and its metadata will be permanently deleted.",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
+      },
+      "receipt_result": {
+        "title": "Receipt updated",
+        "description": "The receipt operation was completed. File: {filename}"
+      },
+      "receipt_list": {
+        "title": "Stored receipts",
+        "description": "{receipt_count} receipt(s) are stored. Select an entry to view filename, date, size and assignment.",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
       }
     },
     "error": {
@@ -289,11 +294,19 @@
       "charge_none_available": "No archived charging sessions were found.",
       "charge_not_found": "The selected charging session was not found.",
       "charge_cost_save_failed": "Charging costs could not be saved or cleared.",
-      "pause_load_failed": "Pauses could not be loaded.",
-      "pause_none_available": "No editable pauses are available.",
-      "pause_invalid_selection": "The selected pause is invalid.",
-      "pause_journey_not_found": "The related journey was not found.",
-      "pause_save_failed": "The pause could not be saved."
+      "receipt_target_load_failed": "Targets could not be loaded.",
+      "receipt_no_targets": "No suitable pauses or charging sessions are available.",
+      "receipt_import_failed": "The receipt could not be imported. Use PDF, JPG, PNG or WEBP up to 20 MB.",
+      "receipt_load_failed": "Receipts could not be loaded.",
+      "receipt_none_available": "No receipts are stored.",
+      "receipt_delete_failed": "The receipt could not be deleted.",
+      "receipt_not_found": "The receipt no longer exists."
+    },
+    "menu": {
+      "receipt_management": "Receipts",
+      "receipt_import_type": "Import receipt",
+      "receipt_delete": "Delete receipt",
+      "receipt_list": "View receipts"
     }
   },
   "entity": {
@@ -462,9 +475,7 @@
     "charge_management": "Charging sessions",
     "charge_cost": "Charging costs",
     "charge_currency": "Currency",
-    "charge_price_per_kwh": "Price per kWh",
-    "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data"
+    "charge_price_per_kwh": "Price per kWh"
   },
   "services": {
     "import_charging_sites": {
@@ -533,6 +544,14 @@
     },
     "database_generation_failed": {
       "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
+    }
+  },
+  "selector": {
+    "receipt_target_type": {
+      "options": {
+        "pause": "Pause",
+        "charge": "Charging session"
+      }
     }
   }
 }
