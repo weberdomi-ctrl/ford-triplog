@@ -462,7 +462,9 @@
     "charge_management": "Ladevorgänge",
     "charge_cost": "Ladekosten",
     "charge_currency": "Währung",
-    "charge_price_per_kwh": "Preis pro kWh"
+    "charge_price_per_kwh": "Preis pro kWh",
+    "pause_action_save": "Speichern",
+    "pause_action_clear": "Manuelle Angaben löschen"
   },
   "services": {
     "import_charging_sites": {

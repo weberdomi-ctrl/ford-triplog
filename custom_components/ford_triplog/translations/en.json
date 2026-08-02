@@ -462,7 +462,9 @@
     "charge_management": "Charging sessions",
     "charge_cost": "Charging costs",
     "charge_currency": "Currency",
-    "charge_price_per_kwh": "Price per kWh"
+    "charge_price_per_kwh": "Price per kWh",
+    "pause_action_save": "Save",
+    "pause_action_clear": "Clear manual data"
   },
   "services": {
     "import_charging_sites": {

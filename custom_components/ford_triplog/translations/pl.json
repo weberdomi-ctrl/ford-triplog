@@ -462,7 +462,9 @@
     "charge_management": "Sesje ładowania",
     "charge_cost": "Koszty ładowania",
     "charge_currency": "Waluta",
-    "charge_price_per_kwh": "Cena za kWh"
+    "charge_price_per_kwh": "Cena za kWh",
+    "pause_action_save": "Zapisz",
+    "pause_action_clear": "Usuń dane ręczne"
   },
   "services": {
     "import_charging_sites": {

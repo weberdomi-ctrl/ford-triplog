@@ -229,6 +229,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_pause_journey_id: str | None = None
         self._selected_pause_id: str | None = None
         self._pause_result: dict[str, str] = {}
+        self._pause_translations: dict[str, str] | None = None
 
     async def async_step_init(
         self,
@@ -851,6 +852,33 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return "—"
 
 
+
+    async def _async_get_pause_translations(self) -> dict[str, str]:
+        """Load Pause Editor translations once for this options flow."""
+
+        if self._pause_translations is not None:
+            return self._pause_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+
+        self._pause_translations = {
+            "save": translations.get(
+                f"component.{DOMAIN}.common.pause_action_save",
+                "Save",
+            ),
+            "clear": translations.get(
+                f"component.{DOMAIN}.common.pause_action_clear",
+                "Clear",
+            ),
+        }
+
+        return self._pause_translations
+
     def _get_journey_storage(self):
         """Return Journey storage for this config entry."""
 
@@ -1026,6 +1054,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         override = dict(
             journey.pause_overrides.get(self._selected_pause_id, {})
         )
+        pause_text = await self._async_get_pause_translations()
 
         if user_input is not None:
             action = user_input.get(CONF_PAUSE_ACTION, PAUSE_ACTION_SAVE)
@@ -1124,7 +1153,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 default=PAUSE_ACTION_SAVE,
             ): selector.SelectSelector(
                 selector.SelectSelectorConfig(
-                    options=[PAUSE_ACTION_SAVE, PAUSE_ACTION_CLEAR],
+                    options=[
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_SAVE,
+                            label=pause_text["save"],
+                        ),
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_CLEAR,
+                            label=pause_text["clear"],
+                        ),
+                    ],
                     mode=selector.SelectSelectorMode.LIST,
                 )
             ),
