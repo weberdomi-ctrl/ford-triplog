@@ -252,12 +252,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="init",
             menu_options=[
                 "settings",
-                "user_charging_sites",
-                "download_charging_sites",
                 "journey_management",
                 "pause_management",
                 "charge_management",
                 "receipt_management",
+                "user_charging_sites",
+                "download_charging_sites",
             ],
         )
 

@@ -26,19 +26,23 @@
         "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
           "settings": "Einstellungen",
-          "import_charging_sites": "Ladeort-Datenbank importieren",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Ladevorgänge"
+          "pause_management": "Pausen bearbeiten",
+          "charge_management": "Ladevorgänge",
+          "receipt_management": "Belegverwaltung",
+          "user_charging_sites": "Eigene Ladeorte",
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
+          "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "Archivierte Ladevorgänge anzeigen und Ladekosten verwalten."
+          "pause_management": "Erkannte Tour-Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
+          "charge_management": "Archivierte Ladevorgänge anzeigen und Ladekosten verwalten.",
+          "receipt_management": "Belege für Pausen und Ladevorgänge hinterlegen, anzeigen oder löschen.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
+          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
         }
       },
       "settings": {
@@ -243,8 +247,18 @@
         "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Abgerechnete Energie:** {energy_billed_kwh} kWh\n**Ladeverlust:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Kosten:** {cost_total} {currency}\n**Energiepreis pro kWh:** {energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {price_per_kwh}"
       },
       "receipt_management": {
-        "title": "Belege",
-        "description": "Belege hinterlegen oder löschen."
+        "title": "Belegverwaltung",
+        "description": "Belege für Pausen und Ladevorgänge verwalten.",
+        "menu_options": {
+          "receipt_import_type": "Beleg hinterlegen",
+          "receipt_list": "Belege anzeigen",
+          "receipt_delete": "Beleg löschen"
+        },
+        "menu_option_descriptions": {
+          "receipt_import_type": "PDF oder Bild hochladen und einer Pause oder einem Ladevorgang zuordnen.",
+          "receipt_list": "Gespeicherte Belege mit Zuordnung und Dateiinformationen anzeigen.",
+          "receipt_delete": "Eine Belegdatei und ihre Metadaten dauerhaft löschen."
+        }
       },
       "receipt_import_type": {
         "title": "Beleg hinterlegen",
@@ -279,6 +293,37 @@
         "data": {
           "receipt_selection": "Beleg"
         }
+      },
+      "pause_management": {
+        "title": "Pausen bearbeiten",
+        "description": "Wähle eine der {pause_count} erkannten Pausen aus.",
+        "data": {
+          "pause_selection": "Pause"
+        },
+        "data_description": {
+          "pause_selection": "Die Liste zeigt Datum, Uhrzeit, Dauer, Ort und einen vorhandenen Titel."
+        }
+      },
+      "pause_edit": {
+        "title": "Pause bearbeiten",
+        "description": "**Tour:** {journey_id}\n\n**Pause:** {pause_id}\n**Bisheriger Titel:** {current_title}",
+        "data": {
+          "category": "Kategorie",
+          "title": "Titel",
+          "note": "Notiz",
+          "location": "Ort",
+          "cost_total": "Kosten",
+          "currency": "Währung",
+          "action": "Aktion"
+        },
+        "data_description": {
+          "category": "Zum Beispiel food, shopping, leisure, work, parking, overnight oder other.",
+          "action": "Änderungen speichern oder alle manuellen Angaben dieser Pause zurücksetzen."
+        }
+      },
+      "pause_result": {
+        "title": "Pause gespeichert",
+        "description": "Aktion **{action}** für Pause **{pause_id}** in Tour **{journey_id}** abgeschlossen."
       }
     },
     "error": {
@@ -300,13 +345,18 @@
       "receipt_load_failed": "Die Belege konnten nicht geladen werden.",
       "receipt_none_available": "Es sind keine Belege gespeichert.",
       "receipt_delete_failed": "Der Beleg konnte nicht gelöscht werden.",
-      "receipt_not_found": "Der Beleg ist nicht mehr vorhanden."
+      "receipt_not_found": "Der Beleg ist nicht mehr vorhanden.",
+      "pause_load_failed": "Pausen konnten nicht geladen werden.",
+      "pause_none_available": "Es sind keine bearbeitbaren Pausen vorhanden.",
+      "pause_invalid_selection": "Die ausgewählte Pause ist ungültig.",
+      "pause_journey_not_found": "Die zugehörige Tour wurde nicht gefunden.",
+      "pause_save_failed": "Die Pause konnte nicht gespeichert werden."
     },
     "menu": {
-      "receipt_management": "Belege",
+      "receipt_management": "Belegverwaltung",
       "receipt_import_type": "Beleg hinterlegen",
-      "receipt_delete": "Beleg löschen",
-      "receipt_list": "Belege anzeigen"
+      "receipt_list": "Belege anzeigen",
+      "receipt_delete": "Beleg löschen"
     }
   },
   "entity": {
@@ -475,7 +525,9 @@
     "charge_management": "Ladevorgänge",
     "charge_cost": "Ladekosten",
     "charge_currency": "Währung",
-    "charge_price_per_kwh": "Preis pro kWh"
+    "charge_price_per_kwh": "Preis pro kWh",
+    "pause_action_save": "Speichern",
+    "pause_action_clear": "Manuelle Angaben löschen"
   },
   "services": {
     "import_charging_sites": {

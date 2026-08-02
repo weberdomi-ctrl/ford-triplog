@@ -26,19 +26,23 @@
         "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
           "settings": "Einstellungen",
-          "import_charging_sites": "Ladeort-Datenbank importieren",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "user_charging_sites": "Eigene Ladeorte",
           "journey_management": "Tour-Verwaltung",
-          "charge_management": "Sesje ładowania"
+          "pause_management": "Edytuj postoje",
+          "charge_management": "Sesje ładowania",
+          "receipt_management": "Zarządzanie paragonami",
+          "user_charging_sites": "Eigene Ladeorte",
+          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
+          "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami."
+          "pause_management": "Uzupełnij wykryte postoje o tytuł, kategorię, miejsce, notatkę i koszty.",
+          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami.",
+          "receipt_management": "Dodawaj, przeglądaj lub usuwaj paragony dla postojów i sesji ładowania.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
+          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
+          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
         }
       },
       "settings": {
@@ -243,8 +247,18 @@
         "description": "**Akcja:** {action}\n\n**Sesja ładowania:** {charge_id}\n**Rozliczona energia:** {energy_billed_kwh} kWh\n**Strata ładowania:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Koszt:** {cost_total} {currency}\n**Cena energii za kWh:** {energy_price_per_kwh}\n**Efektywna cena za kWh:** {price_per_kwh}"
       },
       "receipt_management": {
-        "title": "Paragony",
-        "description": "Dodaj lub usuń paragony."
+        "title": "Zarządzanie paragonami",
+        "description": "Zarządzaj paragonami dla postojów i sesji ładowania.",
+        "menu_options": {
+          "receipt_import_type": "Dodaj paragon",
+          "receipt_list": "Pokaż paragony",
+          "receipt_delete": "Usuń paragon"
+        },
+        "menu_option_descriptions": {
+          "receipt_import_type": "Prześlij PDF lub obraz i przypisz go do postoju albo sesji ładowania.",
+          "receipt_list": "Pokaż zapisane paragony wraz z przypisaniem i informacjami o pliku.",
+          "receipt_delete": "Trwale usuń plik paragonu i jego metadane."
+        }
       },
       "receipt_import_type": {
         "title": "Dodaj paragon",
@@ -279,6 +293,37 @@
         "data": {
           "receipt_selection": "Paragon"
         }
+      },
+      "pause_management": {
+        "title": "Edytuj postoje",
+        "description": "Wybierz jeden z {pause_count} wykrytych postojów.",
+        "data": {
+          "pause_selection": "Postój"
+        },
+        "data_description": {
+          "pause_selection": "Lista pokazuje datę, czas, długość, miejsce i zapisany tytuł."
+        }
+      },
+      "pause_edit": {
+        "title": "Edytuj postój",
+        "description": "**Podróż:** {journey_id}\n\n**Postój:** {pause_id}\n**Aktualny tytuł:** {current_title}",
+        "data": {
+          "category": "Kategoria",
+          "title": "Tytuł",
+          "note": "Notatka",
+          "location": "Miejsce",
+          "cost_total": "Koszt",
+          "currency": "Waluta",
+          "action": "Akcja"
+        },
+        "data_description": {
+          "category": "Na przykład food, shopping, leisure, work, parking, overnight lub other.",
+          "action": "Zapisz zmiany lub usuń wszystkie ręcznie wprowadzone dane postoju."
+        }
+      },
+      "pause_result": {
+        "title": "Postój zapisany",
+        "description": "Akcja **{action}** dla postoju **{pause_id}** w podróży **{journey_id}** została zakończona."
       }
     },
     "error": {
@@ -300,13 +345,18 @@
       "receipt_load_failed": "Nie udało się wczytać paragonów.",
       "receipt_none_available": "Brak zapisanych paragonów.",
       "receipt_delete_failed": "Nie udało się usunąć paragonu.",
-      "receipt_not_found": "Paragon już nie istnieje."
+      "receipt_not_found": "Paragon już nie istnieje.",
+      "pause_load_failed": "Nie udało się wczytać postojów.",
+      "pause_none_available": "Brak postojów możliwych do edycji.",
+      "pause_invalid_selection": "Wybrany postój jest nieprawidłowy.",
+      "pause_journey_not_found": "Nie znaleziono powiązanej podróży.",
+      "pause_save_failed": "Nie udało się zapisać postoju."
     },
     "menu": {
-      "receipt_management": "Paragony",
+      "receipt_management": "Zarządzanie paragonami",
       "receipt_import_type": "Dodaj paragon",
-      "receipt_delete": "Usuń paragon",
-      "receipt_list": "Pokaż paragony"
+      "receipt_list": "Pokaż paragony",
+      "receipt_delete": "Usuń paragon"
     }
   },
   "entity": {
@@ -475,7 +525,9 @@
     "charge_management": "Sesje ładowania",
     "charge_cost": "Koszty ładowania",
     "charge_currency": "Waluta",
-    "charge_price_per_kwh": "Cena za kWh"
+    "charge_price_per_kwh": "Cena za kWh",
+    "pause_action_save": "Zapisz",
+    "pause_action_clear": "Usuń dane ręczne"
   },
   "services": {
     "import_charging_sites": {
