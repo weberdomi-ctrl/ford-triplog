@@ -25,7 +25,7 @@ from .const import (
     LAST_JOURNEY_FILE,
     STORAGE_DIR,
 )
-from .journey import FordTriplogJourney
+from .journey import FordTriplogJourney, build_pause_id
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,10 +109,22 @@ class FordTriplogJourneyStorage:
     async def save_completed_journey(
         self,
         journey: FordTriplogJourney | dict[str, Any],
+        *,
+        preserve_pause_overrides: bool = True,
     ) -> Path:
-        """Archive a completed journey and update last_journey.json."""
+        """Archive a completed journey and update last_journey.json.
+
+        Newly generated journeys inherit manual pause data from any archived
+        journey of the same day when the stable pause identifier still exists.
+        This makes pause edits survive every journey creation path, including
+        automatic rebuilds that generate a new journey identifier.
+        """
 
         data = self._normalize_journey_data(journey)
+
+        if preserve_pause_overrides:
+            data = await self._inherit_pause_overrides(data)
+
         journey_id = str(data["journey_id"]).strip()
 
         archive_path = (
@@ -254,10 +266,125 @@ class FordTriplogJourneyStorage:
         self,
         journey: FordTriplogJourney | dict[str, Any],
     ) -> Path:
-        """Replace one archived journey and refresh the last-journey cache when needed."""
+        """Replace one archived journey and synchronize manual pause data.
 
-        path = await self.save_completed_journey(journey)
+        Explicit editor changes must not be re-imported from an older duplicate
+        journey. The selected journey is therefore saved as authoritative and
+        its pause overrides are copied to other archived journeys of the same
+        day that contain the same stable pause identifiers.
+        """
+
+        data = self._normalize_journey_data(journey)
+        path = await self.save_completed_journey(
+            data,
+            preserve_pause_overrides=False,
+        )
+        await self._synchronize_pause_overrides(data)
         return path
+
+    async def _inherit_pause_overrides(
+        self,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Return journey data enriched with matching archived pause edits."""
+
+        valid_pause_ids = self._pause_ids_from_data(data)
+        if not valid_pause_ids:
+            return data
+
+        journey_date = str(data.get("date", "")).strip()
+        journey_id = str(data.get("journey_id", "")).strip()
+        inherited: dict[str, dict[str, Any]] = {}
+
+        for existing in await self.get_all_journeys():
+            if existing.journey_id == journey_id:
+                continue
+            if str(existing.date or "").strip() != journey_date:
+                continue
+
+            for pause_id, override in existing.pause_overrides.items():
+                if pause_id in valid_pause_ids and isinstance(override, dict):
+                    inherited[pause_id] = dict(override)
+
+        current = data.get("pause_overrides")
+        if isinstance(current, dict):
+            inherited.update(
+                {
+                    str(pause_id): dict(override)
+                    for pause_id, override in current.items()
+                    if isinstance(override, dict)
+                }
+            )
+
+        data["pause_overrides"] = inherited
+        return data
+
+    async def _synchronize_pause_overrides(
+        self,
+        authoritative_data: dict[str, Any],
+    ) -> None:
+        """Synchronize pause edits to duplicate journeys of the same day."""
+
+        journey_date = str(authoritative_data.get("date", "")).strip()
+        journey_id = str(authoritative_data.get("journey_id", "")).strip()
+        authoritative_ids = self._pause_ids_from_data(authoritative_data)
+        authoritative_overrides = authoritative_data.get("pause_overrides")
+        if not isinstance(authoritative_overrides, dict):
+            authoritative_overrides = {}
+
+        if not journey_date or not authoritative_ids:
+            return
+
+        for path in await self.list_journey_files():
+            existing = await self.load_journey_file(path)
+            if existing is None or existing.journey_id == journey_id:
+                continue
+            if str(existing.date or "").strip() != journey_date:
+                continue
+
+            existing_ids = {
+                build_pause_id(current.item_id, following.item_id)
+                for current, following in zip(
+                    existing.items,
+                    existing.items[1:],
+                )
+            }
+            shared_ids = authoritative_ids & existing_ids
+            if not shared_ids:
+                continue
+
+            changed = False
+            for pause_id in shared_ids:
+                authoritative = authoritative_overrides.get(pause_id)
+                if isinstance(authoritative, dict):
+                    normalized = dict(authoritative)
+                    if existing.pause_overrides.get(pause_id) != normalized:
+                        existing.pause_overrides[pause_id] = normalized
+                        changed = True
+                elif pause_id in existing.pause_overrides:
+                    existing.pause_overrides.pop(pause_id, None)
+                    changed = True
+
+            if changed:
+                await self._async_write_json(path, existing.to_dict())
+
+    @staticmethod
+    def _pause_ids_from_data(data: dict[str, Any]) -> set[str]:
+        """Return stable pause identifiers represented by journey items."""
+
+        items = data.get("items")
+        if not isinstance(items, list):
+            return set()
+
+        item_ids = [
+            str(item.get("id", "")).strip()
+            for item in items
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        ]
+        return {
+            build_pause_id(current_id, following_id)
+            for current_id, following_id in zip(item_ids, item_ids[1:])
+        }
 
     async def delete_journey(
         self,
