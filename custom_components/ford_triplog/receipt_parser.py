@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+
+_LOGGER = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class ReceiptParseResult:
@@ -130,7 +133,21 @@ class ReceiptParserEngine:
         for field_name, rule in rules.items():
             if not isinstance(rule, dict):
                 continue
-            value = self._extract_value(rule, text)
+
+            try:
+                value = self._extract_value(rule, text)
+            except (TypeError, ValueError) as err:
+                _LOGGER.warning(
+                    "Receipt parser field conversion failed: "
+                    "profile_id=%s field=%s error=%s",
+                    profile.get("profile_id"),
+                    field_name,
+                    err,
+                )
+                if bool(rule.get("required", False)):
+                    missing_fields.append(str(field_name))
+                continue
+
             if value is None or value == "":
                 if bool(rule.get("required", False)):
                     missing_fields.append(str(field_name))
@@ -300,8 +317,18 @@ class ReceiptParserEngine:
                     "%d.%m.%y,%H:%M",
                 ).isoformat()
             elif name == "datetime_dmy4_space":
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = re.sub(
+                    r"^(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})$",
+                    r"\1 \2",
+                    normalized,
+                )
                 result = datetime.strptime(
-                    re.sub(r"\s+", " ", str(result)).strip(),
+                    normalized,
                     "%d.%m.%Y %H:%M",
                 ).isoformat()
             elif name == "datetime_iso":
