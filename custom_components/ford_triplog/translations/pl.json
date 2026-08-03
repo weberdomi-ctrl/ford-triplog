@@ -164,8 +164,8 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Zarządzaj trasami",
+        "description": "Co chcesz zrobić z zapisanymi trasami?",
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
@@ -204,7 +204,7 @@
       },
       "charge_management": {
         "title": "Sesje ładowania",
-        "description": "Wybierz jedną z {charge_count} zapisanych sesji ładowania.",
+        "description": "Wybierz zapisaną sesję ładowania.",
         "data": {
           "charge_selection": "Sesja ładowania"
         },
@@ -299,8 +299,8 @@
         }
       },
       "pause_management": {
-        "title": "Edytuj postoje",
-        "description": "Wybierz jeden z {pause_count} wykrytych postojów.",
+        "title": "Edytuj przerwy",
+        "description": "Wybierz wykrytą przerwę i w razie potrzeby dodaj tytuł, kategorię, miejsce, notatkę lub koszty.",
         "data": {
           "pause_selection": "Postój"
         },

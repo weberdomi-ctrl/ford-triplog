@@ -164,12 +164,17 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Manage journeys",
+        "description": "What would you like to do with the stored journeys?",
         "menu_options": {
-          "journey_update": "Touren aktualisieren",
-          "journey_rebuild": "Touren neu berechnen",
-          "journey_delete": "Touren löschen"
+          "journey_update": "Update journeys",
+          "journey_rebuild": "Rebuild journeys",
+          "journey_delete": "Delete journeys"
+        },
+        "menu_option_descriptions": {
+          "journey_update": "Update existing journeys with current data.",
+          "journey_rebuild": "Fully recalculate and save all journeys.",
+          "journey_delete": "Permanently delete stored journeys."
         }
       },
       "journey_update": {
@@ -204,7 +209,7 @@
       },
       "charge_management": {
         "title": "Charging sessions",
-        "description": "Select one of the {charge_count} archived charging sessions.",
+        "description": "Select a stored charging session.",
         "data": {
           "charge_selection": "Charging session"
         },
@@ -300,7 +305,7 @@
       },
       "pause_management": {
         "title": "Edit pauses",
-        "description": "Select one of {pause_count} detected pauses.",
+        "description": "Select a detected pause and add a title, category, location, note or costs if needed.",
         "data": {
           "pause_selection": "Pause"
         },

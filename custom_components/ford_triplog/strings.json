@@ -164,12 +164,17 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Touren verwalten",
+        "description": "Was möchtest du mit den gespeicherten Touren machen?",
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
           "journey_delete": "Touren löschen"
+        },
+        "menu_option_descriptions": {
+          "journey_update": "Vorhandene Touren mit den aktuellen Daten aktualisieren.",
+          "journey_rebuild": "Alle Touren vollständig neu berechnen und speichern.",
+          "journey_delete": "Gespeicherte Touren dauerhaft löschen."
         }
       },
       "journey_update": {
@@ -203,8 +208,8 @@
         "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
       },
       "charge_management": {
-        "title": "Charging sessions",
-        "description": "Select one of the {charge_count} archived charging sessions.",
+        "title": "Ladevorgänge",
+        "description": "Wähle einen gespeicherten Ladevorgang aus.",
         "data": {
           "charge_selection": "Charging session"
         },
@@ -299,8 +304,8 @@
         }
       },
       "pause_management": {
-        "title": "Edit pauses",
-        "description": "Select one of {pause_count} detected pauses.",
+        "title": "Pausen bearbeiten",
+        "description": "Wähle eine erkannte Pause aus und ergänze bei Bedarf Titel, Kategorie, Ort, Notiz oder Kosten.",
         "data": {
           "pause_selection": "Pause"
         },
