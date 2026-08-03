@@ -395,7 +395,7 @@
       },
       "charge_receipt_upload": {
         "title": "Beleg zur Ladesitzung hinzufügen",
-        "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nWähle einen PDF- oder Bildbeleg. Ist OCR aktiv, werden OCR und Parser automatisch ausgeführt und anschließend direkt die Prüfansicht geöffnet.",
+        "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nNach dem Speichern wird direkt der Beleg geöffnet. Bei aktiver OCR werden Text und Parserprofil automatisch ermittelt.",
         "data": {
           "receipt_file": "Belegdatei",
           "receipt_note": "Notiz"

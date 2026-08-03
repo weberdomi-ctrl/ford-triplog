@@ -1288,12 +1288,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
 
                 if not bool(self._options.get(CONF_OCR_ENABLED, False)):
-                    self._receipt_result = {
-                        "filename": filename,
-                        "target_id": charge_id,
-                        "status": "Beleg gespeichert · OCR deaktiviert",
-                    }
-                    return await self.async_step_receipt_result()
+                    self._selected_receipt_id = receipt_id
+                    return await self.async_step_charge_receipt_detail()
 
                 try:
                     analyzed = await self._get_receipt_storage().async_analyze(
@@ -1315,26 +1311,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         receipt_id,
                         charge_id,
                     )
-                    self._receipt_result = {
-                        "filename": filename,
-                        "target_id": charge_id,
-                        "status": (
-                            "Beleg gespeichert · OCR fehlgeschlagen; "
-                            "Analyse kann später erneut gestartet werden"
-                        ),
-                    }
-                    return await self.async_step_receipt_result()
+                    self._selected_receipt_id = receipt_id
+                    return await self.async_step_charge_receipt_detail()
 
                 if str(analyzed.get("parse_status") or "") == "parsed":
+                    self._selected_receipt_id = receipt_id
                     self._selected_apply_receipt_id = receipt_id
                     return await self.async_step_receipt_apply_edit()
 
-                self._receipt_result = {
-                    "filename": filename,
-                    "target_id": charge_id,
-                    "status": "Beleg gespeichert und gelesen · kein passendes Parserprofil",
-                }
-                return await self.async_step_receipt_result()
+                self._selected_receipt_id = receipt_id
+                return await self.async_step_charge_receipt_detail()
 
         return self.async_show_form(
             step_id="charge_receipt_upload",
@@ -2929,6 +2915,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ),
                     }
                     self._selected_apply_receipt_id = None
+                    if self._selected_charge_id and self._selected_receipt_id:
+                        return await self.async_step_charge_receipt_detail()
                     return await self.async_step_receipt_apply_result()
 
         placeholders = {

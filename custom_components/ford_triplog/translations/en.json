@@ -395,7 +395,7 @@
       },
       "charge_receipt_upload": {
         "title": "Add receipt to charging session",
-        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nSelect a PDF or image receipt. When OCR is enabled, OCR and parsing run automatically and the review screen opens immediately.",
+        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nAfter saving, the receipt opens directly. When OCR is enabled, text and parser profile are detected automatically.",
         "data": {
           "receipt_file": "Receipt file",
           "receipt_note": "Note"

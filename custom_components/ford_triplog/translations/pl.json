@@ -395,7 +395,7 @@
       },
       "charge_receipt_upload": {
         "title": "Dodaj paragon do sesji ładowania",
-        "description": "**Sesja ładowania:** {date} · {location}\n**ID ładowania:** {charge_id}\n**OCR:** {ocr_status}\n\nWybierz plik PDF lub obraz. Gdy OCR jest włączone, analiza i parser uruchomią się automatycznie, a następnie otworzy się ekran weryfikacji.",
+        "description": "**Sesja ładowania:** {date} · {location}\n**ID ładowania:** {charge_id}\n**OCR:** {ocr_status}\n\nPo zapisaniu paragon zostanie otwarty bezpośrednio. Przy włączonym OCR tekst i profil parsera zostaną wykryte automatycznie.",
         "data": {
           "receipt_file": "Plik paragonu",
           "receipt_note": "Notatka"
