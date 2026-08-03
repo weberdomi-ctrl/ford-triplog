@@ -395,10 +395,10 @@
         "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nNach dem Speichern wird direkt der Beleg geöffnet. Bei aktiver OCR werden Text und Parserprofil automatisch ermittelt.",
         "data": {
           "receipt_file": "Belegdatei",
-          "receipt_note": "Notiz"
+          "note": "Notiz"
         },
         "data_description": {
-          "receipt_note": "Optionaler Hinweis zum Beleg."
+          "note": "Optionaler Hinweis zum Beleg."
         }
       },
       "charge_detail": {
@@ -790,7 +790,44 @@
     "pause_action_clear": "Manuelle Angaben löschen",
     "charge_action_add_receipt": "Beleg hinzufügen",
     "pause_action_back": "Zurück zu den Pausen",
-    "charging_site_back": "Zurück zu den Ladeorten"
+    "charging_site_back": "Zurück zu den Ladeorten",
+    "receipt": "Beleg",
+    "receipt_none": "Noch kein Beleg vorhanden",
+    "receipt_status_not_started": "Noch nicht ausgeführt",
+    "receipt_status_queued": "Wartet",
+    "receipt_status_running": "Wird verarbeitet",
+    "receipt_status_completed": "Abgeschlossen",
+    "receipt_status_failed": "Fehlgeschlagen",
+    "receipt_status_unread": "Noch nicht gelesen",
+    "receipt_status_values_applied": "Werte übernommen",
+    "receipt_status_values_detected": "Werte erkannt",
+    "receipt_status_no_profile": "OCR abgeschlossen · kein Profil",
+    "receipt_status_ocr_completed": "OCR abgeschlossen",
+    "receipt_parser_none": "Keine Parserwerte vorhanden",
+    "receipt_parser_provider": "Anbieter",
+    "receipt_parser_location": "Ladeort",
+    "receipt_parser_energy": "Energie",
+    "receipt_parser_duration": "Dauer",
+    "receipt_parser_current": "Strom",
+    "receipt_parser_voltage": "Spannung",
+    "receipt_parser_power": "Leistung",
+    "receipt_parser_temperature": "Temperatur",
+    "receipt_parser_price": "Preis pro kWh",
+    "receipt_parser_total": "Gesamt",
+    "receipt_profile_none": "Kein passendes Profil",
+    "receipt_text_none": "Kein Text erkannt.",
+    "receipt_not_evaluated": "Noch nicht ausgewertet",
+    "receipt_open_browser": "Beleg im Browser öffnen",
+    "receipt_back_list": "Zurück zur Belegliste",
+    "receipt_upload_ocr_enabled": "aktiv – Beleg wird automatisch analysiert",
+    "receipt_upload_ocr_disabled": "deaktiviert – Beleg wird nur gespeichert",
+    "ocr_enabled": "aktiv",
+    "ocr_disabled": "deaktiviert",
+    "ocr_service_disabled": "OCR deaktiviert",
+    "ocr_pdf_first_page": "Nur erste Seite",
+    "ocr_pdf_all_pages": "Alle Seiten / nicht angegeben",
+    "operation_completed": "Vorgang abgeschlossen",
+    "charge": "Ladevorgang"
   },
   "services": {
     "import_charging_sites": {

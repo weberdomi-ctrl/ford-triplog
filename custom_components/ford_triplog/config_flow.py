@@ -292,6 +292,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._ocr_connection_result: dict[str, str] = {}
         self._selected_apply_receipt_id: str | None = None
         self._receipt_apply_result: dict[str, str] = {}
+        self._ui_translations: dict[str, str] | None = None
 
     async def async_step_init(
         self,
@@ -311,6 +312,72 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ],
         )
 
+
+    async def _async_get_ui_translations(self) -> dict[str, str]:
+        """Load shared Ford Triplog UI translations once."""
+
+        if self._ui_translations is not None:
+            return self._ui_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+
+        defaults = {
+            "receipt": "Receipt",
+            "receipt_none": "No receipt available",
+            "receipt_status_not_started": "Not started",
+            "receipt_status_queued": "Queued",
+            "receipt_status_running": "Running",
+            "receipt_status_completed": "Completed",
+            "receipt_status_failed": "Failed",
+            "receipt_status_unread": "Not read yet",
+            "receipt_status_values_applied": "Values applied",
+            "receipt_status_values_detected": "Values detected",
+            "receipt_status_no_profile": "OCR completed · no profile",
+            "receipt_status_ocr_completed": "OCR completed",
+            "receipt_parser_none": "No parser values available",
+            "receipt_parser_provider": "Provider",
+            "receipt_parser_location": "Charging location",
+            "receipt_parser_energy": "Energy",
+            "receipt_parser_duration": "Duration",
+            "receipt_parser_current": "Current",
+            "receipt_parser_voltage": "Voltage",
+            "receipt_parser_power": "Power",
+            "receipt_parser_temperature": "Temperature",
+            "receipt_parser_price": "Price per kWh",
+            "receipt_parser_total": "Total",
+            "receipt_profile_none": "No matching profile",
+            "receipt_text_none": "No text detected.",
+            "receipt_not_evaluated": "Not evaluated yet",
+            "receipt_open_browser": "Open receipt in browser",
+            "receipt_back_list": "Back to receipt list",
+            "receipt_upload_ocr_enabled": (
+                "enabled – receipt will be analysed automatically"
+            ),
+            "receipt_upload_ocr_disabled": (
+                "disabled – receipt will only be stored"
+            ),
+            "ocr_enabled": "enabled",
+            "ocr_disabled": "disabled",
+            "ocr_service_disabled": "OCR disabled",
+            "ocr_pdf_first_page": "First page only",
+            "ocr_pdf_all_pages": "All pages / not specified",
+            "operation_completed": "Operation completed",
+            "charge": "Charging session",
+        }
+
+        self._ui_translations = {
+            key: translations.get(
+                f"component.{DOMAIN}.common.{key}",
+                default,
+            )
+            for key, default in defaults.items()
+        }
+        return self._ui_translations
 
     async def _async_get_charge_translations(self) -> dict[str, str]:
         """Load Charge Manager translations once for this options flow."""
@@ -583,23 +650,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
             == self._selected_charge_id
         ]
 
+        ui_text = await self._async_get_ui_translations()
+
         if receipts:
             lines = []
             for receipt in receipts[:10]:
                 filename = str(
                     receipt.get("original_filename")
                     or receipt.get("filename")
-                    or "Beleg"
+                    or ui_text["receipt"]
                 )
                 lines.append(
                     f"{filename} · "
-                    f"{self._format_receipt_processing_status(receipt)}"
+                    f"{self._format_receipt_processing_status(receipt, ui_text)}"
                 )
             receipt_summary = "\n".join(lines)
             if len(receipts) > 10:
-                receipt_summary += f"\n… und {len(receipts) - 10} weitere"
+                receipt_summary += f"\n… +{len(receipts) - 10}"
         else:
-            receipt_summary = "Noch kein Beleg vorhanden"
+            receipt_summary = ui_text["receipt_none"]
 
         return self.async_show_menu(
             step_id="charge_receipts",
@@ -612,9 +681,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "receipt_count": str(len(receipts)),
                 "receipt_summary": receipt_summary,
                 "ocr_status": (
-                    "aktiv"
+                    ui_text["ocr_enabled"]
                     if bool(self._options.get(CONF_OCR_ENABLED, False))
-                    else "deaktiviert"
+                    else ui_text["ocr_disabled"]
                 ),
             },
         )
@@ -1008,7 +1077,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
                 label=(
-                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{self._format_receipt_processing_status(receipt, await self._async_get_ui_translations())} · "
                     f"{receipt.get('original_filename') or receipt.get('filename') or receipt.get('receipt_id')}"
                 ),
             )
@@ -1093,6 +1162,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 errors={"base": "receipt_not_charge"},
             )
 
+        ui_text = await self._async_get_ui_translations()
+
         parser_result = receipt.get("parser_result", {})
         if not isinstance(parser_result, dict):
             parser_result = {}
@@ -1105,10 +1176,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             receipt.get("ocr_status") or "not_started"
         ).lower()
         ocr_status_text = {
-            "completed": "Abgeschlossen",
-            "running": "Läuft",
-            "failed": "Fehlgeschlagen",
-            "not_started": "Noch nicht ausgeführt",
+            "completed": ui_text["receipt_status_completed"],
+            "running": ui_text["receipt_status_running"],
+            "failed": ui_text["receipt_status_failed"],
+            "not_started": ui_text["receipt_status_not_started"],
         }.get(ocr_status, ocr_status)
 
         detail_lines: list[str] = []
@@ -1118,15 +1189,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
             or fields.get("provider")
         )
         if provider:
-            detail_lines.append(f"Anbieter: {provider}")
+            detail_lines.append(f"{ui_text['receipt_parser_provider']}: {provider}")
 
         station = fields.get("station")
         if station:
-            detail_lines.append(f"Ladeort: {station}")
+            detail_lines.append(f"{ui_text['receipt_parser_location']}: {station}")
 
         energy = fields.get("energy_kwh")
         if isinstance(energy, (int, float)):
-            detail_lines.append(f"Energie: {float(energy):.3f} kWh")
+            detail_lines.append(f"{ui_text['receipt_parser_energy']}: {float(energy):.3f} kWh")
 
         duration_seconds = fields.get("duration_seconds")
         if isinstance(duration_seconds, (int, float)):
@@ -1134,32 +1205,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
             hours, remainder = divmod(total_seconds, 3600)
             minutes, seconds = divmod(remainder, 60)
             detail_lines.append(
-                f"Dauer: {hours:02d}:{minutes:02d}:{seconds:02d}"
+                f"{ui_text['receipt_parser_duration']}: {hours:02d}:{minutes:02d}:{seconds:02d}"
             )
 
         current_a = fields.get("current_limit_a")
         if isinstance(current_a, (int, float)):
-            detail_lines.append(f"Strom: {float(current_a):g} A")
+            detail_lines.append(f"{ui_text['receipt_parser_current']}: {float(current_a):g} A")
 
         voltage_v = fields.get("voltage_v")
         if isinstance(voltage_v, (int, float)):
-            detail_lines.append(f"Spannung: {float(voltage_v):g} V")
+            detail_lines.append(f"{ui_text['receipt_parser_voltage']}: {float(voltage_v):g} V")
 
         power_kw = fields.get("power_kw")
         if isinstance(power_kw, (int, float)):
-            detail_lines.append(f"Leistung: {float(power_kw):g} kW")
+            detail_lines.append(f"{ui_text['receipt_parser_power']}: {float(power_kw):g} kW")
 
         temperature_c = fields.get("temperature_c")
         if isinstance(temperature_c, (int, float)):
             detail_lines.append(
-                f"Temperatur: {float(temperature_c):g} °C"
+                f"{ui_text['receipt_parser_temperature']}: {float(temperature_c):g} °C"
             )
 
         price_per_kwh = fields.get("price_per_kwh")
         currency = str(fields.get("currency") or "CHF")
         if isinstance(price_per_kwh, (int, float)):
             detail_lines.append(
-                f"Preis pro kWh: {float(price_per_kwh):.3f} {currency}"
+                f"{ui_text['receipt_parser_price']}: {float(price_per_kwh):.3f} {currency}"
             )
 
         total = (
@@ -1169,23 +1240,23 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
         if isinstance(total, (int, float)):
             detail_lines.append(
-                f"Gesamt: {float(total):.2f} {currency}"
+                f"{ui_text['receipt_parser_total']}: {float(total):.2f} {currency}"
             )
 
         if not detail_lines:
-            detail_lines.append("Keine Parserwerte vorhanden")
+            detail_lines.append(ui_text["receipt_parser_none"])
 
         placeholders = {
             "filename": str(
                 receipt.get("original_filename")
                 or receipt.get("filename")
-                or "Beleg"
+                or ui_text["receipt"]
             ),
-            "status": self._format_receipt_processing_status(receipt),
+            "status": self._format_receipt_processing_status(receipt, ui_text),
             "ocr_status": ocr_status_text,
             "profile": str(
                 parser_result.get("profile_name")
-                or "Kein passendes Profil"
+                or ui_text["receipt_profile_none"]
             ),
             "details": "\n".join(detail_lines),
         }
@@ -1526,7 +1597,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "filename": str(
                     receipt.get("original_filename")
                     or receipt.get("filename")
-                    or "Beleg"
+                    or (await self._async_get_ui_translations())["receipt"]
                 ),
                 "raw_text": raw_text[:2000],
             },
@@ -1704,9 +1775,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "date": self._format_charge_datetime(charge.start_time),
                 "location": self._charge_location(charge),
                 "ocr_status": (
-                    "aktiv – Beleg wird automatisch analysiert"
+                    (await self._async_get_ui_translations())[
+                        "receipt_upload_ocr_enabled"
+                    ]
                     if bool(self._options.get(CONF_OCR_ENABLED, False))
-                    else "deaktiviert – Beleg wird nur gespeichert"
+                    else (await self._async_get_ui_translations())[
+                        "receipt_upload_ocr_disabled"
+                    ]
                 ),
             },
         )
@@ -2358,9 +2433,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             else "—"
                         ),
                         "pdf_mode": (
-                            "Nur erste Seite"
+                            (await self._async_get_ui_translations())[
+                                "ocr_pdf_first_page"
+                            ]
                             if health.pdf_first_page_only
-                            else "Alle Seiten / nicht angegeben"
+                            else (await self._async_get_ui_translations())[
+                                "ocr_pdf_all_pages"
+                            ]
                         ),
                     }
                     return await self.async_step_ocr_connection_result()
@@ -2380,7 +2459,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
                 self._options.update(updated_options)
                 self._ocr_connection_result = {
-                    "service": "OCR deaktiviert",
+                    "service": (await self._async_get_ui_translations())[
+                        "ocr_service_disabled"
+                    ],
                     "version": "—",
                     "engine": "—",
                     "url": url or "—",
@@ -2600,6 +2681,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def _async_receipt_contexts(self) -> list[dict[str, Any]]:
         """Return receipts enriched with their pause or charge context."""
 
+        ui_text = await self._async_get_ui_translations()
         receipts = await self._get_receipt_storage().async_list()
         pauses = {
             str(entry["pause_id"]): entry
@@ -2650,7 +2732,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     if charge else "—"
                 )
                 label = f"⚡ {date_text} · {location}"
-                kind = "Ladevorgang"
+                kind = ui_text["charge"]
 
             try:
                 cost = f"{float(amount):.2f} {currency}".strip() if amount is not None else "—"
@@ -2728,16 +2810,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
 
     @staticmethod
-    def _format_receipt_ocr_status(value: Any) -> str:
-        """Return a translated-friendly OCR status label."""
+    def _format_receipt_ocr_status(
+        value: Any,
+        ui_text: dict[str, str],
+    ) -> str:
+        """Return a translated OCR status label."""
 
         status = str(value or "not_started").strip().lower()
         labels = {
-            "not_started": "Noch nicht ausgeführt",
-            "queued": "Wartet",
-            "running": "Wird verarbeitet",
-            "completed": "Abgeschlossen",
-            "failed": "Fehlgeschlagen",
+            "not_started": ui_text["receipt_status_not_started"],
+            "queued": ui_text["receipt_status_queued"],
+            "running": ui_text["receipt_status_running"],
+            "completed": ui_text["receipt_status_completed"],
+            "failed": ui_text["receipt_status_failed"],
         }
         return labels.get(status, status or "—")
 
@@ -2822,6 +2907,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         except NoURLAvailableError:
             self._selected_receipt_url = signed_path
 
+        ui_text = await self._async_get_ui_translations()
+
         return self.async_show_form(
             step_id="receipt_detail",
             data_schema=vol.Schema(
@@ -2834,11 +2921,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             options=[
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_OPEN,
-                                    label="Beleg im Browser öffnen",
+                                    label=ui_text["receipt_open_browser"],
                                 ),
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_BACK,
-                                    label="Zurück zur Belegliste",
+                                    label=ui_text["receipt_back_list"],
                                 ),
                             ],
                             mode=selector.SelectSelectorMode.LIST,
@@ -2858,7 +2945,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "filename": document_type,
                 "size": size_text,
                 "ocr_status": self._format_receipt_ocr_status(
-                    receipt.get("ocr_status")
+                    receipt.get("ocr_status"),
+                    ui_text,
                 ),
             },
         )
@@ -2880,8 +2968,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
     @staticmethod
     def _format_receipt_processing_status(
         receipt: dict[str, Any],
+        ui_text: dict[str, str],
     ) -> str:
-        """Return one compact OCR/parser status label."""
+        """Return one compact translated OCR/parser status label."""
 
         ocr_status = str(
             receipt.get("ocr_status") or "not_started"
@@ -2891,21 +2980,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
         ).lower()
 
         if ocr_status == "failed":
-            return "⚠ OCR fehlgeschlagen"
+            return f"⚠ {ui_text['receipt_status_failed']}"
         if ocr_status == "running":
-            return "⏳ OCR läuft"
+            return f"⏳ {ui_text['receipt_status_running']}"
         if ocr_status != "completed":
-            return "⬜ Noch nicht gelesen"
+            return f"⬜ {ui_text['receipt_status_unread']}"
         if bool(receipt.get("parser_confirmed", False)):
-            return "✔ Werte übernommen"
+            return f"✔ {ui_text['receipt_status_values_applied']}"
         if parse_status == "parsed":
             profile = str(
-                receipt.get("parser_profile") or "Profil"
+                receipt.get("parser_profile") or "Profile"
             )
-            return f"🧾 Werte erkannt · {profile}"
+            return (
+                f"🧾 {ui_text['receipt_status_values_detected']} · "
+                f"{profile}"
+            )
         if parse_status == "no_match":
-            return "✅ OCR abgeschlossen · kein Profil"
-        return "✅ OCR abgeschlossen"
+            return f"✅ {ui_text['receipt_status_no_profile']}"
+        return f"✅ {ui_text['receipt_status_ocr_completed']}"
+
 
     def _get_ocr_client(self) -> FordTriplogOCRClient:
         """Return a configured client for the external OCR service."""
@@ -2945,7 +3038,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
                 label=(
-                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{self._format_receipt_processing_status(receipt, await self._async_get_ui_translations())} · "
                     f"{receipt.get('display_label') or receipt.get('receipt_id')}"
                 ),
             )
@@ -3086,15 +3179,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "parsed_currency": str(
                         parsed_fields.get("currency") or ""
                     ),
-                    "raw_text": display_text or "Kein Text erkannt.",
+                    "raw_text": display_text or (await self._async_get_ui_translations())["receipt_text_none"],
 
                     # Backward compatibility for cached dev12/dev19
                     # translations that still expect parser placeholders.
                     "filename": document_name,
-                    "merchant": "Noch nicht ausgewertet",
-                    "date": "Noch nicht ausgewertet",
-                    "time": "Noch nicht ausgewertet",
-                    "amount": "Noch nicht ausgewertet",
+                    "merchant": (await self._async_get_ui_translations())["receipt_not_evaluated"],
+                    "date": (await self._async_get_ui_translations())["receipt_not_evaluated"],
+                    "time": (await self._async_get_ui_translations())["receipt_not_evaluated"],
+                    "amount": (await self._async_get_ui_translations())["receipt_not_evaluated"],
                     "currency": "",
                 }
                 return await self.async_step_receipt_ocr_result()
@@ -3159,7 +3252,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             selector.SelectOptionDict(
                 value=str(receipt.get("receipt_id")),
                 label=(
-                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{self._format_receipt_processing_status(receipt, await self._async_get_ui_translations())} · "
                     f"{receipt.get('display_label') or receipt.get('receipt_id')}"
                 ),
             )
@@ -3469,7 +3562,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if self._selected_charge_id:
                 return await self.async_step_charge_detail()
             return await self.async_step_receipt_management()
-        self._receipt_result.setdefault("status", "Vorgang abgeschlossen")
+        self._receipt_result.setdefault(
+            "status",
+            (await self._async_get_ui_translations())["operation_completed"],
+        )
         return self.async_show_form(
             step_id="receipt_result",
             data_schema=vol.Schema({}),
