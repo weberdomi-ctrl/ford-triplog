@@ -305,13 +305,15 @@
         }
       },
       "pause_management": {
-        "title": "Edytuj przerwy",
-        "description": "Wybierz wykrytą przerwę i w razie potrzeby dodaj tytuł, kategorię, miejsce, notatkę lub koszty.",
-        "data": {
-          "pause_selection": "Postój"
+        "title": "Przerwy",
+        "description": "Wybierz, co chcesz zrobić.",
+        "menu_options": {
+          "pause_selection": "Wybierz i uzupełnij przerwę",
+          "init": "Wróć do menu głównego"
         },
-        "data_description": {
-          "pause_selection": "Lista pokazuje datę, czas, długość, miejsce i zapisany tytuł."
+        "menu_option_descriptions": {
+          "pause_selection": "Wybierz automatycznie wykrytą przerwę i dodaj tytuł, kategorię, lokalizację, notatkę lub koszty.",
+          "init": "Wróć do przeglądu Ford Triplog."
         }
       },
       "pause_edit": {
@@ -506,6 +508,16 @@
         },
         "data_description": {
           "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty."
+        }
+      },
+      "pause_selection": {
+        "title": "Wybierz przerwę",
+        "description": "Wybierz jedną z {pause_count} automatycznie wykrytych przerw.",
+        "data": {
+          "pause_selection": "Przerwa"
+        },
+        "data_description": {
+          "pause_selection": "Lista pokazuje datę, przedział czasu, czas trwania i lokalizację."
         }
       }
     },
@@ -727,7 +739,8 @@
     "charge_price_per_kwh": "Cena za kWh",
     "pause_action_save": "Zapisz",
     "pause_action_clear": "Usuń dane ręczne",
-    "charge_action_add_receipt": "Dodaj paragon"
+    "charge_action_add_receipt": "Dodaj paragon",
+    "pause_action_back": "Wróć do przerw"
   },
   "services": {
     "import_charging_sites": {

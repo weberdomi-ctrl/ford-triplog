@@ -308,13 +308,15 @@
         }
       },
       "pause_management": {
-        "title": "Pausen bearbeiten",
-        "description": "Wähle eine erkannte Pause aus und ergänze bei Bedarf Titel, Kategorie, Ort, Notiz oder Kosten.",
-        "data": {
-          "pause_selection": "Pause"
+        "title": "Pausen",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "pause_selection": "Pause auswählen und ergänzen",
+          "init": "Zurück zum Hauptmenü"
         },
-        "data_description": {
-          "pause_selection": "The list shows date, time, duration, location and any stored title."
+        "menu_option_descriptions": {
+          "pause_selection": "Eine automatisch erkannte Pause auswählen und mit Titel, Kategorie, Ort, Notiz oder Kosten ergänzen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "pause_edit": {
@@ -509,6 +511,16 @@
         },
         "data_description": {
           "charge_selection": "Die Liste zeigt Datum, Ort, geladene Energie und gespeicherte Kosten."
+        }
+      },
+      "pause_selection": {
+        "title": "Pause auswählen",
+        "description": "Wähle eine der {pause_count} automatisch erkannten Pausen aus.",
+        "data": {
+          "pause_selection": "Pause"
+        },
+        "data_description": {
+          "pause_selection": "Die Liste zeigt Datum, Zeitraum, Dauer und Ort."
         }
       }
     },
@@ -729,8 +741,9 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data",
-    "charge_action_add_receipt": "Beleg hinzufügen"
+    "pause_action_clear": "Manuelle Angaben löschen",
+    "charge_action_add_receipt": "Beleg hinzufügen",
+    "pause_action_back": "Zurück zu den Pausen"
   },
   "services": {
     "import_charging_sites": {

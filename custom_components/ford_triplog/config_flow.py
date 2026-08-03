@@ -142,6 +142,7 @@ CONF_PAUSE_ACTION = "action"
 
 PAUSE_ACTION_SAVE = "save"
 PAUSE_ACTION_CLEAR = "clear"
+PAUSE_ACTION_BACK = "back"
 
 CONF_RECEIPT_TARGET_TYPE = "target_type"
 CONF_RECEIPT_TARGET = "target"
@@ -1860,6 +1861,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 f"component.{DOMAIN}.common.pause_action_clear",
                 "Clear",
             ),
+            "back": translations.get(
+                f"component.{DOMAIN}.common.pause_action_back",
+                "Back to pauses",
+            ),
         }
 
         return self._pause_translations
@@ -1982,7 +1987,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Select one archived Journey pause."""
+        """Show pause navigation."""
+
+        return self.async_show_menu(
+            step_id="pause_management",
+            menu_options=[
+                "pause_selection",
+                "init",
+            ],
+        )
+
+    async def async_step_pause_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one automatically detected Journey pause."""
 
         errors: dict[str, str] = {}
 
@@ -2028,7 +2047,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="pause_management",
+            step_id="pause_selection",
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"pause_count": str(len(pauses))},
@@ -2041,7 +2060,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Edit one Journey pause."""
 
         if not self._selected_pause_journey_id or not self._selected_pause_id:
-            return await self.async_step_pause_management()
+            return await self.async_step_pause_selection()
 
         errors: dict[str, str] = {}
         journey = await self._get_journey_storage().load_journey_by_id(
@@ -2062,7 +2081,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             action = user_input.get(CONF_PAUSE_ACTION, PAUSE_ACTION_SAVE)
-            service = "clear_pause_edit" if action == PAUSE_ACTION_CLEAR else "edit_pause"
+
+            if action == PAUSE_ACTION_BACK:
+                self._selected_pause_journey_id = None
+                self._selected_pause_id = None
+                return await self.async_step_pause_selection()
+
+            service = (
+                "clear_pause_edit"
+                if action == PAUSE_ACTION_CLEAR
+                else "edit_pause"
+            )
             service_data: dict[str, Any] = {
                 "entry_id": self._config_entry.entry_id,
                 "journey_id": self._selected_pause_journey_id,
@@ -2092,12 +2121,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             except (HomeAssistantError, ValueError):
                 errors["base"] = "pause_save_failed"
             else:
-                self._pause_result = {
-                    "journey_id": self._selected_pause_journey_id,
-                    "pause_id": self._selected_pause_id,
-                    "action": action,
-                }
-                return await self.async_step_pause_result()
+                self._selected_pause_journey_id = None
+                self._selected_pause_id = None
+                return await self.async_step_pause_selection()
 
         fields: dict[Any, Any] = {
             vol.Optional(
@@ -2165,6 +2191,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         selector.SelectOptionDict(
                             value=PAUSE_ACTION_CLEAR,
                             label=pause_text["clear"],
+                        ),
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_BACK,
+                            label=pause_text["back"],
                         ),
                     ],
                     mode=selector.SelectSelectorMode.LIST,

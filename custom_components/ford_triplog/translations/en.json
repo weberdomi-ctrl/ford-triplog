@@ -308,13 +308,15 @@
         }
       },
       "pause_management": {
-        "title": "Edit pauses",
-        "description": "Select a detected pause and add a title, category, location, note or costs if needed.",
-        "data": {
-          "pause_selection": "Pause"
+        "title": "Pauses",
+        "description": "Select what you want to do.",
+        "menu_options": {
+          "pause_selection": "Select and complete a pause",
+          "init": "Back to main menu"
         },
-        "data_description": {
-          "pause_selection": "The list shows date, time, duration, location and any stored title."
+        "menu_option_descriptions": {
+          "pause_selection": "Select an automatically detected pause and add a title, category, location, note or costs.",
+          "init": "Return to the Ford Triplog overview."
         }
       },
       "pause_edit": {
@@ -509,6 +511,16 @@
         },
         "data_description": {
           "charge_selection": "The list shows date, location, charged energy and stored costs."
+        }
+      },
+      "pause_selection": {
+        "title": "Select pause",
+        "description": "Select one of the {pause_count} automatically detected pauses.",
+        "data": {
+          "pause_selection": "Pause"
+        },
+        "data_description": {
+          "pause_selection": "The list shows date, time range, duration and location."
         }
       }
     },
@@ -729,8 +741,9 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data",
-    "charge_action_add_receipt": "Add receipt"
+    "pause_action_clear": "Clear manual details",
+    "charge_action_add_receipt": "Add receipt",
+    "pause_action_back": "Back to pauses"
   },
   "services": {
     "import_charging_sites": {
