@@ -2285,7 +2285,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show receipt management actions."""
 
-        menu_options = ["ocr_settings"]
+        menu_options: list[str] = []
         if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("receipt_ocr")
         menu_options.extend(
@@ -2450,7 +2450,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the external OCR connection result."""
 
         if user_input is not None:
-            return await self.async_step_receipt_management()
+            return await self.async_step_settings()
 
         return self.async_show_form(
             step_id="ocr_connection_result",
@@ -3674,16 +3674,37 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Manage integration settings."""
+        """Show settings navigation."""
+
+        return self.async_show_menu(
+            step_id="settings",
+            menu_options=[
+                "general_settings",
+                "ocr_settings",
+                "init",
+            ],
+        )
+
+    async def async_step_general_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Manage general integration settings."""
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=user_input,
+            updated_options = dict(self._config_entry.options)
+            updated_options.update(user_input)
+
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options=updated_options,
             )
+            self._options.update(updated_options)
+
+            return await self.async_step_settings()
 
         return self.async_show_form(
-            step_id="settings",
+            step_id="general_settings",
             data_schema=self.add_suggested_values_to_schema(
                 self._build_options_schema(),
                 self._options,

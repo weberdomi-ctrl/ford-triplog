@@ -43,35 +43,16 @@
       },
       "settings": {
         "title": "Einstellungen",
-        "description": "Ford Triplog konfigurieren.",
-        "data": {
-          "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
-          "charging": "Ladestatus-Sensor",
-          "battery_capacity_kwh": "Nutzbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)",
-          "journey_home_zone": "Tour-Basis",
-          "journey_home_timeout_minutes": "Mindestaufenthalt an der Tour-Basis",
-          "journey_max_gap_hours": "Maximale Pause zwischen Touren",
-          "home_tariff_enabled": "Automatische Heimladekosten",
-          "home_tariff_summer_price": "Sommertarif (1. April bis 30. September)",
-          "home_tariff_winter_price": "Wintertarif (1. Oktober bis 31. März)",
-          "home_tariff_currency": "Währung der Heimtarife",
-          "charging_site_country": "Land der Ladeort-Datenbank"
+        "description": "Wähle den Bereich aus, den du konfigurieren möchtest.",
+        "menu_options": {
+          "general_settings": "Allgemeine Einstellungen",
+          "ocr_settings": "OCR-Verbindung",
+          "init": "Zurück zum Hauptmenü"
         },
-        "data_description": {
-          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
-          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
-          "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
-          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
-          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens so lange in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
-          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
-          "home_tariff_enabled": "Berechnet die Kosten für Ladevorgänge in der Tour-Basis automatisch.",
-          "home_tariff_summer_price": "Preis pro kWh für Ladevorgänge vom 1. April bis 30. September.",
-          "home_tariff_winter_price": "Preis pro kWh für Ladevorgänge vom 1. Oktober bis 31. März.",
-          "home_tariff_currency": "Währung für automatisch berechnete Heimladekosten.",
-          "charging_site_country": "Land der aktuell verwendeten OpenStreetMap-Ladeort-Datenbank."
+        "menu_option_descriptions": {
+          "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
+          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "import_charging_sites": {
@@ -553,6 +534,39 @@
           "download_charging_sites": "Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und aktivieren.",
           "import_charging_sites": "Eine vorhandene Ford-Triplog-Ladeort-Datenbank als JSON-Datei importieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "general_settings": {
+        "title": "Allgemeine Einstellungen",
+        "description": "Ford Triplog konfigurieren.",
+        "data": {
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "charging": "Ladestatus-Sensor",
+          "charging_site_country": "Land der Ladeort-Datenbank",
+          "battery_capacity_kwh": "Nutzbare Akkukapazität (kWh)",
+          "soh": "Batteriezustand (SOH)",
+          "journey_home_zone": "Tour-Basis",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an der Tour-Basis",
+          "journey_max_gap_hours": "Maximale Pause zwischen Touren",
+          "home_tariff_enabled": "Automatische Heimladekosten",
+          "home_tariff_summer_price": "Sommertarif (1. April bis 30. September)",
+          "home_tariff_winter_price": "Wintertarif (1. Oktober bis 31. März)",
+          "home_tariff_currency": "Währung der Heimtarife"
+        },
+        "data_description": {
+          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
+          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
+          "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar).",
+          "charging_site_country": "Land der aktuell verwendeten OpenStreetMap-Ladeort-Datenbank.",
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens so lange in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
+          "home_tariff_enabled": "Berechnet die Kosten für Ladevorgänge in der Tour-Basis automatisch.",
+          "home_tariff_summer_price": "Preis pro kWh für Ladevorgänge vom 1. April bis 30. September.",
+          "home_tariff_winter_price": "Preis pro kWh für Ladevorgänge vom 1. Oktober bis 31. März.",
+          "home_tariff_currency": "Währung für automatisch berechnete Heimladekosten."
         }
       }
     },
