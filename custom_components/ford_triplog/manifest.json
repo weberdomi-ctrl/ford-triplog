@@ -2,9 +2,7 @@
   "domain": "ford_triplog",
   "name": "Ford Triplog",
   "after_dependencies": [],
-  "codeowners": [
-    "@weberdomi-ctrl"
-  ],
+  "codeowners": ["@weberdomi-ctrl"],
   "config_flow": true,
   "dependencies": [
     "file_upload"
