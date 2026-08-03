@@ -449,7 +449,7 @@
       },
       "charge_receipt_list": {
         "title": "Receipts for this charging session",
-        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}",
+        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}\n\nSelect “← Back” to return to the receipt menu.",
         "data": {
           "receipt_list_selection": "Receipt"
         }
@@ -510,7 +510,7 @@
           "charge_selection": "Charging session"
         },
         "data_description": {
-          "charge_selection": "The list shows date, location, charged energy and stored costs."
+          "charge_selection": "The list shows date, location, charged energy and stored costs. Select “← Back” to return to the charging-session menu."
         }
       },
       "pause_selection": {
@@ -520,7 +520,7 @@
           "pause_selection": "Pause"
         },
         "data_description": {
-          "pause_selection": "The list shows date, time range, duration and location."
+          "pause_selection": "The list shows date, time range, duration and location. Select “← Back” to return to the pause menu."
         }
       }
     },

@@ -143,6 +143,7 @@ CONF_PAUSE_ACTION = "action"
 PAUSE_ACTION_SAVE = "save"
 PAUSE_ACTION_CLEAR = "clear"
 PAUSE_ACTION_BACK = "back"
+SELECTION_BACK = "__back__"
 
 CONF_RECEIPT_TARGET_TYPE = "target_type"
 CONF_RECEIPT_TARGET = "target"
@@ -387,22 +388,30 @@ class FordTriplogOptionsFlow(OptionsFlow):
             charges = []
             errors["base"] = "charge_load_failed"
 
-        if not charges and not errors:
-            errors["base"] = "charge_none_available"
-
-        if user_input is not None and not errors:
-            self._selected_charge_id = str(
-                user_input[CONF_CHARGE_SELECTION]
+        if user_input is not None:
+            selected_charge = str(
+                user_input.get(CONF_CHARGE_SELECTION) or ""
             ).strip()
-            return await self.async_step_charge_detail()
+            if selected_charge == SELECTION_BACK:
+                return await self.async_step_charge_management()
+
+            if not errors and selected_charge:
+                self._selected_charge_id = selected_charge
+                return await self.async_step_charge_detail()
 
         options = [
             selector.SelectOptionDict(
-                value=str(charge.charge_id),
-                label=self._format_charge_label(charge),
-            )
-            for charge in charges
-            if charge.charge_id
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=self._format_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ],
         ]
 
         schema: dict[Any, Any] = {}
@@ -425,7 +434,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
-                "charge_count": str(len(options)),
+                "charge_count": str(max(0, len(options) - 1)),
             },
         )
 
@@ -1005,14 +1014,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if receipt.get("receipt_id")
         ]
 
-        if not options and not errors:
-            errors["base"] = "receipt_none_available"
+        options.insert(
+            0,
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+        )
 
-        if user_input is not None and not errors:
-            self._selected_receipt_id = str(
-                user_input[CONF_RECEIPT_LIST_SELECTION]
+        if user_input is not None:
+            selected_receipt = str(
+                user_input.get(CONF_RECEIPT_LIST_SELECTION) or ""
             )
-            return await self.async_step_charge_receipt_detail()
+            if selected_receipt == SELECTION_BACK:
+                return await self.async_step_charge_receipts()
+
+            if not errors and selected_receipt:
+                self._selected_receipt_id = selected_receipt
+                return await self.async_step_charge_receipt_detail()
 
         schema: dict[Any, Any] = {}
         if options:
@@ -2011,29 +2030,38 @@ class FordTriplogOptionsFlow(OptionsFlow):
             pauses = []
             errors["base"] = "pause_load_failed"
 
-        if not pauses and not errors:
-            errors["base"] = "pause_none_available"
+        if user_input is not None:
+            selection = str(
+                user_input.get(CONF_PAUSE_SELECTION) or ""
+            )
+            if selection == SELECTION_BACK:
+                return await self.async_step_pause_management()
 
-        if user_input is not None and not errors:
-            selection = str(user_input[CONF_PAUSE_SELECTION])
-            try:
-                journey_id, pause_id = selection.split("::", 1)
-            except ValueError:
-                errors["base"] = "pause_invalid_selection"
-            else:
-                self._selected_pause_journey_id = journey_id
-                self._selected_pause_id = pause_id
-                return await self.async_step_pause_edit()
+            if not errors and selection:
+                try:
+                    journey_id, pause_id = selection.split("::", 1)
+                except ValueError:
+                    errors["base"] = "pause_invalid_selection"
+                else:
+                    self._selected_pause_journey_id = journey_id
+                    self._selected_pause_id = pause_id
+                    return await self.async_step_pause_edit()
 
         schema: dict[Any, Any] = {}
-        if pauses:
-            options = [
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
                 selector.SelectOptionDict(
                     value=pause["value"],
                     label=pause["label"],
                 )
                 for pause in pauses
-            ]
+            ],
+        ]
+        if options:
             schema[
                 vol.Required(
                     CONF_PAUSE_SELECTION,
@@ -2227,6 +2255,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema({}),
             description_placeholders=self._pause_result,
         )
+
+    def _selection_back_label(self) -> str:
+        """Return a localized label for selection-form back entries."""
+
+        language = str(self.hass.config.language or "en").lower()
+        if language.startswith("de"):
+            return "← Zurück"
+        if language.startswith("pl"):
+            return "← Wróć"
+        return "← Back"
 
     def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
         """Return initialized receipt storage for this config entry."""

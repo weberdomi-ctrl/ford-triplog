@@ -449,7 +449,7 @@
       },
       "charge_receipt_list": {
         "title": "Belege dieser Ladesitzung",
-        "description": "Ladesitzung: {charge_id}\n\nVerknüpfte Belege: {receipt_count}",
+        "description": "Ladesitzung: {charge_id}\n\nVerknüpfte Belege: {receipt_count}\n\nMit „← Zurück“ kehrst du zum Belegmenü zurück.",
         "data": {
           "receipt_list_selection": "Beleg"
         }
@@ -510,7 +510,7 @@
           "charge_selection": "Ladevorgang"
         },
         "data_description": {
-          "charge_selection": "Die Liste zeigt Datum, Ort, geladene Energie und gespeicherte Kosten."
+          "charge_selection": "Die Liste zeigt Datum, Ort, geladene Energie und gespeicherte Kosten. Mit „← Zurück“ kehrst du zum Ladevorgangsmenü zurück."
         }
       },
       "pause_selection": {
@@ -520,7 +520,7 @@
           "pause_selection": "Pause"
         },
         "data_description": {
-          "pause_selection": "Die Liste zeigt Datum, Zeitraum, Dauer und Ort."
+          "pause_selection": "Die Liste zeigt Datum, Zeitraum, Dauer und Ort. Mit „← Zurück“ kehrst du zum Pausenmenü zurück."
         }
       }
     },

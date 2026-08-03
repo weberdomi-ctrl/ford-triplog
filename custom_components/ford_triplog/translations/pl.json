@@ -446,7 +446,7 @@
       },
       "charge_receipt_list": {
         "title": "Paragony tej sesji ładowania",
-        "description": "Sesja ładowania: {charge_id}\n\nPowiązane paragony: {receipt_count}",
+        "description": "Sesja ładowania: {charge_id}\n\nPowiązane paragony: {receipt_count}\n\nWybierz „← Wróć”, aby wrócić do menu paragonów.",
         "data": {
           "receipt_list_selection": "Paragon"
         }
@@ -507,7 +507,7 @@
           "charge_selection": "Sesja ładowania"
         },
         "data_description": {
-          "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty."
+          "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty. Wybierz „← Wróć”, aby wrócić do menu sesji ładowania."
         }
       },
       "pause_selection": {
@@ -517,7 +517,7 @@
           "pause_selection": "Przerwa"
         },
         "data_description": {
-          "pause_selection": "Lista pokazuje datę, przedział czasu, czas trwania i lokalizację."
+          "pause_selection": "Lista pokazuje datę, przedział czasu, czas trwania i lokalizację. Wybierz „← Wróć”, aby wrócić do menu przerw."
         }
       }
     },
