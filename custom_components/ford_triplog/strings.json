@@ -30,8 +30,7 @@
           "pause_management": "Pausen bearbeiten",
           "charge_management": "Ladevorgänge",
           "user_charging_sites": "Eigene Ladeorte",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "import_charging_sites": "Ladeort-Datenbank importieren"
+          "charging_site_database": "OpenStreetMap-Ladeorte"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
@@ -39,8 +38,7 @@
           "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
           "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
+          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren."
         }
       },
       "settings": {
@@ -95,7 +93,7 @@
           "charging_site_country": "Land"
         },
         "data_description": {
-          "charging_site_country": "Für das ausgewählte Land wird eine neue Ladeort-Datenbank erstellt und sofort aktiviert."
+          "charging_site_country": "Wähle ein Land oder „← Zurück“, um zum OpenStreetMap-Menü zurückzukehren."
         }
       },
       "download_charging_sites_success": {
@@ -540,6 +538,20 @@
       "user_charging_site_new": {
         "title": "Neuen Ladeort erstellen",
         "description": "Einen neuen benutzerdefinierten Ladeort anlegen."
+      },
+      "charging_site_database": {
+        "title": "OpenStreetMap-Ladeorte",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "download_charging_sites": "Ladeorte herunterladen",
+          "import_charging_sites": "Datenbank importieren",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "download_charging_sites": "Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und aktivieren.",
+          "import_charging_sites": "Eine vorhandene Ford-Triplog-Ladeort-Datenbank als JSON-Datei importieren.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
       }
     },
     "error": {

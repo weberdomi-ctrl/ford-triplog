@@ -30,8 +30,7 @@
           "pause_management": "Edytuj przerwy",
           "charge_management": "Sesje ładowania",
           "user_charging_sites": "Eigene Ladeorte",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "import_charging_sites": "Ladeort-Datenbank importieren"
+          "charging_site_database": "Lokalizacje OpenStreetMap"
         },
         "menu_option_descriptions": {
           "settings": "Edytuj ustawienia tras, ładowania i pojazdu.",
@@ -39,8 +38,7 @@
           "pause_management": "Dodaj tytuł, kategorię, miejsce, notatkę i koszty.",
           "charge_management": "Zarządzaj sesjami, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
+          "charging_site_database": "Pobierz lub zaimportuj bazę lokalizacji ładowania."
         }
       },
       "settings": {
@@ -95,7 +93,7 @@
           "charging_site_country": "Land"
         },
         "data_description": {
-          "charging_site_country": "Für das ausgewählte Land wird eine neue Ladeort-Datenbank erstellt und sofort aktiviert."
+          "charging_site_country": "Wybierz kraj lub „← Wróć”, aby wrócić do menu OpenStreetMap."
         }
       },
       "download_charging_sites_success": {
@@ -537,6 +535,20 @@
       "user_charging_site_new": {
         "title": "Utwórz lokalizację ładowania",
         "description": "Utwórz nową własną lokalizację ładowania."
+      },
+      "charging_site_database": {
+        "title": "Lokalizacje OpenStreetMap",
+        "description": "Wybierz, co chcesz zrobić.",
+        "menu_options": {
+          "download_charging_sites": "Pobierz lokalizacje",
+          "import_charging_sites": "Importuj bazę",
+          "init": "Wróć do menu głównego"
+        },
+        "menu_option_descriptions": {
+          "download_charging_sites": "Pobierz, przetwórz i aktywuj lokalizacje ładowania wybranego kraju bezpośrednio z OpenStreetMap.",
+          "import_charging_sites": "Zaimportuj istniejącą bazę lokalizacji Ford Triplog jako plik JSON.",
+          "init": "Wróć do przeglądu Ford Triplog."
+        }
       }
     },
     "error": {

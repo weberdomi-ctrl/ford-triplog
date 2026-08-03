@@ -30,8 +30,7 @@
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
           "user_charging_sites": "Eigene Ladeorte",
-          "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
-          "import_charging_sites": "Ladeort-Datenbank importieren"
+          "charging_site_database": "OpenStreetMap charging locations"
         },
         "menu_option_descriptions": {
           "settings": "Edit trip, charging and vehicle settings.",
@@ -39,8 +38,7 @@
           "pause_management": "Add title, category, location, note and costs to pauses.",
           "charge_management": "Manage charging sessions, costs and linked receipts.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
-          "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
+          "charging_site_database": "Download or import the charging-location database."
         }
       },
       "settings": {
@@ -95,7 +93,7 @@
           "charging_site_country": "Land"
         },
         "data_description": {
-          "charging_site_country": "Für das ausgewählte Land wird eine neue Ladeort-Datenbank erstellt und sofort aktiviert."
+          "charging_site_country": "Select a country or “← Back” to return to the OpenStreetMap menu."
         }
       },
       "download_charging_sites_success": {
@@ -540,6 +538,20 @@
       "user_charging_site_new": {
         "title": "Create charging location",
         "description": "Create a new custom charging location."
+      },
+      "charging_site_database": {
+        "title": "OpenStreetMap charging locations",
+        "description": "Select what you want to do.",
+        "menu_options": {
+          "download_charging_sites": "Download charging locations",
+          "import_charging_sites": "Import database",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "download_charging_sites": "Download, process and activate a country's charging locations directly from OpenStreetMap.",
+          "import_charging_sites": "Import an existing Ford Triplog charging-location database as a JSON file.",
+          "init": "Return to the Ford Triplog overview."
+        }
       }
     },
     "error": {

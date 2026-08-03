@@ -88,6 +88,7 @@ from .const import (
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
+CHARGING_SITE_DATABASE_BACK = "__back__"
 CONF_USER_CHARGING_SITE_SELECTION = "user_charging_site_selection"
 CONF_USER_CHARGING_SITE_NAME = "name"
 CONF_USER_CHARGING_SITE_STREET = "street"
@@ -306,7 +307,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "pause_management",
                 "charge_management",
                     "user_charging_sites",
-                "download_charging_sites",
+                "charging_site_database",
             ],
         )
 
@@ -4693,6 +4694,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return translations["stored_one"]
         return translations["stored_many"].format(count=count)
 
+    async def async_step_charging_site_database(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show charging-location database navigation."""
+
+        return self.async_show_menu(
+            step_id="charging_site_database",
+            menu_options=[
+                "download_charging_sites",
+                "import_charging_sites",
+                "init",
+            ],
+        )
+
     async def async_step_import_charging_sites(
         self,
         user_input: dict[str, Any] | None = None,
@@ -4751,7 +4767,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the successful charging-site import result."""
 
         if user_input is not None:
-            return await self.async_step_init()
+            return await self.async_step_charging_site_database()
 
         return self.async_show_form(
             step_id="import_charging_sites_success",
@@ -4769,14 +4785,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            selected_country = str(
+                user_input.get(CONF_CHARGING_SITE_COUNTRY) or ""
+            ).strip()
+
+            if selected_country == CHARGING_SITE_DATABASE_BACK:
+                return await self.async_step_charging_site_database()
+
             progress_manager = self.hass.data[DOMAIN]["progress_manager"]
 
             if progress_manager.is_running:
                 errors["base"] = "charging_site_download_in_progress"
             else:
-                self._download_country_code = str(
-                    user_input[CONF_CHARGING_SITE_COUNTRY]
-                ).strip().upper()
+                self._download_country_code = selected_country.upper()
                 self._download_error = None
                 self._download_result = {}
                 self._download_started = perf_counter()
@@ -4792,10 +4813,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         country_options = [
             selector.SelectOptionDict(
+                value=CHARGING_SITE_DATABASE_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
                 value=country_code,
                 label=f"{country['name']} ({country_code})",
             )
-            for country_code, country in COUNTRIES.items()
+                for country_code, country in COUNTRIES.items()
+            ],
         ]
 
         default_country = self._download_country_code
@@ -4982,10 +5009,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
             country_options = [
                 selector.SelectOptionDict(
-                    value=country_code,
-                    label=f"{country['name']} ({country_code})",
-                )
-                for country_code, country in COUNTRIES.items()
+                    value=CHARGING_SITE_DATABASE_BACK,
+                    label=self._selection_back_label(),
+                ),
+                *[
+                    selector.SelectOptionDict(
+                        value=country_code,
+                        label=f"{country['name']} ({country_code})",
+                    )
+                    for country_code, country in COUNTRIES.items()
+                ],
             ]
 
             return self.async_show_form(
@@ -5015,10 +5048,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the successful OpenStreetMap download result."""
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=dict(self._options),
-            )
+            return await self.async_step_charging_site_database()
 
         return self.async_show_form(
             step_id="download_charging_sites_success",
