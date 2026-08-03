@@ -111,10 +111,17 @@
         "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
       },
       "user_charging_sites": {
-        "title": "Eigene Ladeorte",
-        "description": "{stored_text}",
-        "data": {
-          "user_charging_site_selection": "Ladeort"
+        "title": "Własne lokalizacje ładowania",
+        "description": "Wybierz, co chcesz zrobić.",
+        "menu_options": {
+          "user_charging_site_selection": "Wybierz lokalizację",
+          "user_charging_site_new": "Utwórz lokalizację",
+          "init": "Wróć do menu głównego"
+        },
+        "menu_option_descriptions": {
+          "user_charging_site_selection": "Otwórz i edytuj zapisaną lokalizację ładowania.",
+          "user_charging_site_new": "Utwórz nową własną lokalizację ładowania.",
+          "init": "Wróć do przeglądu Ford Triplog."
         }
       },
       "user_charging_site_details": {
@@ -519,6 +526,17 @@
         "data_description": {
           "pause_selection": "Lista pokazuje datę, przedział czasu, czas trwania i lokalizację. Wybierz „← Wróć”, aby wrócić do menu przerw."
         }
+      },
+      "user_charging_site_selection": {
+        "title": "Wybierz lokalizację ładowania",
+        "description": "{stored_text}\n\nWybierz „Wróć do lokalizacji”, aby wrócić do menu.",
+        "data": {
+          "user_charging_site_selection": "Lokalizacja ładowania"
+        }
+      },
+      "user_charging_site_new": {
+        "title": "Utwórz lokalizację ładowania",
+        "description": "Utwórz nową własną lokalizację ładowania."
       }
     },
     "error": {
@@ -740,7 +758,8 @@
     "pause_action_save": "Zapisz",
     "pause_action_clear": "Usuń dane ręczne",
     "charge_action_add_receipt": "Dodaj paragon",
-    "pause_action_back": "Wróć do przerw"
+    "pause_action_back": "Wróć do przerw",
+    "charging_site_back": "Wróć do lokalizacji ładowania"
   },
   "services": {
     "import_charging_sites": {

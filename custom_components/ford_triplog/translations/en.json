@@ -111,10 +111,17 @@
         "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
       },
       "user_charging_sites": {
-        "title": "Eigene Ladeorte",
-        "description": "{stored_text}",
-        "data": {
-          "user_charging_site_selection": "Ladeort"
+        "title": "Custom charging locations",
+        "description": "Select what you want to do.",
+        "menu_options": {
+          "user_charging_site_selection": "Select charging location",
+          "user_charging_site_new": "Create charging location",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "user_charging_site_selection": "Open and edit a stored charging location.",
+          "user_charging_site_new": "Create a new custom charging location.",
+          "init": "Return to the Ford Triplog overview."
         }
       },
       "user_charging_site_details": {
@@ -522,6 +529,17 @@
         "data_description": {
           "pause_selection": "The list shows date, time range, duration and location. Select “← Back” to return to the pause menu."
         }
+      },
+      "user_charging_site_selection": {
+        "title": "Select charging location",
+        "description": "{stored_text}\n\nSelect “Back to charging locations” to return to the menu.",
+        "data": {
+          "user_charging_site_selection": "Charging location"
+        }
+      },
+      "user_charging_site_new": {
+        "title": "Create charging location",
+        "description": "Create a new custom charging location."
       }
     },
     "error": {
@@ -743,7 +761,8 @@
     "pause_action_save": "Save",
     "pause_action_clear": "Clear manual details",
     "charge_action_add_receipt": "Add receipt",
-    "pause_action_back": "Back to pauses"
+    "pause_action_back": "Back to pauses",
+    "charging_site_back": "Back to charging locations"
   },
   "services": {
     "import_charging_sites": {

@@ -112,9 +112,16 @@
       },
       "user_charging_sites": {
         "title": "Eigene Ladeorte",
-        "description": "{stored_text}",
-        "data": {
-          "user_charging_site_selection": "Ladeort"
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "user_charging_site_selection": "Ladeort auswählen",
+          "user_charging_site_new": "Neuen Ladeort erstellen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "user_charging_site_selection": "Einen gespeicherten Ladeort öffnen und bearbeiten.",
+          "user_charging_site_new": "Einen neuen benutzerdefinierten Ladeort anlegen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "user_charging_site_details": {
@@ -522,6 +529,17 @@
         "data_description": {
           "pause_selection": "Die Liste zeigt Datum, Zeitraum, Dauer und Ort. Mit „← Zurück“ kehrst du zum Pausenmenü zurück."
         }
+      },
+      "user_charging_site_selection": {
+        "title": "Ladeort auswählen",
+        "description": "{stored_text}\n\nMit „Zurück zu den Ladeorten“ kehrst du zum Menü zurück.",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "user_charging_site_new": {
+        "title": "Neuen Ladeort erstellen",
+        "description": "Einen neuen benutzerdefinierten Ladeort anlegen."
       }
     },
     "error": {
@@ -743,7 +761,8 @@
     "pause_action_save": "Save",
     "pause_action_clear": "Manuelle Angaben löschen",
     "charge_action_add_receipt": "Beleg hinzufügen",
-    "pause_action_back": "Zurück zu den Pausen"
+    "pause_action_back": "Zurück zu den Pausen",
+    "charging_site_back": "Zurück zu den Ladeorten"
   },
   "services": {
     "import_charging_sites": {

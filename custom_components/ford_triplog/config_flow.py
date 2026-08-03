@@ -109,6 +109,7 @@ CONF_USER_CHARGING_SITE_NOTES = "notes"
 CONF_USER_CHARGING_SITE_ACTION = "action"
 USER_CHARGING_SITE_NEW = "__new__"
 USER_CHARGING_SITE_PENDING = "__pending__"
+USER_CHARGING_SITE_BACK = "__back__"
 
 CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
@@ -3717,6 +3718,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "pending_locations": "⚠ Newly detected charging locations ({count})",
             "save": "Save",
             "delete": "Delete",
+            "back": "Back to charging locations",
             "step": "Step",
             "no_progress": "No progress messages yet.",
             "stored_one": "1 custom charging location saved.",
@@ -3759,6 +3761,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
+        """Show custom charging-location navigation."""
+
+        return self.async_show_menu(
+            step_id="user_charging_sites",
+            menu_options=[
+                "user_charging_site_selection",
+                "user_charging_site_new",
+                "init",
+            ],
+        )
+
+    async def async_step_user_charging_site_new(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Start creation of a custom charging location."""
+
+        self._selected_user_charging_site = None
+        self._selected_pending_charging_site = None
+        return await self.async_step_user_charging_site_edit()
+
+    async def async_step_user_charging_site_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """List stored charging locations and show pending-location notice."""
 
         errors: dict[str, str] = {}
@@ -3779,6 +3806,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             selected_id = str(
                 user_input[CONF_USER_CHARGING_SITE_SELECTION]
             )
+
+            if selected_id == USER_CHARGING_SITE_BACK:
+                return await self.async_step_user_charging_sites()
 
             if selected_id == USER_CHARGING_SITE_PENDING:
                 return await self.async_step_pending_charging_sites()
@@ -3803,7 +3833,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._selected_pending_charging_site = None
                 return await self.async_step_user_charging_site_edit()
 
-        options: list[selector.SelectOptionDict] = []
+        options: list[selector.SelectOptionDict] = [
+            selector.SelectOptionDict(
+                value=USER_CHARGING_SITE_BACK,
+                label=charging_site_text["back"],
+            )
+        ]
 
         if pending_sites:
             options.append(
@@ -3836,11 +3871,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
-        step_id = (
-            "user_charging_sites_pending_notice"
-            if pending_sites
-            else "user_charging_sites"
-        )
+        step_id = "user_charging_site_selection"
 
         return self.async_show_form(
             step_id=step_id,
@@ -3848,11 +3879,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
-                        default=(
-                            USER_CHARGING_SITE_PENDING
-                            if pending_sites
-                            else USER_CHARGING_SITE_NEW
-                        ),
+                        default=USER_CHARGING_SITE_BACK,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
@@ -3884,7 +3911,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Handle the stored-location page when a pending notice is visible."""
 
-        return await self.async_step_user_charging_sites(user_input)
+        return await self.async_step_user_charging_site_selection(
+            user_input
+        )
 
     async def async_step_pending_charging_sites(
         self,
@@ -3905,12 +3934,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors["base"] = "user_charging_sites_load_failed"
 
         if not pending_sites and not errors:
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         if user_input is not None and not errors:
             pending_id = str(
                 user_input[CONF_USER_CHARGING_SITE_SELECTION]
             )
+            if pending_id == USER_CHARGING_SITE_BACK:
+                return await self.async_step_user_charging_site_selection()
+
             pending = next(
                 (
                     site
@@ -3929,13 +3961,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         options = [
             selector.SelectOptionDict(
-                value=str(site["site_id"]),
-                label=str(
-                    site.get("name")
-                    or charging_site_text["unknown_location"]
-                ),
-            )
-            for site in pending_sites
+                value=USER_CHARGING_SITE_BACK,
+                label=charging_site_text["back"],
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(site["site_id"]),
+                    label=str(
+                        site.get("name")
+                        or charging_site_text["unknown_location"]
+                    ),
+                )
+                for site in pending_sites
+            ],
         ]
 
         return self.async_show_form(
@@ -3944,7 +3982,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
-                        default=str(pending_sites[0]["site_id"]),
+                        default=USER_CHARGING_SITE_BACK,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
@@ -4062,10 +4100,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
 
         if user_input is not None:
-            if (
-                existing is not None
-                and user_input.get(CONF_USER_CHARGING_SITE_ACTION) == "delete"
-            ):
+            action = str(
+                user_input.get(CONF_USER_CHARGING_SITE_ACTION) or "save"
+            )
+
+            if action == "back":
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_site_selection()
+
+            if existing is not None and action == "delete":
                 return await self.async_step_user_charging_site_delete()
 
             site_type = str(
@@ -4186,7 +4230,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             else:
                 self._selected_user_charging_site = None
                 self._selected_pending_charging_site = None
-                return await self.async_step_user_charging_sites()
+                return await self.async_step_user_charging_site_selection()
 
         schema_fields: dict[Any, Any] = {
             vol.Optional(
@@ -4427,27 +4471,36 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
+        action_options = [
+            selector.SelectOptionDict(
+                value="save",
+                label=charging_site_text["save"],
+            ),
+            selector.SelectOptionDict(
+                value="back",
+                label=charging_site_text["back"],
+            ),
+        ]
         if existing is not None:
-            schema_fields[
-                vol.Required(
-                    CONF_USER_CHARGING_SITE_ACTION,
-                    default="save",
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value="save",
-                            label=charging_site_text["save"],
-                        ),
-                        selector.SelectOptionDict(
-                            value="delete",
-                            label=charging_site_text["delete"],
-                        ),
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+            action_options.insert(
+                1,
+                selector.SelectOptionDict(
+                    value="delete",
+                    label=charging_site_text["delete"],
+                ),
             )
+
+        schema_fields[
+            vol.Required(
+                CONF_USER_CHARGING_SITE_ACTION,
+                default="save",
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=action_options,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
 
         return self.async_show_form(
             step_id="user_charging_site_edit",
@@ -4474,14 +4527,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
         existing = self._selected_user_charging_site
 
         if existing is None:
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         if user_input is not None:
             await self._user_charging_site_storage.async_delete(
                 str(existing["site_id"])
             )
             self._selected_user_charging_site = None
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         return self.async_show_form(
             step_id="user_charging_site_delete",
