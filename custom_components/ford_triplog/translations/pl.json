@@ -169,7 +169,11 @@
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
-          "journey_delete": "Touren löschen"
+          "journey_delete": "Touren löschen",
+          "init": "Wróć do menu głównego"
+        },
+        "menu_option_descriptions": {
+          "init": "Wróć do przeglądu Ford Triplog."
         }
       },
       "journey_update": {

@@ -169,12 +169,14 @@
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
-          "journey_delete": "Touren löschen"
+          "journey_delete": "Touren löschen",
+          "init": "Zurück zum Hauptmenü"
         },
         "menu_option_descriptions": {
           "journey_update": "Vorhandene Touren mit den aktuellen Daten aktualisieren.",
           "journey_rebuild": "Alle Touren vollständig neu berechnen und speichern.",
-          "journey_delete": "Gespeicherte Touren dauerhaft löschen."
+          "journey_delete": "Gespeicherte Touren dauerhaft löschen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "journey_update": {

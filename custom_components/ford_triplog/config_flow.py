@@ -3448,6 +3448,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_update",
                 "journey_rebuild",
                 "journey_delete",
+                "init",
             ],
         )
 

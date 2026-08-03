@@ -169,12 +169,14 @@
         "menu_options": {
           "journey_update": "Update journeys",
           "journey_rebuild": "Rebuild journeys",
-          "journey_delete": "Delete journeys"
+          "journey_delete": "Delete journeys",
+          "init": "Back to main menu"
         },
         "menu_option_descriptions": {
           "journey_update": "Update existing journeys with current data.",
           "journey_rebuild": "Fully recalculate and save all journeys.",
-          "journey_delete": "Permanently delete stored journeys."
+          "journey_delete": "Permanently delete stored journeys.",
+          "init": "Return to the Ford Triplog overview."
         }
       },
       "journey_update": {
