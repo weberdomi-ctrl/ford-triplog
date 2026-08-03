@@ -158,10 +158,28 @@ class FordTriplogReceiptStorage:
         completed_at = datetime.now(timezone.utc).isoformat()
         result["completed_at"] = completed_at
 
-        parse_result = self._parser.parse(
-            str(result.get("raw_text") or "")
+        try:
+            parse_result = self._parser.parse(
+                str(result.get("raw_text") or "")
+            )
+            parse_data = parse_result.as_dict()
+        except Exception:
+            _LOGGER.exception(
+                "Receipt parser failed after successful OCR: receipt_id=%s "
+                "filename=%s",
+                normalized_id,
+                filename,
+            )
+            raise
+
+        _LOGGER.info(
+            "Receipt OCR and parser completed: receipt_id=%s "
+            "ocr_engine=%s parse_status=%s parser_profile=%s",
+            normalized_id,
+            result.get("engine"),
+            parse_result.status,
+            parse_result.profile_id,
         )
-        parse_data = parse_result.as_dict()
 
         updated = await self._metadata.update_receipt(
             normalized_id,

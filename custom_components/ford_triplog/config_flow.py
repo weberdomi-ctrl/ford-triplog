@@ -21,6 +21,8 @@ Changes:
 
 from __future__ import annotations
 
+import logging
+
 import asyncio
 from datetime import datetime, timedelta
 from pathlib import Path
@@ -154,6 +156,8 @@ RECEIPT_DETAIL_BACK = "back"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
 
+
+_LOGGER = logging.getLogger(__name__)
 
 class FordTriplogConfigFlow(
     config_entries.ConfigFlow,
@@ -1942,12 +1946,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     self._get_ocr_client(),
                 )
             except FordTriplogOCRAuthenticationError:
+                _LOGGER.exception(
+                    "Receipt OCR authentication failed: receipt_id=%s",
+                    receipt_id,
+                )
                 errors["base"] = "ocr_authentication_failed"
             except FordTriplogOCRConnectionError:
+                _LOGGER.exception(
+                    "Receipt OCR connection failed: receipt_id=%s",
+                    receipt_id,
+                )
                 errors["base"] = "ocr_connection_failed"
             except FordTriplogOCRResponseError:
+                _LOGGER.exception(
+                    "Receipt OCR service response failed: receipt_id=%s",
+                    receipt_id,
+                )
                 errors["base"] = "receipt_ocr_response_failed"
             except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                _LOGGER.exception(
+                    "Receipt OCR or parser processing failed: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "receipt_ocr_failed"
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected receipt OCR or parser error: receipt_id=%s",
+                    receipt_id,
+                )
                 errors["base"] = "receipt_ocr_failed"
             else:
                 ocr_result = receipt.get("ocr_result", {})
