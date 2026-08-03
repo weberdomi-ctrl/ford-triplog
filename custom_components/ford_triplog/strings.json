@@ -26,10 +26,9 @@
         "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
           "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
-          "pause_management": "Edit pauses",
-          "charge_management": "Charging sessions",
-          "receipt_management": "Receipt management",
+          "journey_management": "Touren verwalten",
+          "pause_management": "Pausen bearbeiten",
+          "charge_management": "Ladevorgänge",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
@@ -37,9 +36,8 @@
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Add a title, category, location, note and costs to detected journey pauses.",
-          "charge_management": "View archived charging sessions and manage charging costs.",
-          "receipt_management": "Import, view or delete receipts for pauses and charging sessions.",
+          "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
+          "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
@@ -166,12 +164,17 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Touren verwalten",
+        "description": "Was möchtest du mit den gespeicherten Touren machen?",
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
           "journey_delete": "Touren löschen"
+        },
+        "menu_option_descriptions": {
+          "journey_update": "Vorhandene Touren mit den aktuellen Daten aktualisieren.",
+          "journey_rebuild": "Alle Touren vollständig neu berechnen und speichern.",
+          "journey_delete": "Gespeicherte Touren dauerhaft löschen."
         }
       },
       "journey_update": {
@@ -205,8 +208,8 @@
         "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
       },
       "charge_management": {
-        "title": "Charging sessions",
-        "description": "Select one of the {charge_count} archived charging sessions.",
+        "title": "Ladevorgänge",
+        "description": "Wähle einen gespeicherten Ladevorgang aus.",
         "data": {
           "charge_selection": "Charging session"
         },
@@ -254,14 +257,16 @@
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
           "receipt_ocr": "OCR ausführen",
-          "ocr_settings": "OCR-Verbindung"
+          "ocr_settings": "OCR-Verbindung",
+          "receipt_apply": "Parserwerte übernehmen"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
           "receipt_list": "View stored receipts with assignment and file information.",
           "receipt_delete": "Permanently delete a receipt file and its metadata.",
           "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
-          "receipt_ocr": "Einen gespeicherten Beleg an den konfigurierten OCR-Dienst senden."
+          "receipt_ocr": "Einen gespeicherten Beleg an den konfigurierten OCR-Dienst senden.",
+          "receipt_apply": "Erkannte Abrechnungswerte prüfen, korrigieren und in die zugehörige Ladesitzung übernehmen."
         }
       },
       "receipt_import_type": {
@@ -289,7 +294,7 @@
       },
       "receipt_result": {
         "title": "Receipt updated",
-        "description": "The receipt operation was completed. File: {filename}"
+        "description": "**Datei:** {filename}\n**Zuordnung:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Stored receipts",
@@ -299,8 +304,8 @@
         }
       },
       "pause_management": {
-        "title": "Edit pauses",
-        "description": "Select one of {pause_count} detected pauses.",
+        "title": "Pausen bearbeiten",
+        "description": "Wähle eine erkannte Pause aus und ergänze bei Bedarf Titel, Kategorie, Ort, Notiz oder Kosten.",
         "data": {
           "pause_selection": "Pause"
         },
@@ -370,6 +375,127 @@
       "ocr_connection_result": {
         "title": "OCR-Verbindung gespeichert",
         "description": "**Status:** Verbindung erfolgreich\n\n**Dienst:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Adresse:** {url}\n**Maximale Dateigröße:** {max_file_mb} MB\n**PDF-Verarbeitung:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Belegwerte übernehmen",
+        "description": "Wähle einen bereits per OCR gelesenen und erfolgreich geparsten Ladebeleg aus. Bereits übernommene Belege bleiben sichtbar und können erneut geprüft werden.",
+        "data": {
+          "receipt_apply_selection": "Beleg"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Belegwerte prüfen",
+        "description": "**Ladesitzung:** {charge_label}\n**Charge-ID:** {charge_id}\n**Parserprofil:** {profile}\n\n**Beleg-Ladeort:** {parsed_station}\n**Beleg-Start:** {parsed_start}\n**Beleg-Ende:** {parsed_end}\n\n**Abgerechnete Energie:** vorhanden {current_energy} kWh · Beleg {parsed_energy} kWh\n**Gesamtkosten:** vorhanden {current_total} {currency} · Beleg {parsed_total} {currency}\n\nDie Eingabefelder können vor dem Speichern korrigiert werden. Startzeit, Endzeit und technische Fahrzeugdaten werden in diesem Schritt nicht überschrieben.",
+        "data": {
+          "receipt_apply_energy": "Abgerechnete Energie",
+          "receipt_apply_total": "Gesamtkosten",
+          "receipt_apply_currency": "Währung"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Belegwerte übernommen",
+        "description": "**Beleg:** {document}\n**Ladesitzung:** {charge_id}\n**Parserprofil:** {profile}\n**Abgerechnete Energie:** {energy} kWh\n**Gesamtkosten:** {total} {currency}\n\nDer Beleg wurde als geprüft und übernommen markiert."
+      },
+      "charge_receipt_upload": {
+        "title": "Beleg zur Ladesitzung hinzufügen",
+        "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nNach dem Speichern wird direkt der Beleg geöffnet. Bei aktiver OCR werden Text und Parserprofil automatisch ermittelt.",
+        "data": {
+          "receipt_file": "Belegdatei",
+          "receipt_note": "Notiz"
+        },
+        "data_description": {
+          "receipt_note": "Optionaler Hinweis zum Beleg."
+        }
+      },
+      "charge_detail": {
+        "title": "Ladesitzung",
+        "description": "{date} · {location}\n\nKosten: {cost_total} {currency} · Abgerechnete Energie: {energy} kWh\n\nBelege: {receipt_count} · OCR abgeschlossen: {completed_count} · Werte übernommen: {applied_count}",
+        "menu_options": {
+          "charge_technical": "Technische Daten",
+          "charge_cost_edit": "Kosten",
+          "charge_receipts": "Belege",
+          "charge_management": "Andere Ladesitzung"
+        },
+        "menu_option_descriptions": {
+          "charge_technical": "Gespeicherte technische Ladedaten anzeigen.",
+          "charge_cost_edit": "Kosten und abgerechnete Energie bearbeiten.",
+          "charge_receipts": "Belege anzeigen oder einen neuen Beleg hinzufügen.",
+          "charge_management": "Zur Liste der Ladesitzungen zurückkehren."
+        }
+      },
+      "charge_technical": {
+        "title": "Technische Daten",
+        "description": "**Charge-ID:** {charge_id}\n**Start:** {start}\n**Ende:** {end}\n**Ort:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Fahrzeugenergie:** {energy} kWh\n**Abgerechnete Energie:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Belege",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Beleg hinzufügen",
+          "charge_detail": "Zurück zur Ladesitzung",
+          "charge_receipt_list": "Belege dieser Ladesitzung anzeigen"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
+          "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren.",
+          "charge_receipt_list": "Nur die Belege öffnen und verwalten, die mit dieser Ladesitzung verknüpft sind."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Belege dieser Ladesitzung",
+        "description": "Ladesitzung: {charge_id}\n\nVerknüpfte Belege: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Beleg"
+        }
+      },
+      "charge_receipt_detail": {
+        "title": "Beleg",
+        "description": "**Datei:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parserprofil:** {profile}\n\n{details}",
+        "menu_options": {
+          "charge_receipt_open": "Beleg öffnen",
+          "charge_receipt_ocr": "OCR erneut ausführen",
+          "charge_receipt_delete": "Beleg löschen",
+          "charge_receipt_list": "Zurück zu den Belegen",
+          "charge_receipt_parser_create": "Parserprofil erstellen"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Originaldatei im Browser anzeigen.",
+          "charge_receipt_ocr": "Beleg erneut analysieren und Parserwerte aktualisieren.",
+          "charge_receipt_delete": "Belegdatei und gespeicherte Metadaten löschen.",
+          "charge_receipt_list": "Zur Belegliste dieser Ladesitzung zurückkehren.",
+          "charge_receipt_parser_create": "Aus dem vorhandenen OCR-Text ein eigenes Parserprofil anlegen."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "OCR erneut ausführen",
+        "description": "Die vorhandene OCR-Analyse und das Parser-Ergebnis werden durch eine neue Analyse ersetzt."
+      },
+      "charge_receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Soll der Beleg **{filename}** dauerhaft gelöscht werden?",
+        "data": {
+          "confirm": "Löschen bestätigen"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Beleg öffnen",
+        "description": "Klicke auf „Website öffnen“, um den Beleg anzuzeigen."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Parserprofil erstellen",
+        "description": "**Beleg:** {filename}\n\nLege ein einfaches Benutzerprofil an. Der Erkennungstext muss in künftigen Belegen dieses Typs vorkommen. Nach dem Speichern wird der vorhandene OCR-Text sofort erneut ausgewertet.\n\n**OCR-Text:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Profilname",
+          "user_parser_match_text": "Erkennungstext",
+          "user_parser_provider": "Fester Anbieter",
+          "user_parser_location": "Fester Ladeort",
+          "user_parser_energy": "Energie vor kWh erkennen",
+          "user_parser_duration": "Dauer HH:MM:SS erkennen",
+          "user_parser_current": "Strom vor A erkennen",
+          "user_parser_voltage": "Spannung vor V erkennen",
+          "user_parser_power": "Leistung vor kW erkennen",
+          "user_parser_temperature": "Temperatur erkennen"
+        }
       }
     },
     "error": {
@@ -403,7 +529,15 @@
       "ocr_connection_failed": "Der OCR-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
       "ocr_invalid_response": "Der OCR-Dienst hat keine gültige Health-Antwort geliefert.",
       "ocr_not_configured": "OCR ist nicht aktiviert oder noch nicht konfiguriert.",
-      "receipt_ocr_response_failed": "Der OCR-Dienst hat die Datei oder die Anfrage abgelehnt."
+      "receipt_ocr_response_failed": "Der OCR-Dienst hat die Datei oder die Anfrage abgelehnt.",
+      "receipt_no_parsed_charge_receipts": "Es sind keine erfolgreich geparsten Ladebelege vorhanden.",
+      "receipt_not_charge": "Dieser Beleg ist keiner Ladesitzung zugeordnet.",
+      "receipt_apply_failed": "Die Belegwerte konnten nicht in die Ladesitzung übernommen werden.",
+      "receipt_no_ocr_text": "Für diesen Beleg ist kein OCR-Text gespeichert.",
+      "user_parser_required_fields": "Profilname und Erkennungstext sind erforderlich.",
+      "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
+      "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
+      "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
     },
     "menu": {
       "receipt_management": "Receipt management",
@@ -581,7 +715,8 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data"
+    "pause_action_clear": "Clear manual data",
+    "charge_action_add_receipt": "Beleg hinzufügen"
   },
   "services": {
     "import_charging_sites": {

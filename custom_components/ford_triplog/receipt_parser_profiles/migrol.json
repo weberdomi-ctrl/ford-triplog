@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "migrol_delivery_note_v1",
   "name": "Migrol Ladevorgang",
-  "version": "1.0",
+  "version": "1.2",
   "priority": 100,
   "match_threshold": 0.75,
   "match": {
@@ -91,6 +91,28 @@
         "strip",
         "collapse_whitespace"
       ]
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "Migrol"
+    },
+    "loyalty_points": {
+      "patterns": [
+        "(\\d+)\\s+Punkte gutgeschrieben"
+      ],
+      "transform": "integer"
+    },
+    "seller": {
+      "patterns": [
+        "Verkäufer ist\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
     }
-  }
+  },
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true
 }

@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import json
+import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+
+_LOGGER = logging.getLogger(__name__)
 
 @dataclass(slots=True)
 class ReceiptParseResult:
@@ -39,8 +42,13 @@ class ReceiptParseResult:
 class ReceiptParserEngine:
     """Load and apply bundled parser profiles."""
 
-    def __init__(self, profile_directory: Path) -> None:
+    def __init__(
+        self,
+        profile_directory: Path,
+        user_profile_directory: Path | None = None,
+    ) -> None:
         self._profile_directory = profile_directory
+        self._user_profile_directory = user_profile_directory
         self._profiles: list[dict[str, Any]] = []
 
     @property
@@ -57,11 +65,21 @@ class ReceiptParserEngine:
         """
 
         profiles: list[dict[str, Any]] = []
-        if self._profile_directory.is_dir():
-            for path in sorted(self._profile_directory.glob("*.json")):
+        directories = [self._profile_directory]
+        if self._user_profile_directory is not None:
+            directories.append(self._user_profile_directory)
+
+        for directory in directories:
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.json")):
                 with path.open("r", encoding="utf-8") as handle:
                     profile = json.load(handle)
-                if isinstance(profile, dict) and profile.get("profile_id"):
+                if (
+                    isinstance(profile, dict)
+                    and profile.get("profile_id")
+                    and isinstance(profile.get("match"), dict)
+                ):
                     profiles.append(profile)
 
         profiles.sort(
@@ -130,14 +148,47 @@ class ReceiptParserEngine:
         for field_name, rule in rules.items():
             if not isinstance(rule, dict):
                 continue
-            value = self._extract_value(rule, text)
+
+            try:
+                value = self._extract_value(rule, text)
+            except (TypeError, ValueError) as err:
+                _LOGGER.warning(
+                    "Receipt parser field conversion failed: "
+                    "profile_id=%s field=%s error=%s",
+                    profile.get("profile_id"),
+                    field_name,
+                    err,
+                )
+                if bool(rule.get("required", False)):
+                    missing_fields.append(str(field_name))
+                continue
+
             if value is None or value == "":
                 if bool(rule.get("required", False)):
                     missing_fields.append(str(field_name))
                 continue
             fields[str(field_name)] = value
 
-        field_count = max(1, len(rules))
+        derived_rules = profile.get("derived_fields", {})
+        if isinstance(derived_rules, dict):
+            for field_name, rule in derived_rules.items():
+                if not isinstance(rule, dict):
+                    continue
+                try:
+                    value = self._derive_value(rule, fields)
+                except (TypeError, ValueError) as err:
+                    _LOGGER.warning(
+                        "Receipt parser derived field failed: "
+                        "profile_id=%s field=%s error=%s",
+                        profile.get("profile_id"),
+                        field_name,
+                        err,
+                    )
+                    continue
+                if value is not None and value != "":
+                    fields[str(field_name)] = value
+
+        field_count = max(1, len(rules) + len(derived_rules))
         extracted_ratio = len(fields) / field_count
         confidence = round(
             min(1.0, (match_score * 0.55) + (extracted_ratio * 0.45)),
@@ -234,7 +285,8 @@ class ReceiptParserEngine:
             if not groups:
                 value: Any = match.group(0)
             elif bool(rule.get("join_groups", False)):
-                value = "".join(
+                separator = str(rule.get("join_separator") or "")
+                value = separator.join(
                     str(group or "") for group in groups
                 )
             else:
@@ -242,6 +294,58 @@ class ReceiptParserEngine:
                 value = match.group(group_index)
 
             return self._transform(value, rule.get("transform"))
+
+        return None
+
+    @staticmethod
+    def _derive_value(
+        rule: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> Any:
+        """Calculate one field from already extracted values."""
+
+        method = str(rule.get("method") or "")
+        if method == "add_seconds":
+            start_value = fields.get(str(rule.get("start_field") or ""))
+            seconds_value = fields.get(str(rule.get("seconds_field") or ""))
+            if start_value is None or seconds_value is None:
+                return None
+            start = datetime.fromisoformat(str(start_value))
+            return (
+                start + timedelta(seconds=int(seconds_value))
+            ).isoformat()
+
+        if method == "copy":
+            return fields.get(str(rule.get("source_field") or ""))
+
+        if method == "concat_fields":
+            source_fields = rule.get("source_fields", [])
+            if not isinstance(source_fields, list):
+                return None
+            separator = str(rule.get("separator") or ", ")
+            values = [
+                str(fields.get(str(field)) or "").strip()
+                for field in source_fields
+            ]
+            values = [value for value in values if value]
+            return separator.join(values) if values else None
+
+        if method == "format_fields":
+            template = str(rule.get("template") or "")
+            if not template:
+                return None
+            values = {
+                key: str(value or "").strip()
+                for key, value in fields.items()
+            }
+            try:
+                result = template.format(**values)
+            except KeyError:
+                return None
+            result = re.sub(r"\s+,", ",", result)
+            result = re.sub(r",\s*,+", ",", result)
+            result = re.sub(r"\s+", " ", result).strip(" ,")
+            return result or None
 
         return None
 
@@ -294,20 +398,150 @@ class ReceiptParserEngine:
                     str(result).strip(),
                     "%d/%m/%Y",
                 ).date().isoformat()
+            elif name == "datetime_slash_dmy4_at":
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = normalized.replace(" à ", " ")
+                result = datetime.strptime(
+                    normalized,
+                    "%d/%m/%Y %H:%M",
+                ).isoformat()
+            elif name == "duration_mmss":
+                normalized = str(result).strip()
+                minutes, seconds = normalized.split(":", 1)
+                result = (int(minutes) * 60) + int(seconds)
+            elif name == "duration_hhmmss":
+                normalized = str(result).strip()
+                hours, minutes, seconds = normalized.split(":", 2)
+                result = (
+                    int(hours) * 3600
+                    + int(minutes) * 60
+                    + int(seconds)
+                )
+            elif name == "date_ordinal_month":
+                normalized = re.sub(
+                    r"(\d{1,2})(?:st|nd|rd|th)",
+                    r"\1",
+                    str(result).strip(),
+                    flags=re.IGNORECASE,
+                )
+                month_map = {
+                    "januar": 1,
+                    "january": 1,
+                    "februar": 2,
+                    "february": 2,
+                    "märz": 3,
+                    "maerz": 3,
+                    "march": 3,
+                    "april": 4,
+                    "mai": 5,
+                    "may": 5,
+                    "juni": 6,
+                    "june": 6,
+                    "juli": 7,
+                    "july": 7,
+                    "august": 8,
+                    "september": 9,
+                    "oktober": 10,
+                    "october": 10,
+                    "november": 11,
+                    "dezember": 12,
+                    "december": 12,
+                }
+                parts = normalized.split()
+                if len(parts) != 3:
+                    raise ValueError(
+                        f"Unsupported ordinal date: {normalized}"
+                    )
+                day = int(parts[0])
+                month = month_map.get(parts[1].casefold())
+                if month is None:
+                    raise ValueError(
+                        f"Unsupported month: {parts[1]}"
+                    )
+                result = datetime(
+                    int(parts[2]),
+                    month,
+                    day,
+                ).date().isoformat()
+            elif name == "datetime_ordinal_month":
+                normalized = re.sub(
+                    r"(\d{1,2})(?:st|nd|rd|th)",
+                    r"\1",
+                    str(result).strip(),
+                    flags=re.IGNORECASE,
+                )
+                parts = normalized.split()
+                if len(parts) != 4:
+                    raise ValueError(
+                        f"Unsupported ordinal datetime: {normalized}"
+                    )
+                month_map = {
+                    "januar": 1, "january": 1,
+                    "februar": 2, "february": 2,
+                    "märz": 3, "maerz": 3, "march": 3,
+                    "april": 4,
+                    "mai": 5, "may": 5,
+                    "juni": 6, "june": 6,
+                    "juli": 7, "july": 7,
+                    "august": 8,
+                    "september": 9,
+                    "oktober": 10, "october": 10,
+                    "november": 11,
+                    "dezember": 12, "december": 12,
+                }
+                month = month_map.get(parts[1].casefold())
+                if month is None:
+                    raise ValueError(
+                        f"Unsupported month: {parts[1]}"
+                    )
+                hour, minute, second = (
+                    int(value) for value in parts[3].split(":")
+                )
+                result = datetime(
+                    int(parts[2]),
+                    month,
+                    int(parts[0]),
+                    hour,
+                    minute,
+                    second,
+                ).isoformat()
             elif name == "datetime_dmy2_comma":
                 result = datetime.strptime(
                     re.sub(r"\s+", "", str(result)),
                     "%d.%m.%y,%H:%M",
                 ).isoformat()
             elif name == "datetime_dmy4_space":
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = re.sub(
+                    r"^(\d{2}\.\d{2}\.\d{4})(\d{2}:\d{2})$",
+                    r"\1 \2",
+                    normalized,
+                )
                 result = datetime.strptime(
-                    re.sub(r"\s+", " ", str(result)).strip(),
+                    normalized,
                     "%d.%m.%Y %H:%M",
                 ).isoformat()
             elif name == "datetime_iso":
-                result = datetime.fromisoformat(
-                    re.sub(r"\s+", " ", str(result)).strip()
-                ).isoformat()
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = re.sub(
+                    r"^(\d{4}-\d{2}-\d{2})(\d{2}:\d{2}:\d{2})$",
+                    r"\1 \2",
+                    normalized,
+                )
+                normalized = normalized.replace("T", " ")
+                result = datetime.fromisoformat(normalized).isoformat()
             elif name == "upper":
                 result = str(result).upper()
         return result

@@ -23,23 +23,21 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Select the area you want to edit.",
         "menu_options": {
-          "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
+          "settings": "Settings",
+          "journey_management": "Manage journeys",
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
-          "receipt_management": "Receipt management",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
-          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Add a title, category, location, note and costs to detected journey pauses.",
-          "charge_management": "View archived charging sessions and manage charging costs.",
-          "receipt_management": "Import, view or delete receipts for pauses and charging sessions.",
+          "settings": "Edit trip, charging and vehicle settings.",
+          "journey_management": "Update, rebuild or delete journeys.",
+          "pause_management": "Add title, category, location, note and costs to pauses.",
+          "charge_management": "Manage charging sessions, costs and linked receipts.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
@@ -166,12 +164,17 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Manage journeys",
+        "description": "What would you like to do with the stored journeys?",
         "menu_options": {
-          "journey_update": "Touren aktualisieren",
-          "journey_rebuild": "Touren neu berechnen",
-          "journey_delete": "Touren löschen"
+          "journey_update": "Update journeys",
+          "journey_rebuild": "Rebuild journeys",
+          "journey_delete": "Delete journeys"
+        },
+        "menu_option_descriptions": {
+          "journey_update": "Update existing journeys with current data.",
+          "journey_rebuild": "Fully recalculate and save all journeys.",
+          "journey_delete": "Permanently delete stored journeys."
         }
       },
       "journey_update": {
@@ -206,7 +209,7 @@
       },
       "charge_management": {
         "title": "Charging sessions",
-        "description": "Select one of the {charge_count} archived charging sessions.",
+        "description": "Select a stored charging session.",
         "data": {
           "charge_selection": "Charging session"
         },
@@ -254,14 +257,16 @@
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
           "receipt_ocr": "Run OCR",
-          "ocr_settings": "OCR connection"
+          "ocr_settings": "OCR connection",
+          "receipt_apply": "Apply parsed values"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
           "receipt_list": "View stored receipts with assignment and file information.",
           "receipt_delete": "Permanently delete a receipt file and its metadata.",
           "ocr_settings": "Configure and test the optional local OCR service.",
-          "receipt_ocr": "Send a stored receipt to the configured OCR service."
+          "receipt_ocr": "Send a stored receipt to the configured OCR service.",
+          "receipt_apply": "Review, correct and apply recognized billing values to the associated charging session."
         }
       },
       "receipt_import_type": {
@@ -289,7 +294,7 @@
       },
       "receipt_result": {
         "title": "Receipt updated",
-        "description": "The receipt operation was completed. File: {filename}"
+        "description": "**File:** {filename}\n**Assigned to:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Stored receipts",
@@ -300,7 +305,7 @@
       },
       "pause_management": {
         "title": "Edit pauses",
-        "description": "Select one of {pause_count} detected pauses.",
+        "description": "Select a detected pause and add a title, category, location, note or costs if needed.",
         "data": {
           "pause_selection": "Pause"
         },
@@ -370,6 +375,127 @@
       "ocr_connection_result": {
         "title": "OCR connection saved",
         "description": "**Status:** Connection successful\n\n**Service:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Address:** {url}\n**Maximum file size:** {max_file_mb} MB\n**PDF processing:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Apply receipt values",
+        "description": "Select a charging receipt that has already been read by OCR and successfully parsed. Previously applied receipts remain available for review.",
+        "data": {
+          "receipt_apply_selection": "Receipt"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Review receipt values",
+        "description": "**Charging session:** {charge_label}\n**Charge ID:** {charge_id}\n**Parser profile:** {profile}\n\n**Receipt location:** {parsed_station}\n**Receipt start:** {parsed_start}\n**Receipt end:** {parsed_end}\n\n**Billed energy:** current {current_energy} kWh · receipt {parsed_energy} kWh\n**Total cost:** current {current_total} {currency} · receipt {parsed_total} {currency}\n\nThe values can be corrected before saving. Start time, end time and technical vehicle data are not overwritten.",
+        "data": {
+          "receipt_apply_energy": "Billed energy",
+          "receipt_apply_total": "Total cost",
+          "receipt_apply_currency": "Currency"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Receipt values applied",
+        "description": "**Receipt:** {document}\n**Charging session:** {charge_id}\n**Parser profile:** {profile}\n**Billed energy:** {energy} kWh\n**Total cost:** {total} {currency}\n\nThe receipt has been marked as reviewed and applied."
+      },
+      "charge_receipt_upload": {
+        "title": "Add receipt to charging session",
+        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nAfter saving, the receipt opens directly. When OCR is enabled, text and parser profile are detected automatically.",
+        "data": {
+          "receipt_file": "Receipt file",
+          "receipt_note": "Note"
+        },
+        "data_description": {
+          "receipt_note": "Optional note for the receipt."
+        }
+      },
+      "charge_detail": {
+        "title": "Charging session",
+        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR completed: {completed_count} · Values applied: {applied_count}",
+        "menu_options": {
+          "charge_technical": "Technical data",
+          "charge_cost_edit": "Costs",
+          "charge_receipts": "Receipts",
+          "charge_management": "Another charging session"
+        },
+        "menu_option_descriptions": {
+          "charge_technical": "Show stored technical charging data.",
+          "charge_cost_edit": "Edit costs and billed energy.",
+          "charge_receipts": "View receipts or add a new receipt.",
+          "charge_management": "Return to the charging-session list."
+        }
+      },
+      "charge_technical": {
+        "title": "Technical data",
+        "description": "**Charge ID:** {charge_id}\n**Start:** {start}\n**End:** {end}\n**Location:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Vehicle energy:** {energy} kWh\n**Billed energy:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Receipts",
+        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Add receipt",
+          "charge_detail": "Back to charging session",
+          "charge_receipt_list": "Show receipts for this session"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "Attach a PDF or image. When OCR is enabled, the receipt is analyzed automatically.",
+          "charge_detail": "Return to the charging-session overview.",
+          "charge_receipt_list": "Open and manage only receipts linked to this charging session."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Receipts for this charging session",
+        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Receipt"
+        }
+      },
+      "charge_receipt_detail": {
+        "title": "Receipt",
+        "description": "**File:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parser profile:** {profile}\n\n{details}",
+        "menu_options": {
+          "charge_receipt_open": "Open receipt",
+          "charge_receipt_ocr": "Run OCR again",
+          "charge_receipt_delete": "Delete receipt",
+          "charge_receipt_list": "Back to receipts",
+          "charge_receipt_parser_create": "Create parser profile"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Display the original file in the browser.",
+          "charge_receipt_ocr": "Analyze the receipt again and refresh parser values.",
+          "charge_receipt_delete": "Delete the receipt file and stored metadata.",
+          "charge_receipt_list": "Return to this charging session's receipt list.",
+          "charge_receipt_parser_create": "Create a custom parser profile from the stored OCR text."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "Run OCR again",
+        "description": "The existing OCR analysis and parser result will be replaced by a new analysis."
+      },
+      "charge_receipt_delete": {
+        "title": "Delete receipt",
+        "description": "Permanently delete receipt **{filename}**?",
+        "data": {
+          "confirm": "Confirm deletion"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Open receipt",
+        "description": "Select “Open website” to display the receipt."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Create parser profile",
+        "description": "**Receipt:** {filename}\n\nCreate a basic user profile. The recognition text must occur in future receipts of this type. The stored OCR text is reparsed immediately after saving.\n\n**OCR text:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Profile name",
+          "user_parser_match_text": "Recognition text",
+          "user_parser_provider": "Fixed provider",
+          "user_parser_location": "Fixed charging location",
+          "user_parser_energy": "Extract energy before kWh",
+          "user_parser_duration": "Extract HH:MM:SS duration",
+          "user_parser_current": "Extract current before A",
+          "user_parser_voltage": "Extract voltage before V",
+          "user_parser_power": "Extract power before kW",
+          "user_parser_temperature": "Extract temperature"
+        }
       }
     },
     "error": {
@@ -403,7 +529,15 @@
       "ocr_connection_failed": "The OCR service is unreachable. Check the address, port, container and network.",
       "ocr_invalid_response": "The OCR service did not return a valid health response.",
       "ocr_not_configured": "OCR is disabled or has not been configured.",
-      "receipt_ocr_response_failed": "The OCR service rejected the file or request."
+      "receipt_ocr_response_failed": "The OCR service rejected the file or request.",
+      "receipt_no_parsed_charge_receipts": "No successfully parsed charging receipts are available.",
+      "receipt_not_charge": "This receipt is not assigned to a charging session.",
+      "receipt_apply_failed": "The receipt values could not be applied to the charging session.",
+      "receipt_no_ocr_text": "No OCR text is stored for this receipt.",
+      "user_parser_required_fields": "Profile name and recognition text are required.",
+      "user_parser_match_not_found": "The recognition text is not present in the OCR text.",
+      "user_parser_create_failed": "The user parser profile could not be saved.",
+      "user_parser_test_failed": "The profile was saved but could not parse the current receipt."
     },
     "menu": {
       "receipt_management": "Receipt management",
@@ -581,7 +715,8 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data"
+    "pause_action_clear": "Clear manual data",
+    "charge_action_add_receipt": "Add receipt"
   },
   "services": {
     "import_charging_sites": {

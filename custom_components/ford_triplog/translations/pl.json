@@ -23,23 +23,21 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Wybierz obszar, który chcesz edytować.",
         "menu_options": {
-          "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
-          "pause_management": "Edytuj postoje",
+          "settings": "Ustawienia",
+          "journey_management": "Zarządzaj trasami",
+          "pause_management": "Edytuj przerwy",
           "charge_management": "Sesje ładowania",
-          "receipt_management": "Zarządzanie paragonami",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
-          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Uzupełnij wykryte postoje o tytuł, kategorię, miejsce, notatkę i koszty.",
-          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami.",
-          "receipt_management": "Dodawaj, przeglądaj lub usuwaj paragony dla postojów i sesji ładowania.",
+          "settings": "Edytuj ustawienia tras, ładowania i pojazdu.",
+          "journey_management": "Aktualizuj, przeliczaj ponownie lub usuwaj trasy.",
+          "pause_management": "Dodaj tytuł, kategorię, miejsce, notatkę i koszty.",
+          "charge_management": "Zarządzaj sesjami, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
@@ -166,8 +164,8 @@
         }
       },
       "journey_management": {
-        "title": "Tour-Verwaltung",
-        "description": "Wähle die gewünschte Wartungsaktion.",
+        "title": "Zarządzaj trasami",
+        "description": "Co chcesz zrobić z zapisanymi trasami?",
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
@@ -206,7 +204,7 @@
       },
       "charge_management": {
         "title": "Sesje ładowania",
-        "description": "Wybierz jedną z {charge_count} zapisanych sesji ładowania.",
+        "description": "Wybierz zapisaną sesję ładowania.",
         "data": {
           "charge_selection": "Sesja ładowania"
         },
@@ -254,14 +252,16 @@
           "receipt_list": "Pokaż paragony",
           "receipt_delete": "Usuń paragon",
           "receipt_ocr": "Uruchom OCR",
-          "ocr_settings": "Połączenie OCR"
+          "ocr_settings": "Połączenie OCR",
+          "receipt_apply": "Zastosuj wartości parsera"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Prześlij PDF lub obraz i przypisz go do postoju albo sesji ładowania.",
           "receipt_list": "Pokaż zapisane paragony wraz z przypisaniem i informacjami o pliku.",
           "receipt_delete": "Trwale usuń plik paragonu i jego metadane.",
           "ocr_settings": "Skonfiguruj i przetestuj opcjonalną lokalną usługę OCR.",
-          "receipt_ocr": "Wyślij zapisany paragon do skonfigurowanej usługi OCR."
+          "receipt_ocr": "Wyślij zapisany paragon do skonfigurowanej usługi OCR.",
+          "receipt_apply": "Sprawdź, popraw i zastosuj rozpoznane wartości rozliczeniowe do powiązanej sesji ładowania."
         }
       },
       "receipt_import_type": {
@@ -289,7 +289,7 @@
       },
       "receipt_result": {
         "title": "Paragon zaktualizowany",
-        "description": "Operacja została zakończona. Plik: {filename}"
+        "description": "**Plik:** {filename}\n**Przypisanie:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Zapisane paragony",
@@ -299,8 +299,8 @@
         }
       },
       "pause_management": {
-        "title": "Edytuj postoje",
-        "description": "Wybierz jeden z {pause_count} wykrytych postojów.",
+        "title": "Edytuj przerwy",
+        "description": "Wybierz wykrytą przerwę i w razie potrzeby dodaj tytuł, kategorię, miejsce, notatkę lub koszty.",
         "data": {
           "pause_selection": "Postój"
         },
@@ -370,6 +370,127 @@
       "ocr_connection_result": {
         "title": "Połączenie OCR zapisane",
         "description": "**Status:** Połączenie udane\n\n**Usługa:** {service}\n**Wersja:** {version}\n**Silnik:** {engine}\n**Adres:** {url}\n**Maksymalny rozmiar pliku:** {max_file_mb} MB\n**Obsługa PDF:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Zastosuj wartości paragonu",
+        "description": "Wybierz paragon ładowania odczytany przez OCR i poprawnie przetworzony przez parser.",
+        "data": {
+          "receipt_apply_selection": "Paragon"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Sprawdź wartości paragonu",
+        "description": "**Sesja ładowania:** {charge_label}\n**ID ładowania:** {charge_id}\n**Profil parsera:** {profile}\n\n**Lokalizacja na paragonie:** {parsed_station}\n**Początek na paragonie:** {parsed_start}\n**Koniec na paragonie:** {parsed_end}\n\n**Rozliczona energia:** obecnie {current_energy} kWh · paragon {parsed_energy} kWh\n**Koszt całkowity:** obecnie {current_total} {currency} · paragon {parsed_total} {currency}\n\nWartości można poprawić przed zapisaniem. Czasy i dane techniczne pojazdu nie są nadpisywane.",
+        "data": {
+          "receipt_apply_energy": "Rozliczona energia",
+          "receipt_apply_total": "Koszt całkowity",
+          "receipt_apply_currency": "Waluta"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Zastosowano wartości paragonu",
+        "description": "**Paragon:** {document}\n**Sesja ładowania:** {charge_id}\n**Profil parsera:** {profile}\n**Rozliczona energia:** {energy} kWh\n**Koszt całkowity:** {total} {currency}\n\nParagon oznaczono jako sprawdzony i zastosowany."
+      },
+      "charge_receipt_upload": {
+        "title": "Dodaj paragon do sesji ładowania",
+        "description": "**Sesja ładowania:** {date} · {location}\n**ID ładowania:** {charge_id}\n**OCR:** {ocr_status}\n\nPo zapisaniu paragon zostanie otwarty bezpośrednio. Przy włączonym OCR tekst i profil parsera zostaną wykryte automatycznie.",
+        "data": {
+          "receipt_file": "Plik paragonu",
+          "receipt_note": "Notatka"
+        },
+        "data_description": {
+          "receipt_note": "Opcjonalna notatka do paragonu."
+        }
+      },
+      "charge_detail": {
+        "title": "Sesja ładowania",
+        "description": "{date} · {location}\n\nKoszt: {cost_total} {currency} · Rozliczona energia: {energy} kWh\n\nParagony: {receipt_count} · OCR zakończone: {completed_count} · Zastosowane wartości: {applied_count}",
+        "menu_options": {
+          "charge_technical": "Dane techniczne",
+          "charge_cost_edit": "Koszty",
+          "charge_receipts": "Paragony",
+          "charge_management": "Inna sesja ładowania"
+        },
+        "menu_option_descriptions": {
+          "charge_technical": "Pokaż zapisane techniczne dane ładowania.",
+          "charge_cost_edit": "Edytuj koszty i rozliczoną energię.",
+          "charge_receipts": "Pokaż paragony lub dodaj nowy.",
+          "charge_management": "Wróć do listy sesji ładowania."
+        }
+      },
+      "charge_technical": {
+        "title": "Dane techniczne",
+        "description": "**ID ładowania:** {charge_id}\n**Początek:** {start}\n**Koniec:** {end}\n**Lokalizacja:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Energia pojazdu:** {energy} kWh\n**Rozliczona energia:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Paragony",
+        "description": "Zapisane paragony: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Dodaj paragon",
+          "charge_detail": "Wróć do sesji ładowania",
+          "charge_receipt_list": "Pokaż paragony tej sesji"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
+          "charge_detail": "Wróć do przeglądu sesji ładowania.",
+          "charge_receipt_list": "Otwórz i zarządzaj tylko paragonami powiązanymi z tą sesją ładowania."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Paragony tej sesji ładowania",
+        "description": "Sesja ładowania: {charge_id}\n\nPowiązane paragony: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Paragon"
+        }
+      },
+      "charge_receipt_detail": {
+        "title": "Paragon",
+        "description": "**Plik:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Profil parsera:** {profile}\n\n{details}",
+        "menu_options": {
+          "charge_receipt_open": "Otwórz paragon",
+          "charge_receipt_ocr": "Uruchom OCR ponownie",
+          "charge_receipt_delete": "Usuń paragon",
+          "charge_receipt_list": "Wróć do paragonów",
+          "charge_receipt_parser_create": "Utwórz profil parsera"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Pokaż oryginalny plik w przeglądarce.",
+          "charge_receipt_ocr": "Ponownie przeanalizuj paragon i odśwież wartości parsera.",
+          "charge_receipt_delete": "Usuń plik paragonu i zapisane metadane.",
+          "charge_receipt_list": "Wróć do listy paragonów tej sesji ładowania.",
+          "charge_receipt_parser_create": "Utwórz własny profil parsera z zapisanego tekstu OCR."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "Uruchom OCR ponownie",
+        "description": "Dotychczasowa analiza OCR i wynik parsera zostaną zastąpione nową analizą."
+      },
+      "charge_receipt_delete": {
+        "title": "Usuń paragon",
+        "description": "Trwale usunąć paragon **{filename}**?",
+        "data": {
+          "confirm": "Potwierdź usunięcie"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Otwórz paragon",
+        "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Utwórz profil parsera",
+        "description": "**Paragon:** {filename}\n\nUtwórz podstawowy profil użytkownika. Tekst rozpoznawczy musi występować w przyszłych dokumentach tego typu. Po zapisaniu tekst OCR zostanie od razu ponownie przetworzony.\n\n**Tekst OCR:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Nazwa profilu",
+          "user_parser_match_text": "Tekst rozpoznawczy",
+          "user_parser_provider": "Stały dostawca",
+          "user_parser_location": "Stała lokalizacja",
+          "user_parser_energy": "Rozpoznaj energię przed kWh",
+          "user_parser_duration": "Rozpoznaj czas HH:MM:SS",
+          "user_parser_current": "Rozpoznaj prąd przed A",
+          "user_parser_voltage": "Rozpoznaj napięcie przed V",
+          "user_parser_power": "Rozpoznaj moc przed kW",
+          "user_parser_temperature": "Rozpoznaj temperaturę"
+        }
       }
     },
     "error": {
@@ -403,7 +524,15 @@
       "ocr_connection_failed": "Usługa OCR jest niedostępna. Sprawdź adres, port, kontener i sieć.",
       "ocr_invalid_response": "Usługa OCR nie zwróciła prawidłowej odpowiedzi health.",
       "ocr_not_configured": "OCR jest wyłączone lub nie zostało skonfigurowane.",
-      "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie."
+      "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie.",
+      "receipt_no_parsed_charge_receipts": "Brak poprawnie przetworzonych paragonów ładowania.",
+      "receipt_not_charge": "Ten paragon nie jest przypisany do sesji ładowania.",
+      "receipt_apply_failed": "Nie udało się zastosować wartości do sesji ładowania.",
+      "receipt_no_ocr_text": "Brak zapisanego tekstu OCR.",
+      "user_parser_required_fields": "Nazwa profilu i tekst rozpoznawczy są wymagane.",
+      "user_parser_match_not_found": "Tekst rozpoznawczy nie występuje w tekście OCR.",
+      "user_parser_create_failed": "Nie udało się zapisać profilu użytkownika.",
+      "user_parser_test_failed": "Profil zapisano, ale nie przetworzył bieżącego dokumentu."
     },
     "menu": {
       "receipt_management": "Zarządzanie paragonami",
@@ -581,7 +710,8 @@
     "charge_currency": "Waluta",
     "charge_price_per_kwh": "Cena za kWh",
     "pause_action_save": "Zapisz",
-    "pause_action_clear": "Usuń dane ręczne"
+    "pause_action_clear": "Usuń dane ręczne",
+    "charge_action_add_receipt": "Dodaj paragon"
   },
   "services": {
     "import_charging_sites": {
