@@ -482,8 +482,8 @@
         }
       },
       "charge_receipt_open": {
-        "title": "Beleg öffnen",
-        "description": "Klicke auf „Website öffnen“, um den Beleg anzuzeigen."
+        "title": "Beleg anzeigen",
+        "description": "[Beleg in einem neuen Fenster öffnen]({receipt_url})\n\nDer Link ist 10 Minuten gültig. Mit **OK** kehrst du anschließend zum Beleg zurück."
       },
       "charge_receipt_parser_create": {
         "title": "Parserprofil erstellen",

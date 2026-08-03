@@ -479,8 +479,8 @@
         }
       },
       "charge_receipt_open": {
-        "title": "Otwórz paragon",
-        "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon."
+        "title": "Wyświetl paragon",
+        "description": "[Otwórz paragon w nowym oknie]({receipt_url})\n\nLink jest ważny przez 10 minut. Wybierz **OK**, aby wrócić do paragonu."
       },
       "charge_receipt_parser_create": {
         "title": "Utwórz profil parsera",

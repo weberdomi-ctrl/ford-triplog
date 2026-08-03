@@ -1193,10 +1193,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Open the selected charge receipt."""
+        """Show a signed receipt link without leaving the options flow."""
 
         if not self._selected_receipt_id:
             return await self.async_step_charge_receipt_list()
+
+        if user_input is not None:
+            return await self.async_step_charge_receipt_detail()
 
         receipt_path = (
             f"/api/ford_triplog/receipts/{self._selected_receipt_id}"
@@ -1217,22 +1220,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 allow_ip=True,
                 prefer_external=True,
             ).rstrip("/")
-            self._selected_receipt_url = f"{base_url}{signed_path}"
+            receipt_url = f"{base_url}{signed_path}"
         except NoURLAvailableError:
-            self._selected_receipt_url = signed_path
+            receipt_url = signed_path
 
-        return self.async_external_step(
+        return self.async_show_form(
             step_id="charge_receipt_open",
-            url=self._selected_receipt_url,
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "receipt_url": receipt_url,
+            },
         )
-
-    async def async_step_charge_receipt_open_done(
-        self,
-        user_input: dict[str, Any] | None = None,
-    ) -> ConfigFlowResult:
-        """Return from the external receipt viewer."""
-
-        return await self.async_step_charge_receipt_detail()
 
     async def async_step_charge_receipt_ocr(
         self,

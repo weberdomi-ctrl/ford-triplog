@@ -482,8 +482,8 @@
         }
       },
       "charge_receipt_open": {
-        "title": "Open receipt",
-        "description": "Select “Open website” to display the receipt."
+        "title": "View receipt",
+        "description": "[Open receipt in a new window]({receipt_url})\n\nThe link is valid for 10 minutes. Select **OK** to return to the receipt afterwards."
       },
       "charge_receipt_parser_create": {
         "title": "Create parser profile",
