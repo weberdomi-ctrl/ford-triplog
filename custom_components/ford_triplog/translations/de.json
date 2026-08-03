@@ -8,13 +8,13 @@
           "ignition": "Zündung",
           "odometer": "Kilometerstand",
           "tracker": "Fahrzeug-Tracker",
-          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
+          "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar)",
           "smart_trip": "Smart Trip aktivieren",
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
         },
         "data_description": {
           "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
-          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
+          "smart_trip_timeout": "Zeit, bis eine pausierte Fahrt endgültig abgeschlossen wird."
         }
       }
     }
@@ -48,11 +48,11 @@
           "smart_trip": "Smart Trip aktivieren",
           "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
           "charging": "Ladestatus-Sensor",
-          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
+          "battery_capacity_kwh": "Nutzbare Akkukapazität (kWh)",
           "soh": "Batteriezustand (SOH)",
           "journey_home_zone": "Tour-Basis",
-          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
-          "journey_max_gap_hours": "Maximale Tour-Pause",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an der Tour-Basis",
+          "journey_max_gap_hours": "Maximale Pause zwischen Touren",
           "home_tariff_enabled": "Automatische Heimladekosten",
           "home_tariff_summer_price": "Sommertarif (1. April bis 30. September)",
           "home_tariff_winter_price": "Wintertarif (1. Oktober bis 31. März)",
@@ -64,7 +64,7 @@
           "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
           "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
           "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
-          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens so lange in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
           "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
           "home_tariff_enabled": "Berechnet die Kosten für Ladevorgänge in der Tour-Basis automatisch.",
           "home_tariff_summer_price": "Preis pro kWh für Ladevorgänge vom 1. April bis 30. September.",
@@ -110,7 +110,7 @@
       },
       "user_charging_sites": {
         "title": "Eigene Ladeorte",
-        "description": "Wähle aus, was du machen möchtest.",
+        "description": "Wähle aus, was du mit den eigenen Ladeorten machen möchtest.",
         "menu_options": {
           "user_charging_site_selection": "Ladeort auswählen",
           "user_charging_site_new": "Neuen Ladeort erstellen",
@@ -124,10 +124,10 @@
       },
       "user_charging_site_details": {
         "title": "{name}",
-        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}\n\nDas Anlegen, Bearbeiten und Löschen folgt in Build 04."
+        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}"
       },
       "user_charging_site_edit": {
-        "title": "Ladeort erfassen oder bearbeiten",
+        "title": "Ladeort erstellen oder bearbeiten",
         "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Anschlüsse können mehrfach ausgewählt werden; bei der Marke sind auch eigene Werte möglich. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
         "data": {
           "name": "Name",
@@ -170,7 +170,7 @@
       },
       "journey_management": {
         "title": "Touren verwalten",
-        "description": "Was möchtest du mit den gespeicherten Touren machen?",
+        "description": "Wähle die gewünschte Aktion für die gespeicherten Touren aus.",
         "menu_options": {
           "journey_update": "Touren aktualisieren",
           "journey_rebuild": "Touren neu berechnen",
@@ -216,7 +216,7 @@
       },
       "charge_management": {
         "title": "Ladevorgänge",
-        "description": "Wähle aus, was du machen möchtest.",
+        "description": "Wähle aus, was du mit den gespeicherten Ladevorgängen machen möchtest.",
         "menu_options": {
           "charge_selection": "Ladevorgang auswählen",
           "init": "Zurück zum Hauptmenü"
@@ -259,8 +259,8 @@
         "description": "**Aktion:** {action}\n\n**Ladevorgang:** {charge_id}\n**Abgerechnete Energie:** {energy_billed_kwh} kWh\n**Ladeverlust:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Kosten:** {cost_total} {currency}\n**Energiepreis pro kWh:** {energy_price_per_kwh}\n**Effektiver Preis pro kWh:** {price_per_kwh}"
       },
       "receipt_management": {
-        "title": "Belegverwaltung",
-        "description": "Belege für Pausen und Ladevorgänge verwalten.",
+        "title": "Belege und OCR",
+        "description": "Belege, OCR-Verbindung und erkannte Abrechnungswerte verwalten.",
         "menu_options": {
           "receipt_import_type": "Beleg hinterlegen",
           "receipt_list": "Belege anzeigen",
@@ -307,14 +307,14 @@
       },
       "receipt_list": {
         "title": "Gespeicherte Belege",
-        "description": "Es sind {receipt_count} Beleg(e) gespeichert. Wähle eine Pause oder einen Ladevorgang aus; der interne Dateiname wird nur in der Detailansicht angezeigt.",
+        "description": "Es sind {receipt_count} Belege gespeichert. Wähle eine Pause oder einen Ladevorgang aus; der interne Dateiname wird nur in der Detailansicht angezeigt.",
         "data": {
           "receipt_selection": "Beleg"
         }
       },
       "pause_management": {
         "title": "Pausen",
-        "description": "Wähle aus, was du machen möchtest.",
+        "description": "Wähle aus, was du mit den erkannten Pausen machen möchtest.",
         "menu_options": {
           "pause_selection": "Pause auswählen und ergänzen",
           "init": "Zurück zum Hauptmenü"
@@ -337,7 +337,7 @@
           "action": "Aktion"
         },
         "data_description": {
-          "category": "Zum Beispiel food, shopping, leisure, work, parking, overnight oder other.",
+          "category": "Zum Beispiel Essen, Einkauf, Freizeit, Arbeit, Parken, Übernachtung oder Sonstiges.",
           "action": "Änderungen speichern oder alle manuellen Angaben dieser Pause zurücksetzen."
         }
       },
@@ -372,7 +372,7 @@
         "description": "Ford Triplog kann Belege optional über einen externen lokalen OCR-Dienst analysieren. Ohne aktivierte OCR-Verbindung bleiben alle anderen Funktionen uneingeschränkt verfügbar.\n\nBeim Speichern wird die Verbindung über den Endpunkt `/health` geprüft.",
         "data": {
           "ocr_enabled": "OCR aktivieren",
-          "ocr_url": "OCR-Dienst URL",
+          "ocr_url": "OCR-Dienst-URL",
           "ocr_api_key": "API-Key",
           "ocr_timeout": "Zeitüberschreitung"
         },
@@ -541,7 +541,7 @@
       },
       "charging_site_database": {
         "title": "OpenStreetMap-Ladeorte",
-        "description": "Wähle aus, was du machen möchtest.",
+        "description": "Wähle die gewünschte Aktion für die Ladeort-Datenbank aus.",
         "menu_options": {
           "download_charging_sites": "Ladeorte herunterladen",
           "import_charging_sites": "Datenbank importieren",
