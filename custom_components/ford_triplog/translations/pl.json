@@ -403,6 +403,20 @@
         "data_description": {
           "receipt_note": "Opcjonalna notatka do paragonu."
         }
+      },
+      "charge_detail": {
+        "title": "Sesja ładowania",
+        "description": "**Data:** {date}\\n**Lokalizacja:** {location}\\n**ID ładowania:** {charge_id}\\n\\n## Koszty\\n\\n**Rozliczona energia:** {energy} kWh\\n**Koszt całkowity:** {cost_total} {currency}\\n\\n## Paragony ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "menu_options": {
+          "charge_cost_edit": "Edytuj koszty",
+          "charge_receipt_upload": "Dodaj paragon",
+          "charge_management": "Wybierz inną sesję ładowania"
+        },
+        "menu_option_descriptions": {
+          "charge_cost_edit": "Ręcznie wprowadź lub zmień koszty i rozliczoną energię.",
+          "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
+          "charge_management": "Wróć do listy sesji ładowania."
+        }
       }
     },
     "error": {

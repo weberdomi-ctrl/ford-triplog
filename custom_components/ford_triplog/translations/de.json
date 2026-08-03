@@ -403,6 +403,20 @@
         "data_description": {
           "receipt_note": "Optionaler Hinweis zum Beleg."
         }
+      },
+      "charge_detail": {
+        "title": "Ladesitzung",
+        "description": "**Datum:** {date}\\n**Ort:** {location}\\n**Charge-ID:** {charge_id}\\n\\n## Kosten\\n\\n**Abgerechnete Energie:** {energy} kWh\\n**Gesamtkosten:** {cost_total} {currency}\\n\\n## Belege ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "menu_options": {
+          "charge_cost_edit": "Kosten bearbeiten",
+          "charge_receipt_upload": "Beleg hinzufügen",
+          "charge_management": "Andere Ladesitzung auswählen"
+        },
+        "menu_option_descriptions": {
+          "charge_cost_edit": "Kosten und abgerechnete Energie manuell erfassen oder ändern.",
+          "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
+          "charge_management": "Zur Liste der Ladesitzungen zurückkehren."
+        }
       }
     },
     "error": {

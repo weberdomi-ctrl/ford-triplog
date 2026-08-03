@@ -366,7 +366,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_charge_id = str(
                 user_input[CONF_CHARGE_SELECTION]
             ).strip()
-            return await self.async_step_charge_cost_edit()
+            return await self.async_step_charge_detail()
 
         options = [
             selector.SelectOptionDict(
@@ -401,6 +401,80 @@ class FordTriplogOptionsFlow(OptionsFlow):
             },
         )
 
+    async def async_step_charge_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the selected charging session and its available actions."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        receipts = await self._get_receipt_storage().async_list(
+            target_type=RECEIPT_TARGET_CHARGE,
+            target_id=self._selected_charge_id,
+        )
+
+        receipt_count = len(receipts)
+        if receipt_count:
+            receipt_statuses: list[str] = []
+            for receipt in receipts:
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+                status = self._format_receipt_processing_status(receipt)
+                receipt_statuses.append(f"{filename} · {status}")
+            receipt_summary = "\n".join(receipt_statuses[:5])
+            if receipt_count > 5:
+                receipt_summary += f"\n… und {receipt_count - 5} weitere"
+        else:
+            receipt_summary = "Noch kein Beleg vorhanden"
+
+        self._charge_detail_placeholders = {
+            "charge_id": str(charge.charge_id or ""),
+            "date": self._format_charge_datetime(charge.start_time),
+            "location": self._charge_location(charge),
+            "energy": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+            "cost_total": self._format_optional_number(
+                getattr(charge, "cost_total", None),
+                2,
+            ),
+            "currency": str(getattr(charge, "currency", None) or "CHF"),
+            "receipt_count": str(receipt_count),
+            "receipt_summary": receipt_summary,
+            "ocr_status": (
+                "aktiv"
+                if bool(self._options.get(CONF_OCR_ENABLED, False))
+                else "deaktiviert"
+            ),
+        }
+
+        return self.async_show_menu(
+            step_id="charge_detail",
+            menu_options=[
+                "charge_cost_edit",
+                "charge_receipt_upload",
+                "charge_management",
+            ],
+            description_placeholders=self._charge_detail_placeholders,
+        )
+
     async def async_step_charge_cost_edit(
         self,
         user_input: dict[str, Any] | None = None,
@@ -433,9 +507,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     CHARGE_ACTION_SAVE,
                 )
             )
-
-            if action == CHARGE_ACTION_ADD_RECEIPT:
-                return await self.async_step_charge_receipt_upload()
 
             try:
                 if action == CHARGE_ACTION_CLEAR:
@@ -538,7 +609,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             2,
                         ),
                     }
-                    self._selected_charge_id = None
                     return await self.async_step_charge_cost_result()
 
         default_currency = str(charge.currency or "CHF").upper()
@@ -817,7 +887,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "target_id": charge_id,
                         "status": "Beleg gespeichert · OCR deaktiviert",
                     }
-                    self._selected_charge_id = None
                     return await self.async_step_receipt_result()
 
                 try:
@@ -848,7 +917,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             "Analyse kann später erneut gestartet werden"
                         ),
                     }
-                    self._selected_charge_id = None
                     return await self.async_step_receipt_result()
 
                 if str(analyzed.get("parse_status") or "") == "parsed":
@@ -860,7 +928,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "target_id": charge_id,
                     "status": "Beleg gespeichert und gelesen · kein passendes Parserprofil",
                 }
-                self._selected_charge_id = None
                 return await self.async_step_receipt_result()
 
         return self.async_show_form(
@@ -903,7 +970,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the result of a charging-cost operation."""
 
         if user_input is not None:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_detail()
 
         return self.async_show_form(
             step_id="charge_cost_result",
@@ -2601,6 +2668,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show receipt operation result."""
 
         if user_input is not None:
+            if self._selected_charge_id:
+                return await self.async_step_charge_detail()
             return await self.async_step_receipt_management()
         self._receipt_result.setdefault("status", "Vorgang abgeschlossen")
         return self.async_show_form(

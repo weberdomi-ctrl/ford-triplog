@@ -403,6 +403,20 @@
         "data_description": {
           "receipt_note": "Optional note for the receipt."
         }
+      },
+      "charge_detail": {
+        "title": "Charging session",
+        "description": "**Date:** {date}\\n**Location:** {location}\\n**Charge ID:** {charge_id}\\n\\n## Costs\\n\\n**Billed energy:** {energy} kWh\\n**Total cost:** {cost_total} {currency}\\n\\n## Receipts ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "menu_options": {
+          "charge_cost_edit": "Edit costs",
+          "charge_receipt_upload": "Add receipt",
+          "charge_management": "Select another charging session"
+        },
+        "menu_option_descriptions": {
+          "charge_cost_edit": "Enter or change costs and billed energy manually.",
+          "charge_receipt_upload": "Attach a PDF or image. When OCR is enabled, the receipt is analyzed automatically.",
+          "charge_management": "Return to the charging-session list."
+        }
       }
     },
     "error": {
