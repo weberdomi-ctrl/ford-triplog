@@ -23,23 +23,21 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Select the area you want to edit.",
         "menu_options": {
-          "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
+          "settings": "Settings",
+          "journey_management": "Manage journeys",
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
-          "receipt_management": "Receipt management",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
-          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Add a title, category, location, note and costs to detected journey pauses.",
-          "charge_management": "View archived charging sessions and manage charging costs.",
-          "receipt_management": "Import, view or delete receipts for pauses and charging sessions.",
+          "settings": "Edit trip, charging and vehicle settings.",
+          "journey_management": "Update, rebuild or delete journeys.",
+          "pause_management": "Add title, category, location, note and costs to pauses.",
+          "charge_management": "Manage charging sessions, costs and linked receipts.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."

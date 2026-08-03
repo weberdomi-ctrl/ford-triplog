@@ -26,10 +26,9 @@
         "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
           "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
-          "pause_management": "Edit pauses",
-          "charge_management": "Charging sessions",
-          "receipt_management": "Receipt management",
+          "journey_management": "Touren verwalten",
+          "pause_management": "Pausen bearbeiten",
+          "charge_management": "Ladevorgänge",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
@@ -37,9 +36,8 @@
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Add a title, category, location, note and costs to detected journey pauses.",
-          "charge_management": "View archived charging sessions and manage charging costs.",
-          "receipt_management": "Import, view or delete receipts for pauses and charging sessions.",
+          "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
+          "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."

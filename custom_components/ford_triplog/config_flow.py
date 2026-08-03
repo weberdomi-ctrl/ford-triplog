@@ -302,8 +302,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_management",
                 "pause_management",
                 "charge_management",
-                "receipt_management",
-                "user_charging_sites",
+                    "user_charging_sites",
                 "download_charging_sites",
             ],
         )

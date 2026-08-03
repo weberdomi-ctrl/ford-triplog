@@ -23,23 +23,21 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Wybierz obszar, który chcesz edytować.",
         "menu_options": {
-          "settings": "Einstellungen",
-          "journey_management": "Tour-Verwaltung",
-          "pause_management": "Edytuj postoje",
+          "settings": "Ustawienia",
+          "journey_management": "Zarządzaj trasami",
+          "pause_management": "Edytuj przerwy",
           "charge_management": "Sesje ładowania",
-          "receipt_management": "Zarządzanie paragonami",
           "user_charging_sites": "Eigene Ladeorte",
           "download_charging_sites": "Ladeort-Datenbank von OpenStreetMap herunterladen",
           "import_charging_sites": "Ladeort-Datenbank importieren"
         },
         "menu_option_descriptions": {
-          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
-          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
-          "pause_management": "Uzupełnij wykryte postoje o tytuł, kategorię, miejsce, notatkę i koszty.",
-          "charge_management": "Przeglądaj zapisane sesje ładowania i zarządzaj kosztami.",
-          "receipt_management": "Dodawaj, przeglądaj lub usuwaj paragony dla postojów i sesji ładowania.",
+          "settings": "Edytuj ustawienia tras, ładowania i pojazdu.",
+          "journey_management": "Aktualizuj, przeliczaj ponownie lub usuwaj trasy.",
+          "pause_management": "Dodaj tytuł, kategorię, miejsce, notatkę i koszty.",
+          "charge_management": "Zarządzaj sesjami, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "download_charging_sites": "Die Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und sofort aktivieren.",
           "import_charging_sites": "Eine Ladeort-Datenbank als JSON-Datei hochladen und sofort aktivieren."
