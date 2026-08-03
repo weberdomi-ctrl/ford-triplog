@@ -35,15 +35,31 @@ class FordTriplogReceiptStorage:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._directory = Path(hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR))
+        self._directory = Path(
+            hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR)
+        )
+        self._user_profile_directory = Path(
+            hass.config.path(
+                ".storage",
+                STORAGE_DIR,
+                "receipt_parser_profiles",
+            )
+        )
         self._metadata = FordTriplogMetadataStorage(hass)
         self._parser = ReceiptParserEngine(
-            Path(__file__).parent / "receipt_parser_profiles"
+            Path(__file__).parent / "receipt_parser_profiles",
+            self._user_profile_directory,
         )
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(
             self._directory.mkdir, 0o755, True, True
+        )
+        await self.hass.async_add_executor_job(
+            self._user_profile_directory.mkdir,
+            0o755,
+            True,
+            True,
         )
         await self._metadata.async_setup()
         await self.hass.async_add_executor_job(self._parser.load)
@@ -199,6 +215,70 @@ class FordTriplogReceiptStorage:
         return updated
 
 
+    async def async_create_user_parser_profile(
+        self,
+        profile: dict[str, Any],
+    ) -> Path:
+        """Persist one user-created parser profile and reload profiles."""
+
+        profile_id = self._safe_name(
+            str(profile.get("profile_id") or "")
+        )
+        if not profile_id:
+            raise ValueError("Parser profile ID is required")
+
+        destination = self._user_profile_directory / f"{profile_id}.json"
+        payload = json.dumps(
+            profile,
+            ensure_ascii=False,
+            indent=2,
+        ) + "\n"
+
+        await self.hass.async_add_executor_job(
+            self._write_text_atomic,
+            destination,
+            payload,
+        )
+        await self.hass.async_add_executor_job(self._parser.load)
+        return destination
+
+    async def async_reparse(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any]:
+        """Reparse saved OCR text without running OCR again."""
+
+        normalized_id = str(receipt_id).strip()
+        receipt = await self._metadata.get_receipt(normalized_id)
+        if receipt is None:
+            raise ValueError("Receipt was not found")
+
+        ocr_result = receipt.get("ocr_result", {})
+        if not isinstance(ocr_result, dict):
+            raise ValueError("Receipt has no OCR result")
+
+        raw_text = str(ocr_result.get("raw_text") or "")
+        if not raw_text.strip():
+            raise ValueError("Receipt has no OCR text")
+
+        parse_result = self._parser.parse(raw_text)
+        parse_data = parse_result.as_dict()
+
+        updated = await self._metadata.update_receipt(
+            normalized_id,
+            {
+                "parse_status": parse_result.status,
+                "parser_profile": parse_result.profile_id,
+                "parser_result": parse_data,
+                "parser_confirmed": False,
+            },
+        )
+        if updated is None:
+            raise ValueError("Receipt was not found")
+        return updated
+
+
+
     async def async_mark_applied(
         self,
         receipt_id: str,
@@ -273,6 +353,19 @@ class FordTriplogReceiptStorage:
     def _safe_name(value: str) -> str:
         cleaned = "".join(char if char.isalnum() or char in "-_" else "_" for char in value)
         return cleaned.strip("_") or "item"
+
+    @staticmethod
+    def _write_text_atomic(destination: Path, content: str) -> None:
+        """Write UTF-8 text atomically."""
+
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        temporary = destination.with_suffix(destination.suffix + ".tmp")
+        try:
+            temporary.write_text(content, encoding="utf-8")
+            os.replace(temporary, destination)
+        except Exception:
+            temporary.unlink(missing_ok=True)
+            raise
 
     @staticmethod
     def _copy_atomic(source: Path, destination: Path) -> None:

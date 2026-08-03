@@ -452,13 +452,15 @@
           "charge_receipt_open": "Otwórz paragon",
           "charge_receipt_ocr": "Uruchom OCR ponownie",
           "charge_receipt_delete": "Usuń paragon",
-          "charge_receipt_list": "Wróć do paragonów"
+          "charge_receipt_list": "Wróć do paragonów",
+          "charge_receipt_parser_create": "Utwórz profil parsera"
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Pokaż oryginalny plik w przeglądarce.",
           "charge_receipt_ocr": "Ponownie przeanalizuj paragon i odśwież wartości parsera.",
           "charge_receipt_delete": "Usuń plik paragonu i zapisane metadane.",
-          "charge_receipt_list": "Wróć do listy paragonów tej sesji ładowania."
+          "charge_receipt_list": "Wróć do listy paragonów tej sesji ładowania.",
+          "charge_receipt_parser_create": "Utwórz własny profil parsera z zapisanego tekstu OCR."
         }
       },
       "charge_receipt_ocr": {
@@ -475,6 +477,22 @@
       "charge_receipt_open": {
         "title": "Otwórz paragon",
         "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Utwórz profil parsera",
+        "description": "**Paragon:** {filename}\n\nUtwórz podstawowy profil użytkownika. Tekst rozpoznawczy musi występować w przyszłych dokumentach tego typu. Po zapisaniu tekst OCR zostanie od razu ponownie przetworzony.\n\n**Tekst OCR:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Nazwa profilu",
+          "user_parser_match_text": "Tekst rozpoznawczy",
+          "user_parser_provider": "Stały dostawca",
+          "user_parser_location": "Stała lokalizacja",
+          "user_parser_energy": "Rozpoznaj energię przed kWh",
+          "user_parser_duration": "Rozpoznaj czas HH:MM:SS",
+          "user_parser_current": "Rozpoznaj prąd przed A",
+          "user_parser_voltage": "Rozpoznaj napięcie przed V",
+          "user_parser_power": "Rozpoznaj moc przed kW",
+          "user_parser_temperature": "Rozpoznaj temperaturę"
+        }
       }
     },
     "error": {
@@ -511,7 +529,12 @@
       "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie.",
       "receipt_no_parsed_charge_receipts": "Brak poprawnie przetworzonych paragonów ładowania.",
       "receipt_not_charge": "Ten paragon nie jest przypisany do sesji ładowania.",
-      "receipt_apply_failed": "Nie udało się zastosować wartości do sesji ładowania."
+      "receipt_apply_failed": "Nie udało się zastosować wartości do sesji ładowania.",
+      "receipt_no_ocr_text": "Brak zapisanego tekstu OCR.",
+      "user_parser_required_fields": "Nazwa profilu i tekst rozpoznawczy są wymagane.",
+      "user_parser_match_not_found": "Tekst rozpoznawczy nie występuje w tekście OCR.",
+      "user_parser_create_failed": "Nie udało się zapisać profilu użytkownika.",
+      "user_parser_test_failed": "Profil zapisano, ale nie przetworzył bieżącego dokumentu."
     },
     "menu": {
       "receipt_management": "Zarządzanie paragonami",

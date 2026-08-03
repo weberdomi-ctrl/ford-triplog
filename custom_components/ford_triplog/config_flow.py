@@ -21,6 +21,8 @@ Changes:
 
 from __future__ import annotations
 
+import re
+
 import logging
 
 import asyncio
@@ -152,6 +154,16 @@ CONF_RECEIPT_APPLY_SELECTION = "receipt_apply_selection"
 CONF_RECEIPT_APPLY_ENERGY = "receipt_apply_energy"
 CONF_RECEIPT_APPLY_TOTAL = "receipt_apply_total"
 CONF_RECEIPT_APPLY_CURRENCY = "receipt_apply_currency"
+CONF_USER_PARSER_NAME = "user_parser_name"
+CONF_USER_PARSER_MATCH_TEXT = "user_parser_match_text"
+CONF_USER_PARSER_PROVIDER = "user_parser_provider"
+CONF_USER_PARSER_LOCATION = "user_parser_location"
+CONF_USER_PARSER_ENERGY = "user_parser_energy"
+CONF_USER_PARSER_DURATION = "user_parser_duration"
+CONF_USER_PARSER_CURRENT = "user_parser_current"
+CONF_USER_PARSER_VOLTAGE = "user_parser_voltage"
+CONF_USER_PARSER_POWER = "user_parser_power"
+CONF_USER_PARSER_TEMPERATURE = "user_parser_temperature"
 CONF_OCR_ENABLED = "ocr_enabled"
 CONF_OCR_URL = "ocr_url"
 CONF_OCR_API_KEY = "ocr_api_key"
@@ -1086,6 +1098,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         menu_options = ["charge_receipt_open"]
         if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("charge_receipt_ocr")
+        if (
+            str(receipt.get("ocr_status") or "") == "completed"
+            and str(receipt.get("parse_status") or "") != "parsed"
+        ):
+            menu_options.append("charge_receipt_parser_create")
         menu_options.extend(
             [
                 "charge_receipt_delete",
@@ -1174,6 +1191,234 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="charge_receipt_ocr",
             data_schema=vol.Schema({}),
             errors=errors,
+        )
+
+    async def async_step_charge_receipt_parser_create(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create a basic user parser profile from the selected OCR receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            return await self.async_step_charge_receipt_list()
+
+        ocr_result = receipt.get("ocr_result", {})
+        if not isinstance(ocr_result, dict):
+            ocr_result = {}
+        raw_text = str(ocr_result.get("raw_text") or "").strip()
+
+        if not raw_text:
+            return self.async_show_form(
+                step_id="charge_receipt_parser_create",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_no_ocr_text"},
+            )
+
+        lines = [
+            line.strip()
+            for line in raw_text.splitlines()
+            if line.strip()
+        ]
+        suggested_match = next(
+            (
+                line
+                for line in lines
+                if len(line) >= 4
+                and not re.fullmatch(r"[\d.,:%°A-Za-z+-]+", line)
+            ),
+            lines[0] if lines else "",
+        )
+        if "EV Charger" in raw_text:
+            suggested_match = "EV Charger"
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = str(
+                user_input.get(CONF_USER_PARSER_NAME) or ""
+            ).strip()
+            match_text = str(
+                user_input.get(CONF_USER_PARSER_MATCH_TEXT) or ""
+            ).strip()
+            provider = str(
+                user_input.get(CONF_USER_PARSER_PROVIDER) or ""
+            ).strip()
+            location = str(
+                user_input.get(CONF_USER_PARSER_LOCATION) or ""
+            ).strip()
+
+            if not name or not match_text:
+                errors["base"] = "user_parser_required_fields"
+            elif match_text.casefold() not in raw_text.casefold():
+                errors["base"] = "user_parser_match_not_found"
+            else:
+                profile_id = (
+                    "user_"
+                    + re.sub(
+                        r"[^a-z0-9]+",
+                        "_",
+                        name.casefold(),
+                    ).strip("_")
+                )
+                fields: dict[str, Any] = {}
+
+                if provider:
+                    fields["provider"] = {
+                        "method": "fixed",
+                        "value": provider,
+                    }
+                    fields["merchant"] = {
+                        "method": "fixed",
+                        "value": provider,
+                    }
+                if location:
+                    fields["station"] = {
+                        "method": "fixed",
+                        "value": location,
+                    }
+
+                if bool(user_input.get(CONF_USER_PARSER_ENERGY, True)):
+                    fields["energy_kwh"] = {
+                        "patterns": [
+                            r"([\d.,]+)\s*kWh\b"
+                        ],
+                        "transform": "decimal",
+                        "required": True,
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_DURATION, True)):
+                    fields["duration_seconds"] = {
+                        "patterns": [
+                            r"\b(\d{1,2}:\d{2}:\d{2})\b"
+                        ],
+                        "transform": "duration_hhmmss",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_CURRENT, True)):
+                    fields["current_limit_a"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*A\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_VOLTAGE, True)):
+                    fields["voltage_v"] = {
+                        "patterns": [
+                            r"(?:C:\s*)?([\d.,]+)\s*V\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_POWER, True)):
+                    fields["power_kw"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*kW\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_TEMPERATURE, True)):
+                    fields["temperature_c"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*[°℃]\s*C?\b"
+                        ],
+                        "transform": "decimal",
+                    }
+
+                profile = {
+                    "schema": 1,
+                    "profile_id": profile_id,
+                    "name": name,
+                    "version": "1.0",
+                    "country": str(self.hass.config.country or ""),
+                    "status": "user",
+                    "priority": 200,
+                    "match_threshold": 1.0,
+                    "match": {
+                        "required_contains": [match_text],
+                        "optional_contains": [],
+                    },
+                    "fields": fields,
+                }
+
+                try:
+                    await self._get_receipt_storage().async_create_user_parser_profile(
+                        profile
+                    )
+                    updated = await self._get_receipt_storage().async_reparse(
+                        self._selected_receipt_id
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "Unable to create user parser profile: "
+                        "receipt_id=%s profile_id=%s",
+                        self._selected_receipt_id,
+                        profile_id,
+                    )
+                    errors["base"] = "user_parser_create_failed"
+                else:
+                    if str(updated.get("parse_status") or "") != "parsed":
+                        errors["base"] = "user_parser_test_failed"
+                    else:
+                        return await self.async_step_charge_receipt_detail()
+
+        return self.async_show_form(
+            step_id="charge_receipt_parser_create",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_PARSER_NAME,
+                        default="Mobile Wallbox Zuhause",
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_MATCH_TEXT,
+                        default=suggested_match,
+                    ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_USER_PARSER_PROVIDER,
+                        default="Mobile Wallbox",
+                    ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_USER_PARSER_LOCATION,
+                        default="Home",
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_ENERGY,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_DURATION,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_CURRENT,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_VOLTAGE,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_POWER,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_TEMPERATURE,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                ),
+                "raw_text": raw_text[:2000],
+            },
         )
 
     async def async_step_charge_receipt_delete(

@@ -42,8 +42,13 @@ class ReceiptParseResult:
 class ReceiptParserEngine:
     """Load and apply bundled parser profiles."""
 
-    def __init__(self, profile_directory: Path) -> None:
+    def __init__(
+        self,
+        profile_directory: Path,
+        user_profile_directory: Path | None = None,
+    ) -> None:
         self._profile_directory = profile_directory
+        self._user_profile_directory = user_profile_directory
         self._profiles: list[dict[str, Any]] = []
 
     @property
@@ -60,8 +65,14 @@ class ReceiptParserEngine:
         """
 
         profiles: list[dict[str, Any]] = []
-        if self._profile_directory.is_dir():
-            for path in sorted(self._profile_directory.glob("*.json")):
+        directories = [self._profile_directory]
+        if self._user_profile_directory is not None:
+            directories.append(self._user_profile_directory)
+
+        for directory in directories:
+            if not directory.is_dir():
+                continue
+            for path in sorted(directory.glob("*.json")):
                 with path.open("r", encoding="utf-8") as handle:
                     profile = json.load(handle)
                 if (
@@ -402,6 +413,14 @@ class ReceiptParserEngine:
                 normalized = str(result).strip()
                 minutes, seconds = normalized.split(":", 1)
                 result = (int(minutes) * 60) + int(seconds)
+            elif name == "duration_hhmmss":
+                normalized = str(result).strip()
+                hours, minutes, seconds = normalized.split(":", 2)
+                result = (
+                    int(hours) * 3600
+                    + int(minutes) * 60
+                    + int(seconds)
+                )
             elif name == "date_ordinal_month":
                 normalized = re.sub(
                     r"(\d{1,2})(?:st|nd|rd|th)",

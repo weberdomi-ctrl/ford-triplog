@@ -452,13 +452,15 @@
           "charge_receipt_open": "Beleg öffnen",
           "charge_receipt_ocr": "OCR erneut ausführen",
           "charge_receipt_delete": "Beleg löschen",
-          "charge_receipt_list": "Zurück zu den Belegen"
+          "charge_receipt_list": "Zurück zu den Belegen",
+          "charge_receipt_parser_create": "Parserprofil erstellen"
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Originaldatei im Browser anzeigen.",
           "charge_receipt_ocr": "Beleg erneut analysieren und Parserwerte aktualisieren.",
           "charge_receipt_delete": "Belegdatei und gespeicherte Metadaten löschen.",
-          "charge_receipt_list": "Zur Belegliste dieser Ladesitzung zurückkehren."
+          "charge_receipt_list": "Zur Belegliste dieser Ladesitzung zurückkehren.",
+          "charge_receipt_parser_create": "Aus dem vorhandenen OCR-Text ein eigenes Parserprofil anlegen."
         }
       },
       "charge_receipt_ocr": {
@@ -475,6 +477,22 @@
       "charge_receipt_open": {
         "title": "Beleg öffnen",
         "description": "Klicke auf „Website öffnen“, um den Beleg anzuzeigen."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Parserprofil erstellen",
+        "description": "**Beleg:** {filename}\n\nLege ein einfaches Benutzerprofil an. Der Erkennungstext muss in künftigen Belegen dieses Typs vorkommen. Nach dem Speichern wird der vorhandene OCR-Text sofort erneut ausgewertet.\n\n**OCR-Text:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Profilname",
+          "user_parser_match_text": "Erkennungstext",
+          "user_parser_provider": "Fester Anbieter",
+          "user_parser_location": "Fester Ladeort",
+          "user_parser_energy": "Energie vor kWh erkennen",
+          "user_parser_duration": "Dauer HH:MM:SS erkennen",
+          "user_parser_current": "Strom vor A erkennen",
+          "user_parser_voltage": "Spannung vor V erkennen",
+          "user_parser_power": "Leistung vor kW erkennen",
+          "user_parser_temperature": "Temperatur erkennen"
+        }
       }
     },
     "error": {
@@ -511,7 +529,12 @@
       "receipt_ocr_response_failed": "Der OCR-Dienst hat die Datei oder die Anfrage abgelehnt.",
       "receipt_no_parsed_charge_receipts": "Es sind keine erfolgreich geparsten Ladebelege vorhanden.",
       "receipt_not_charge": "Dieser Beleg ist keiner Ladesitzung zugeordnet.",
-      "receipt_apply_failed": "Die Belegwerte konnten nicht in die Ladesitzung übernommen werden."
+      "receipt_apply_failed": "Die Belegwerte konnten nicht in die Ladesitzung übernommen werden.",
+      "receipt_no_ocr_text": "Für diesen Beleg ist kein OCR-Text gespeichert.",
+      "user_parser_required_fields": "Profilname und Erkennungstext sind erforderlich.",
+      "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
+      "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
+      "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
     },
     "menu": {
       "receipt_management": "Receipt management",

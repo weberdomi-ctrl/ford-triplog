@@ -452,13 +452,15 @@
           "charge_receipt_open": "Open receipt",
           "charge_receipt_ocr": "Run OCR again",
           "charge_receipt_delete": "Delete receipt",
-          "charge_receipt_list": "Back to receipts"
+          "charge_receipt_list": "Back to receipts",
+          "charge_receipt_parser_create": "Create parser profile"
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Display the original file in the browser.",
           "charge_receipt_ocr": "Analyze the receipt again and refresh parser values.",
           "charge_receipt_delete": "Delete the receipt file and stored metadata.",
-          "charge_receipt_list": "Return to this charging session's receipt list."
+          "charge_receipt_list": "Return to this charging session's receipt list.",
+          "charge_receipt_parser_create": "Create a custom parser profile from the stored OCR text."
         }
       },
       "charge_receipt_ocr": {
@@ -475,6 +477,22 @@
       "charge_receipt_open": {
         "title": "Open receipt",
         "description": "Select “Open website” to display the receipt."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Create parser profile",
+        "description": "**Receipt:** {filename}\n\nCreate a basic user profile. The recognition text must occur in future receipts of this type. The stored OCR text is reparsed immediately after saving.\n\n**OCR text:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Profile name",
+          "user_parser_match_text": "Recognition text",
+          "user_parser_provider": "Fixed provider",
+          "user_parser_location": "Fixed charging location",
+          "user_parser_energy": "Extract energy before kWh",
+          "user_parser_duration": "Extract HH:MM:SS duration",
+          "user_parser_current": "Extract current before A",
+          "user_parser_voltage": "Extract voltage before V",
+          "user_parser_power": "Extract power before kW",
+          "user_parser_temperature": "Extract temperature"
+        }
       }
     },
     "error": {
@@ -511,7 +529,12 @@
       "receipt_ocr_response_failed": "The OCR service rejected the file or request.",
       "receipt_no_parsed_charge_receipts": "No successfully parsed charging receipts are available.",
       "receipt_not_charge": "This receipt is not assigned to a charging session.",
-      "receipt_apply_failed": "The receipt values could not be applied to the charging session."
+      "receipt_apply_failed": "The receipt values could not be applied to the charging session.",
+      "receipt_no_ocr_text": "No OCR text is stored for this receipt.",
+      "user_parser_required_fields": "Profile name and recognition text are required.",
+      "user_parser_match_not_found": "The recognition text is not present in the OCR text.",
+      "user_parser_create_failed": "The user parser profile could not be saved.",
+      "user_parser_test_failed": "The profile was saved but could not parse the current receipt."
     },
     "menu": {
       "receipt_management": "Receipt management",
