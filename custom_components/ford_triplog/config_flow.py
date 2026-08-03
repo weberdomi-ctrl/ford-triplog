@@ -1200,7 +1200,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_charge_receipt_detail()
 
             try:
-                deleted = await self._get_receipt_storage().async_delete(
+                deleted = await self._get_receipt_storage().async_remove(
                     self._selected_receipt_id
                 )
             except Exception:
