@@ -62,177 +62,187 @@
 
 {% for item in timeline %}
 
-{% if item.type == "start" %}
+{% set item_type = item.get('type', '') %}
 
-### 🟢 {{ item.time_formatted }}
+{% if item_type == 'start' %}
 
-📍 **{{ item.location }}**
+### 🟢 {{ item.get('time_formatted', '—') }}
 
----
-
-{% elif item.type == "trip" %}
-
-### 🚗 {{ item.start_time_formatted }}–{{ item.end_time_formatted }}
-
-⏱️ {{ item.duration }} · {{ item.distance_km | float(0) | round(1) }} km
-
-{% if item.start_soc is defined and item.end_soc is defined %}
-🔋 {{ item.start_soc | int }} → {{ item.end_soc | int }} %
-{% if item.soc_used is defined %}
-(-{{ item.soc_used | int }} %)
-{% endif %}
-{% endif %}
-
-{% if item.energy_used_kwh is defined %}
-⚡ {{ item.energy_used_kwh | float(0) | round(1) }} kWh
-{% endif %}
-
-{% if item.distance_km | float(0) >= 3 and item.consumption_kwh_100km is defined %}
-📈 {{ item.consumption_kwh_100km | float(0) | round(1) }} kWh/100 km
-{% endif %}
-
-📍 {{ item.start_location }}
-➡️ {{ item.end_location }}
+📍 **{{ item.get('location', 'Unbekannter Ort') }}**
 
 ---
 
-{% elif item.type == "pause" %}
+{% elif item_type == 'trip' %}
 
-### ⏸️ {{ item.start_time_formatted }}
+### 🚗 {{ item.get('start_time_formatted', '—') }}–{{ item.get('end_time_formatted', '—') }}
 
-⏱️ {{ item.duration }}
+⏱️ {{ item.get('duration', '—') }} · {{ item.get('distance_km', 0) | float(0) | round(1) }} km
 
-{% if item.title %}
-{% set category = item.category | default('', true) %}
+{% if item.get('start_soc') is not none and item.get('end_soc') is not none %}
+🔋 {{ item.get('start_soc') | int }} → {{ item.get('end_soc') | int }} %
+{% if item.get('soc_used') is not none %}
+(-{{ item.get('soc_used') | int }} %)
+{% endif %}
+{% endif %}
+
+{% if item.get('energy_used_kwh') is not none %}
+⚡ {{ item.get('energy_used_kwh') | float(0) | round(1) }} kWh
+{% endif %}
+
+{% if item.get('distance_km', 0) | float(0) >= 3
+      and item.get('consumption_kwh_100km') is not none %}
+📈 {{ item.get('consumption_kwh_100km') | float(0) | round(1) }} kWh/100 km
+{% endif %}
+
+📍 {{ item.get('start_location', 'Unbekannter Startort') }}
+➡️ {{ item.get('end_location', 'Unbekannter Zielort') }}
+
+---
+
+{% elif item_type == 'pause' %}
+
+{% set title = item.get('title', '') %}
+{% set category = item.get('category', '') %}
+{% set location = item.get('location', '') %}
+{% set note = item.get('note', '') %}
+
+### ⏸️ {{ item.get('start_time_formatted', '—') }}
+
+⏱️ {{ item.get('duration', '—') }}
+
+{% if title %}
 {% if category == 'food' %}
-🍽️ **{{ item.title }}**
+🍽️ **{{ title }}**
 {% elif category == 'coffee' %}
-☕ **{{ item.title }}**
+☕ **{{ title }}**
 {% elif category == 'shopping' %}
-🛒 **{{ item.title }}**
+🛒 **{{ title }}**
 {% elif category == 'sightseeing' %}
-📸 **{{ item.title }}**
+📸 **{{ title }}**
 {% elif category == 'hotel' %}
-🏨 **{{ item.title }}**
+🏨 **{{ title }}**
 {% elif category == 'work' %}
-💼 **{{ item.title }}**
+💼 **{{ title }}**
 {% elif category == 'break' %}
-🪑 **{{ item.title }}**
+🪑 **{{ title }}**
 {% else %}
-📌 **{{ item.title }}**
+📌 **{{ title }}**
 {% endif %}
 {% endif %}
 
-{% if item.category %}
-{% if item.category == 'food' %}
+{% if category %}
+{% if category == 'food' %}
 🏷️ Essen
-{% elif item.category == 'coffee' %}
+{% elif category == 'coffee' %}
 🏷️ Kaffee
-{% elif item.category == 'shopping' %}
+{% elif category == 'shopping' %}
 🏷️ Einkauf
-{% elif item.category == 'sightseeing' %}
+{% elif category == 'sightseeing' %}
 🏷️ Besichtigung
-{% elif item.category == 'hotel' %}
+{% elif category == 'hotel' %}
 🏷️ Übernachtung
-{% elif item.category == 'work' %}
+{% elif category == 'work' %}
 🏷️ Arbeit
-{% elif item.category == 'break' %}
+{% elif category == 'break' %}
 🏷️ Pause
-{% elif item.category == 'other' %}
+{% elif category == 'other' %}
 🏷️ Sonstiges
 {% else %}
-🏷️ {{ item.category }}
+🏷️ {{ category }}
 {% endif %}
 {% endif %}
 
-{% if item.location %}
-📍 {{ item.location }}
+{% if location %}
+📍 {{ location }}
 {% endif %}
 
-{% if item.note %}
-📝 {{ item.note }}
+{% if note %}
+📝 {{ note }}
 {% endif %}
 
-{% if item.soc_start is defined and item.soc_end is defined %}
-🔋 {{ item.soc_start | int }} → {{ item.soc_end | int }} %{% if item.soc_delta is defined %} ({% if item.soc_delta | float(0) > 0 %}+{% endif %}{{ item.soc_delta | int }} %){% endif %}
+{% if item.get('soc_start') is not none and item.get('soc_end') is not none %}
+🔋 {{ item.get('soc_start') | int }} → {{ item.get('soc_end') | int }} %
+{% if item.get('soc_delta') is not none %}
+({% if item.get('soc_delta') | float(0) > 0 %}+{% endif %}{{ item.get('soc_delta') | int }} %)
+{% endif %}
 {% endif %}
 
-{% if item.battery_energy_change_kwh is defined %}
-⚡ Batterie: **{% if item.battery_energy_change_kwh | float(0) > 0 %}+{% endif %}{{ item.battery_energy_change_kwh | float(0) | round(2) }} kWh**
+{% if item.get('battery_energy_change_kwh') is not none %}
+⚡ Batterie: **{% if item.get('battery_energy_change_kwh') | float(0) > 0 %}+{% endif %}{{ item.get('battery_energy_change_kwh') | float(0) | round(2) }} kWh**
 {% endif %}
 
-{% if item.cost_total is defined %}
-💰 {{ item.cost_total | float(0) | round(2) }} {{ item.currency | default('CHF', true) }}
+{% if item.get('cost_total') is not none %}
+💰 {{ item.get('cost_total') | float(0) | round(2) }} {{ item.get('currency', 'CHF') or 'CHF' }}
 {% endif %}
 
-{% if item.edited | default(false) %}
+{% if item.get('edited', false) %}
 ✏️ Manuell ergänzt
 {% endif %}
 
 ---
 
-{% elif item.type == "charge" %}
+{% elif item_type == 'charge' %}
 
-### ⚡ {{ item.start_time_formatted }}–{{ item.end_time_formatted }}
+### ⚡ {{ item.get('start_time_formatted', '—') }}–{{ item.get('end_time_formatted', '—') }}
 
-{% if item.arrival_buffer_seconds | default(0) | int > 0 %}
-🚗 Ankunft: {{ item.arrival_buffer }}
+{% if item.get('arrival_buffer_seconds', 0) | int > 0 %}
+🚗 Ankunft: {{ item.get('arrival_buffer', '—') }}
 {% endif %}
 
-⏱️ {{ item.duration }}
+⏱️ {{ item.get('duration', '—') }}
 
-{% if item.departure_buffer_seconds | default(0) | int > 0 %}
-🚙 Abfahrt: {{ item.departure_buffer }}
+{% if item.get('departure_buffer_seconds', 0) | int > 0 %}
+🚙 Abfahrt: {{ item.get('departure_buffer', '—') }}
 {% endif %}
 
-{% if item.total_stop_duration_seconds | default(0) | int > 0 %}
-🅿️ Aufenthalt: {{ item.total_stop_duration }}
+{% if item.get('total_stop_duration_seconds', 0) | int > 0 %}
+🅿️ Aufenthalt: {{ item.get('total_stop_duration', '—') }}
 {% endif %}
 
-{% if item.start_soc is defined and item.end_soc is defined %}
-🔋 {{ item.start_soc | int }} → {{ item.end_soc | int }} %
-{% if item.soc_added is defined %}
-(+{{ item.soc_added | int }} %)
+{% if item.get('start_soc') is not none and item.get('end_soc') is not none %}
+🔋 {{ item.get('start_soc') | int }} → {{ item.get('end_soc') | int }} %
+{% if item.get('soc_added') is not none %}
+(+{{ item.get('soc_added') | int }} %)
 {% endif %}
 {% endif %}
 
-{% if item.energy_charged_kwh is defined %}
-⚡ Im Fahrzeug: **{{ item.energy_charged_kwh | float(0) | round(2) }} kWh**
+{% if item.get('energy_charged_kwh') is not none %}
+⚡ Im Fahrzeug: **{{ item.get('energy_charged_kwh') | float(0) | round(2) }} kWh**
 {% endif %}
 
-{% if item.energy_billed_kwh is defined %}
-🧾 Abgerechnet: **{{ item.energy_billed_kwh | float(0) | round(2) }} kWh**
+{% if item.get('energy_billed_kwh') is not none %}
+🧾 Abgerechnet: **{{ item.get('energy_billed_kwh') | float(0) | round(2) }} kWh**
 {% endif %}
 
-{% if item.cost_total is defined %}
-💰 Kosten: **{{ item.cost_total | float(0) | round(2) }} {{ item.currency | default('', true) }}**
+{% if item.get('cost_total') is not none %}
+💰 Kosten: **{{ item.get('cost_total') | float(0) | round(2) }} {{ item.get('currency', '') }}**
 {% endif %}
 
-{% if item.energy_price_per_kwh is defined %}
-📊 Energiepreis: **{{ item.energy_price_per_kwh | float(0) | round(4) }} {{ item.currency | default('', true) }}/kWh**
+{% if item.get('energy_price_per_kwh') is not none %}
+📊 Energiepreis: **{{ item.get('energy_price_per_kwh') | float(0) | round(4) }} {{ item.get('currency', '') }}/kWh**
 {% endif %}
 
-{% if item.effective_price_per_kwh is defined
-      and item.energy_price_per_kwh is defined
-      and item.effective_price_per_kwh != item.energy_price_per_kwh %}
-💳 Effektiver Preis: **{{ item.effective_price_per_kwh | float(0) | round(4) }} {{ item.currency | default('', true) }}/kWh**
+{% if item.get('effective_price_per_kwh') is not none
+      and item.get('energy_price_per_kwh') is not none
+      and item.get('effective_price_per_kwh') != item.get('energy_price_per_kwh') %}
+💳 Effektiver Preis: **{{ item.get('effective_price_per_kwh') | float(0) | round(4) }} {{ item.get('currency', '') }}/kWh**
 {% endif %}
 
-{% if item.cost_source is defined %}
-🗂️ Quelle: **{{ item.cost_source }}**
+{% if item.get('cost_source') %}
+🗂️ Quelle: **{{ item.get('cost_source') }}**
 {% endif %}
 
-{% if item.location %}
-📍 {{ item.location }}
+{% if item.get('location') %}
+📍 {{ item.get('location') }}
 {% endif %}
 
 ---
 
-{% elif item.type == "end" %}
+{% elif item_type == 'end' %}
 
-### 🏁 {{ item.time_formatted }}
+### 🏁 {{ item.get('time_formatted', '—') }}
 
-📍 **{{ item.location }}**
+📍 **{{ item.get('location', 'Unbekannter Ort') }}**
 
 {% endif %}
 
