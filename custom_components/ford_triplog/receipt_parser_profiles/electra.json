@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "electra_invoice_v1",
   "name": "Electra Rechnung",
-  "version": "1.1",
+  "version": "1.2",
   "priority": 100,
   "match_threshold": 0.75,
   "match": {

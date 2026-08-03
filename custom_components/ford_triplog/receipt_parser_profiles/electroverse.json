@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "electroverse_receipt_v1",
   "name": "Octopus Electroverse Beleg",
-  "version": "1.0",
+  "version": "1.1",
   "country": "CH",
   "status": "tested",
   "tested_with_real_receipt": true,
@@ -134,6 +134,40 @@
         "Est\\. C0?2 saved\\s*\\n([\\d.,]+)\\s*kg"
       ],
       "transform": "decimal"
+    },
+    "address_street": {
+      "patterns": [
+        "Address\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "city": {
+      "patterns": [
+        "Session end\\s*\\n\\d{1,2}(?:st|nd|rd|th)\\s+\\w+\\s+\\d{4}\\s+\\d{2}:\\d{2}:\\d{2}\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "postal_code": {
+      "patterns": [
+        "\\n(\\d{4}),\\s*CHE\\b"
+      ],
+      "transform": "integer"
+    },
+    "country": {
+      "method": "fixed",
+      "value": "CHE"
+    }
+  },
+  "derived_fields": {
+    "station": {
+      "method": "format_fields",
+      "template": "{address_street}, {postal_code} {city}, {country}"
     }
   }
 }

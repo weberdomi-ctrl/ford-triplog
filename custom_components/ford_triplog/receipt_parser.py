@@ -64,7 +64,11 @@ class ReceiptParserEngine:
             for path in sorted(self._profile_directory.glob("*.json")):
                 with path.open("r", encoding="utf-8") as handle:
                     profile = json.load(handle)
-                if isinstance(profile, dict) and profile.get("profile_id"):
+                if (
+                    isinstance(profile, dict)
+                    and profile.get("profile_id")
+                    and isinstance(profile.get("match"), dict)
+                ):
                     profiles.append(profile)
 
         profiles.sort(
@@ -270,7 +274,8 @@ class ReceiptParserEngine:
             if not groups:
                 value: Any = match.group(0)
             elif bool(rule.get("join_groups", False)):
-                value = "".join(
+                separator = str(rule.get("join_separator") or "")
+                value = separator.join(
                     str(group or "") for group in groups
                 )
             else:
@@ -301,6 +306,35 @@ class ReceiptParserEngine:
 
         if method == "copy":
             return fields.get(str(rule.get("source_field") or ""))
+
+        if method == "concat_fields":
+            source_fields = rule.get("source_fields", [])
+            if not isinstance(source_fields, list):
+                return None
+            separator = str(rule.get("separator") or ", ")
+            values = [
+                str(fields.get(str(field)) or "").strip()
+                for field in source_fields
+            ]
+            values = [value for value in values if value]
+            return separator.join(values) if values else None
+
+        if method == "format_fields":
+            template = str(rule.get("template") or "")
+            if not template:
+                return None
+            values = {
+                key: str(value or "").strip()
+                for key, value in fields.items()
+            }
+            try:
+                result = template.format(**values)
+            except KeyError:
+                return None
+            result = re.sub(r"\s+,", ",", result)
+            result = re.sub(r",\s*,+", ",", result)
+            result = re.sub(r"\s+", " ", result).strip(" ,")
+            return result or None
 
         return None
 
@@ -477,9 +511,18 @@ class ReceiptParserEngine:
                     "%d.%m.%Y %H:%M",
                 ).isoformat()
             elif name == "datetime_iso":
-                result = datetime.fromisoformat(
-                    re.sub(r"\s+", " ", str(result)).strip()
-                ).isoformat()
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = re.sub(
+                    r"^(\d{4}-\d{2}-\d{2})(\d{2}:\d{2}:\d{2})$",
+                    r"\1 \2",
+                    normalized,
+                )
+                normalized = normalized.replace("T", " ")
+                result = datetime.fromisoformat(normalized).isoformat()
             elif name == "upper":
                 result = str(result).upper()
         return result

@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "agrola_receipt_v1",
   "name": "AGROLA Beleg",
-  "version": "1.1",
+  "version": "1.2",
   "priority": 100,
   "match_threshold": 0.75,
   "match": {
@@ -121,6 +121,7 @@
         "Standort der Ladestation:\\s*([^\\n]+)\\nLadepunkt-ID:[^\\n]+\\n([^\\n]+)"
       ],
       "join_groups": true,
+      "join_separator": " ",
       "transform": [
         "strip",
         "collapse_whitespace"
