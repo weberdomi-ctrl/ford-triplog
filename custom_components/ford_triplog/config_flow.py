@@ -362,6 +362,20 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
+        """Show charging-session navigation."""
+
+        return self.async_show_menu(
+            step_id="charge_management",
+            menu_options=[
+                "charge_selection",
+                "init",
+            ],
+        )
+
+    async def async_step_charge_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """Select one archived charging session."""
 
         errors: dict[str, str] = {}
@@ -421,7 +435,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the selected charging session as a compact navigation hub."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         charge = await self._get_charge_manager().async_get_charge(
             self._selected_charge_id
@@ -479,7 +493,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "charge_technical",
                 "charge_cost_edit",
                 "charge_receipts",
-                "charge_management",
+                "charge_selection",
             ],
             description_placeholders=self._charge_detail_placeholders,
         )
@@ -491,7 +505,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show read-only technical charging-session details."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         charge = await self._get_charge_manager().async_get_charge(
             self._selected_charge_id
@@ -542,7 +556,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show receipt actions for the selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         if user_input is not None:
             return await self.async_step_charge_detail()
@@ -600,7 +614,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Edit manual costs for the selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         manager = self._get_charge_manager()
         charge_text = await self._async_get_charge_translations()
@@ -955,7 +969,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show only receipts assigned to the selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         errors: dict[str, str] = {}
 
@@ -1030,7 +1044,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show actions for one receipt of the selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
         if not self._selected_receipt_id:
             return await self.async_step_charge_receipt_list()
 
@@ -1565,7 +1579,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Attach a receipt to the currently selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         charge = await self._get_charge_manager().async_get_charge(
             self._selected_charge_id

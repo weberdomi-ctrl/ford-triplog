@@ -208,12 +208,14 @@
       },
       "charge_management": {
         "title": "Sesje ładowania",
-        "description": "Wybierz zapisaną sesję ładowania.",
-        "data": {
-          "charge_selection": "Sesja ładowania"
+        "description": "Wybierz, co chcesz zrobić.",
+        "menu_options": {
+          "charge_selection": "Wybierz sesję ładowania",
+          "init": "Wróć do menu głównego"
         },
-        "data_description": {
-          "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty."
+        "menu_option_descriptions": {
+          "charge_selection": "Otwórz i edytuj zapisaną sesję ładowania.",
+          "init": "Wróć do przeglądu Ford Triplog."
         }
       },
       "charge_cost_edit": {
@@ -413,13 +415,13 @@
           "charge_technical": "Dane techniczne",
           "charge_cost_edit": "Koszty",
           "charge_receipts": "Paragony",
-          "charge_management": "Inna sesja ładowania"
+          "charge_selection": "Wróć do sesji ładowania"
         },
         "menu_option_descriptions": {
           "charge_technical": "Pokaż zapisane techniczne dane ładowania.",
           "charge_cost_edit": "Edytuj koszty i rozliczoną energię.",
           "charge_receipts": "Pokaż paragony lub dodaj nowy.",
-          "charge_management": "Wróć do listy sesji ładowania."
+          "charge_selection": "Wróć do listy zapisanych sesji ładowania."
         }
       },
       "charge_technical": {
@@ -432,12 +434,12 @@
         "menu_options": {
           "charge_receipt_upload": "Dodaj paragon",
           "charge_detail": "Wróć do sesji ładowania",
-          "charge_receipt_list": "Pokaż paragony tej sesji"
+          "charge_receipt_list": "Paragony"
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
           "charge_detail": "Wróć do przeglądu sesji ładowania.",
-          "charge_receipt_list": "Otwórz i zarządzaj tylko paragonami powiązanymi z tą sesją ładowania."
+          "charge_receipt_list": "Wyświetlaj i zarządzaj paragonami tej sesji ładowania."
         }
       },
       "charge_receipt_list": {
@@ -451,7 +453,7 @@
         "title": "Paragon",
         "description": "**Plik:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Profil parsera:** {profile}\n\n{details}",
         "menu_options": {
-          "charge_receipt_open": "Otwórz paragon",
+          "charge_receipt_open": "Wyświetl paragon",
           "charge_receipt_ocr": "Uruchom OCR ponownie",
           "charge_receipt_delete": "Usuń paragon",
           "charge_receipt_list": "Wróć do paragonów",
@@ -494,6 +496,16 @@
           "user_parser_voltage": "Rozpoznaj napięcie przed V",
           "user_parser_power": "Rozpoznaj moc przed kW",
           "user_parser_temperature": "Rozpoznaj temperaturę"
+        }
+      },
+      "charge_selection": {
+        "title": "Wybierz sesję ładowania",
+        "description": "Wybierz zapisaną sesję ładowania.",
+        "data": {
+          "charge_selection": "Sesja ładowania"
+        },
+        "data_description": {
+          "charge_selection": "Lista pokazuje datę, lokalizację, energię i zapisane koszty."
         }
       }
     },

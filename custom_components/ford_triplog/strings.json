@@ -211,12 +211,14 @@
       },
       "charge_management": {
         "title": "Ladevorgänge",
-        "description": "Wähle einen gespeicherten Ladevorgang aus.",
-        "data": {
-          "charge_selection": "Charging session"
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "charge_selection": "Ladevorgang auswählen",
+          "init": "Zurück zum Hauptmenü"
         },
-        "data_description": {
-          "charge_selection": "The list shows date, location, charged energy and stored costs."
+        "menu_option_descriptions": {
+          "charge_selection": "Einen gespeicherten Ladevorgang öffnen und bearbeiten.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "charge_cost_edit": {
@@ -416,13 +418,13 @@
           "charge_technical": "Technische Daten",
           "charge_cost_edit": "Kosten",
           "charge_receipts": "Belege",
-          "charge_management": "Andere Ladesitzung"
+          "charge_selection": "Zurück zu den Ladevorgängen"
         },
         "menu_option_descriptions": {
           "charge_technical": "Gespeicherte technische Ladedaten anzeigen.",
           "charge_cost_edit": "Kosten und abgerechnete Energie bearbeiten.",
           "charge_receipts": "Belege anzeigen oder einen neuen Beleg hinzufügen.",
-          "charge_management": "Zur Liste der Ladesitzungen zurückkehren."
+          "charge_selection": "Zur Auswahl der gespeicherten Ladevorgänge zurückkehren."
         }
       },
       "charge_technical": {
@@ -435,12 +437,12 @@
         "menu_options": {
           "charge_receipt_upload": "Beleg hinzufügen",
           "charge_detail": "Zurück zur Ladesitzung",
-          "charge_receipt_list": "Belege dieser Ladesitzung anzeigen"
+          "charge_receipt_list": "Belege"
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
           "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren.",
-          "charge_receipt_list": "Nur die Belege öffnen und verwalten, die mit dieser Ladesitzung verknüpft sind."
+          "charge_receipt_list": "Belege dieser Ladesitzung anzeigen und verwalten."
         }
       },
       "charge_receipt_list": {
@@ -454,7 +456,7 @@
         "title": "Beleg",
         "description": "**Datei:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parserprofil:** {profile}\n\n{details}",
         "menu_options": {
-          "charge_receipt_open": "Beleg öffnen",
+          "charge_receipt_open": "Beleg anzeigen",
           "charge_receipt_ocr": "OCR erneut ausführen",
           "charge_receipt_delete": "Beleg löschen",
           "charge_receipt_list": "Zurück zu den Belegen",
@@ -497,6 +499,16 @@
           "user_parser_voltage": "Spannung vor V erkennen",
           "user_parser_power": "Leistung vor kW erkennen",
           "user_parser_temperature": "Temperatur erkennen"
+        }
+      },
+      "charge_selection": {
+        "title": "Ladevorgang auswählen",
+        "description": "Wähle einen gespeicherten Ladevorgang aus.",
+        "data": {
+          "charge_selection": "Ladevorgang"
+        },
+        "data_description": {
+          "charge_selection": "Die Liste zeigt Datum, Ort, geladene Energie und gespeicherte Kosten."
         }
       }
     },
