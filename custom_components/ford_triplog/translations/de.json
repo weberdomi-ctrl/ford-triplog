@@ -610,13 +610,6 @@
       "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
       "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
       "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
-    },
-    "menu": {
-      "receipt_management": "Belegverwaltung",
-      "receipt_import_type": "Beleg hinterlegen",
-      "receipt_list": "Belege anzeigen",
-      "receipt_delete": "Beleg löschen",
-      "receipt_ocr": "OCR ausführen"
     }
   },
   "entity": {
