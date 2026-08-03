@@ -1,0 +1,148 @@
+{
+  "schema": 1,
+  "profile_id": "swisscharge_gofast_v1",
+  "name": "Swisscharge / GOFAST Rechnung",
+  "version": "1.2",
+  "priority": 100,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "swisscharge",
+      "Details zur Ladesitzung"
+    ],
+    "optional_contains": [
+      "GOFAST",
+      "Sitzungs-ID",
+      "Gesamtenergie"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "Swisscharge"
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "GOFAST"
+    },
+    "invoice_number": {
+      "patterns": [
+        "Rechnungsnummer:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "receipt_datetime": {
+      "patterns": [
+        "Datum:\\s*(\\d{4}-\\d{2}-\\d{2}\\s*\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_iso"
+    },
+    "station": {
+      "patterns": [
+        "Standort\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ],
+      "required": true
+    },
+    "charging_start": {
+      "patterns": [
+        "Sitzung begonnen\\s*(\\d{4}-\\d{2}-\\d{2}\\s*\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_iso",
+      "required": true
+    },
+    "charging_end": {
+      "patterns": [
+        "Sitzung beendet\\s*(\\d{4}-\\d{2}-\\d{2}\\s*\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_iso"
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Gesamtenergie\\s*\\n([\\d.,]+)\\s*kWh"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "price_per_kwh": {
+      "patterns": [
+        "Geladene Energie.*?\\n(?:kWh\\s*\\n)?([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "dotall": true
+    },
+    "subtotal": {
+      "patterns": [
+        "Gesamt exkl\\. MwSt\\.\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "vat": {
+      "patterns": [
+        "MwSt\\.\\s*8\\.1%\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "total": {
+      "patterns": [
+        "Gesamtbetrag brutto\\s*\\n([\\d.,]+)\\s*CHF",
+        "Gesamtbetrag\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "session_id": {
+      "patterns": [
+        "Sitzungs-ID\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "connector": {
+      "patterns": [
+        "ID:\\s*[^;\\n]+;\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "Swisscharge"
+    },
+    "evse_id": {
+      "patterns": [
+        "ID:\\s*([^;\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "payment_method": {
+      "patterns": [
+        "Zahlungsmethode\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    }
+  },
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true
+}

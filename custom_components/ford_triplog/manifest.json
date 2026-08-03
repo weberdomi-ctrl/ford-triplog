@@ -4,12 +4,16 @@
   "after_dependencies": [],
   "codeowners": ["@weberdomi-ctrl"],
   "config_flow": true,
-  "dependencies": ["file_upload"],
+  "dependencies": [
+    "file_upload"
+  ],
   "documentation": "https://github.com/weberdomi-ctrl/ford-triplog",
   "integration_type": "hub",
   "iot_class": "local_push",
   "issue_tracker": "https://github.com/weberdomi-ctrl/ford-triplog/issues",
-  "loggers": ["custom_components.ford_triplog"],
+  "loggers": [
+    "custom_components.ford_triplog"
+  ],
   "requirements": [],
-  "version": "1.8.1"
+  "version": "1.9.0"
 }

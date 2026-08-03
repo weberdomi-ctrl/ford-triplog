@@ -21,6 +21,7 @@ import voluptuous as vol
 
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .charging_database_builder import (
     ChargingDatabaseBuildError,
@@ -34,6 +35,9 @@ from .charging_site_lookup import (
 from .const import DOMAIN
 from .countries import COUNTRIES
 from .journey_rebuilder import FordTriplogJourneyRebuilder
+from .journey_storage import FordTriplogJourneyStorage
+from .journey import build_pause_id
+from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .charge_manager import FordTriplogChargeManager
 
 _LOGGER = logging.getLogger(__name__)
@@ -45,6 +49,8 @@ SERVICE_REBUILD_JOURNEYS = "rebuild_journeys"
 SERVICE_DELETE_JOURNEYS = "delete_journeys"
 SERVICE_SET_CHARGE_COST = "set_charge_cost"
 SERVICE_CLEAR_CHARGE_COST = "clear_charge_cost"
+SERVICE_EDIT_PAUSE = "edit_pause"
+SERVICE_CLEAR_PAUSE_EDIT = "clear_pause_edit"
 
 ATTR_FILE = "file"
 ATTR_COUNTRY = "country"
@@ -54,6 +60,12 @@ ATTR_END_DATE = "end_date"
 ATTR_CHARGE_ID = "charge_id"
 ATTR_COST_TOTAL = "cost_total"
 ATTR_CURRENCY = "currency"
+ATTR_JOURNEY_ID = "journey_id"
+ATTR_PAUSE_ID = "pause_id"
+ATTR_CATEGORY = "category"
+ATTR_TITLE = "title"
+ATTR_NOTE = "note"
+ATTR_LOCATION = "location"
 
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
 
@@ -122,6 +134,29 @@ CLEAR_CHARGE_COST_SCHEMA = vol.Schema(
             str,
             vol.Length(min=1),
         ),
+    }
+)
+
+
+EDIT_PAUSE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(str, vol.Length(min=1)),
+        vol.Required(ATTR_JOURNEY_ID): vol.All(str, vol.Length(min=1)),
+        vol.Required(ATTR_PAUSE_ID): vol.All(str, vol.Length(min=1)),
+        vol.Optional(ATTR_CATEGORY): vol.Any(None, str),
+        vol.Optional(ATTR_TITLE): vol.Any(None, str),
+        vol.Optional(ATTR_NOTE): vol.Any(None, str),
+        vol.Optional(ATTR_LOCATION): vol.Any(None, str),
+        vol.Optional(ATTR_COST_TOTAL): vol.Any(None, vol.All(vol.Coerce(float), vol.Range(min=0))),
+        vol.Optional(ATTR_CURRENCY): vol.Any(None, vol.All(str, str.upper, vol.Length(min=3, max=3))),
+    }
+)
+
+CLEAR_PAUSE_EDIT_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(str, vol.Length(min=1)),
+        vol.Required(ATTR_JOURNEY_ID): vol.All(str, vol.Length(min=1)),
+        vol.Required(ATTR_PAUSE_ID): vol.All(str, vol.Length(min=1)),
     }
 )
 
@@ -663,6 +698,79 @@ def _resolve_charge_manager(
     return candidates[0][1]
 
 
+def _extract_journey_storage(runtime_data: Any) -> FordTriplogJourneyStorage | None:
+    if isinstance(runtime_data, FordTriplogJourneyStorage):
+        return runtime_data
+    if isinstance(runtime_data, Mapping):
+        candidate = runtime_data.get("journey_storage")
+        if isinstance(candidate, FordTriplogJourneyStorage):
+            return candidate
+    return None
+
+
+def _resolve_journey_storage(hass: HomeAssistant, entry_id: str | None) -> FordTriplogJourneyStorage:
+    domain_data = hass.data.get(DOMAIN)
+    if not isinstance(domain_data, Mapping):
+        raise HomeAssistantError("Ford Triplog is not initialized")
+    candidates = [(str(eid), storage) for eid, runtime in domain_data.items() if (storage := _extract_journey_storage(runtime)) is not None]
+    if entry_id is not None:
+        for eid, storage in candidates:
+            if eid == str(entry_id).strip():
+                return storage
+        raise HomeAssistantError(f"No Journey storage exists for config entry {entry_id}")
+    if len(candidates) != 1:
+        raise HomeAssistantError("Specify entry_id because the Journey storage is unavailable or ambiguous")
+    return candidates[0][1]
+
+
+def _valid_pause_ids(journey) -> set[str]:
+    return {
+        build_pause_id(current.item_id, following.item_id)
+        for current, following in zip(journey.items, journey.items[1:])
+        if current.end_time and following.start_time
+    }
+
+
+async def _async_edit_pause(hass: HomeAssistant, call: ServiceCall) -> dict[str, Any]:
+    storage = _resolve_journey_storage(hass, call.data.get(ATTR_ENTRY_ID))
+    journey_id = call.data[ATTR_JOURNEY_ID].strip()
+    pause_id = call.data[ATTR_PAUSE_ID].strip()
+    journey = await storage.load_journey_by_id(journey_id)
+    if journey is None:
+        raise ServiceValidationError(f"Journey not found: {journey_id}")
+    if pause_id not in _valid_pause_ids(journey):
+        raise ServiceValidationError(f"Pause not found in journey: {pause_id}")
+    override = dict(journey.pause_overrides.get(pause_id, {}))
+    for field_name in (ATTR_CATEGORY, ATTR_TITLE, ATTR_NOTE, ATTR_LOCATION, ATTR_COST_TOTAL, ATTR_CURRENCY):
+        if field_name not in call.data:
+            continue
+        value = call.data[field_name]
+        if isinstance(value, str):
+            value = value.strip()
+        if value in (None, ""):
+            override.pop(field_name, None)
+        else:
+            override[field_name] = value
+    override["updated_at"] = datetime.now(timezone.utc).isoformat()
+    journey.pause_overrides[pause_id] = override
+    await storage.save_archived_journey(journey)
+    async_dispatcher_send(hass, SIGNAL_LAST_JOURNEY_UPDATED)
+    return {"updated": True, "journey_id": journey_id, "pause_id": pause_id, "pause": override}
+
+
+async def _async_clear_pause_edit(hass: HomeAssistant, call: ServiceCall) -> dict[str, Any]:
+    storage = _resolve_journey_storage(hass, call.data.get(ATTR_ENTRY_ID))
+    journey_id = call.data[ATTR_JOURNEY_ID].strip()
+    pause_id = call.data[ATTR_PAUSE_ID].strip()
+    journey = await storage.load_journey_by_id(journey_id)
+    if journey is None:
+        raise ServiceValidationError(f"Journey not found: {journey_id}")
+    removed = journey.pause_overrides.pop(pause_id, None) is not None
+    await storage.save_archived_journey(journey)
+    async_dispatcher_send(hass, SIGNAL_LAST_JOURNEY_UPDATED)
+    return {"updated": removed, "journey_id": journey_id, "pause_id": pause_id}
+
+
 async def _async_set_charge_cost(
     hass: HomeAssistant,
     call: ServiceCall,
@@ -966,4 +1074,13 @@ async def async_register_services(hass: HomeAssistant) -> None:
             DOMAIN,
             SERVICE_CLEAR_CHARGE_COST,
         )
+    if not hass.services.has_service(DOMAIN, SERVICE_EDIT_PAUSE):
+        async def handle_edit_pause(call: ServiceCall) -> dict[str, Any]:
+            return await _async_edit_pause(hass, call)
+        hass.services.async_register(DOMAIN, SERVICE_EDIT_PAUSE, handle_edit_pause, schema=EDIT_PAUSE_SCHEMA, supports_response=True)
+
+    if not hass.services.has_service(DOMAIN, SERVICE_CLEAR_PAUSE_EDIT):
+        async def handle_clear_pause_edit(call: ServiceCall) -> dict[str, Any]:
+            return await _async_clear_pause_edit(hass, call)
+        hass.services.async_register(DOMAIN, SERVICE_CLEAR_PAUSE_EDIT, handle_clear_pause_edit, schema=CLEAR_PAUSE_EDIT_SCHEMA, supports_response=True)
 

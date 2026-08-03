@@ -1,0 +1,134 @@
+{
+  "schema": 1,
+  "profile_id": "agrola_receipt_v1",
+  "name": "AGROLA Beleg",
+  "version": "1.2",
+  "priority": 100,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "AGROLA",
+      "kWh geladen:"
+    ],
+    "optional_contains": [
+      "Belegnummer:",
+      "Gesamt inkl. USt",
+      "Ladepunkt-ID:"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "AGROLA"
+    },
+    "invoice_number": {
+      "patterns": [
+        "Belegnummer:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "receipt_date": {
+      "patterns": [
+        "Datum:\\s*(\\d{2}\\.\\d{2}\\.\\d{2})"
+      ],
+      "transform": "date_dmy2"
+    },
+    "charging_start": {
+      "patterns": [
+        "Gestartet um:\\s*(\\d{2}\\.\\d{2}\\.\\d{2},\\s*\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_dmy2_comma",
+      "required": true
+    },
+    "energy_kwh": {
+      "patterns": [
+        "kWh geladen:\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "price_per_kwh": {
+      "patterns": [
+        "Energieentgelt\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "subtotal": {
+      "patterns": [
+        "Zwischensumme\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "vat": {
+      "patterns": [
+        "USt\\s*\\([^)]+\\)\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "total": {
+      "patterns": [
+        "Gesamt inkl\\. USt\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "charge_point_id": {
+      "patterns": [
+        "Ladepunkt-ID:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "charge_id": {
+      "patterns": [
+        "Lade-ID:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "AGROLA"
+    },
+    "transaction_id": {
+      "patterns": [
+        "Transaktions-ID:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "charging_end": {
+      "patterns": [
+        "\\d{2}\\.\\d{2}\\.\\d{2},\\s*\\d{2}:\\d{2}\\s*-\\s*(\\d{2}\\.\\d{2}\\.\\d{2},\\s*\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_dmy2_comma"
+    },
+    "station": {
+      "patterns": [
+        "Standort der Ladestation:\\s*([^\\n]+)\\nLadepunkt-ID:[^\\n]+\\n([^\\n]+)"
+      ],
+      "join_groups": true,
+      "join_separator": " ",
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    }
+  },
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true
+}

@@ -3,18 +3,18 @@
     "step": {
       "user": {
         "title": "Ford Triplog",
-        "description": "Configure Ford Triplog.",
+        "description": "Ford Triplog konfigurieren.",
         "data": {
-          "ignition": "Ignition",
-          "odometer": "Odometer",
-          "tracker": "Vehicle tracker",
-          "charging": "Charging status sensor (only available for Ford Pass EVs)",
-          "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+          "ignition": "Zündung",
+          "odometer": "Kilometerstand",
+          "tracker": "Fahrzeug-Tracker",
+          "charging": "Ladestatus Sensor (nur für Ford Pass Elektrofahrzeuge verfügbar)",
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
         },
         "data_description": {
-          "smart_trip": "Merge short stops into one trip.",
-          "smart_trip_timeout": "Time before a paused trip is finalized."
+          "smart_trip": "Pausiert kurze Stopps und führt sie zu einer Fahrt zusammen.",
+          "smart_trip_timeout": "Zeit bis eine pausierte Fahrt endgültig abgeschlossen wird."
         }
       }
     }
@@ -22,138 +22,834 @@
   "options": {
     "step": {
       "init": {
-        "description": "Ford Triplog options",
+        "title": "Ford Triplog",
+        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "menu_options": {
+          "settings": "Einstellungen",
+          "journey_management": "Touren verwalten",
+          "pause_management": "Pausen bearbeiten",
+          "charge_management": "Ladevorgänge",
+          "user_charging_sites": "Eigene Ladeorte",
+          "charging_site_database": "OpenStreetMap-Ladeorte"
+        },
+        "menu_option_descriptions": {
+          "settings": "Fahrten-, Lade- und Fahrzeugeinstellungen bearbeiten.",
+          "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
+          "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
+          "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
+          "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
+          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren."
+        }
+      },
+      "settings": {
+        "title": "Einstellungen",
+        "description": "Ford Triplog konfigurieren.",
         "data": {
-          "soh": "State of Health (SOH)",
-          "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)",
-          "charging": "Charging status sensor",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)"
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "charging": "Ladestatus-Sensor",
+          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
+          "soh": "Batteriezustand (SOH)",
+          "journey_home_zone": "Tour-Basis",
+          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
+          "journey_max_gap_hours": "Maximale Tour-Pause",
+          "home_tariff_enabled": "Automatic home charging costs",
+          "home_tariff_summer_price": "Summer tariff (1 April to 30 September)",
+          "home_tariff_winter_price": "Winter tariff (1 October to 31 March)",
+          "home_tariff_currency": "Home tariff currency"
         },
         "data_description": {
-          "smart_trip": "Merge short stops into one trip.",
-          "smart_trip_timeout": "Minimum value: 30 seconds.",
-          "charging": "Charging status sensor (only available for Ford Pass EVs)",
-          "battery_capacity_kwh": "The usable battery capacity of your vehicle. Default: 77 kWh."
+          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
+          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
+          "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
+          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
+          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
+          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
+          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
+          "home_tariff_enabled": "Automatically calculates costs for charging sessions at the Journey base.",
+          "home_tariff_summer_price": "Price per kWh for charging sessions from 1 April to 30 September.",
+          "home_tariff_winter_price": "Price per kWh for charging sessions from 1 October to 31 March.",
+          "home_tariff_currency": "Currency used for automatically calculated home charging costs."
+        }
+      },
+      "import_charging_sites": {
+        "title": "Ladeort-Datenbank importieren",
+        "description": "Wähle eine Ford-Triplog-Ladeort-Datenbank im JSON-Format aus. Die bestehende Datenbank wird automatisch gesichert und nach erfolgreicher Prüfung ersetzt.",
+        "data": {
+          "charging_site_file": "JSON-Datei"
+        },
+        "data_description": {
+          "charging_site_file": "Zum Beispiel charging_sites_de.json, charging_sites_at.json oder charging_sites_ch.json."
+        }
+      },
+      "import_charging_sites_success": {
+        "title": "Import erfolgreich",
+        "description": "Die Ladeort-Datenbank wurde importiert und sofort aktiviert.\n\nErkannte Ladeorte: {searchable_sites}\nGeohash-Zellen: {index_cells}"
+      },
+      "download_charging_sites": {
+        "title": "Ladeort-Datenbank herunterladen",
+        "description": "Wähle das Land aus, dessen Ladeorte direkt von OpenStreetMap heruntergeladen werden sollen. Die bestehende Datenbank wird vor der Aktivierung automatisch gesichert.\n\n**Hinweis:** Nach dem Download werden die Ladestandorte lokal verarbeitet und optimiert. Dieser Schritt kann je nach Datenbankgröße und Hardware einige Minuten in Anspruch nehmen. Währenddessen kann der Fortschrittsbalken vorübergehend unverändert bleiben.",
+        "data": {
+          "charging_site_country": "Land"
+        },
+        "data_description": {
+          "charging_site_country": "Wähle ein Land oder „← Zurück“, um zum OpenStreetMap-Menü zurückzukehren."
+        }
+      },
+      "download_charging_sites_success": {
+        "title": "Ladeort-Datenbank erfolgreich aktiviert",
+        "description": "Die Ladeort-Datenbank für **{country} ({country_code})** wurde erfolgreich von OpenStreetMap heruntergeladen, verarbeitet und sofort aktiviert.\n\n**Download und Verarbeitung**\n- OSM-Elemente: **{downloaded_elements}**\n- Normalisierte Ladestationen: **{normalized_stations}**\n- Erkannte Ladeorte: **{searchable_sites}**\n- Geohash-Zellen: **{index_cells}**\n- Übersprungene Elemente: **{skipped_elements}**\n\n**Datenbank**\n- Größe: **{database_size}**\n- Gesamtdauer: **{duration}**\n\nDie neue Datenbank steht sofort für die Ladeorterkennung zur Verfügung."
+      },
+      "download_charging_sites_progress": {
+        "title": "Ladeort-Datenbank wird erstellt",
+        "description": "Land: {country_code}\n\nSchritt: {stage}\n{message}\n\nFortschritt: {progress}%\nSchritt {step} von {total_steps}\nVergangene Zeit: {elapsed} s\n\n{progress_log}"
+      },
+      "download_charging_sites_result": {
+        "title": "Ladeort-Datenbank abgeschlossen",
+        "description": "Die Ladeort-Datenbank wurde erfolgreich erstellt und aktiviert."
+      },
+      "user_charging_sites": {
+        "title": "Eigene Ladeorte",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "user_charging_site_selection": "Ladeort auswählen",
+          "user_charging_site_new": "Neuen Ladeort erstellen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "user_charging_site_selection": "Einen gespeicherten Ladeort öffnen und bearbeiten.",
+          "user_charging_site_new": "Einen neuen benutzerdefinierten Ladeort anlegen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "user_charging_site_details": {
+        "title": "{name}",
+        "description": "**Typ:** {type}\n**Koordinaten:** {coordinates}\n**Radius:** {radius}\n**Betreiber:** {operator}\n**Netzwerk:** {network}\n**Leistung:** {power}\n\nDas Anlegen, Bearbeiten und Löschen folgt in Build 04."
+      },
+      "user_charging_site_edit": {
+        "title": "Ladeort erfassen oder bearbeiten",
+        "description": "Die Felder entsprechen dem Datenmodell der OSM-Ladestationsdatenbank. Anschlüsse können mehrfach ausgewählt werden; bei der Marke sind auch eigene Werte möglich. Bei einem erkannten Ladeort werden verfügbare Daten vorausgefüllt.",
+        "data": {
+          "name": "Name",
+          "street": "Strasse",
+          "house_number": "Hausnummer",
+          "postcode": "Postleitzahl",
+          "city": "Ort",
+          "country": "Land",
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "radius": "Erkennungsradius",
+          "type": "Typ",
+          "power_kw": "Maximale Ladeleistung",
+          "capacity": "Anzahl Ladepunkte",
+          "connectors": "Anschlüsse (Mehrfachauswahl)",
+          "operator": "Betreiber",
+          "network": "Netzwerk",
+          "brand": "Marke / Anbieter",
+          "notes": "Notizen",
+          "action": "Aktion"
+        }
+      },
+      "user_charging_site_delete": {
+        "title": "Ladeort löschen",
+        "description": "Soll der Ladeort „{name}“ wirklich gelöscht werden?"
+      },
+      "user_charging_sites_pending_notice": {
+        "title": "Eigene Ladeorte",
+        "description": "{pending_text}\n\n{stored_text}",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "pending_charging_sites": {
+        "title": "Unbekannte Ladeorte erfassen",
+        "description": "Wähle einen der {pending_count} erkannten Ladeorte aus. Koordinaten und verfügbare Stationsdaten werden beim Erfassen vorausgefüllt.",
+        "data": {
+          "user_charging_site_selection": "Erkannter Ladeort"
+        }
+      },
+      "journey_management": {
+        "title": "Touren verwalten",
+        "description": "Was möchtest du mit den gespeicherten Touren machen?",
+        "menu_options": {
+          "journey_update": "Touren aktualisieren",
+          "journey_rebuild": "Touren neu berechnen",
+          "journey_delete": "Touren löschen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "journey_update": "Vorhandene Touren mit den aktuellen Daten aktualisieren.",
+          "journey_rebuild": "Alle Touren vollständig neu berechnen und speichern.",
+          "journey_delete": "Gespeicherte Touren dauerhaft löschen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "journey_update": {
+        "title": "Touren aktualisieren",
+        "description": "Erstellt nur fehlende Touren im optionalen Zeitraum.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "journey_rebuild": {
+        "title": "Touren neu berechnen",
+        "description": "Löscht bestehende Touren im Zeitraum und berechnet sie neu.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "journey_delete": {
+        "title": "Touren löschen",
+        "description": "Löscht Touren. Trips und Ladevorgänge bleiben erhalten.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum",
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "journey_result": {
+        "title": "Tour-Aktion abgeschlossen",
+        "description": "Modus: {mode}\n\nTrips: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
+      },
+      "charge_management": {
+        "title": "Ladevorgänge",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "charge_selection": "Ladevorgang auswählen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "charge_selection": "Einen gespeicherten Ladevorgang öffnen und bearbeiten.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "charge_cost_edit": {
+        "title": "Edit charging costs",
+        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Location:** {location}\n**Energy added to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
+        "data": {
+          "cost_total": "Total cost",
+          "currency": "Currency",
+          "action": "Action",
+          "energy_billed_kwh": "Billed energy",
+          "energy_cost": "Energy cost",
+          "session_fee": "Start / session fee",
+          "time_fee": "Time fee",
+          "blocking_fee": "Blocking fee",
+          "parking_fee": "Parking fee",
+          "other_cost": "Other cost"
+        },
+        "data_description": {
+          "cost_total": "Optional total for simple or older entries. When detailed cost components are entered, the total is calculated automatically.",
+          "currency": "Three-letter currency code, for example CHF or EUR.",
+          "action": "Save costs or remove all stored cost information.",
+          "energy_billed_kwh": "Energy shown on the invoice, charging station, or charging app. Used to calculate charging losses.",
+          "energy_cost": "Energy-only cost excluding additional fees.",
+          "session_fee": "One-time start or session fee.",
+          "time_fee": "Time-based charging fee.",
+          "blocking_fee": "Fee for occupying the charging point.",
+          "parking_fee": "Additional parking fee.",
+          "other_cost": "Any cost that does not fit another category."
+        }
+      },
+      "charge_cost_result": {
+        "title": "Charging costs updated",
+        "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Billed energy:** {energy_billed_kwh} kWh\n**Charging loss:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Cost:** {cost_total} {currency}\n**Energy price per kWh:** {energy_price_per_kwh}\n**Effective price per kWh:** {price_per_kwh}"
+      },
+      "receipt_management": {
+        "title": "Receipt management",
+        "description": "Manage receipts for pauses and charging sessions.",
+        "menu_options": {
+          "receipt_import_type": "Import receipt",
+          "receipt_list": "View receipts",
+          "receipt_delete": "Delete receipt",
+          "receipt_ocr": "OCR ausführen",
+          "ocr_settings": "OCR-Verbindung",
+          "receipt_apply": "Parserwerte übernehmen"
+        },
+        "menu_option_descriptions": {
+          "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
+          "receipt_list": "View stored receipts with assignment and file information.",
+          "receipt_delete": "Permanently delete a receipt file and its metadata.",
+          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
+          "receipt_ocr": "Einen gespeicherten Beleg an den konfigurierten OCR-Dienst senden.",
+          "receipt_apply": "Erkannte Abrechnungswerte prüfen, korrigieren und in die zugehörige Ladesitzung übernehmen."
+        }
+      },
+      "receipt_import_type": {
+        "title": "Import receipt",
+        "description": "Select whether the receipt belongs to a pause or charging session.",
+        "data": {
+          "target_type": "Assignment"
+        }
+      },
+      "receipt_import": {
+        "title": "Import receipt",
+        "description": "Upload a PDF or image and assign it to the selected item.",
+        "data": {
+          "target": "Pause or charging session",
+          "receipt_file": "Receipt file",
+          "note": "Note"
+        }
+      },
+      "receipt_delete": {
+        "title": "Delete receipt",
+        "description": "The selected receipt file and its metadata will be permanently deleted.",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
+      },
+      "receipt_result": {
+        "title": "Receipt updated",
+        "description": "**Datei:** {filename}\n**Zuordnung:** {target_id}\n**Status:** {status}"
+      },
+      "receipt_list": {
+        "title": "Stored receipts",
+        "description": "Es sind {receipt_count} Beleg(e) gespeichert. Wähle eine Pause oder einen Ladevorgang aus; der interne Dateiname wird nur in der Detailansicht angezeigt.",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
+      },
+      "pause_management": {
+        "title": "Pausen",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "pause_selection": "Pause auswählen und ergänzen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "pause_selection": "Eine automatisch erkannte Pause auswählen und mit Titel, Kategorie, Ort, Notiz oder Kosten ergänzen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "pause_edit": {
+        "title": "Edit pause",
+        "description": "**Journey:** {journey_id}\n\n**Pause:** {pause_id}\n**Current title:** {current_title}",
+        "data": {
+          "category": "Category",
+          "title": "Title",
+          "note": "Note",
+          "location": "Location",
+          "cost_total": "Cost",
+          "currency": "Currency",
+          "action": "Action"
+        },
+        "data_description": {
+          "category": "For example food, shopping, leisure, work, parking, overnight or other.",
+          "action": "Save changes or clear all manually maintained data for this pause."
+        }
+      },
+      "pause_result": {
+        "title": "Pause updated",
+        "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
+      },
+      "receipt_ocr": {
+        "title": "Beleg per OCR analysieren",
+        "description": "Wähle einen gespeicherten Beleg aus. Der Status am Anfang jeder Zeile zeigt, ob der Beleg bereits gelesen und mit einem Parser-Profil ausgewertet wurde. Eine erneute OCR ist weiterhin möglich.",
+        "data": {
+          "receipt_ocr_selection": "Beleg"
+        }
+      },
+      "receipt_ocr_result": {
+        "title": "OCR abgeschlossen",
+        "description": "**Dokument:** {document}\n\n**Engine:** {engine}\n**Dienstversion:** {service_version}\n**Verarbeitungsdauer:** {elapsed}\n**Durchschnittliche Sicherheit:** {confidence}\n**PDF-Seite:** {page}\n**Erkannte Zeichen:** {character_count}\n\n## Parser-Ergebnis\n\n**Profil:** {parser_profile}\n**Parser-Sicherheit:** {parser_confidence}\n**Anbieter:** {parsed_merchant}\n**Ladeort:** {parsed_station}\n**Start:** {parsed_start}\n**Ende:** {parsed_end}\n**Energie:** {parsed_energy} kWh\n**Preis pro kWh:** {parsed_price} {parsed_currency}\n**Gesamt:** {parsed_total} {parsed_currency}\n\n## Erkannter Text\n\n{raw_text}"
+      },
+      "receipt_detail": {
+        "title": "Belegdetails",
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n\n**Ladestand:** {soc}\n**Energie:** {energy}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n**OCR-Analyse:** {ocr_status}\n\n**Hinweis:** Nach der Auswahl von „Beleg im Browser öffnen“ zeigt Home Assistant einen separaten Dialog. Dort auf „Website öffnen“ klicken, um das Dokument anzuzeigen.",
+        "data": {
+          "receipt_detail_action": "Aktion"
+        }
+      },
+      "receipt_open": {
+        "title": "Beleg öffnen",
+        "description": "Klicke auf „Website öffnen“, um den ausgewählten Beleg in einem neuen Browserfenster oder Tab anzuzeigen."
+      },
+      "ocr_settings": {
+        "title": "OCR-Verbindung",
+        "description": "Ford Triplog kann Belege optional über einen externen lokalen OCR-Dienst analysieren. Ohne aktivierte OCR-Verbindung bleiben alle anderen Funktionen uneingeschränkt verfügbar.\n\nBeim Speichern wird die Verbindung über den Endpunkt `/health` geprüft.",
+        "data": {
+          "ocr_enabled": "OCR aktivieren",
+          "ocr_url": "OCR-Dienst URL",
+          "ocr_api_key": "API-Key",
+          "ocr_timeout": "Zeitüberschreitung"
+        },
+        "data_description": {
+          "ocr_enabled": "Aktiviert die Verbindung zum externen OCR-Dienst.",
+          "ocr_url": "Zum Beispiel http://192.168.1.20:9080",
+          "ocr_api_key": "Muss dem OCR_API_KEY des Containers entsprechen.",
+          "ocr_timeout": "Maximale Wartezeit für Verbindungstests und spätere OCR-Anfragen."
+        }
+      },
+      "ocr_connection_result": {
+        "title": "OCR-Verbindung gespeichert",
+        "description": "**Status:** Verbindung erfolgreich\n\n**Dienst:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Adresse:** {url}\n**Maximale Dateigröße:** {max_file_mb} MB\n**PDF-Verarbeitung:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Belegwerte übernehmen",
+        "description": "Wähle einen bereits per OCR gelesenen und erfolgreich geparsten Ladebeleg aus. Bereits übernommene Belege bleiben sichtbar und können erneut geprüft werden.",
+        "data": {
+          "receipt_apply_selection": "Beleg"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Belegwerte prüfen",
+        "description": "**Ladesitzung:** {charge_label}\n**Charge-ID:** {charge_id}\n**Parserprofil:** {profile}\n\n**Beleg-Ladeort:** {parsed_station}\n**Beleg-Start:** {parsed_start}\n**Beleg-Ende:** {parsed_end}\n\n**Abgerechnete Energie:** vorhanden {current_energy} kWh · Beleg {parsed_energy} kWh\n**Gesamtkosten:** vorhanden {current_total} {currency} · Beleg {parsed_total} {currency}\n\nDie Eingabefelder können vor dem Speichern korrigiert werden. Startzeit, Endzeit und technische Fahrzeugdaten werden in diesem Schritt nicht überschrieben.",
+        "data": {
+          "receipt_apply_energy": "Abgerechnete Energie",
+          "receipt_apply_total": "Gesamtkosten",
+          "receipt_apply_currency": "Währung"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Belegwerte übernommen",
+        "description": "**Beleg:** {document}\n**Ladesitzung:** {charge_id}\n**Parserprofil:** {profile}\n**Abgerechnete Energie:** {energy} kWh\n**Gesamtkosten:** {total} {currency}\n\nDer Beleg wurde als geprüft und übernommen markiert."
+      },
+      "charge_receipt_upload": {
+        "title": "Beleg zur Ladesitzung hinzufügen",
+        "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nNach dem Speichern wird direkt der Beleg geöffnet. Bei aktiver OCR werden Text und Parserprofil automatisch ermittelt.",
+        "data": {
+          "receipt_file": "Belegdatei",
+          "receipt_note": "Notiz"
+        },
+        "data_description": {
+          "receipt_note": "Optionaler Hinweis zum Beleg."
+        }
+      },
+      "charge_detail": {
+        "title": "Ladesitzung",
+        "description": "{date} · {location}\n\nKosten: {cost_total} {currency} · Abgerechnete Energie: {energy} kWh\n\nBelege: {receipt_count} · OCR abgeschlossen: {completed_count} · Werte übernommen: {applied_count}",
+        "menu_options": {
+          "charge_technical": "Technische Daten",
+          "charge_cost_edit": "Kosten",
+          "charge_receipts": "Belege",
+          "charge_selection": "Zurück zu den Ladevorgängen"
+        },
+        "menu_option_descriptions": {
+          "charge_technical": "Gespeicherte technische Ladedaten anzeigen.",
+          "charge_cost_edit": "Kosten und abgerechnete Energie bearbeiten.",
+          "charge_receipts": "Belege anzeigen oder einen neuen Beleg hinzufügen.",
+          "charge_selection": "Zur Auswahl der gespeicherten Ladevorgänge zurückkehren."
+        }
+      },
+      "charge_technical": {
+        "title": "Technische Daten",
+        "description": "**Charge-ID:** {charge_id}\n**Start:** {start}\n**Ende:** {end}\n**Ort:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Fahrzeugenergie:** {energy} kWh\n**Abgerechnete Energie:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Belege",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Beleg hinzufügen",
+          "charge_detail": "Zurück zur Ladesitzung",
+          "charge_receipt_list": "Belege"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
+          "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren.",
+          "charge_receipt_list": "Belege dieser Ladesitzung anzeigen und verwalten."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Belege dieser Ladesitzung",
+        "description": "Ladesitzung: {charge_id}\n\nVerknüpfte Belege: {receipt_count}\n\nMit „← Zurück“ kehrst du zum Belegmenü zurück.",
+        "data": {
+          "receipt_list_selection": "Beleg"
+        }
+      },
+      "charge_receipt_detail": {
+        "title": "Beleg",
+        "description": "**Datei:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parserprofil:** {profile}\n\n{details}",
+        "menu_options": {
+          "charge_receipt_open": "Beleg anzeigen",
+          "charge_receipt_ocr": "OCR erneut ausführen",
+          "charge_receipt_delete": "Beleg löschen",
+          "charge_receipt_list": "Zurück zu den Belegen",
+          "charge_receipt_parser_create": "Parserprofil erstellen"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Originaldatei im Browser anzeigen.",
+          "charge_receipt_ocr": "Beleg erneut analysieren und Parserwerte aktualisieren.",
+          "charge_receipt_delete": "Belegdatei und gespeicherte Metadaten löschen.",
+          "charge_receipt_list": "Zur Belegliste dieser Ladesitzung zurückkehren.",
+          "charge_receipt_parser_create": "Aus dem vorhandenen OCR-Text ein eigenes Parserprofil anlegen."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "OCR erneut ausführen",
+        "description": "Die vorhandene OCR-Analyse und das Parser-Ergebnis werden durch eine neue Analyse ersetzt."
+      },
+      "charge_receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Soll der Beleg **{filename}** dauerhaft gelöscht werden?",
+        "data": {
+          "confirm": "Löschen bestätigen"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Beleg anzeigen",
+        "description": "[Beleg in einem neuen Fenster öffnen]({receipt_url})\n\nDer Link ist 10 Minuten gültig. Mit **OK** kehrst du anschließend zum Beleg zurück."
+      },
+      "charge_receipt_parser_create": {
+        "title": "Parserprofil erstellen",
+        "description": "**Beleg:** {filename}\n\nLege ein einfaches Benutzerprofil an. Der Erkennungstext muss in künftigen Belegen dieses Typs vorkommen. Nach dem Speichern wird der vorhandene OCR-Text sofort erneut ausgewertet.\n\n**OCR-Text:**\n\n{raw_text}",
+        "data": {
+          "user_parser_name": "Profilname",
+          "user_parser_match_text": "Erkennungstext",
+          "user_parser_provider": "Fester Anbieter",
+          "user_parser_location": "Fester Ladeort",
+          "user_parser_energy": "Energie vor kWh erkennen",
+          "user_parser_duration": "Dauer HH:MM:SS erkennen",
+          "user_parser_current": "Strom vor A erkennen",
+          "user_parser_voltage": "Spannung vor V erkennen",
+          "user_parser_power": "Leistung vor kW erkennen",
+          "user_parser_temperature": "Temperatur erkennen"
+        }
+      },
+      "charge_selection": {
+        "title": "Ladevorgang auswählen",
+        "description": "Wähle einen gespeicherten Ladevorgang aus.",
+        "data": {
+          "charge_selection": "Ladevorgang"
+        },
+        "data_description": {
+          "charge_selection": "Die Liste zeigt Datum, Ort, geladene Energie und gespeicherte Kosten. Mit „← Zurück“ kehrst du zum Ladevorgangsmenü zurück."
+        }
+      },
+      "pause_selection": {
+        "title": "Pause auswählen",
+        "description": "Wähle eine der {pause_count} automatisch erkannten Pausen aus.",
+        "data": {
+          "pause_selection": "Pause"
+        },
+        "data_description": {
+          "pause_selection": "Die Liste zeigt Datum, Zeitraum, Dauer und Ort. Mit „← Zurück“ kehrst du zum Pausenmenü zurück."
+        }
+      },
+      "user_charging_site_selection": {
+        "title": "Ladeort auswählen",
+        "description": "{stored_text}\n\nMit „Zurück zu den Ladeorten“ kehrst du zum Menü zurück.",
+        "data": {
+          "user_charging_site_selection": "Ladeort"
+        }
+      },
+      "user_charging_site_new": {
+        "title": "Neuen Ladeort erstellen",
+        "description": "Einen neuen benutzerdefinierten Ladeort anlegen."
+      },
+      "charging_site_database": {
+        "title": "OpenStreetMap-Ladeorte",
+        "description": "Wähle aus, was du machen möchtest.",
+        "menu_options": {
+          "download_charging_sites": "Ladeorte herunterladen",
+          "import_charging_sites": "Datenbank importieren",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "download_charging_sites": "Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und aktivieren.",
+          "import_charging_sites": "Eine vorhandene Ford-Triplog-Ladeort-Datenbank als JSON-Datei importieren.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       }
+    },
+    "error": {
+      "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
+      "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll auf weitere Details.",
+      "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
+      "user_charging_sites_load_failed": "Die Datenbank der eigenen Ladeorte konnte nicht geladen werden.",
+      "user_charging_site_not_found": "Der ausgewählte Ladeort wurde nicht gefunden.",
+      "user_charging_site_save_failed": "Der Ladeort konnte nicht gespeichert werden.",
+      "journey_operation_failed": "Die Tour-Aktion konnte nicht ausgeführt werden.",
+      "journey_confirmation_required": "Die Aktion muss bestätigt werden.",
+      "charge_load_failed": "Unable to load archived charging sessions.",
+      "charge_none_available": "No archived charging sessions were found.",
+      "charge_not_found": "The selected charging session was not found.",
+      "charge_cost_save_failed": "Charging costs could not be saved or cleared.",
+      "receipt_target_load_failed": "Targets could not be loaded.",
+      "receipt_no_targets": "No suitable pauses or charging sessions are available.",
+      "receipt_import_failed": "The receipt could not be imported. Use PDF, JPG, PNG or WEBP up to 20 MB.",
+      "receipt_load_failed": "Receipts could not be loaded.",
+      "receipt_none_available": "No receipts are stored.",
+      "receipt_delete_failed": "The receipt could not be deleted.",
+      "receipt_not_found": "The receipt no longer exists.",
+      "pause_load_failed": "Pauses could not be loaded.",
+      "pause_none_available": "No editable pauses are available.",
+      "pause_invalid_selection": "The selected pause is invalid.",
+      "pause_journey_not_found": "The related journey was not found.",
+      "pause_save_failed": "The pause could not be saved.",
+      "receipt_ocr_failed": "Der Beleg konnte nicht analysiert werden. Prüfe das Home-Assistant- und OCR-Container-Protokoll.",
+      "ocr_invalid_url": "Die OCR-Adresse ist ungültig. Verwende eine vollständige HTTP- oder HTTPS-Adresse.",
+      "ocr_authentication_failed": "Der OCR-Dienst hat den API-Key abgelehnt.",
+      "ocr_connection_failed": "Der OCR-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
+      "ocr_invalid_response": "Der OCR-Dienst hat keine gültige Health-Antwort geliefert.",
+      "ocr_not_configured": "OCR ist nicht aktiviert oder noch nicht konfiguriert.",
+      "receipt_ocr_response_failed": "Der OCR-Dienst hat die Datei oder die Anfrage abgelehnt.",
+      "receipt_no_parsed_charge_receipts": "Es sind keine erfolgreich geparsten Ladebelege vorhanden.",
+      "receipt_not_charge": "Dieser Beleg ist keiner Ladesitzung zugeordnet.",
+      "receipt_apply_failed": "Die Belegwerte konnten nicht in die Ladesitzung übernommen werden.",
+      "receipt_no_ocr_text": "Für diesen Beleg ist kein OCR-Text gespeichert.",
+      "user_parser_required_fields": "Profilname und Erkennungstext sind erforderlich.",
+      "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
+      "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
+      "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
+    },
+    "menu": {
+      "receipt_management": "Receipt management",
+      "receipt_import_type": "Import receipt",
+      "receipt_list": "Belege anzeigen",
+      "receipt_delete": "Delete receipt",
+      "receipt_ocr": "OCR ausführen"
     }
   },
   "entity": {
     "sensor": {
       "trip_count": {
-        "name": "Trip Count"
+        "name": "Anzahl Fahrten"
       },
       "total_distance": {
-        "name": "Total Distance"
+        "name": "Gesamtdistanz"
       },
       "total_energy_used": {
-        "name": "Total Energy Used"
+        "name": "Gesamtenergieverbrauch"
       },
       "average_consumption": {
-        "name": "Average Consumption"
+        "name": "Durchschnittsverbrauch"
       },
       "total_duration": {
-        "name": "Total Duration"
+        "name": "Gesamtdauer"
       },
       "total_driving_time": {
-        "name": "Total Driving Time"
+        "name": "Gesamte Fahrzeit"
       },
       "last_distance": {
-        "name": "Last Distance"
+        "name": "Letzte Fahrtdistanz"
       },
       "last_energy_used": {
-        "name": "Last Energy Used"
+        "name": "Energieverbrauch der letzten Fahrt"
       },
       "last_consumption": {
-        "name": "Last Consumption"
+        "name": "Verbrauch der letzten Fahrt"
       },
       "last_average_speed": {
-        "name": "Last Average Speed"
+        "name": "Durchschnittsgeschwindigkeit der letzten Fahrt"
       },
       "last_duration": {
-        "name": "Last Duration"
+        "name": "Dauer der letzten Fahrt"
       },
       "last_driving_time": {
-        "name": "Last Driving Time"
+        "name": "Fahrzeit der letzten Fahrt"
       },
       "last_start_address": {
-        "name": "Last Start Address"
+        "name": "Startadresse der letzten Fahrt"
       },
       "last_destination": {
-        "name": "Last Destination"
+        "name": "Letztes Ziel"
       },
       "last_start_time": {
-        "name": "Last Start Time"
+        "name": "Startzeit der letzten Fahrt"
       },
       "last_end_time": {
-        "name": "Last End Time"
+        "name": "Endzeit der letzten Fahrt"
       },
       "last_charge_start_time": {
-        "name": "Last Charge Start Time"
+        "name": "Startzeit des letzten Ladevorgangs"
       },
       "last_charge_end_time": {
-        "name": "Last Charge End Time"
+        "name": "Endzeit des letzten Ladevorgangs"
       },
       "last_charge_start_soc": {
-        "name": "Last Charge Start SOC"
+        "name": "Ladestand zu Beginn des letzten Ladevorgangs"
       },
       "last_charge_end_soc": {
-        "name": "Last Charge End SOC"
+        "name": "Ladestand am Ende des letzten Ladevorgangs"
       },
       "last_charge_soc_added": {
-        "name": "Last Charge SOC Added"
+        "name": "Geladener Ladestand beim letzten Ladevorgang"
       },
       "last_charge_duration": {
-        "name": "Last Charge Duration"
+        "name": "Dauer des letzten Ladevorgangs"
       },
       "last_charging_location": {
-        "name": "Last Charging Location"
+        "name": "Letzter Ladeort"
+      },
+      "last_charging_site": {
+        "name": "Letzte Ladestation"
       },
       "last_trip_start_soc": {
-        "name": "Last Trip Start SOC"
+        "name": "Ladestand zu Beginn der letzten Fahrt"
       },
       "last_trip_end_soc": {
-        "name": "Last Trip End SOC"
+        "name": "Ladestand am Ende der letzten Fahrt"
       },
       "last_trip_soc_used": {
-        "name": "Last Trip SOC Used"
+        "name": "Verbrauchter Ladestand der letzten Fahrt"
       },
       "charge_count": {
-        "name": "Charge Count"
+        "name": "Anzahl Ladevorgänge"
       },
       "average_charge_soc_added": {
-        "name": "Average Charge SOC Added"
+        "name": "Durchschnittlich geladener Ladestand"
       },
       "average_charge_duration": {
-        "name": "Average Charge Duration"
+        "name": "Durchschnittliche Ladedauer"
       },
       "average_charge_start_soc": {
-        "name": "Average Charge Start SOC"
+        "name": "Durchschnittlicher Ladestand bei Ladebeginn"
       },
       "average_charge_end_soc": {
-        "name": "Average Charge End SOC"
+        "name": "Durchschnittlicher Ladestand bei Ladeende"
       },
       "average_trip_distance": {
-        "name": "Average Trip Distance"
+        "name": "Durchschnittliche Fahrtdistanz"
       },
       "average_trip_duration": {
-        "name": "Average Trip Duration"
+        "name": "Durchschnittliche Fahrtdauer"
       },
       "average_trip_energy": {
-        "name": "Average Trip Energy"
+        "name": "Durchschnittlicher Energieverbrauch pro Fahrt"
       },
       "average_trip_soc_used": {
-        "name": "Average Trip SOC Used"
+        "name": "Durchschnittlich verbrauchter Ladestand pro Fahrt"
       },
       "average_trip_consumption": {
-        "name": "Average Trip Consumption"
+        "name": "Durchschnittlicher Verbrauch pro Fahrt"
       },
-      "last_charge": {
-        "name": "Last charge"
+      "last_charge_energy": {
+        "name": "Energie der letzten Ladung"
+      },
+      "last_charge_energy_fordpass": {
+        "name": "FordPass-Energie der letzten Ladung"
+      },
+      "last_charge_energy_calculated": {
+        "name": "Berechnete Energie der letzten Ladung"
+      },
+      "last_charge_energy_source": {
+        "name": "Energiequelle der letzten Ladung"
       },
       "last_journey": {
-        "name": "Last Journey"
+        "name": "Letzte Tour"
+      },
+      "last_charge": {
+        "name": "Letzter Ladevorgang"
+      },
+      "last_journey_overview": {
+        "name": "Letzte Tour Übersicht"
+      }
+    }
+  },
+  "common": {
+    "today": "Heute",
+    "yesterday": "Gestern",
+    "unknown": "Unbekannt",
+    "no_gps_data": "Keine GPS-Daten verfügbar",
+    "charging_site_home": "Zuhause",
+    "charging_site_work": "Arbeit",
+    "charging_site_public": "Öffentlich",
+    "charging_site_private": "Privat",
+    "charging_site_dealer": "Händler",
+    "charging_site_hotel": "Hotel",
+    "charging_site_other": "Sonstige",
+    "charging_site_custom": "Benutzerdefiniert",
+    "charging_site_location": "Ladeort",
+    "charging_site_unknown_location": "Unbekannter Ladeort",
+    "charging_site_new_location": "+ Neuer Ladeort",
+    "charging_site_pending_locations": "⚠ Neue erkannte Ladeorte ({count})",
+    "charging_site_save": "Speichern",
+    "charging_site_delete": "Löschen",
+    "charging_site_step": "Schritt",
+    "charging_site_no_progress": "Noch keine Fortschrittsmeldungen.",
+    "charging_site_stored_one": "1 eigener Ladeort gespeichert.",
+    "charging_site_stored_many": "{count} eigene Ladeorte gespeichert.",
+    "charging_site_pending_one": "Es wurde 1 unbekannter Ladeort erkannt. Dieser kann jetzt als eigener Ladeort gespeichert werden.",
+    "charging_site_pending_many": "Es wurden {count} unbekannte Ladeorte erkannt. Diese können jetzt als eigene Ladeorte gespeichert werden.",
+    "charge_action_save": "Save",
+    "charge_action_clear": "Clear costs",
+    "charge_management": "Charging sessions",
+    "charge_cost": "Charging costs",
+    "charge_currency": "Currency",
+    "charge_price_per_kwh": "Price per kWh",
+    "pause_action_save": "Save",
+    "pause_action_clear": "Manuelle Angaben löschen",
+    "charge_action_add_receipt": "Beleg hinzufügen",
+    "pause_action_back": "Zurück zu den Pausen",
+    "charging_site_back": "Zurück zu den Ladeorten"
+  },
+  "services": {
+    "import_charging_sites": {
+      "name": "Ladestationen importieren",
+      "description": "Importiert eine Ladestationsdatenbank aus einer JSON-Datei im Home-Assistant-Konfigurationsverzeichnis.",
+      "fields": {
+        "file": {
+          "name": "Datei",
+          "description": "Relativer Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_ch.json."
+        }
+      }
+    },
+    "download_charging_database": {
+      "name": "Ladestationsdatenbank herunterladen",
+      "description": "Lädt die Ladestationsdatenbank für ein Land herunter, erstellt sie, importiert sie und aktiviert sie.",
+      "fields": {
+        "country": {
+          "name": "Land",
+          "description": "ISO-3166-1-Alpha-2-Ländercode, zum Beispiel CH, DE oder AT."
+        }
+      }
+    }
+  },
+  "exceptions": {
+    "json_read_failed": {
+      "message": "Die JSON-Datei konnte nicht gelesen werden: {error}"
+    },
+    "missing_country_code": {
+      "message": "Die importierte Datenbank enthält kein Feld country_code."
+    },
+    "unsupported_import_country": {
+      "message": "Die importierte Datenbank enthält den nicht unterstützten Ländercode „{country_code}“."
+    },
+    "absolute_import_path": {
+      "message": "Verwende einen relativen Pfad unterhalb des Home-Assistant-Konfigurationsverzeichnisses, zum Beispiel import/charging_sites_de.json."
+    },
+    "import_path_outside_config": {
+      "message": "Die Importdatei muss sich unterhalb des Home-Assistant-Konfigurationsverzeichnisses befinden."
+    },
+    "import_file_not_json": {
+      "message": "Die Importdatei der Ladestationsdatenbank muss eine JSON-Datei sein."
+    },
+    "import_file_not_found": {
+      "message": "Die Importdatei der Ladestationsdatenbank wurde nicht gefunden: {path}"
+    },
+    "database_invalid": {
+      "message": "Die Ladestationsdatenbank ist ungültig: {error}"
+    },
+    "database_validation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht geprüft werden: {error}"
+    },
+    "integration_not_loaded": {
+      "message": "Ford Triplog ist derzeit nicht geladen."
+    },
+    "unsupported_country": {
+      "message": "Der Ländercode „{country_code}“ wird nicht unterstützt. Unterstützte Länder: {supported}."
+    },
+    "imported_database_load_failed": {
+      "message": "Die importierte Ladestationsdatenbank konnte nicht geladen werden: {error}"
+    },
+    "database_import_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht importiert werden: {error}"
+    },
+    "database_download_failed": {
+      "message": "Das Herunterladen der Ladestationsdatenbank ist fehlgeschlagen: {error}"
+    },
+    "database_generation_failed": {
+      "message": "Die Ladestationsdatenbank konnte nicht erstellt werden: {error}"
+    }
+  },
+  "selector": {
+    "receipt_target_type": {
+      "options": {
+        "pause": "Pause",
+        "charge": "Charging session"
       }
     }
   }

@@ -18,7 +18,7 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "1.8.0"
+VERSION: Final = "1.9.0"
 
 #
 # Storage
@@ -50,12 +50,16 @@ DIAGNOSTICS_FILE: Final = "diagnostics.json"
 # Journey
 #
 
-JOURNEY_SCHEMA_VERSION: Final = 1
+JOURNEY_SCHEMA_VERSION: Final = 2
 
 JOURNEYS_DIR: Final = "journeys"
 
 CURRENT_JOURNEY_FILE: Final = "current_journey.json"
 LAST_JOURNEY_FILE: Final = "last_journey.json"
+METADATA_FILE: Final = "metadata.json"
+METADATA_SCHEMA_VERSION: Final = 1
+RECEIPTS_DIR: Final = "receipts"
+RECEIPT_MAX_SIZE_BYTES: Final = 20 * 1024 * 1024
 
 #
 # Config Flow

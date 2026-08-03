@@ -25,7 +25,8 @@ from .const import (
     LAST_JOURNEY_FILE,
     STORAGE_DIR,
 )
-from .journey import FordTriplogJourney
+from .journey import FordTriplogJourney, build_pause_id
+from .metadata_storage import FordTriplogMetadataStorage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -53,6 +54,7 @@ class FordTriplogJourneyStorage:
         self._last_journey_path = (
             self._base_directory / LAST_JOURNEY_FILE
         )
+        self._metadata_storage = FordTriplogMetadataStorage(hass)
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
@@ -63,6 +65,8 @@ class FordTriplogJourneyStorage:
             True,
             True,
         )
+        await self._metadata_storage.async_setup()
+        await self._migrate_pause_overrides_to_metadata()
 
     async def save_current_journey(
         self,
@@ -109,10 +113,22 @@ class FordTriplogJourneyStorage:
     async def save_completed_journey(
         self,
         journey: FordTriplogJourney | dict[str, Any],
+        *,
+        preserve_pause_overrides: bool = True,
     ) -> Path:
-        """Archive a completed journey and update last_journey.json."""
+        """Archive a completed journey and update last_journey.json.
+
+        Newly generated journeys inherit manual pause data from any archived
+        journey of the same day when the stable pause identifier still exists.
+        This makes pause edits survive every journey creation path, including
+        automatic rebuilds that generate a new journey identifier.
+        """
 
         data = self._normalize_journey_data(journey)
+
+        if preserve_pause_overrides:
+            data = await self._inherit_pause_overrides(data)
+
         journey_id = str(data["journey_id"]).strip()
 
         archive_path = (
@@ -236,6 +252,182 @@ class FordTriplogJourneyStorage:
         )
 
         return journeys
+
+    async def load_journey_by_id(
+        self,
+        journey_id: str,
+    ) -> FordTriplogJourney | None:
+        """Load an archived journey by its identifier."""
+
+        normalized_id = str(journey_id).strip()
+        if not normalized_id:
+            return None
+
+        path = self._journeys_directory / f"{self._safe_filename(normalized_id)}.json"
+        return await self.load_journey_file(path)
+
+    async def save_archived_journey(
+        self,
+        journey: FordTriplogJourney | dict[str, Any],
+    ) -> Path:
+        """Replace one archived journey and synchronize manual pause data.
+
+        Explicit editor changes must not be re-imported from an older duplicate
+        journey. The selected journey is therefore saved as authoritative and
+        its pause overrides are copied to other archived journeys of the same
+        day that contain the same stable pause identifiers.
+        """
+
+        data = self._normalize_journey_data(journey)
+        path = await self.save_completed_journey(
+            data,
+            preserve_pause_overrides=False,
+        )
+        await self._synchronize_pause_overrides(data)
+        return path
+
+    async def _inherit_pause_overrides(
+        self,
+        data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Apply persistent pause metadata to a generated journey."""
+
+        valid_pause_ids = self._pause_ids_from_data(data)
+        persistent = await self._metadata_storage.get_pause_overrides()
+        current = data.get("pause_overrides")
+        merged: dict[str, dict[str, Any]] = {
+            pause_id: dict(persistent[pause_id])
+            for pause_id in valid_pause_ids
+            if pause_id in persistent
+        }
+        if isinstance(current, dict):
+            merged.update(
+                {
+                    str(pause_id): dict(override)
+                    for pause_id, override in current.items()
+                    if str(pause_id) in valid_pause_ids
+                    and isinstance(override, dict)
+                }
+            )
+        data["pause_overrides"] = merged
+        return data
+
+    async def _migrate_pause_overrides_to_metadata(self) -> None:
+        """Import legacy journey-embedded overrides into metadata.json."""
+
+        collected: dict[str, dict[str, Any]] = {}
+
+        for path in await self.list_journey_files():
+            journey = await self.load_journey_file(path)
+            if journey is not None:
+                collected.update(
+                    {
+                        pause_id: dict(value)
+                        for pause_id, value in journey.pause_overrides.items()
+                        if isinstance(value, dict)
+                    }
+                )
+
+        for cache_path in (self._current_journey_path, self._last_journey_path):
+            cache_data = await self._async_load_json(cache_path)
+            if not isinstance(cache_data, dict):
+                continue
+            overrides = cache_data.get("pause_overrides")
+            if isinstance(overrides, dict):
+                collected.update(
+                    {
+                        str(pause_id): dict(value)
+                        for pause_id, value in overrides.items()
+                        if isinstance(value, dict)
+                    }
+                )
+
+        if collected:
+            changed = await self._metadata_storage.import_legacy_pause_overrides(collected)
+            if changed:
+                _LOGGER.info(
+                    "Migrated %d pause override(s) to persistent metadata",
+                    len(collected),
+                )
+
+    async def _synchronize_pause_overrides(
+        self,
+        authoritative_data: dict[str, Any],
+    ) -> None:
+        """Synchronize pause edits to duplicate journeys of the same day."""
+
+        journey_date = str(authoritative_data.get("date", "")).strip()
+        journey_id = str(authoritative_data.get("journey_id", "")).strip()
+        authoritative_ids = self._pause_ids_from_data(authoritative_data)
+        authoritative_overrides = authoritative_data.get("pause_overrides")
+        if not isinstance(authoritative_overrides, dict):
+            authoritative_overrides = {}
+
+        if not authoritative_ids:
+            return
+
+        await self._metadata_storage.synchronize_pause_overrides(
+            authoritative_ids,
+            {
+                str(pause_id): dict(value)
+                for pause_id, value in authoritative_overrides.items()
+                if isinstance(value, dict)
+            },
+        )
+
+        if not journey_date:
+            return
+
+        for path in await self.list_journey_files():
+            existing = await self.load_journey_file(path)
+            if existing is None or existing.journey_id == journey_id:
+                continue
+            if str(existing.date or "").strip() != journey_date:
+                continue
+
+            existing_ids = {
+                build_pause_id(current.item_id, following.item_id)
+                for current, following in zip(
+                    existing.items,
+                    existing.items[1:],
+                )
+            }
+            shared_ids = authoritative_ids & existing_ids
+            if not shared_ids:
+                continue
+
+            changed = False
+            for pause_id in shared_ids:
+                authoritative = authoritative_overrides.get(pause_id)
+                if isinstance(authoritative, dict):
+                    normalized = dict(authoritative)
+                    if existing.pause_overrides.get(pause_id) != normalized:
+                        existing.pause_overrides[pause_id] = normalized
+                        changed = True
+                elif pause_id in existing.pause_overrides:
+                    existing.pause_overrides.pop(pause_id, None)
+                    changed = True
+
+            if changed:
+                await self._async_write_json(path, existing.to_dict())
+
+    @staticmethod
+    def _pause_ids_from_data(data: dict[str, Any]) -> set[str]:
+        """Return stable pause identifiers represented by journey items."""
+
+        items = data.get("items")
+        if not isinstance(items, list):
+            return set()
+
+        item_ids = [
+            str(item.get("id", "")).strip()
+            for item in items
+            if isinstance(item, dict) and str(item.get("id", "")).strip()
+        ]
+        return {
+            build_pause_id(current_id, following_id)
+            for current_id, following_id in zip(item_ids, item_ids[1:])
+        }
 
     async def delete_journey(
         self,

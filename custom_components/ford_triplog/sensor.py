@@ -50,6 +50,7 @@ from .icons import (
 
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
+from .journey import build_pause_id
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -559,6 +560,33 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         total_pause_seconds = 0
         items = list(journey.items)
 
+        # Short gaps directly before or after a charging session are
+        # operational buffers (parking, plugging in, unplugging, departure),
+        # not separate Journey pauses. Keep the real charging duration
+        # unchanged and expose the buffers on the charge timeline entry.
+        charge_buffers: dict[int, dict[str, int]] = {}
+        charging_buffer_limit_seconds = 180
+
+        for gap_index in range(len(items) - 1):
+            current_item = items[gap_index]
+            following_item = items[gap_index + 1]
+            gap_seconds = self._seconds_between(
+                current_item.end_time,
+                following_item.start_time,
+            )
+
+            if gap_seconds <= 0 or gap_seconds > charging_buffer_limit_seconds:
+                continue
+
+            if following_item.item_type == "charge":
+                charge_buffers.setdefault(gap_index + 1, {})[
+                    "arrival_buffer_seconds"
+                ] = gap_seconds
+            elif current_item.item_type == "charge":
+                charge_buffers.setdefault(gap_index, {})[
+                    "departure_buffer_seconds"
+                ] = gap_seconds
+
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
@@ -680,6 +708,19 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     2,
                 )
 
+                buffers = charge_buffers.get(index, {})
+                arrival_buffer_seconds = buffers.get(
+                    "arrival_buffer_seconds", 0
+                )
+                departure_buffer_seconds = buffers.get(
+                    "departure_buffer_seconds", 0
+                )
+                total_stop_duration_seconds = (
+                    duration_seconds
+                    + arrival_buffer_seconds
+                    + departure_buffer_seconds
+                )
+
                 entry = {
                     "type": "charge",
                     "id": item.item_id,
@@ -689,6 +730,26 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
+                    "arrival_buffer_seconds": arrival_buffer_seconds or None,
+                    "arrival_buffer": (
+                        format_duration(arrival_buffer_seconds)
+                        if arrival_buffer_seconds
+                        else None
+                    ),
+                    "departure_buffer_seconds": (
+                        departure_buffer_seconds or None
+                    ),
+                    "departure_buffer": (
+                        format_duration(departure_buffer_seconds)
+                        if departure_buffer_seconds
+                        else None
+                    ),
+                    "total_stop_duration_seconds": (
+                        total_stop_duration_seconds
+                    ),
+                    "total_stop_duration": format_duration(
+                        total_stop_duration_seconds
+                    ),
                     **location_details,
                     "display_location": location_details.get("location"),
                     "start_soc": start_soc,
@@ -739,14 +800,62 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if pause_seconds <= 0:
                 continue
 
+            # Gaps up to three minutes adjacent to a charge were already
+            # assigned to that charging entry as arrival/departure buffers.
+            if (
+                pause_seconds <= charging_buffer_limit_seconds
+                and (
+                    item.item_type == "charge"
+                    or next_item.item_type == "charge"
+                )
+            ):
+                continue
+
             total_pause_seconds += pause_seconds
             pause_location = self._item_location_details(
                 item,
                 endpoint="end",
             )
 
+            pause_id = build_pause_id(item.item_id, next_item.item_id)
+            override = getattr(journey, "pause_overrides", {}).get(
+                pause_id, {}
+            )
+            if not isinstance(override, dict):
+                override = {}
+
+            pause_soc_start = self._optional_number(
+                getattr(item, "end_soc", None),
+                1,
+            )
+            pause_soc_end = self._optional_number(
+                getattr(next_item, "start_soc", None),
+                1,
+            )
+            pause_soc_delta = None
+            battery_energy_change_kwh = None
+
+            if pause_soc_start is not None and pause_soc_end is not None:
+                pause_soc_delta = round(
+                    pause_soc_end - pause_soc_start,
+                    1,
+                )
+
+                battery_capacity_kwh = self._optional_number(
+                    getattr(journey, "battery_capacity_kwh", None),
+                    2,
+                )
+                if battery_capacity_kwh is not None:
+                    battery_energy_change_kwh = round(
+                        pause_soc_delta
+                        / 100.0
+                        * battery_capacity_kwh,
+                        2,
+                    )
+
             pause_entry = {
                 "type": "pause",
+                "id": pause_id,
                 "start_time": item.end_time,
                 "end_time": next_item.start_time,
                 "start_time_formatted": self._format_clock(item.end_time),
@@ -758,7 +867,26 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "after": item.item_type,
                 "before": next_item.item_type,
                 **pause_location,
+                "soc_start": pause_soc_start,
+                "soc_end": pause_soc_end,
+                "soc_delta": pause_soc_delta,
+                "battery_energy_change_kwh": (
+                    battery_energy_change_kwh
+                ),
+                "category": override.get("category"),
+                "title": override.get("title"),
+                "note": override.get("note"),
+                "cost_total": override.get("cost_total"),
+                "currency": override.get("currency"),
+                "edited": bool(override),
+                "updated_at": override.get("updated_at"),
             }
+
+            manual_location = override.get("location")
+            if manual_location:
+                pause_entry["location"] = manual_location
+                pause_entry["display_location"] = manual_location
+                pause_entry["location_source"] = "manual"
 
             timeline.append(
                 {

@@ -21,8 +21,13 @@ Changes:
 
 from __future__ import annotations
 
+import re
+
+import logging
+
 import asyncio
-from datetime import datetime
+from datetime import datetime, timedelta
+from pathlib import Path
 from time import perf_counter
 from typing import Any
 
@@ -30,6 +35,7 @@ import voluptuous as vol
 
 from homeassistant import config_entries
 from homeassistant.components.file_upload import process_uploaded_file
+from homeassistant.components.http.auth import async_sign_path
 from homeassistant.config_entries import (
     ConfigEntry,
     ConfigFlowResult,
@@ -38,12 +44,21 @@ from homeassistant.config_entries import (
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers import selector
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.network import NoURLAvailableError, get_url
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.util import dt as dt_util
 
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
+from .receipt_storage import FordTriplogReceiptStorage
+from .ocr_client import (
+    FordTriplogOCRAuthenticationError,
+    FordTriplogOCRClient,
+    FordTriplogOCRConnectionError,
+    FordTriplogOCRResponseError,
+)
 
 from .services import (
     async_download_charging_database,
@@ -73,6 +88,7 @@ from .const import (
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
+CHARGING_SITE_DATABASE_BACK = "__back__"
 CONF_USER_CHARGING_SITE_SELECTION = "user_charging_site_selection"
 CONF_USER_CHARGING_SITE_NAME = "name"
 CONF_USER_CHARGING_SITE_STREET = "street"
@@ -94,6 +110,7 @@ CONF_USER_CHARGING_SITE_NOTES = "notes"
 CONF_USER_CHARGING_SITE_ACTION = "action"
 USER_CHARGING_SITE_NEW = "__new__"
 USER_CHARGING_SITE_PENDING = "__pending__"
+USER_CHARGING_SITE_BACK = "__back__"
 
 CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
@@ -114,7 +131,55 @@ CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
 
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
+CHARGE_ACTION_ADD_RECEIPT = "add_receipt"
 
+CONF_PAUSE_SELECTION = "pause_selection"
+CONF_PAUSE_CATEGORY = "category"
+CONF_PAUSE_TITLE = "title"
+CONF_PAUSE_NOTE = "note"
+CONF_PAUSE_LOCATION = "location"
+CONF_PAUSE_COST_TOTAL = "cost_total"
+CONF_PAUSE_CURRENCY = "currency"
+CONF_PAUSE_ACTION = "action"
+
+PAUSE_ACTION_SAVE = "save"
+PAUSE_ACTION_CLEAR = "clear"
+PAUSE_ACTION_BACK = "back"
+SELECTION_BACK = "__back__"
+
+CONF_RECEIPT_TARGET_TYPE = "target_type"
+CONF_RECEIPT_TARGET = "target"
+CONF_RECEIPT_FILE = "receipt_file"
+CONF_RECEIPT_NOTE = "note"
+CONF_RECEIPT_SELECTION = "receipt_selection"
+CONF_RECEIPT_OCR_SELECTION = "receipt_ocr_selection"
+CONF_RECEIPT_LIST_SELECTION = "receipt_list_selection"
+CONF_RECEIPT_APPLY_SELECTION = "receipt_apply_selection"
+CONF_RECEIPT_APPLY_ENERGY = "receipt_apply_energy"
+CONF_RECEIPT_APPLY_TOTAL = "receipt_apply_total"
+CONF_RECEIPT_APPLY_CURRENCY = "receipt_apply_currency"
+CONF_USER_PARSER_NAME = "user_parser_name"
+CONF_USER_PARSER_MATCH_TEXT = "user_parser_match_text"
+CONF_USER_PARSER_PROVIDER = "user_parser_provider"
+CONF_USER_PARSER_LOCATION = "user_parser_location"
+CONF_USER_PARSER_ENERGY = "user_parser_energy"
+CONF_USER_PARSER_DURATION = "user_parser_duration"
+CONF_USER_PARSER_CURRENT = "user_parser_current"
+CONF_USER_PARSER_VOLTAGE = "user_parser_voltage"
+CONF_USER_PARSER_POWER = "user_parser_power"
+CONF_USER_PARSER_TEMPERATURE = "user_parser_temperature"
+CONF_OCR_ENABLED = "ocr_enabled"
+CONF_OCR_URL = "ocr_url"
+CONF_OCR_API_KEY = "ocr_api_key"
+CONF_OCR_TIMEOUT = "ocr_timeout"
+CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
+RECEIPT_DETAIL_OPEN = "open"
+RECEIPT_DETAIL_BACK = "back"
+RECEIPT_TARGET_PAUSE = "pause"
+RECEIPT_TARGET_CHARGE = "charge"
+
+
+_LOGGER = logging.getLogger(__name__)
 
 class FordTriplogConfigFlow(
     config_entries.ConfigFlow,
@@ -214,6 +279,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_charge_id: str | None = None
         self._charge_result: dict[str, str] = {}
         self._charge_translations: dict[str, str] | None = None
+        self._selected_pause_journey_id: str | None = None
+        self._selected_pause_id: str | None = None
+        self._pause_result: dict[str, str] = {}
+        self._pause_translations: dict[str, str] | None = None
+        self._receipt_target_type: str | None = None
+        self._receipt_result: dict[str, str] = {}
+        self._selected_receipt_id: str | None = None
+        self._selected_charge_receipt_action: str | None = None
+        self._selected_receipt_url: str | None = None
+        self._receipt_ocr_result: dict[str, str] = {}
+        self._ocr_connection_result: dict[str, str] = {}
+        self._selected_apply_receipt_id: str | None = None
+        self._receipt_apply_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -225,10 +303,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="init",
             menu_options=[
                 "settings",
-                "user_charging_sites",
-                "download_charging_sites",
                 "journey_management",
+                "pause_management",
                 "charge_management",
+                    "user_charging_sites",
+                "charging_site_database",
             ],
         )
 
@@ -254,6 +333,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "clear": translations.get(
                 f"component.{DOMAIN}.common.charge_action_clear",
                 "Clear costs",
+            ),
+            "add_receipt": translations.get(
+                f"component.{DOMAIN}.common.charge_action_add_receipt",
+                "Add receipt",
             ),
         }
 
@@ -283,6 +366,20 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
+        """Show charging-session navigation."""
+
+        return self.async_show_menu(
+            step_id="charge_management",
+            menu_options=[
+                "charge_selection",
+                "init",
+            ],
+        )
+
+    async def async_step_charge_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """Select one archived charging session."""
 
         errors: dict[str, str] = {}
@@ -293,22 +390,30 @@ class FordTriplogOptionsFlow(OptionsFlow):
             charges = []
             errors["base"] = "charge_load_failed"
 
-        if not charges and not errors:
-            errors["base"] = "charge_none_available"
-
-        if user_input is not None and not errors:
-            self._selected_charge_id = str(
-                user_input[CONF_CHARGE_SELECTION]
+        if user_input is not None:
+            selected_charge = str(
+                user_input.get(CONF_CHARGE_SELECTION) or ""
             ).strip()
-            return await self.async_step_charge_cost_edit()
+            if selected_charge == SELECTION_BACK:
+                return await self.async_step_charge_management()
+
+            if not errors and selected_charge:
+                self._selected_charge_id = selected_charge
+                return await self.async_step_charge_detail()
 
         options = [
             selector.SelectOptionDict(
-                value=str(charge.charge_id),
-                label=self._format_charge_label(charge),
-            )
-            for charge in charges
-            if charge.charge_id
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=self._format_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ],
         ]
 
         schema: dict[Any, Any] = {}
@@ -327,11 +432,190 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="charge_management",
+            step_id="charge_selection",
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
-                "charge_count": str(len(options)),
+                "charge_count": str(max(0, len(options) - 1)),
+            },
+        )
+
+    async def async_step_charge_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the selected charging session as a compact navigation hub."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        all_receipts = await self._get_receipt_storage().async_list()
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
+
+        receipt_count = len(receipts)
+        completed_count = sum(
+            1
+            for receipt in receipts
+            if str(receipt.get("ocr_status") or "") == "completed"
+        )
+        applied_count = sum(
+            1
+            for receipt in receipts
+            if bool(receipt.get("parser_confirmed", False))
+        )
+
+        self._charge_detail_placeholders = {
+            "date": self._format_charge_datetime(charge.start_time),
+            "location": self._charge_location(charge),
+            "energy": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+            "cost_total": self._format_optional_number(
+                getattr(charge, "cost_total", None),
+                2,
+            ),
+            "currency": str(getattr(charge, "currency", None) or "CHF"),
+            "receipt_count": str(receipt_count),
+            "completed_count": str(completed_count),
+            "applied_count": str(applied_count),
+        }
+
+        return self.async_show_menu(
+            step_id="charge_detail",
+            menu_options=[
+                "charge_technical",
+                "charge_cost_edit",
+                "charge_receipts",
+                "charge_selection",
+            ],
+            description_placeholders=self._charge_detail_placeholders,
+        )
+
+    async def async_step_charge_technical(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show read-only technical charging-session details."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            return self.async_show_form(
+                step_id="charge_technical",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        if user_input is not None:
+            return await self.async_step_charge_detail()
+
+        placeholders = {
+            "charge_id": str(charge.charge_id or ""),
+            "start": self._format_charge_datetime(charge.start_time),
+            "end": self._format_charge_datetime(charge.end_time),
+            "location": self._charge_location(charge),
+            "soc_start": self._format_optional_number(
+                getattr(charge, "soc_start", None),
+                0,
+            ),
+            "soc_end": self._format_optional_number(
+                getattr(charge, "soc_end", None),
+                0,
+            ),
+            "energy": self._format_optional_number(
+                getattr(charge, "energy_kwh", None),
+                3,
+            ),
+            "energy_billed": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="charge_technical",
+            data_schema=vol.Schema({}),
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_charge_receipts(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt actions for the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+
+        if user_input is not None:
+            return await self.async_step_charge_detail()
+
+        all_receipts = await self._get_receipt_storage().async_list()
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
+
+        if receipts:
+            lines = []
+            for receipt in receipts[:10]:
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+                lines.append(
+                    f"{filename} · "
+                    f"{self._format_receipt_processing_status(receipt)}"
+                )
+            receipt_summary = "\n".join(lines)
+            if len(receipts) > 10:
+                receipt_summary += f"\n… und {len(receipts) - 10} weitere"
+        else:
+            receipt_summary = "Noch kein Beleg vorhanden"
+
+        return self.async_show_menu(
+            step_id="charge_receipts",
+            menu_options=[
+                "charge_receipt_upload",
+                "charge_receipt_list",
+                "charge_detail",
+            ],
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+                "receipt_summary": receipt_summary,
+                "ocr_status": (
+                    "aktiv"
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "deaktiviert"
+                ),
             },
         )
 
@@ -342,7 +626,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Edit manual costs for the selected charging session."""
 
         if not self._selected_charge_id:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_selection()
 
         manager = self._get_charge_manager()
         charge_text = await self._async_get_charge_translations()
@@ -469,7 +753,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             2,
                         ),
                     }
-                    self._selected_charge_id = None
                     return await self.async_step_charge_cost_result()
 
         default_currency = str(charge.currency or "CHF").upper()
@@ -602,6 +885,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                     value=CHARGE_ACTION_CLEAR,
                                     label=charge_text["clear"],
                                 ),
+                                selector.SelectOptionDict(
+                                    value=CHARGE_ACTION_ADD_RECEIPT,
+                                    label=charge_text["add_receipt"],
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -687,6 +974,743 @@ class FordTriplogOptionsFlow(OptionsFlow):
             },
         )
 
+    async def async_step_charge_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show only receipts assigned to the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+
+        errors: dict[str, str] = {}
+
+        try:
+            all_receipts = await self._get_receipt_storage().async_list()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            _LOGGER.exception(
+                "Unable to load receipts for charge: charge_id=%s",
+                self._selected_charge_id,
+            )
+            all_receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('original_filename') or receipt.get('filename') or receipt.get('receipt_id')}"
+                ),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+
+        options.insert(
+            0,
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+        )
+
+        if user_input is not None:
+            selected_receipt = str(
+                user_input.get(CONF_RECEIPT_LIST_SELECTION) or ""
+            )
+            if selected_receipt == SELECTION_BACK:
+                return await self.async_step_charge_receipts()
+
+            if not errors and selected_receipt:
+                self._selected_receipt_id = selected_receipt
+                return await self.async_step_charge_receipt_detail()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_LIST_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="charge_receipt_list",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={
+                "charge_id": self._selected_charge_id,
+                "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_charge_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show actions for one receipt of the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            self._selected_receipt_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        if (
+            str(receipt.get("target_type") or "") != RECEIPT_TARGET_CHARGE
+            or str(receipt.get("target_id") or "")
+            != self._selected_charge_id
+        ):
+            self._selected_receipt_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_charge"},
+            )
+
+        parser_result = receipt.get("parser_result", {})
+        if not isinstance(parser_result, dict):
+            parser_result = {}
+
+        fields = parser_result.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
+
+        ocr_status = str(
+            receipt.get("ocr_status") or "not_started"
+        ).lower()
+        ocr_status_text = {
+            "completed": "Abgeschlossen",
+            "running": "Läuft",
+            "failed": "Fehlgeschlagen",
+            "not_started": "Noch nicht ausgeführt",
+        }.get(ocr_status, ocr_status)
+
+        detail_lines: list[str] = []
+
+        provider = (
+            fields.get("merchant")
+            or fields.get("provider")
+        )
+        if provider:
+            detail_lines.append(f"Anbieter: {provider}")
+
+        station = fields.get("station")
+        if station:
+            detail_lines.append(f"Ladeort: {station}")
+
+        energy = fields.get("energy_kwh")
+        if isinstance(energy, (int, float)):
+            detail_lines.append(f"Energie: {float(energy):.3f} kWh")
+
+        duration_seconds = fields.get("duration_seconds")
+        if isinstance(duration_seconds, (int, float)):
+            total_seconds = int(duration_seconds)
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            detail_lines.append(
+                f"Dauer: {hours:02d}:{minutes:02d}:{seconds:02d}"
+            )
+
+        current_a = fields.get("current_limit_a")
+        if isinstance(current_a, (int, float)):
+            detail_lines.append(f"Strom: {float(current_a):g} A")
+
+        voltage_v = fields.get("voltage_v")
+        if isinstance(voltage_v, (int, float)):
+            detail_lines.append(f"Spannung: {float(voltage_v):g} V")
+
+        power_kw = fields.get("power_kw")
+        if isinstance(power_kw, (int, float)):
+            detail_lines.append(f"Leistung: {float(power_kw):g} kW")
+
+        temperature_c = fields.get("temperature_c")
+        if isinstance(temperature_c, (int, float)):
+            detail_lines.append(
+                f"Temperatur: {float(temperature_c):g} °C"
+            )
+
+        price_per_kwh = fields.get("price_per_kwh")
+        currency = str(fields.get("currency") or "CHF")
+        if isinstance(price_per_kwh, (int, float)):
+            detail_lines.append(
+                f"Preis pro kWh: {float(price_per_kwh):.3f} {currency}"
+            )
+
+        total = (
+            fields.get("amount_payable")
+            if fields.get("amount_payable") is not None
+            else fields.get("total")
+        )
+        if isinstance(total, (int, float)):
+            detail_lines.append(
+                f"Gesamt: {float(total):.2f} {currency}"
+            )
+
+        if not detail_lines:
+            detail_lines.append("Keine Parserwerte vorhanden")
+
+        placeholders = {
+            "filename": str(
+                receipt.get("original_filename")
+                or receipt.get("filename")
+                or "Beleg"
+            ),
+            "status": self._format_receipt_processing_status(receipt),
+            "ocr_status": ocr_status_text,
+            "profile": str(
+                parser_result.get("profile_name")
+                or "Kein passendes Profil"
+            ),
+            "details": "\n".join(detail_lines),
+        }
+
+        menu_options = ["charge_receipt_open"]
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+            menu_options.append("charge_receipt_ocr")
+        if (
+            str(receipt.get("ocr_status") or "") == "completed"
+            and str(receipt.get("parse_status") or "") != "parsed"
+        ):
+            menu_options.append("charge_receipt_parser_create")
+        menu_options.extend(
+            [
+                "charge_receipt_delete",
+                "charge_receipt_list",
+            ]
+        )
+
+        return self.async_show_menu(
+            step_id="charge_receipt_detail",
+            menu_options=menu_options,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_charge_receipt_open(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show a signed receipt link without leaving the options flow."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        if user_input is not None:
+            return await self.async_step_charge_receipt_detail()
+
+        receipt_path = (
+            f"/api/ford_triplog/receipts/{self._selected_receipt_id}"
+        )
+        signed_path = async_sign_path(
+            self.hass,
+            receipt_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=True,
+            ).rstrip("/")
+            receipt_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            receipt_url = signed_path
+
+        return self.async_show_form(
+            step_id="charge_receipt_open",
+            data_schema=vol.Schema({}),
+            description_placeholders={
+                "receipt_url": receipt_url,
+            },
+        )
+
+    async def async_step_charge_receipt_ocr(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Run OCR again for the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                receipt = await self._get_receipt_storage().async_analyze(
+                    self._selected_receipt_id,
+                    self._get_ocr_client(),
+                )
+            except FordTriplogOCRAuthenticationError:
+                _LOGGER.exception(
+                    "Charge receipt OCR authentication failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "ocr_authentication_failed"
+            except FordTriplogOCRConnectionError:
+                _LOGGER.exception(
+                    "Charge receipt OCR connection failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "ocr_connection_failed"
+            except FordTriplogOCRResponseError:
+                _LOGGER.exception(
+                    "Charge receipt OCR response failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_ocr_response_failed"
+            except Exception:
+                _LOGGER.exception(
+                    "Charge receipt OCR failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_ocr_failed"
+            else:
+                return await self.async_step_charge_receipt_detail()
+
+        return self.async_show_form(
+            step_id="charge_receipt_ocr",
+            data_schema=vol.Schema({}),
+            errors=errors,
+        )
+
+    async def async_step_charge_receipt_parser_create(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create a basic user parser profile from the selected OCR receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            return await self.async_step_charge_receipt_list()
+
+        ocr_result = receipt.get("ocr_result", {})
+        if not isinstance(ocr_result, dict):
+            ocr_result = {}
+        raw_text = str(ocr_result.get("raw_text") or "").strip()
+
+        if not raw_text:
+            return self.async_show_form(
+                step_id="charge_receipt_parser_create",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_no_ocr_text"},
+            )
+
+        lines = [
+            line.strip()
+            for line in raw_text.splitlines()
+            if line.strip()
+        ]
+        suggested_match = next(
+            (
+                line
+                for line in lines
+                if len(line) >= 4
+                and not re.fullmatch(r"[\d.,:%°A-Za-z+-]+", line)
+            ),
+            lines[0] if lines else "",
+        )
+        if "EV Charger" in raw_text:
+            suggested_match = "EV Charger"
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            name = str(
+                user_input.get(CONF_USER_PARSER_NAME) or ""
+            ).strip()
+            match_text = str(
+                user_input.get(CONF_USER_PARSER_MATCH_TEXT) or ""
+            ).strip()
+            provider = str(
+                user_input.get(CONF_USER_PARSER_PROVIDER) or ""
+            ).strip()
+            location = str(
+                user_input.get(CONF_USER_PARSER_LOCATION) or ""
+            ).strip()
+
+            if not name or not match_text:
+                errors["base"] = "user_parser_required_fields"
+            elif match_text.casefold() not in raw_text.casefold():
+                errors["base"] = "user_parser_match_not_found"
+            else:
+                profile_id = (
+                    "user_"
+                    + re.sub(
+                        r"[^a-z0-9]+",
+                        "_",
+                        name.casefold(),
+                    ).strip("_")
+                )
+                fields: dict[str, Any] = {}
+
+                if provider:
+                    fields["provider"] = {
+                        "method": "fixed",
+                        "value": provider,
+                    }
+                    fields["merchant"] = {
+                        "method": "fixed",
+                        "value": provider,
+                    }
+                if location:
+                    fields["station"] = {
+                        "method": "fixed",
+                        "value": location,
+                    }
+
+                if bool(user_input.get(CONF_USER_PARSER_ENERGY, True)):
+                    fields["energy_kwh"] = {
+                        "patterns": [
+                            r"([\d.,]+)\s*kWh\b"
+                        ],
+                        "transform": "decimal",
+                        "required": True,
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_DURATION, True)):
+                    fields["duration_seconds"] = {
+                        "patterns": [
+                            r"\b(\d{1,2}:\d{2}:\d{2})\b"
+                        ],
+                        "transform": "duration_hhmmss",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_CURRENT, True)):
+                    fields["current_limit_a"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*A\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_VOLTAGE, True)):
+                    fields["voltage_v"] = {
+                        "patterns": [
+                            r"(?:C:\s*)?([\d.,]+)\s*V\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_POWER, True)):
+                    fields["power_kw"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*kW\b"
+                        ],
+                        "transform": "decimal",
+                    }
+                if bool(user_input.get(CONF_USER_PARSER_TEMPERATURE, True)):
+                    fields["temperature_c"] = {
+                        "patterns": [
+                            r"\b([\d.,]+)\s*[°℃]\s*C?\b"
+                        ],
+                        "transform": "decimal",
+                    }
+
+                profile = {
+                    "schema": 1,
+                    "profile_id": profile_id,
+                    "name": name,
+                    "version": "1.0",
+                    "country": str(self.hass.config.country or ""),
+                    "status": "user",
+                    "priority": 200,
+                    "match_threshold": 1.0,
+                    "match": {
+                        "required_contains": [match_text],
+                        "optional_contains": [],
+                    },
+                    "fields": fields,
+                }
+
+                try:
+                    await self._get_receipt_storage().async_create_user_parser_profile(
+                        profile
+                    )
+                    updated = await self._get_receipt_storage().async_reparse(
+                        self._selected_receipt_id
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "Unable to create user parser profile: "
+                        "receipt_id=%s profile_id=%s",
+                        self._selected_receipt_id,
+                        profile_id,
+                    )
+                    errors["base"] = "user_parser_create_failed"
+                else:
+                    if str(updated.get("parse_status") or "") != "parsed":
+                        errors["base"] = "user_parser_test_failed"
+                    else:
+                        return await self.async_step_charge_receipt_detail()
+
+        return self.async_show_form(
+            step_id="charge_receipt_parser_create",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_PARSER_NAME,
+                        default="Mobile Wallbox Zuhause",
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_MATCH_TEXT,
+                        default=suggested_match,
+                    ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_USER_PARSER_PROVIDER,
+                        default="Mobile Wallbox",
+                    ): selector.TextSelector(),
+                    vol.Optional(
+                        CONF_USER_PARSER_LOCATION,
+                        default="Home",
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_ENERGY,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_DURATION,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_CURRENT,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_VOLTAGE,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_POWER,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_USER_PARSER_TEMPERATURE,
+                        default=True,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                ),
+                "raw_text": raw_text[:2000],
+            },
+        )
+
+    async def async_step_charge_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Delete the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        errors: dict[str, str] = {}
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            self._selected_receipt_id = None
+            return await self.async_step_charge_receipt_list()
+
+        if user_input is not None:
+            confirmed = bool(user_input.get("confirm", False))
+            if not confirmed:
+                return await self.async_step_charge_receipt_detail()
+
+            try:
+                deleted = await self._get_receipt_storage().async_remove(
+                    self._selected_receipt_id
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Unable to delete charge receipt: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if not deleted:
+                    errors["base"] = "receipt_delete_failed"
+                else:
+                    self._selected_receipt_id = None
+                    return await self.async_step_charge_receipt_list()
+
+        return self.async_show_form(
+            step_id="charge_receipt_delete",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "confirm",
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+            },
+        )
+
+    async def async_step_charge_receipt_upload(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Attach a receipt to the currently selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_selection()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_upload",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            charge_id = self._selected_charge_id
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=RECEIPT_TARGET_CHARGE,
+                        target_id=charge_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                _LOGGER.exception(
+                    "Unable to attach receipt to charge: charge_id=%s",
+                    charge_id,
+                )
+                errors["base"] = "receipt_import_failed"
+            else:
+                receipt_id = str(receipt.get("receipt_id") or "")
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+
+                if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    self._selected_receipt_id = receipt_id
+                    return await self.async_step_charge_receipt_detail()
+
+                try:
+                    analyzed = await self._get_receipt_storage().async_analyze(
+                        receipt_id,
+                        self._get_ocr_client(),
+                    )
+                except (
+                    FordTriplogOCRAuthenticationError,
+                    FordTriplogOCRConnectionError,
+                    FordTriplogOCRResponseError,
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception(
+                        "Automatic receipt OCR failed after upload: "
+                        "receipt_id=%s charge_id=%s",
+                        receipt_id,
+                        charge_id,
+                    )
+                    self._selected_receipt_id = receipt_id
+                    return await self.async_step_charge_receipt_detail()
+
+                if str(analyzed.get("parse_status") or "") == "parsed":
+                    self._selected_receipt_id = receipt_id
+                    self._selected_apply_receipt_id = receipt_id
+                    return await self.async_step_receipt_apply_edit()
+
+                self._selected_receipt_id = receipt_id
+                return await self.async_step_charge_receipt_detail()
+
+        return self.async_show_form(
+            step_id="charge_receipt_upload",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_RECEIPT_FILE): selector.FileSelector(
+                        selector.FileSelectorConfig(
+                            accept=(
+                                ".pdf,.jpg,.jpeg,.png,.webp,"
+                                "application/pdf,image/jpeg,image/png,image/webp"
+                            )
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_RECEIPT_NOTE,
+                        default="",
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_id": str(charge.charge_id or ""),
+                "date": self._format_charge_datetime(charge.start_time),
+                "location": self._charge_location(charge),
+                "ocr_status": (
+                    "aktiv – Beleg wird automatisch analysiert"
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "deaktiviert – Beleg wird nur gespeichert"
+                ),
+            },
+        )
+
     async def async_step_charge_cost_result(
         self,
         user_input: dict[str, Any] | None = None,
@@ -694,7 +1718,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the result of a charging-cost operation."""
 
         if user_input is not None:
-            return await self.async_step_charge_management()
+            return await self.async_step_charge_detail()
 
         return self.async_show_form(
             step_id="charge_cost_result",
@@ -835,6 +1859,1623 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return "—"
 
 
+
+    async def _async_get_pause_translations(self) -> dict[str, str]:
+        """Load Pause Editor translations once for this options flow."""
+
+        if self._pause_translations is not None:
+            return self._pause_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+
+        self._pause_translations = {
+            "save": translations.get(
+                f"component.{DOMAIN}.common.pause_action_save",
+                "Save",
+            ),
+            "clear": translations.get(
+                f"component.{DOMAIN}.common.pause_action_clear",
+                "Clear",
+            ),
+            "back": translations.get(
+                f"component.{DOMAIN}.common.pause_action_back",
+                "Back to pauses",
+            ),
+        }
+
+        return self._pause_translations
+
+    def _get_journey_storage(self):
+        """Return Journey storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("journey_storage")
+
+        if storage is None:
+            raise HomeAssistantError(
+                "Journey storage is not initialized"
+            )
+
+        return storage
+
+    @staticmethod
+    def _pause_location(current: Any, following: Any) -> str:
+        """Return the most useful automatic location for a pause."""
+
+        return str(
+            getattr(current, "end_location", None)
+            or getattr(current, "end_address", None)
+            or getattr(following, "start_location", None)
+            or getattr(following, "start_address", None)
+            or "—"
+        )
+
+    @staticmethod
+    def _pause_time(value: Any) -> str:
+        """Format one ISO timestamp for a compact selection label."""
+
+        if not value:
+            return "—"
+
+        try:
+            return datetime.fromisoformat(str(value)).strftime("%H:%M")
+        except ValueError:
+            return str(value)
+
+    async def _async_get_pause_entries(self) -> list[dict[str, Any]]:
+        """Return editable pauses from all archived journeys."""
+
+        from .journey import build_pause_id
+
+        entries: list[dict[str, Any]] = []
+        journeys = await self._get_journey_storage().get_all_journeys()
+
+        for journey in reversed(journeys):
+            for current, following in zip(journey.items, journey.items[1:]):
+                if not current.end_time or not following.start_time:
+                    continue
+
+                try:
+                    start = datetime.fromisoformat(current.end_time)
+                    end = datetime.fromisoformat(following.start_time)
+                    duration_seconds = max(0, int((end - start).total_seconds()))
+                except ValueError:
+                    duration_seconds = 0
+
+                if duration_seconds <= 0:
+                    continue
+
+                # Short gaps of up to three minutes directly before or after
+                # a charging session are charging buffers, not editable
+                # Journey pauses. Keep the Pause Editor consistent with the
+                # Journey timeline and hide these entries here as well.
+                if (
+                    duration_seconds <= 180
+                    and (
+                        current.item_type == "charge"
+                        or following.item_type == "charge"
+                    )
+                ):
+                    continue
+
+                pause_id = build_pause_id(current.item_id, following.item_id)
+                override = dict(journey.pause_overrides.get(pause_id, {}))
+                location = override.get("location") or self._pause_location(
+                    current,
+                    following,
+                )
+                title = override.get("title")
+                date_text = str(journey.date or "—")
+                time_text = (
+                    f"{self._pause_time(current.end_time)}–"
+                    f"{self._pause_time(following.start_time)}"
+                )
+                minutes = round(duration_seconds / 60)
+                label_parts = [date_text, time_text, f"{minutes} min", str(location)]
+                if title:
+                    label_parts.append(str(title))
+
+                entries.append(
+                    {
+                        "value": f"{journey.journey_id}::{pause_id}",
+                        "label": " · ".join(label_parts),
+                        "journey_id": journey.journey_id,
+                        "pause_id": pause_id,
+                        "date": date_text,
+                        "start_time": self._pause_time(current.end_time),
+                        "title": str(title or ""),
+                        "location": str(location or "—"),
+                        "cost_total": override.get("cost_total"),
+                        "currency": str(override.get("currency") or ""),
+                    }
+                )
+
+        return entries
+
+    async def async_step_pause_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show pause navigation."""
+
+        return self.async_show_menu(
+            step_id="pause_management",
+            menu_options=[
+                "pause_selection",
+                "init",
+            ],
+        )
+
+    async def async_step_pause_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one automatically detected Journey pause."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            pauses = await self._async_get_pause_entries()
+        except (HomeAssistantError, OSError, ValueError):
+            pauses = []
+            errors["base"] = "pause_load_failed"
+
+        if user_input is not None:
+            selection = str(
+                user_input.get(CONF_PAUSE_SELECTION) or ""
+            )
+            if selection == SELECTION_BACK:
+                return await self.async_step_pause_management()
+
+            if not errors and selection:
+                try:
+                    journey_id, pause_id = selection.split("::", 1)
+                except ValueError:
+                    errors["base"] = "pause_invalid_selection"
+                else:
+                    self._selected_pause_journey_id = journey_id
+                    self._selected_pause_id = pause_id
+                    return await self.async_step_pause_edit()
+
+        schema: dict[Any, Any] = {}
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=pause["value"],
+                    label=pause["label"],
+                )
+                for pause in pauses
+            ],
+        ]
+        if options:
+            schema[
+                vol.Required(
+                    CONF_PAUSE_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="pause_selection",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"pause_count": str(len(pauses))},
+        )
+
+    async def async_step_pause_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Edit one Journey pause."""
+
+        if not self._selected_pause_journey_id or not self._selected_pause_id:
+            return await self.async_step_pause_selection()
+
+        errors: dict[str, str] = {}
+        journey = await self._get_journey_storage().load_journey_by_id(
+            self._selected_pause_journey_id
+        )
+        if journey is None:
+            errors["base"] = "pause_journey_not_found"
+            return self.async_show_form(
+                step_id="pause_edit",
+                data_schema=vol.Schema({}),
+                errors=errors,
+            )
+
+        override = dict(
+            journey.pause_overrides.get(self._selected_pause_id, {})
+        )
+        pause_text = await self._async_get_pause_translations()
+
+        if user_input is not None:
+            action = user_input.get(CONF_PAUSE_ACTION, PAUSE_ACTION_SAVE)
+
+            if action == PAUSE_ACTION_BACK:
+                self._selected_pause_journey_id = None
+                self._selected_pause_id = None
+                return await self.async_step_pause_selection()
+
+            service = (
+                "clear_pause_edit"
+                if action == PAUSE_ACTION_CLEAR
+                else "edit_pause"
+            )
+            service_data: dict[str, Any] = {
+                "entry_id": self._config_entry.entry_id,
+                "journey_id": self._selected_pause_journey_id,
+                "pause_id": self._selected_pause_id,
+            }
+
+            if action == PAUSE_ACTION_SAVE:
+                service_data.update(
+                    {
+                        "category": user_input.get(CONF_PAUSE_CATEGORY, ""),
+                        "title": user_input.get(CONF_PAUSE_TITLE, ""),
+                        "note": user_input.get(CONF_PAUSE_NOTE, ""),
+                        "location": user_input.get(CONF_PAUSE_LOCATION, ""),
+                        "cost_total": user_input.get(CONF_PAUSE_COST_TOTAL),
+                        "currency": user_input.get(CONF_PAUSE_CURRENCY, "CHF"),
+                    }
+                )
+
+            try:
+                await self.hass.services.async_call(
+                    DOMAIN,
+                    service,
+                    service_data,
+                    blocking=True,
+                    return_response=True,
+                )
+            except (HomeAssistantError, ValueError):
+                errors["base"] = "pause_save_failed"
+            else:
+                self._selected_pause_journey_id = None
+                self._selected_pause_id = None
+                return await self.async_step_pause_selection()
+
+        fields: dict[Any, Any] = {
+            vol.Optional(
+                CONF_PAUSE_CATEGORY,
+                default=str(override.get("category") or "other"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        "food",
+                        "shopping",
+                        "leisure",
+                        "work",
+                        "parking",
+                        "overnight",
+                        "other",
+                    ],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Optional(
+                CONF_PAUSE_TITLE,
+                default=str(override.get("title") or ""),
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_PAUSE_NOTE,
+                default=str(override.get("note") or ""),
+            ): selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            ),
+            vol.Optional(
+                CONF_PAUSE_LOCATION,
+                default=str(override.get("location") or ""),
+            ): selector.TextSelector(),
+            vol.Optional(
+                CONF_PAUSE_COST_TOTAL,
+                default=override.get("cost_total", 0),
+            ): selector.NumberSelector(
+                selector.NumberSelectorConfig(
+                    min=0,
+                    step=0.01,
+                    mode=selector.NumberSelectorMode.BOX,
+                )
+            ),
+            vol.Optional(
+                CONF_PAUSE_CURRENCY,
+                default=str(override.get("currency") or "CHF"),
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=["CHF", "EUR", "GBP", "USD"],
+                    custom_value=True,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            ),
+            vol.Required(
+                CONF_PAUSE_ACTION,
+                default=PAUSE_ACTION_SAVE,
+            ): selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=[
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_SAVE,
+                            label=pause_text["save"],
+                        ),
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_CLEAR,
+                            label=pause_text["clear"],
+                        ),
+                        selector.SelectOptionDict(
+                            value=PAUSE_ACTION_BACK,
+                            label=pause_text["back"],
+                        ),
+                    ],
+                    mode=selector.SelectSelectorMode.LIST,
+                )
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="pause_edit",
+            data_schema=vol.Schema(fields),
+            errors=errors,
+            description_placeholders={
+                "journey_id": self._selected_pause_journey_id,
+                "pause_id": self._selected_pause_id,
+                "current_title": str(override.get("title") or "—"),
+            },
+        )
+
+    async def async_step_pause_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the result of a pause edit."""
+
+        if user_input is not None:
+            return await self.async_step_pause_management()
+
+        return self.async_show_form(
+            step_id="pause_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._pause_result,
+        )
+
+    def _selection_back_label(self) -> str:
+        """Return a localized label for selection-form back entries."""
+
+        language = str(self.hass.config.language or "en").lower()
+        if language.startswith("de"):
+            return "← Zurück"
+        if language.startswith("pl"):
+            return "← Wróć"
+        return "← Back"
+
+    def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
+        """Return initialized receipt storage for this config entry."""
+
+        runtime_data = self.hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id, {}
+        )
+        storage = runtime_data.get("receipt_storage")
+        if storage is None:
+            raise HomeAssistantError("Receipt storage is not initialized")
+        return storage
+
+    async def async_step_receipt_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt management actions."""
+
+        menu_options = ["ocr_settings"]
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+            menu_options.append("receipt_ocr")
+        menu_options.extend(
+            [
+                "receipt_import_type",
+                "receipt_list",
+                "receipt_delete",
+            ]
+        )
+
+        return self.async_show_menu(
+            step_id="receipt_management",
+            menu_options=menu_options,
+        )
+
+    async def async_step_ocr_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure and test the optional external OCR service."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            enabled = bool(user_input.get(CONF_OCR_ENABLED, False))
+            url = str(user_input.get(CONF_OCR_URL) or "").strip().rstrip("/")
+            api_key = str(user_input.get(CONF_OCR_API_KEY) or "").strip()
+            timeout_seconds = int(user_input.get(CONF_OCR_TIMEOUT, 15))
+
+            if enabled:
+                try:
+                    client = FordTriplogOCRClient(
+                        async_get_clientsession(self.hass),
+                        url,
+                        api_key,
+                        timeout_seconds,
+                    )
+                    health = await client.async_health()
+                except ValueError:
+                    errors["base"] = "ocr_invalid_url"
+                except FordTriplogOCRAuthenticationError:
+                    errors["base"] = "ocr_authentication_failed"
+                except FordTriplogOCRConnectionError:
+                    errors["base"] = "ocr_connection_failed"
+                except FordTriplogOCRResponseError:
+                    errors["base"] = "ocr_invalid_response"
+                else:
+                    updated_options = dict(self._config_entry.options)
+                    updated_options.update(
+                        {
+                            CONF_OCR_ENABLED: True,
+                            CONF_OCR_URL: client.base_url,
+                            CONF_OCR_API_KEY: api_key,
+                            CONF_OCR_TIMEOUT: timeout_seconds,
+                        }
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        options=updated_options,
+                    )
+                    self._options.update(updated_options)
+                    self._ocr_connection_result = {
+                        "service": health.service,
+                        "version": health.version,
+                        "engine": health.engine,
+                        "url": client.base_url,
+                        "max_file_mb": (
+                            str(health.max_file_mb)
+                            if health.max_file_mb is not None
+                            else "—"
+                        ),
+                        "pdf_mode": (
+                            "Nur erste Seite"
+                            if health.pdf_first_page_only
+                            else "Alle Seiten / nicht angegeben"
+                        ),
+                    }
+                    return await self.async_step_ocr_connection_result()
+            else:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(
+                    {
+                        CONF_OCR_ENABLED: False,
+                        CONF_OCR_URL: url,
+                        CONF_OCR_API_KEY: api_key,
+                        CONF_OCR_TIMEOUT: timeout_seconds,
+                    }
+                )
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._ocr_connection_result = {
+                    "service": "OCR deaktiviert",
+                    "version": "—",
+                    "engine": "—",
+                    "url": url or "—",
+                    "max_file_mb": "—",
+                    "pdf_mode": "—",
+                }
+                return await self.async_step_ocr_connection_result()
+
+        current_enabled = bool(
+            self._options.get(CONF_OCR_ENABLED, False)
+        )
+        current_url = str(
+            self._options.get(CONF_OCR_URL, "http://")
+        )
+        current_api_key = str(
+            self._options.get(CONF_OCR_API_KEY, "")
+        )
+        current_timeout = int(
+            self._options.get(CONF_OCR_TIMEOUT, 15)
+        )
+
+        return self.async_show_form(
+            step_id="ocr_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_OCR_ENABLED,
+                        default=current_enabled,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_OCR_URL,
+                        default=current_url,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.URL,
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_OCR_API_KEY,
+                        default=current_api_key,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.PASSWORD,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OCR_TIMEOUT,
+                        default=current_timeout,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=3,
+                            max=120,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_ocr_connection_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the external OCR connection result."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        return self.async_show_form(
+            step_id="ocr_connection_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._ocr_connection_result,
+        )
+
+    async def async_step_receipt_import_type(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Choose whether a receipt belongs to a pause or charge."""
+
+        if user_input is not None:
+            self._receipt_target_type = str(
+                user_input[CONF_RECEIPT_TARGET_TYPE]
+            )
+            return await self.async_step_receipt_import()
+
+        return self.async_show_form(
+            step_id="receipt_import_type",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_TARGET_TYPE,
+                        default=RECEIPT_TARGET_PAUSE,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                RECEIPT_TARGET_PAUSE,
+                                RECEIPT_TARGET_CHARGE,
+                            ],
+                            translation_key="receipt_target_type",
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def _async_get_receipt_target_options(
+        self,
+    ) -> list[selector.SelectOptionDict]:
+        """Return selectable receipt targets."""
+
+        if self._receipt_target_type == RECEIPT_TARGET_PAUSE:
+            entries = await self._async_get_pause_entries()
+            return [
+                selector.SelectOptionDict(
+                    value=str(entry["pause_id"]),
+                    label=str(entry["label"]),
+                )
+                for entry in entries
+            ]
+
+        if self._receipt_target_type == RECEIPT_TARGET_CHARGE:
+            charges = await self._get_charge_manager().async_get_charges()
+            return [
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=self._format_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ]
+
+        return []
+
+    async def async_step_receipt_import(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Upload and attach one receipt."""
+
+        if self._receipt_target_type not in (
+            RECEIPT_TARGET_PAUSE,
+            RECEIPT_TARGET_CHARGE,
+        ):
+            return await self.async_step_receipt_import_type()
+
+        errors: dict[str, str] = {}
+        try:
+            targets = await self._async_get_receipt_target_options()
+        except (HomeAssistantError, OSError, ValueError):
+            targets = []
+            errors["base"] = "receipt_target_load_failed"
+
+        if not targets and not errors:
+            errors["base"] = "receipt_no_targets"
+
+        if user_input is not None and not errors:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            target_id = str(user_input[CONF_RECEIPT_TARGET])
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=self._receipt_target_type,
+                        target_id=target_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_import_failed"
+            else:
+                self._receipt_result = {
+                    "filename": str(receipt.get("original_filename") or receipt.get("filename") or ""),
+                    "target_id": target_id,
+                }
+                return await self.async_step_receipt_result()
+
+        schema: dict[Any, Any] = {}
+        if targets:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_TARGET,
+                    default=targets[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=targets,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+            schema[
+                vol.Required(CONF_RECEIPT_FILE)
+            ] = selector.FileSelector(
+                selector.FileSelectorConfig(
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                )
+            )
+            schema[
+                vol.Optional(CONF_RECEIPT_NOTE, default="")
+            ] = selector.TextSelector(
+                selector.TextSelectorConfig(multiline=True)
+            )
+
+        return self.async_show_form(
+            step_id="receipt_import",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def _async_receipt_contexts(self) -> list[dict[str, Any]]:
+        """Return receipts enriched with their pause or charge context."""
+
+        receipts = await self._get_receipt_storage().async_list()
+        pauses = {
+            str(entry["pause_id"]): entry
+            for entry in await self._async_get_pause_entries()
+        }
+        charges = {
+            str(charge.charge_id): charge
+            for charge in await self._get_charge_manager().async_get_charges()
+            if charge.charge_id
+        }
+
+        enriched: list[dict[str, Any]] = []
+        for receipt in receipts:
+            item = dict(receipt)
+            target_type = str(item.get("target_type") or "")
+            target_id = str(item.get("target_id") or "")
+
+            if target_type == RECEIPT_TARGET_PAUSE:
+                pause = pauses.get(target_id, {})
+                date_text = str(pause.get("date") or "—")
+                time_text = str(pause.get("start_time") or "—")
+                title = str(pause.get("title") or "Pause")
+                location = str(pause.get("location") or "—")
+                amount = pause.get("cost_total")
+                currency = str(pause.get("currency") or "")
+                label = f"⏸️ {date_text} {time_text} · {title} · {location}"
+                kind = "Pause"
+                soc = "—"
+                energy = "—"
+            else:
+                charge = charges.get(target_id)
+                date_text = self._format_charge_datetime(
+                    getattr(charge, "start_time", None)
+                ) if charge else "—"
+                time_text = ""
+                location = self._charge_location(charge) if charge else "—"
+                title = location
+                amount = getattr(charge, "cost_total", None) if charge else None
+                currency = str(getattr(charge, "currency", None) or "") if charge else ""
+                start_soc = getattr(charge, "start_soc", None) if charge else None
+                end_soc = getattr(charge, "end_soc", None) if charge else None
+                soc = (
+                    f"{self._format_optional_number(start_soc, 0)} % → "
+                    f"{self._format_optional_number(end_soc, 0)} %"
+                )
+                energy = (
+                    f"{self._format_optional_number(getattr(charge, 'energy_added_kwh', None), 2)} kWh"
+                    if charge else "—"
+                )
+                label = f"⚡ {date_text} · {location}"
+                kind = "Ladevorgang"
+
+            try:
+                cost = f"{float(amount):.2f} {currency}".strip() if amount is not None else "—"
+            except (TypeError, ValueError):
+                cost = "—"
+
+            item.update({
+                "display_label": label,
+                "display_type": kind,
+                "display_date": date_text,
+                "display_time": time_text,
+                "display_title": title,
+                "display_location": location,
+                "display_cost": cost,
+                "display_soc": soc,
+                "display_energy": energy,
+            })
+            enriched.append(item)
+
+        enriched.sort(
+            key=lambda value: str(value.get("created_at") or ""),
+            reverse=True,
+        )
+        return enriched
+
+    async def async_step_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a receipt using its associated trip context."""
+
+        errors: dict[str, str] = {}
+        try:
+            receipts = await self._async_receipt_contexts()
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=str(receipt.get("display_label")),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            self._selected_receipt_id = str(
+                user_input[CONF_RECEIPT_SELECTION]
+            )
+            return await self.async_step_receipt_detail()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_list",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"receipt_count": str(len(options))},
+        )
+
+    @staticmethod
+    def _format_receipt_ocr_status(value: Any) -> str:
+        """Return a translated-friendly OCR status label."""
+
+        status = str(value or "not_started").strip().lower()
+        labels = {
+            "not_started": "Noch nicht ausgeführt",
+            "queued": "Wartet",
+            "running": "Wird verarbeitet",
+            "completed": "Abgeschlossen",
+            "failed": "Fehlgeschlagen",
+        }
+        return labels.get(status, status or "—")
+
+    async def async_step_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt details and offer an external browser step."""
+
+        if user_input is not None:
+            action = str(
+                user_input.get(
+                    CONF_RECEIPT_DETAIL_ACTION,
+                    RECEIPT_DETAIL_OPEN,
+                )
+            )
+            if action == RECEIPT_DETAIL_BACK:
+                self._selected_receipt_url = None
+                return await self.async_step_receipt_list()
+            return await self.async_step_receipt_open()
+
+        receipt_id = str(self._selected_receipt_id or "")
+        receipts = await self._async_receipt_contexts()
+        receipt = next(
+            (
+                item
+                for item in receipts
+                if str(item.get("receipt_id")) == receipt_id
+            ),
+            None,
+        )
+        if receipt is None:
+            return self.async_show_form(
+                step_id="receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        size_bytes = int(receipt.get("size_bytes") or 0)
+        size_text = (
+            f"{size_bytes / 1024 / 1024:.1f} MB"
+            if size_bytes >= 1024 * 1024
+            else f"{max(1, round(size_bytes / 1024))} KB"
+        )
+        media_type = str(receipt.get("media_type") or "").lower()
+        original_filename = str(
+            receipt.get("original_filename")
+            or receipt.get("filename")
+            or ""
+        )
+        suffix = Path(original_filename).suffix.lower()
+
+        if media_type == "application/pdf" or suffix == ".pdf":
+            document_type = "PDF-Dokument"
+        elif media_type.startswith("image/") or suffix in {
+            ".jpg",
+            ".jpeg",
+            ".png",
+            ".webp",
+        }:
+            document_type = "Bilddatei"
+        else:
+            document_type = "Dokument"
+
+        receipt_path = f"/api/ford_triplog/receipts/{receipt_id}"
+        signed_path = async_sign_path(
+            self.hass,
+            receipt_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=True,
+            ).rstrip("/")
+            self._selected_receipt_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            self._selected_receipt_url = signed_path
+
+        return self.async_show_form(
+            step_id="receipt_detail",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_DETAIL_ACTION,
+                        default=RECEIPT_DETAIL_OPEN,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=RECEIPT_DETAIL_OPEN,
+                                    label="Beleg im Browser öffnen",
+                                ),
+                                selector.SelectOptionDict(
+                                    value=RECEIPT_DETAIL_BACK,
+                                    label="Zurück zur Belegliste",
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            description_placeholders={
+                "type": str(receipt.get("display_type") or "—"),
+                "date": str(receipt.get("display_date") or "—"),
+                "title": str(receipt.get("display_title") or "—"),
+                "location": str(receipt.get("display_location") or "—"),
+                "soc": str(receipt.get("display_soc") or "—"),
+                "energy": str(receipt.get("display_energy") or "—"),
+                "cost": str(receipt.get("display_cost") or "—"),
+                "document_type": document_type,
+                "filename": document_type,
+                "size": size_text,
+                "ocr_status": self._format_receipt_ocr_status(
+                    receipt.get("ocr_status")
+                ),
+            },
+        )
+
+    async def async_step_receipt_open(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Open the signed receipt URL using a Home Assistant external step."""
+
+        if not self._selected_receipt_url:
+            return await self.async_step_receipt_list()
+
+        return self.async_external_step(
+            step_id="receipt_open",
+            url=self._selected_receipt_url,
+        )
+
+    @staticmethod
+    def _format_receipt_processing_status(
+        receipt: dict[str, Any],
+    ) -> str:
+        """Return one compact OCR/parser status label."""
+
+        ocr_status = str(
+            receipt.get("ocr_status") or "not_started"
+        ).lower()
+        parse_status = str(
+            receipt.get("parse_status") or ""
+        ).lower()
+
+        if ocr_status == "failed":
+            return "⚠ OCR fehlgeschlagen"
+        if ocr_status == "running":
+            return "⏳ OCR läuft"
+        if ocr_status != "completed":
+            return "⬜ Noch nicht gelesen"
+        if bool(receipt.get("parser_confirmed", False)):
+            return "✔ Werte übernommen"
+        if parse_status == "parsed":
+            profile = str(
+                receipt.get("parser_profile") or "Profil"
+            )
+            return f"🧾 Werte erkannt · {profile}"
+        if parse_status == "no_match":
+            return "✅ OCR abgeschlossen · kein Profil"
+        return "✅ OCR abgeschlossen"
+
+    def _get_ocr_client(self) -> FordTriplogOCRClient:
+        """Return a configured client for the external OCR service."""
+
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+            raise HomeAssistantError("OCR is not enabled")
+
+        return FordTriplogOCRClient(
+            async_get_clientsession(self.hass),
+            str(self._options.get(CONF_OCR_URL) or ""),
+            str(self._options.get(CONF_OCR_API_KEY) or ""),
+            int(self._options.get(CONF_OCR_TIMEOUT, 15)),
+        )
+
+    async def async_step_receipt_ocr(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a stored receipt and run external OCR."""
+
+        errors: dict[str, str] = {}
+
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+            return self.async_show_form(
+                step_id="receipt_ocr",
+                data_schema=vol.Schema({}),
+                errors={"base": "ocr_not_configured"},
+            )
+
+        try:
+            receipts = await self._async_receipt_contexts()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('display_label') or receipt.get('receipt_id')}"
+                ),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            receipt_id = str(user_input[CONF_RECEIPT_OCR_SELECTION])
+
+            try:
+                receipt = await self._get_receipt_storage().async_analyze(
+                    receipt_id,
+                    self._get_ocr_client(),
+                )
+            except FordTriplogOCRAuthenticationError:
+                _LOGGER.exception(
+                    "Receipt OCR authentication failed: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "ocr_authentication_failed"
+            except FordTriplogOCRConnectionError:
+                _LOGGER.exception(
+                    "Receipt OCR connection failed: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "ocr_connection_failed"
+            except FordTriplogOCRResponseError:
+                _LOGGER.exception(
+                    "Receipt OCR service response failed: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "receipt_ocr_response_failed"
+            except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                _LOGGER.exception(
+                    "Receipt OCR or parser processing failed: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "receipt_ocr_failed"
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected receipt OCR or parser error: receipt_id=%s",
+                    receipt_id,
+                )
+                errors["base"] = "receipt_ocr_failed"
+            else:
+                ocr_result = receipt.get("ocr_result", {})
+                if not isinstance(ocr_result, dict):
+                    ocr_result = {}
+
+                raw_text = str(ocr_result.get("raw_text") or "").strip()
+                display_text = raw_text
+                if len(display_text) > 5000:
+                    display_text = display_text[:5000] + "\n…"
+
+                confidence = ocr_result.get("confidence")
+                confidence_text = "—"
+                if isinstance(confidence, (int, float)):
+                    confidence_text = f"{float(confidence) * 100:.1f} %"
+
+                elapsed = ocr_result.get("elapsed_seconds")
+                elapsed_text = "—"
+                if isinstance(elapsed, (int, float)):
+                    elapsed_text = f"{float(elapsed):.3f} s"
+
+                source_page = ocr_result.get("source_page")
+                page_text = (
+                    str(source_page)
+                    if source_page is not None
+                    else "—"
+                )
+
+                document_name = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+
+                parser_result = receipt.get("parser_result", {})
+                if not isinstance(parser_result, dict):
+                    parser_result = {}
+                parsed_fields = parser_result.get("fields", {})
+                if not isinstance(parsed_fields, dict):
+                    parsed_fields = {}
+
+                parser_name = str(
+                    parser_result.get("profile_name")
+                    or "Kein passendes Profil"
+                )
+                parser_confidence = parser_result.get("confidence")
+                parser_confidence_text = "—"
+                if isinstance(parser_confidence, (int, float)):
+                    parser_confidence_text = (
+                        f"{float(parser_confidence) * 100:.1f} %"
+                    )
+
+                self._receipt_ocr_result = {
+                    # Current dev21 placeholders.
+                    "document": document_name,
+                    "engine": str(
+                        ocr_result.get("engine") or "—"
+                    ),
+                    "service_version": str(
+                        ocr_result.get("service_version") or "—"
+                    ),
+                    "elapsed": elapsed_text,
+                    "confidence": confidence_text,
+                    "page": page_text,
+                    "character_count": str(len(raw_text)),
+                    "parser_profile": parser_name,
+                    "parser_confidence": parser_confidence_text,
+                    "parsed_merchant": str(
+                        parsed_fields.get("merchant")
+                        or parsed_fields.get("provider")
+                        or "—"
+                    ),
+                    "parsed_station": str(
+                        parsed_fields.get("station") or "—"
+                    ),
+                    "parsed_start": str(
+                        parsed_fields.get("charging_start") or "—"
+                    ),
+                    "parsed_end": str(
+                        parsed_fields.get("charging_end") or "—"
+                    ),
+                    "parsed_energy": str(
+                        parsed_fields.get("energy_kwh") or "—"
+                    ),
+                    "parsed_price": str(
+                        parsed_fields.get("price_per_kwh") or "—"
+                    ),
+                    "parsed_total": str(
+                        parsed_fields.get("total") or "—"
+                    ),
+                    "parsed_currency": str(
+                        parsed_fields.get("currency") or ""
+                    ),
+                    "raw_text": display_text or "Kein Text erkannt.",
+
+                    # Backward compatibility for cached dev12/dev19
+                    # translations that still expect parser placeholders.
+                    "filename": document_name,
+                    "merchant": "Noch nicht ausgewertet",
+                    "date": "Noch nicht ausgewertet",
+                    "time": "Noch nicht ausgewertet",
+                    "amount": "Noch nicht ausgewertet",
+                    "currency": "",
+                }
+                return await self.async_step_receipt_ocr_result()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_OCR_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_ocr",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_ocr_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the stored external OCR result."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        return self.async_show_form(
+            step_id="receipt_ocr_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_ocr_result,
+        )
+
+    async def async_step_receipt_apply(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a parsed charge receipt for review and application."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            receipts = await self._async_receipt_contexts()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        candidates = [
+            receipt
+            for receipt in receipts
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("parse_status") or "") == "parsed"
+        ]
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('display_label') or receipt.get('receipt_id')}"
+                ),
+            )
+            for receipt in candidates
+            if receipt.get("receipt_id")
+        ]
+
+        if not options and not errors:
+            errors["base"] = "receipt_no_parsed_charge_receipts"
+
+        if user_input is not None and not errors:
+            self._selected_apply_receipt_id = str(
+                user_input[CONF_RECEIPT_APPLY_SELECTION]
+            )
+            return await self.async_step_receipt_apply_edit()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_APPLY_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_apply",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_apply_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Review parser values and apply billing data to the charge."""
+
+        receipt_id = self._selected_apply_receipt_id
+        if not receipt_id:
+            return await self.async_step_receipt_apply()
+
+        errors: dict[str, str] = {}
+        receipt = await self._get_receipt_storage().async_get(receipt_id)
+        if receipt is None:
+            self._selected_apply_receipt_id = None
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        target_id = str(receipt.get("target_id") or "")
+        if str(receipt.get("target_type") or "") != RECEIPT_TARGET_CHARGE:
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_charge"},
+            )
+
+        charge = await self._get_charge_manager().async_get_charge(target_id)
+        if charge is None:
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        parser_result = receipt.get("parser_result", {})
+        if not isinstance(parser_result, dict):
+            parser_result = {}
+        fields = parser_result.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
+
+        parsed_energy = fields.get("energy_kwh")
+        parsed_total = (
+            fields.get("amount_payable")
+            if fields.get("amount_payable") is not None
+            else fields.get("total")
+        )
+        parsed_currency = str(fields.get("currency") or "CHF").upper()
+
+        default_energy = (
+            float(parsed_energy)
+            if isinstance(parsed_energy, (int, float))
+            else float(getattr(charge, "energy_billed_kwh", None) or 0.0)
+        )
+        default_total = (
+            float(parsed_total)
+            if isinstance(parsed_total, (int, float))
+            else float(getattr(charge, "cost_total", None) or 0.0)
+        )
+
+        if user_input is not None:
+            energy_billed = float(
+                user_input.get(CONF_RECEIPT_APPLY_ENERGY, 0.0)
+            )
+            total_cost = float(
+                user_input.get(CONF_RECEIPT_APPLY_TOTAL, 0.0)
+            )
+            currency = str(
+                user_input.get(CONF_RECEIPT_APPLY_CURRENCY) or "CHF"
+            ).upper()
+
+            try:
+                result = await self._get_charge_manager().async_set_cost(
+                    target_id,
+                    currency=currency,
+                    cost_total=None,
+                    energy_billed_kwh=energy_billed,
+                    energy_cost=total_cost,
+                    session_fee=0.0,
+                    time_fee=0.0,
+                    blocking_fee=0.0,
+                    parking_fee=0.0,
+                    other_cost=0.0,
+                    energy_billed_source="receipt",
+                )
+            except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                _LOGGER.exception(
+                    "Unable to apply parsed receipt values: receipt_id=%s "
+                    "charge_id=%s",
+                    receipt_id,
+                    target_id,
+                )
+                errors["base"] = "receipt_apply_failed"
+            else:
+                if not result.updated:
+                    errors["base"] = "receipt_apply_failed"
+                else:
+                    await self._get_receipt_storage().async_mark_applied(
+                        receipt_id,
+                        charge_id=target_id,
+                        applied_values={
+                            "energy_billed_kwh": energy_billed,
+                            "cost_total": total_cost,
+                            "currency": currency,
+                        },
+                    )
+                    self._receipt_apply_result = {
+                        "charge_id": target_id,
+                        "document": str(
+                            receipt.get("original_filename")
+                            or receipt.get("filename")
+                            or receipt_id
+                        ),
+                        "energy": f"{energy_billed:.3f}",
+                        "total": f"{total_cost:.2f}",
+                        "currency": currency,
+                        "profile": str(
+                            parser_result.get("profile_name") or "—"
+                        ),
+                    }
+                    self._selected_apply_receipt_id = None
+                    if self._selected_charge_id and self._selected_receipt_id:
+                        return await self.async_step_charge_receipt_detail()
+                    return await self.async_step_receipt_apply_result()
+
+        placeholders = {
+            "charge_id": target_id,
+            "charge_label": self._format_charge_label(charge),
+            "profile": str(parser_result.get("profile_name") or "—"),
+            "parsed_station": str(fields.get("station") or "—"),
+            "parsed_start": str(fields.get("charging_start") or "—"),
+            "parsed_end": str(fields.get("charging_end") or "—"),
+            "current_energy": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+            "parsed_energy": self._format_optional_number(parsed_energy, 3),
+            "current_total": self._format_optional_number(
+                getattr(charge, "cost_total", None),
+                2,
+            ),
+            "parsed_total": self._format_optional_number(parsed_total, 2),
+            "currency": parsed_currency,
+        }
+
+        return self.async_show_form(
+            step_id="receipt_apply_edit",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_ENERGY,
+                        default=default_energy,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=1000,
+                            step=0.001,
+                            unit_of_measurement="kWh",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_TOTAL,
+                        default=default_total,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_CURRENCY,
+                        default=parsed_currency,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.TEXT,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_receipt_apply_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show applied receipt values."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        return self.async_show_form(
+            step_id="receipt_apply_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_apply_result,
+        )
+
+    async def async_step_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select and permanently remove one receipt."""
+
+        errors: dict[str, str] = {}
+        try:
+            receipts = await self._async_receipt_contexts()
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=str(receipt.get("display_label") or receipt.get("receipt_id")),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            receipt_id = str(user_input[CONF_RECEIPT_SELECTION])
+            try:
+                removed = await self._get_receipt_storage().async_remove(receipt_id)
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if removed is None:
+                    errors["base"] = "receipt_not_found"
+                else:
+                    self._receipt_result = {
+                        "filename": str(removed.get("original_filename") or removed.get("filename") or ""),
+                        "target_id": "",
+                    }
+                    return await self.async_step_receipt_result()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_delete",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt operation result."""
+
+        if user_input is not None:
+            if self._selected_charge_id:
+                return await self.async_step_charge_detail()
+            return await self.async_step_receipt_management()
+        self._receipt_result.setdefault("status", "Vorgang abgeschlossen")
+        return self.async_show_form(
+            step_id="receipt_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_result,
+        )
+
     def _get_journey_rebuilder(self):
         """Return the Journey rebuilder for this config entry."""
 
@@ -889,6 +3530,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_update",
                 "journey_rebuild",
                 "journey_delete",
+                "init",
             ],
         )
 
@@ -1077,6 +3719,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "pending_locations": "⚠ Newly detected charging locations ({count})",
             "save": "Save",
             "delete": "Delete",
+            "back": "Back to charging locations",
             "step": "Step",
             "no_progress": "No progress messages yet.",
             "stored_one": "1 custom charging location saved.",
@@ -1119,6 +3762,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
+        """Show custom charging-location navigation."""
+
+        return self.async_show_menu(
+            step_id="user_charging_sites",
+            menu_options=[
+                "user_charging_site_selection",
+                "user_charging_site_new",
+                "init",
+            ],
+        )
+
+    async def async_step_user_charging_site_new(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Start creation of a custom charging location."""
+
+        self._selected_user_charging_site = None
+        self._selected_pending_charging_site = None
+        return await self.async_step_user_charging_site_edit()
+
+    async def async_step_user_charging_site_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
         """List stored charging locations and show pending-location notice."""
 
         errors: dict[str, str] = {}
@@ -1139,6 +3807,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             selected_id = str(
                 user_input[CONF_USER_CHARGING_SITE_SELECTION]
             )
+
+            if selected_id == USER_CHARGING_SITE_BACK:
+                return await self.async_step_user_charging_sites()
 
             if selected_id == USER_CHARGING_SITE_PENDING:
                 return await self.async_step_pending_charging_sites()
@@ -1163,7 +3834,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._selected_pending_charging_site = None
                 return await self.async_step_user_charging_site_edit()
 
-        options: list[selector.SelectOptionDict] = []
+        options: list[selector.SelectOptionDict] = [
+            selector.SelectOptionDict(
+                value=USER_CHARGING_SITE_BACK,
+                label=charging_site_text["back"],
+            )
+        ]
 
         if pending_sites:
             options.append(
@@ -1196,11 +3872,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
-        step_id = (
-            "user_charging_sites_pending_notice"
-            if pending_sites
-            else "user_charging_sites"
-        )
+        step_id = "user_charging_site_selection"
 
         return self.async_show_form(
             step_id=step_id,
@@ -1208,11 +3880,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
-                        default=(
-                            USER_CHARGING_SITE_PENDING
-                            if pending_sites
-                            else USER_CHARGING_SITE_NEW
-                        ),
+                        default=USER_CHARGING_SITE_BACK,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
@@ -1244,7 +3912,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Handle the stored-location page when a pending notice is visible."""
 
-        return await self.async_step_user_charging_sites(user_input)
+        return await self.async_step_user_charging_site_selection(
+            user_input
+        )
 
     async def async_step_pending_charging_sites(
         self,
@@ -1265,12 +3935,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors["base"] = "user_charging_sites_load_failed"
 
         if not pending_sites and not errors:
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         if user_input is not None and not errors:
             pending_id = str(
                 user_input[CONF_USER_CHARGING_SITE_SELECTION]
             )
+            if pending_id == USER_CHARGING_SITE_BACK:
+                return await self.async_step_user_charging_site_selection()
+
             pending = next(
                 (
                     site
@@ -1289,13 +3962,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         options = [
             selector.SelectOptionDict(
-                value=str(site["site_id"]),
-                label=str(
-                    site.get("name")
-                    or charging_site_text["unknown_location"]
-                ),
-            )
-            for site in pending_sites
+                value=USER_CHARGING_SITE_BACK,
+                label=charging_site_text["back"],
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(site["site_id"]),
+                    label=str(
+                        site.get("name")
+                        or charging_site_text["unknown_location"]
+                    ),
+                )
+                for site in pending_sites
+            ],
         ]
 
         return self.async_show_form(
@@ -1304,7 +3983,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_USER_CHARGING_SITE_SELECTION,
-                        default=str(pending_sites[0]["site_id"]),
+                        default=USER_CHARGING_SITE_BACK,
                     ): selector.SelectSelector(
                         selector.SelectSelectorConfig(
                             options=options,
@@ -1422,10 +4101,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
 
         if user_input is not None:
-            if (
-                existing is not None
-                and user_input.get(CONF_USER_CHARGING_SITE_ACTION) == "delete"
-            ):
+            action = str(
+                user_input.get(CONF_USER_CHARGING_SITE_ACTION) or "save"
+            )
+
+            if action == "back":
+                self._selected_user_charging_site = None
+                self._selected_pending_charging_site = None
+                return await self.async_step_user_charging_site_selection()
+
+            if existing is not None and action == "delete":
                 return await self.async_step_user_charging_site_delete()
 
             site_type = str(
@@ -1546,7 +4231,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             else:
                 self._selected_user_charging_site = None
                 self._selected_pending_charging_site = None
-                return await self.async_step_user_charging_sites()
+                return await self.async_step_user_charging_site_selection()
 
         schema_fields: dict[Any, Any] = {
             vol.Optional(
@@ -1787,27 +4472,36 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
+        action_options = [
+            selector.SelectOptionDict(
+                value="save",
+                label=charging_site_text["save"],
+            ),
+            selector.SelectOptionDict(
+                value="back",
+                label=charging_site_text["back"],
+            ),
+        ]
         if existing is not None:
-            schema_fields[
-                vol.Required(
-                    CONF_USER_CHARGING_SITE_ACTION,
-                    default="save",
-                )
-            ] = selector.SelectSelector(
-                selector.SelectSelectorConfig(
-                    options=[
-                        selector.SelectOptionDict(
-                            value="save",
-                            label=charging_site_text["save"],
-                        ),
-                        selector.SelectOptionDict(
-                            value="delete",
-                            label=charging_site_text["delete"],
-                        ),
-                    ],
-                    mode=selector.SelectSelectorMode.DROPDOWN,
-                )
+            action_options.insert(
+                1,
+                selector.SelectOptionDict(
+                    value="delete",
+                    label=charging_site_text["delete"],
+                ),
             )
+
+        schema_fields[
+            vol.Required(
+                CONF_USER_CHARGING_SITE_ACTION,
+                default="save",
+            )
+        ] = selector.SelectSelector(
+            selector.SelectSelectorConfig(
+                options=action_options,
+                mode=selector.SelectSelectorMode.DROPDOWN,
+            )
+        )
 
         return self.async_show_form(
             step_id="user_charging_site_edit",
@@ -1834,14 +4528,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
         existing = self._selected_user_charging_site
 
         if existing is None:
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         if user_input is not None:
             await self._user_charging_site_storage.async_delete(
                 str(existing["site_id"])
             )
             self._selected_user_charging_site = None
-            return await self.async_step_user_charging_sites()
+            return await self.async_step_user_charging_site_selection()
 
         return self.async_show_form(
             step_id="user_charging_site_delete",
@@ -2000,6 +4694,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return translations["stored_one"]
         return translations["stored_many"].format(count=count)
 
+    async def async_step_charging_site_database(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show charging-location database navigation."""
+
+        return self.async_show_menu(
+            step_id="charging_site_database",
+            menu_options=[
+                "download_charging_sites",
+                "import_charging_sites",
+                "init",
+            ],
+        )
+
     async def async_step_import_charging_sites(
         self,
         user_input: dict[str, Any] | None = None,
@@ -2058,7 +4767,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the successful charging-site import result."""
 
         if user_input is not None:
-            return await self.async_step_init()
+            return await self.async_step_charging_site_database()
 
         return self.async_show_form(
             step_id="import_charging_sites_success",
@@ -2076,14 +4785,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         errors: dict[str, str] = {}
 
         if user_input is not None:
+            selected_country = str(
+                user_input.get(CONF_CHARGING_SITE_COUNTRY) or ""
+            ).strip()
+
+            if selected_country == CHARGING_SITE_DATABASE_BACK:
+                return await self.async_step_charging_site_database()
+
             progress_manager = self.hass.data[DOMAIN]["progress_manager"]
 
             if progress_manager.is_running:
                 errors["base"] = "charging_site_download_in_progress"
             else:
-                self._download_country_code = str(
-                    user_input[CONF_CHARGING_SITE_COUNTRY]
-                ).strip().upper()
+                self._download_country_code = selected_country.upper()
                 self._download_error = None
                 self._download_result = {}
                 self._download_started = perf_counter()
@@ -2099,10 +4813,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         country_options = [
             selector.SelectOptionDict(
+                value=CHARGING_SITE_DATABASE_BACK,
+                label=self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
                 value=country_code,
                 label=f"{country['name']} ({country_code})",
             )
-            for country_code, country in COUNTRIES.items()
+                for country_code, country in COUNTRIES.items()
+            ],
         ]
 
         default_country = self._download_country_code
@@ -2289,10 +5009,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
             country_options = [
                 selector.SelectOptionDict(
-                    value=country_code,
-                    label=f"{country['name']} ({country_code})",
-                )
-                for country_code, country in COUNTRIES.items()
+                    value=CHARGING_SITE_DATABASE_BACK,
+                    label=self._selection_back_label(),
+                ),
+                *[
+                    selector.SelectOptionDict(
+                        value=country_code,
+                        label=f"{country['name']} ({country_code})",
+                    )
+                    for country_code, country in COUNTRIES.items()
+                ],
             ]
 
             return self.async_show_form(
@@ -2322,10 +5048,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show the successful OpenStreetMap download result."""
 
         if user_input is not None:
-            return self.async_create_entry(
-                title="",
-                data=dict(self._options),
-            )
+            return await self.async_step_charging_site_database()
 
         return self.async_show_form(
             step_id="download_charging_sites_success",
