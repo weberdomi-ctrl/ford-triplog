@@ -429,13 +429,20 @@
         "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
         "menu_options": {
           "charge_receipt_upload": "Beleg hinzufügen",
-          "receipt_list": "Gespeicherte Belege anzeigen",
-          "charge_detail": "Zurück zur Ladesitzung"
+          "charge_detail": "Zurück zur Ladesitzung",
+          "charge_receipt_list": "Belege dieser Ladesitzung anzeigen"
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
-          "receipt_list": "Alle gespeicherten Belege öffnen und verwalten.",
-          "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren."
+          "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren.",
+          "charge_receipt_list": "Nur die Belege öffnen und verwalten, die mit dieser Ladesitzung verknüpft sind."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Belege dieser Ladesitzung",
+        "description": "Ladesitzung: {charge_id}\n\nVerknüpfte Belege: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Beleg"
         }
       }
     },

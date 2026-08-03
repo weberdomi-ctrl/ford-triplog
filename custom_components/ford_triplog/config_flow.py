@@ -566,7 +566,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="charge_receipts",
             menu_options=[
                 "charge_receipt_upload",
-                "receipt_list",
+                "charge_receipt_list",
                 "charge_detail",
             ],
             description_placeholders={
@@ -932,6 +932,81 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         2,
                     )
                 ),
+            },
+        )
+
+    async def async_step_charge_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show only receipts assigned to the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        errors: dict[str, str] = {}
+
+        try:
+            all_receipts = await self._get_receipt_storage().async_list()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            _LOGGER.exception(
+                "Unable to load receipts for charge: charge_id=%s",
+                self._selected_charge_id,
+            )
+            all_receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('original_filename') or receipt.get('filename') or receipt.get('receipt_id')}"
+                ),
+            )
+            for receipt in receipts
+            if receipt.get("receipt_id")
+        ]
+
+        if not options and not errors:
+            errors["base"] = "receipt_none_available"
+
+        if user_input is not None and not errors:
+            self._selected_receipt_id = str(
+                user_input[CONF_RECEIPT_LIST_SELECTION]
+            )
+            return await self.async_step_receipt_detail()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_LIST_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="charge_receipt_list",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={
+                "charge_id": self._selected_charge_id,
+                "receipt_count": str(len(receipts)),
             },
         )
 
@@ -2125,7 +2200,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 allow_external=True,
                 allow_cloud=True,
                 allow_ip=True,
-                prefer_external=False,
+                prefer_external=True,
             ).rstrip("/")
             self._selected_receipt_url = f"{base_url}{signed_path}"
         except NoURLAvailableError:

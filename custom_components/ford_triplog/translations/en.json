@@ -429,13 +429,20 @@
         "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
         "menu_options": {
           "charge_receipt_upload": "Add receipt",
-          "receipt_list": "Show stored receipts",
-          "charge_detail": "Back to charging session"
+          "charge_detail": "Back to charging session",
+          "charge_receipt_list": "Show receipts for this session"
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "Attach a PDF or image. When OCR is enabled, the receipt is analyzed automatically.",
-          "receipt_list": "Open and manage all stored receipts.",
-          "charge_detail": "Return to the charging-session overview."
+          "charge_detail": "Return to the charging-session overview.",
+          "charge_receipt_list": "Open and manage only receipts linked to this charging session."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Receipts for this charging session",
+        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Receipt"
         }
       }
     },

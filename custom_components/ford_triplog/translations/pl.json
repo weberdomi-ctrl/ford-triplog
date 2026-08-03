@@ -429,13 +429,20 @@
         "description": "Zapisane paragony: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
         "menu_options": {
           "charge_receipt_upload": "Dodaj paragon",
-          "receipt_list": "Pokaż zapisane paragony",
-          "charge_detail": "Wróć do sesji ładowania"
+          "charge_detail": "Wróć do sesji ładowania",
+          "charge_receipt_list": "Pokaż paragony tej sesji"
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
-          "receipt_list": "Otwórz i zarządzaj wszystkimi paragonami.",
-          "charge_detail": "Wróć do przeglądu sesji ładowania."
+          "charge_detail": "Wróć do przeglądu sesji ładowania.",
+          "charge_receipt_list": "Otwórz i zarządzaj tylko paragonami powiązanymi z tą sesją ładowania."
+        }
+      },
+      "charge_receipt_list": {
+        "title": "Paragony tej sesji ładowania",
+        "description": "Sesja ładowania: {charge_id}\n\nPowiązane paragony: {receipt_count}",
+        "data": {
+          "receipt_list_selection": "Paragon"
         }
       }
     },
