@@ -420,7 +420,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
 
         return self.async_show_form(
-            step_id="charge_management",
+            step_id="charge_selection",
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={
