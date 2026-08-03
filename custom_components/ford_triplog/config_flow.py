@@ -421,10 +421,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 errors={"base": "charge_not_found"},
             )
 
-        receipts = await self._get_receipt_storage().async_list(
-            target_type=RECEIPT_TARGET_CHARGE,
-            target_id=self._selected_charge_id,
-        )
+        all_receipts = await self._get_receipt_storage().async_list()
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
 
         receipt_count = len(receipts)
         if receipt_count:
