@@ -444,6 +444,37 @@
         "data": {
           "receipt_list_selection": "Beleg"
         }
+      },
+      "charge_receipt_detail": {
+        "title": "Beleg",
+        "description": "**Datei:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parserprofil:** {profile}\n**Anbieter:** {provider}\n**Energie:** {energy} kWh\n**Gesamt:** {total} {currency}",
+        "menu_options": {
+          "charge_receipt_open": "Beleg öffnen",
+          "charge_receipt_ocr": "OCR erneut ausführen",
+          "charge_receipt_delete": "Beleg löschen",
+          "charge_receipt_list": "Zurück zu den Belegen"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Originaldatei im Browser anzeigen.",
+          "charge_receipt_ocr": "Beleg erneut analysieren und Parserwerte aktualisieren.",
+          "charge_receipt_delete": "Belegdatei und gespeicherte Metadaten löschen.",
+          "charge_receipt_list": "Zur Belegliste dieser Ladesitzung zurückkehren."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "OCR erneut ausführen",
+        "description": "Die vorhandene OCR-Analyse und das Parser-Ergebnis werden durch eine neue Analyse ersetzt."
+      },
+      "charge_receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Soll der Beleg **{filename}** dauerhaft gelöscht werden?",
+        "data": {
+          "confirm": "Löschen bestätigen"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Beleg öffnen",
+        "description": "Klicke auf „Website öffnen“, um den Beleg anzuzeigen."
       }
     },
     "error": {

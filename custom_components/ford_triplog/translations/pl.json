@@ -444,6 +444,37 @@
         "data": {
           "receipt_list_selection": "Paragon"
         }
+      },
+      "charge_receipt_detail": {
+        "title": "Paragon",
+        "description": "**Plik:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Profil parsera:** {profile}\n**Dostawca:** {provider}\n**Energia:** {energy} kWh\n**Razem:** {total} {currency}",
+        "menu_options": {
+          "charge_receipt_open": "Otwórz paragon",
+          "charge_receipt_ocr": "Uruchom OCR ponownie",
+          "charge_receipt_delete": "Usuń paragon",
+          "charge_receipt_list": "Wróć do paragonów"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Pokaż oryginalny plik w przeglądarce.",
+          "charge_receipt_ocr": "Ponownie przeanalizuj paragon i odśwież wartości parsera.",
+          "charge_receipt_delete": "Usuń plik paragonu i zapisane metadane.",
+          "charge_receipt_list": "Wróć do listy paragonów tej sesji ładowania."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "Uruchom OCR ponownie",
+        "description": "Dotychczasowa analiza OCR i wynik parsera zostaną zastąpione nową analizą."
+      },
+      "charge_receipt_delete": {
+        "title": "Usuń paragon",
+        "description": "Trwale usunąć paragon **{filename}**?",
+        "data": {
+          "confirm": "Potwierdź usunięcie"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Otwórz paragon",
+        "description": "Wybierz „Otwórz witrynę”, aby wyświetlić paragon."
       }
     },
     "error": {

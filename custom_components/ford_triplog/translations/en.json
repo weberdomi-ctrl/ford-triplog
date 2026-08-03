@@ -444,6 +444,37 @@
         "data": {
           "receipt_list_selection": "Receipt"
         }
+      },
+      "charge_receipt_detail": {
+        "title": "Receipt",
+        "description": "**File:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parser profile:** {profile}\n**Provider:** {provider}\n**Energy:** {energy} kWh\n**Total:** {total} {currency}",
+        "menu_options": {
+          "charge_receipt_open": "Open receipt",
+          "charge_receipt_ocr": "Run OCR again",
+          "charge_receipt_delete": "Delete receipt",
+          "charge_receipt_list": "Back to receipts"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_open": "Display the original file in the browser.",
+          "charge_receipt_ocr": "Analyze the receipt again and refresh parser values.",
+          "charge_receipt_delete": "Delete the receipt file and stored metadata.",
+          "charge_receipt_list": "Return to this charging session's receipt list."
+        }
+      },
+      "charge_receipt_ocr": {
+        "title": "Run OCR again",
+        "description": "The existing OCR analysis and parser result will be replaced by a new analysis."
+      },
+      "charge_receipt_delete": {
+        "title": "Delete receipt",
+        "description": "Permanently delete receipt **{filename}**?",
+        "data": {
+          "confirm": "Confirm deletion"
+        }
+      },
+      "charge_receipt_open": {
+        "title": "Open receipt",
+        "description": "Select “Open website” to display the receipt."
       }
     },
     "error": {

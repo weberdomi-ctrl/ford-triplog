@@ -270,6 +270,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._receipt_target_type: str | None = None
         self._receipt_result: dict[str, str] = {}
         self._selected_receipt_id: str | None = None
+        self._selected_charge_receipt_action: str | None = None
         self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
         self._ocr_connection_result: dict[str, str] = {}
@@ -985,7 +986,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_receipt_id = str(
                 user_input[CONF_RECEIPT_LIST_SELECTION]
             )
-            return await self.async_step_receipt_detail()
+            return await self.async_step_charge_receipt_detail()
 
         schema: dict[Any, Any] = {}
         if options:
@@ -1008,6 +1009,230 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "charge_id": self._selected_charge_id,
                 "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_charge_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show actions for one receipt of the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            self._selected_receipt_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        if (
+            str(receipt.get("target_type") or "") != RECEIPT_TARGET_CHARGE
+            or str(receipt.get("target_id") or "")
+            != self._selected_charge_id
+        ):
+            self._selected_receipt_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_detail",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_charge"},
+            )
+
+        parser_result = receipt.get("parser_result", {})
+        if not isinstance(parser_result, dict):
+            parser_result = {}
+
+        fields = parser_result.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
+
+        placeholders = {
+            "filename": str(
+                receipt.get("original_filename")
+                or receipt.get("filename")
+                or "Beleg"
+            ),
+            "status": self._format_receipt_processing_status(receipt),
+            "ocr_status": str(receipt.get("ocr_status") or "not_started"),
+            "profile": str(
+                parser_result.get("profile_name") or "—"
+            ),
+            "provider": str(
+                fields.get("merchant")
+                or fields.get("provider")
+                or "—"
+            ),
+            "energy": self._format_optional_number(
+                fields.get("energy_kwh"),
+                3,
+            ),
+            "total": self._format_optional_number(
+                fields.get("amount_payable")
+                if fields.get("amount_payable") is not None
+                else fields.get("total"),
+                2,
+            ),
+            "currency": str(fields.get("currency") or "CHF"),
+        }
+
+        menu_options = ["charge_receipt_open"]
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+            menu_options.append("charge_receipt_ocr")
+        menu_options.extend(
+            [
+                "charge_receipt_delete",
+                "charge_receipt_list",
+            ]
+        )
+
+        return self.async_show_menu(
+            step_id="charge_receipt_detail",
+            menu_options=menu_options,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_charge_receipt_open(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Open the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        self._selected_receipt_url = await (
+            self._get_receipt_storage().async_signed_url(
+                self._selected_receipt_id
+            )
+        )
+        return self.async_external_step(
+            step_id="charge_receipt_open",
+            url=self._selected_receipt_url,
+        )
+
+    async def async_step_charge_receipt_open_done(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Return from the external receipt viewer."""
+
+        return await self.async_step_charge_receipt_detail()
+
+    async def async_step_charge_receipt_ocr(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Run OCR again for the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                receipt = await self._get_receipt_storage().async_analyze(
+                    self._selected_receipt_id,
+                    self._get_ocr_client(),
+                )
+            except FordTriplogOCRAuthenticationError:
+                _LOGGER.exception(
+                    "Charge receipt OCR authentication failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "ocr_authentication_failed"
+            except FordTriplogOCRConnectionError:
+                _LOGGER.exception(
+                    "Charge receipt OCR connection failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "ocr_connection_failed"
+            except FordTriplogOCRResponseError:
+                _LOGGER.exception(
+                    "Charge receipt OCR response failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_ocr_response_failed"
+            except Exception:
+                _LOGGER.exception(
+                    "Charge receipt OCR failed: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_ocr_failed"
+            else:
+                return await self.async_step_charge_receipt_detail()
+
+        return self.async_show_form(
+            step_id="charge_receipt_ocr",
+            data_schema=vol.Schema({}),
+            errors=errors,
+        )
+
+    async def async_step_charge_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Delete the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        errors: dict[str, str] = {}
+
+        receipt = await self._get_receipt_storage().async_get(
+            self._selected_receipt_id
+        )
+        if receipt is None:
+            self._selected_receipt_id = None
+            return await self.async_step_charge_receipt_list()
+
+        if user_input is not None:
+            confirmed = bool(user_input.get("confirm", False))
+            if not confirmed:
+                return await self.async_step_charge_receipt_detail()
+
+            try:
+                deleted = await self._get_receipt_storage().async_delete(
+                    self._selected_receipt_id
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Unable to delete charge receipt: receipt_id=%s",
+                    self._selected_receipt_id,
+                )
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if not deleted:
+                    errors["base"] = "receipt_delete_failed"
+                else:
+                    self._selected_receipt_id = None
+                    return await self.async_step_charge_receipt_list()
+
+        return self.async_show_form(
+            step_id="charge_receipt_delete",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "confirm",
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
             },
         )
 
