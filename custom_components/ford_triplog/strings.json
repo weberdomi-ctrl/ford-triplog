@@ -406,16 +406,36 @@
       },
       "charge_detail": {
         "title": "Ladesitzung",
-        "description": "**Datum:** {date}\\n**Ort:** {location}\\n**Charge-ID:** {charge_id}\\n\\n## Kosten\\n\\n**Abgerechnete Energie:** {energy} kWh\\n**Gesamtkosten:** {cost_total} {currency}\\n\\n## Belege ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "description": "{date} · {location}\n\nKosten: {cost_total} {currency} · Abgerechnete Energie: {energy} kWh\n\nBelege: {receipt_count} · OCR abgeschlossen: {completed_count} · Werte übernommen: {applied_count}",
         "menu_options": {
-          "charge_cost_edit": "Kosten bearbeiten",
-          "charge_receipt_upload": "Beleg hinzufügen",
-          "charge_management": "Andere Ladesitzung auswählen"
+          "charge_technical": "Technische Daten",
+          "charge_cost_edit": "Kosten",
+          "charge_receipts": "Belege",
+          "charge_management": "Andere Ladesitzung"
         },
         "menu_option_descriptions": {
-          "charge_cost_edit": "Kosten und abgerechnete Energie manuell erfassen oder ändern.",
-          "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
+          "charge_technical": "Gespeicherte technische Ladedaten anzeigen.",
+          "charge_cost_edit": "Kosten und abgerechnete Energie bearbeiten.",
+          "charge_receipts": "Belege anzeigen oder einen neuen Beleg hinzufügen.",
           "charge_management": "Zur Liste der Ladesitzungen zurückkehren."
+        }
+      },
+      "charge_technical": {
+        "title": "Technische Daten",
+        "description": "**Charge-ID:** {charge_id}\n**Start:** {start}\n**Ende:** {end}\n**Ort:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Fahrzeugenergie:** {energy} kWh\n**Abgerechnete Energie:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Belege",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Beleg hinzufügen",
+          "receipt_list": "Gespeicherte Belege anzeigen",
+          "charge_detail": "Zurück zur Ladesitzung"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "PDF oder Bild hinterlegen. Bei aktiver OCR wird der Beleg automatisch analysiert.",
+          "receipt_list": "Alle gespeicherten Belege öffnen und verwalten.",
+          "charge_detail": "Zur Übersicht der Ladesitzung zurückkehren."
         }
       }
     },

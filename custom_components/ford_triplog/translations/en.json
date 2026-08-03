@@ -406,16 +406,36 @@
       },
       "charge_detail": {
         "title": "Charging session",
-        "description": "**Date:** {date}\\n**Location:** {location}\\n**Charge ID:** {charge_id}\\n\\n## Costs\\n\\n**Billed energy:** {energy} kWh\\n**Total cost:** {cost_total} {currency}\\n\\n## Receipts ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR completed: {completed_count} · Values applied: {applied_count}",
         "menu_options": {
-          "charge_cost_edit": "Edit costs",
-          "charge_receipt_upload": "Add receipt",
-          "charge_management": "Select another charging session"
+          "charge_technical": "Technical data",
+          "charge_cost_edit": "Costs",
+          "charge_receipts": "Receipts",
+          "charge_management": "Another charging session"
         },
         "menu_option_descriptions": {
-          "charge_cost_edit": "Enter or change costs and billed energy manually.",
-          "charge_receipt_upload": "Attach a PDF or image. When OCR is enabled, the receipt is analyzed automatically.",
+          "charge_technical": "Show stored technical charging data.",
+          "charge_cost_edit": "Edit costs and billed energy.",
+          "charge_receipts": "View receipts or add a new receipt.",
           "charge_management": "Return to the charging-session list."
+        }
+      },
+      "charge_technical": {
+        "title": "Technical data",
+        "description": "**Charge ID:** {charge_id}\n**Start:** {start}\n**End:** {end}\n**Location:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Vehicle energy:** {energy} kWh\n**Billed energy:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Receipts",
+        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Add receipt",
+          "receipt_list": "Show stored receipts",
+          "charge_detail": "Back to charging session"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "Attach a PDF or image. When OCR is enabled, the receipt is analyzed automatically.",
+          "receipt_list": "Open and manage all stored receipts.",
+          "charge_detail": "Return to the charging-session overview."
         }
       }
     },

@@ -405,7 +405,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show the selected charging session and its available actions."""
+        """Show the selected charging session as a compact navigation hub."""
 
         if not self._selected_charge_id:
             return await self.async_step_charge_management()
@@ -432,24 +432,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
         ]
 
         receipt_count = len(receipts)
-        if receipt_count:
-            receipt_statuses: list[str] = []
-            for receipt in receipts:
-                filename = str(
-                    receipt.get("original_filename")
-                    or receipt.get("filename")
-                    or "Beleg"
-                )
-                status = self._format_receipt_processing_status(receipt)
-                receipt_statuses.append(f"{filename} · {status}")
-            receipt_summary = "\n".join(receipt_statuses[:5])
-            if receipt_count > 5:
-                receipt_summary += f"\n… und {receipt_count - 5} weitere"
-        else:
-            receipt_summary = "Noch kein Beleg vorhanden"
+        completed_count = sum(
+            1
+            for receipt in receipts
+            if str(receipt.get("ocr_status") or "") == "completed"
+        )
+        applied_count = sum(
+            1
+            for receipt in receipts
+            if bool(receipt.get("parser_confirmed", False))
+        )
 
         self._charge_detail_placeholders = {
-            "charge_id": str(charge.charge_id or ""),
             "date": self._format_charge_datetime(charge.start_time),
             "location": self._charge_location(charge),
             "energy": self._format_optional_number(
@@ -462,22 +456,128 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             "currency": str(getattr(charge, "currency", None) or "CHF"),
             "receipt_count": str(receipt_count),
-            "receipt_summary": receipt_summary,
-            "ocr_status": (
-                "aktiv"
-                if bool(self._options.get(CONF_OCR_ENABLED, False))
-                else "deaktiviert"
-            ),
+            "completed_count": str(completed_count),
+            "applied_count": str(applied_count),
         }
 
         return self.async_show_menu(
             step_id="charge_detail",
             menu_options=[
+                "charge_technical",
                 "charge_cost_edit",
-                "charge_receipt_upload",
+                "charge_receipts",
                 "charge_management",
             ],
             description_placeholders=self._charge_detail_placeholders,
+        )
+
+    async def async_step_charge_technical(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show read-only technical charging-session details."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            return self.async_show_form(
+                step_id="charge_technical",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        if user_input is not None:
+            return await self.async_step_charge_detail()
+
+        placeholders = {
+            "charge_id": str(charge.charge_id or ""),
+            "start": self._format_charge_datetime(charge.start_time),
+            "end": self._format_charge_datetime(charge.end_time),
+            "location": self._charge_location(charge),
+            "soc_start": self._format_optional_number(
+                getattr(charge, "soc_start", None),
+                0,
+            ),
+            "soc_end": self._format_optional_number(
+                getattr(charge, "soc_end", None),
+                0,
+            ),
+            "energy": self._format_optional_number(
+                getattr(charge, "energy_kwh", None),
+                3,
+            ),
+            "energy_billed": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+        }
+
+        return self.async_show_form(
+            step_id="charge_technical",
+            data_schema=vol.Schema({}),
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_charge_receipts(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt actions for the selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        if user_input is not None:
+            return await self.async_step_charge_detail()
+
+        all_receipts = await self._get_receipt_storage().async_list()
+        receipts = [
+            receipt
+            for receipt in all_receipts
+            if str(receipt.get("target_type") or "")
+            == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("target_id") or "")
+            == self._selected_charge_id
+        ]
+
+        if receipts:
+            lines = []
+            for receipt in receipts[:10]:
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+                lines.append(
+                    f"{filename} · "
+                    f"{self._format_receipt_processing_status(receipt)}"
+                )
+            receipt_summary = "\n".join(lines)
+            if len(receipts) > 10:
+                receipt_summary += f"\n… und {len(receipts) - 10} weitere"
+        else:
+            receipt_summary = "Noch kein Beleg vorhanden"
+
+        return self.async_show_menu(
+            step_id="charge_receipts",
+            menu_options=[
+                "charge_receipt_upload",
+                "receipt_list",
+                "charge_detail",
+            ],
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+                "receipt_summary": receipt_summary,
+                "ocr_status": (
+                    "aktiv"
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "deaktiviert"
+                ),
+            },
         )
 
     async def async_step_charge_cost_edit(

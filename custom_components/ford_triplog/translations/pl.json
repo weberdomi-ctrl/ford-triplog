@@ -406,16 +406,36 @@
       },
       "charge_detail": {
         "title": "Sesja ładowania",
-        "description": "**Data:** {date}\\n**Lokalizacja:** {location}\\n**ID ładowania:** {charge_id}\\n\\n## Koszty\\n\\n**Rozliczona energia:** {energy} kWh\\n**Koszt całkowity:** {cost_total} {currency}\\n\\n## Paragony ({receipt_count})\\n\\n{receipt_summary}\\n\\n**OCR:** {ocr_status}",
+        "description": "{date} · {location}\n\nKoszt: {cost_total} {currency} · Rozliczona energia: {energy} kWh\n\nParagony: {receipt_count} · OCR zakończone: {completed_count} · Zastosowane wartości: {applied_count}",
         "menu_options": {
-          "charge_cost_edit": "Edytuj koszty",
-          "charge_receipt_upload": "Dodaj paragon",
-          "charge_management": "Wybierz inną sesję ładowania"
+          "charge_technical": "Dane techniczne",
+          "charge_cost_edit": "Koszty",
+          "charge_receipts": "Paragony",
+          "charge_management": "Inna sesja ładowania"
         },
         "menu_option_descriptions": {
-          "charge_cost_edit": "Ręcznie wprowadź lub zmień koszty i rozliczoną energię.",
-          "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
+          "charge_technical": "Pokaż zapisane techniczne dane ładowania.",
+          "charge_cost_edit": "Edytuj koszty i rozliczoną energię.",
+          "charge_receipts": "Pokaż paragony lub dodaj nowy.",
           "charge_management": "Wróć do listy sesji ładowania."
+        }
+      },
+      "charge_technical": {
+        "title": "Dane techniczne",
+        "description": "**ID ładowania:** {charge_id}\n**Początek:** {start}\n**Koniec:** {end}\n**Lokalizacja:** {location}\n**SOC:** {soc_start} % → {soc_end} %\n**Energia pojazdu:** {energy} kWh\n**Rozliczona energia:** {energy_billed} kWh"
+      },
+      "charge_receipts": {
+        "title": "Paragony",
+        "description": "Zapisane paragony: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "charge_receipt_upload": "Dodaj paragon",
+          "receipt_list": "Pokaż zapisane paragony",
+          "charge_detail": "Wróć do sesji ładowania"
+        },
+        "menu_option_descriptions": {
+          "charge_receipt_upload": "Dołącz PDF lub obraz. Przy włączonym OCR dokument zostanie automatycznie przeanalizowany.",
+          "receipt_list": "Otwórz i zarządzaj wszystkimi paragonami.",
+          "charge_detail": "Wróć do przeglądu sesji ładowania."
         }
       }
     },
