@@ -291,7 +291,7 @@
       },
       "receipt_result": {
         "title": "Paragon zaktualizowany",
-        "description": "Operacja została zakończona. Plik: {filename}"
+        "description": "**Plik:** {filename}\n**Przypisanie:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Zapisane paragony",
@@ -392,6 +392,17 @@
       "receipt_apply_result": {
         "title": "Zastosowano wartości paragonu",
         "description": "**Paragon:** {document}\n**Sesja ładowania:** {charge_id}\n**Profil parsera:** {profile}\n**Rozliczona energia:** {energy} kWh\n**Koszt całkowity:** {total} {currency}\n\nParagon oznaczono jako sprawdzony i zastosowany."
+      },
+      "charge_receipt_upload": {
+        "title": "Dodaj paragon do sesji ładowania",
+        "description": "**Sesja ładowania:** {date} · {location}\n**ID ładowania:** {charge_id}\n**OCR:** {ocr_status}\n\nWybierz plik PDF lub obraz. Gdy OCR jest włączone, analiza i parser uruchomią się automatycznie, a następnie otworzy się ekran weryfikacji.",
+        "data": {
+          "receipt_file": "Plik paragonu",
+          "receipt_note": "Notatka"
+        },
+        "data_description": {
+          "receipt_note": "Opcjonalna notatka do paragonu."
+        }
       }
     },
     "error": {
@@ -606,7 +617,8 @@
     "charge_currency": "Waluta",
     "charge_price_per_kwh": "Cena za kWh",
     "pause_action_save": "Zapisz",
-    "pause_action_clear": "Usuń dane ręczne"
+    "pause_action_clear": "Usuń dane ręczne",
+    "charge_action_add_receipt": "Dodaj paragon"
   },
   "services": {
     "import_charging_sites": {

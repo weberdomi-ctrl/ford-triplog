@@ -127,6 +127,7 @@ CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
 
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
+CHARGE_ACTION_ADD_RECEIPT = "add_receipt"
 
 CONF_PAUSE_SELECTION = "pause_selection"
 CONF_PAUSE_CATEGORY = "category"
@@ -316,6 +317,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 f"component.{DOMAIN}.common.charge_action_clear",
                 "Clear costs",
             ),
+            "add_receipt": translations.get(
+                f"component.{DOMAIN}.common.charge_action_add_receipt",
+                "Add receipt",
+            ),
         }
 
         return self._charge_translations
@@ -428,6 +433,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     CHARGE_ACTION_SAVE,
                 )
             )
+
+            if action == CHARGE_ACTION_ADD_RECEIPT:
+                return await self.async_step_charge_receipt_upload()
 
             try:
                 if action == CHARGE_ACTION_CLEAR:
@@ -663,6 +671,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                     value=CHARGE_ACTION_CLEAR,
                                     label=charge_text["clear"],
                                 ),
+                                selector.SelectOptionDict(
+                                    value=CHARGE_ACTION_ADD_RECEIPT,
+                                    label=charge_text["add_receipt"],
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -744,6 +756,142 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ),
                         2,
                     )
+                ),
+            },
+        )
+
+    async def async_step_charge_receipt_upload(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Attach a receipt to the currently selected charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_management()
+
+        charge = await self._get_charge_manager().async_get_charge(
+            self._selected_charge_id
+        )
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_receipt_upload",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            charge_id = self._selected_charge_id
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=RECEIPT_TARGET_CHARGE,
+                        target_id=charge_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                _LOGGER.exception(
+                    "Unable to attach receipt to charge: charge_id=%s",
+                    charge_id,
+                )
+                errors["base"] = "receipt_import_failed"
+            else:
+                receipt_id = str(receipt.get("receipt_id") or "")
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "Beleg"
+                )
+
+                if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    self._receipt_result = {
+                        "filename": filename,
+                        "target_id": charge_id,
+                        "status": "Beleg gespeichert · OCR deaktiviert",
+                    }
+                    self._selected_charge_id = None
+                    return await self.async_step_receipt_result()
+
+                try:
+                    analyzed = await self._get_receipt_storage().async_analyze(
+                        receipt_id,
+                        self._get_ocr_client(),
+                    )
+                except (
+                    FordTriplogOCRAuthenticationError,
+                    FordTriplogOCRConnectionError,
+                    FordTriplogOCRResponseError,
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception(
+                        "Automatic receipt OCR failed after upload: "
+                        "receipt_id=%s charge_id=%s",
+                        receipt_id,
+                        charge_id,
+                    )
+                    self._receipt_result = {
+                        "filename": filename,
+                        "target_id": charge_id,
+                        "status": (
+                            "Beleg gespeichert · OCR fehlgeschlagen; "
+                            "Analyse kann später erneut gestartet werden"
+                        ),
+                    }
+                    self._selected_charge_id = None
+                    return await self.async_step_receipt_result()
+
+                if str(analyzed.get("parse_status") or "") == "parsed":
+                    self._selected_apply_receipt_id = receipt_id
+                    return await self.async_step_receipt_apply_edit()
+
+                self._receipt_result = {
+                    "filename": filename,
+                    "target_id": charge_id,
+                    "status": "Beleg gespeichert und gelesen · kein passendes Parserprofil",
+                }
+                self._selected_charge_id = None
+                return await self.async_step_receipt_result()
+
+        return self.async_show_form(
+            step_id="charge_receipt_upload",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_RECEIPT_FILE): selector.FileSelector(
+                        selector.FileSelectorConfig(
+                            accept=(
+                                ".pdf,.jpg,.jpeg,.png,.webp,"
+                                "application/pdf,image/jpeg,image/png,image/webp"
+                            )
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_RECEIPT_NOTE,
+                        default="",
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_id": str(charge.charge_id or ""),
+                "date": self._format_charge_datetime(charge.start_time),
+                "location": self._charge_location(charge),
+                "ocr_status": (
+                    "aktiv – Beleg wird automatisch analysiert"
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "deaktiviert – Beleg wird nur gespeichert"
                 ),
             },
         )
@@ -1277,7 +1425,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
         menu_options = ["ocr_settings"]
         if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("receipt_ocr")
-        menu_options.append("receipt_apply")
         menu_options.extend(
             [
                 "receipt_import_type",
@@ -2455,6 +2602,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         if user_input is not None:
             return await self.async_step_receipt_management()
+        self._receipt_result.setdefault("status", "Vorgang abgeschlossen")
         return self.async_show_form(
             step_id="receipt_result",
             data_schema=vol.Schema({}),

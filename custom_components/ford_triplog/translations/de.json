@@ -291,7 +291,7 @@
       },
       "receipt_result": {
         "title": "Beleg aktualisiert",
-        "description": "Der Vorgang wurde abgeschlossen. Datei: {filename}"
+        "description": "**Datei:** {filename}\n**Zuordnung:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Gespeicherte Belege",
@@ -392,6 +392,17 @@
       "receipt_apply_result": {
         "title": "Belegwerte übernommen",
         "description": "**Beleg:** {document}\n**Ladesitzung:** {charge_id}\n**Parserprofil:** {profile}\n**Abgerechnete Energie:** {energy} kWh\n**Gesamtkosten:** {total} {currency}\n\nDer Beleg wurde als geprüft und übernommen markiert."
+      },
+      "charge_receipt_upload": {
+        "title": "Beleg zur Ladesitzung hinzufügen",
+        "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nWähle einen PDF- oder Bildbeleg. Ist OCR aktiv, werden OCR und Parser automatisch ausgeführt und anschließend direkt die Prüfansicht geöffnet.",
+        "data": {
+          "receipt_file": "Belegdatei",
+          "receipt_note": "Notiz"
+        },
+        "data_description": {
+          "receipt_note": "Optionaler Hinweis zum Beleg."
+        }
       }
     },
     "error": {
@@ -606,7 +617,8 @@
     "charge_currency": "Währung",
     "charge_price_per_kwh": "Preis pro kWh",
     "pause_action_save": "Speichern",
-    "pause_action_clear": "Manuelle Angaben löschen"
+    "pause_action_clear": "Manuelle Angaben löschen",
+    "charge_action_add_receipt": "Beleg hinzufügen"
   },
   "services": {
     "import_charging_sites": {

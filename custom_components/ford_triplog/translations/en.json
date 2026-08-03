@@ -291,7 +291,7 @@
       },
       "receipt_result": {
         "title": "Receipt updated",
-        "description": "The receipt operation was completed. File: {filename}"
+        "description": "**File:** {filename}\n**Assigned to:** {target_id}\n**Status:** {status}"
       },
       "receipt_list": {
         "title": "Stored receipts",
@@ -392,6 +392,17 @@
       "receipt_apply_result": {
         "title": "Receipt values applied",
         "description": "**Receipt:** {document}\n**Charging session:** {charge_id}\n**Parser profile:** {profile}\n**Billed energy:** {energy} kWh\n**Total cost:** {total} {currency}\n\nThe receipt has been marked as reviewed and applied."
+      },
+      "charge_receipt_upload": {
+        "title": "Add receipt to charging session",
+        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nSelect a PDF or image receipt. When OCR is enabled, OCR and parsing run automatically and the review screen opens immediately.",
+        "data": {
+          "receipt_file": "Receipt file",
+          "receipt_note": "Note"
+        },
+        "data_description": {
+          "receipt_note": "Optional note for the receipt."
+        }
       }
     },
     "error": {
@@ -606,7 +617,8 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data"
+    "pause_action_clear": "Clear manual data",
+    "charge_action_add_receipt": "Add receipt"
   },
   "services": {
     "import_charging_sites": {
