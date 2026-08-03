@@ -827,7 +827,14 @@
     "ocr_pdf_first_page": "Nur erste Seite",
     "ocr_pdf_all_pages": "Alle Seiten / nicht angegeben",
     "operation_completed": "Vorgang abgeschlossen",
-    "charge": "Ladevorgang"
+    "charge": "Ladevorgang",
+    "unknown_charging_location": "Unbekannter Ladeort",
+    "selection_back": "← Zurück",
+    "document_pdf": "PDF-Dokument",
+    "document_image": "Bilddatei",
+    "document_generic": "Dokument",
+    "profile": "Profil",
+    "receipt_more": "weitere"
   },
   "services": {
     "import_charging_sites": {

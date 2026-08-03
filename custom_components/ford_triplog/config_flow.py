@@ -368,6 +368,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "ocr_pdf_all_pages": "All pages / not specified",
             "operation_completed": "Operation completed",
             "charge": "Charging session",
+            "unknown_charging_location": "Unknown charging location",
+            "selection_back": "← Back",
+            "selection_back_de": "← Back",
+            "selection_back_pl": "← Back",
+            "document_pdf": "PDF document",
+            "document_image": "Image file",
+            "document_generic": "Document",
+            "profile": "Profile",
+            "receipt_more": "more",
         }
 
         self._ui_translations = {
@@ -471,12 +480,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=SELECTION_BACK,
-                label=self._selection_back_label(),
+                label=await self._selection_back_label(),
             ),
             *[
                 selector.SelectOptionDict(
                     value=str(charge.charge_id),
-                    label=self._format_charge_label(charge),
+                    label=await self._format_charge_label(charge),
                 )
                 for charge in charges
                 if charge.charge_id
@@ -551,7 +560,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         self._charge_detail_placeholders = {
             "date": self._format_charge_datetime(charge.start_time),
-            "location": self._charge_location(charge),
+            "location": await self._charge_location(charge),
             "energy": self._format_optional_number(
                 getattr(charge, "energy_billed_kwh", None),
                 3,
@@ -603,7 +612,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "charge_id": str(charge.charge_id or ""),
             "start": self._format_charge_datetime(charge.start_time),
             "end": self._format_charge_datetime(charge.end_time),
-            "location": self._charge_location(charge),
+            "location": await self._charge_location(charge),
             "soc_start": self._format_optional_number(
                 getattr(charge, "soc_start", None),
                 0,
@@ -666,7 +675,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
             receipt_summary = "\n".join(lines)
             if len(receipts) > 10:
-                receipt_summary += f"\n… +{len(receipts) - 10}"
+                receipt_summary += (
+                    f"\n… +{len(receipts) - 10} "
+                    f"{ui_text['receipt_more']}"
+                )
         else:
             receipt_summary = ui_text["receipt_none"]
 
@@ -970,7 +982,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "date": self._format_charge_datetime(
                     charge.start_time
                 ),
-                "location": self._charge_location(charge),
+                "location": await self._charge_location(charge),
                 "energy_kwh": self._format_optional_number(
                     charge.energy_added_kwh,
                     2,
@@ -1089,7 +1101,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             0,
             selector.SelectOptionDict(
                 value=SELECTION_BACK,
-                label=self._selection_back_label(),
+                label=await self._selection_back_label(),
             ),
         )
 
@@ -1658,7 +1670,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "filename": str(
                     receipt.get("original_filename")
                     or receipt.get("filename")
-                    or "Beleg"
+                    or (await self._async_get_ui_translations())["receipt"]
                 )
             },
         )
@@ -1711,7 +1723,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 filename = str(
                     receipt.get("original_filename")
                     or receipt.get("filename")
-                    or "Beleg"
+                    or (await self._async_get_ui_translations())["receipt"]
                 )
 
                 if not bool(self._options.get(CONF_OCR_ENABLED, False)):
@@ -1773,7 +1785,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "charge_id": str(charge.charge_id or ""),
                 "date": self._format_charge_datetime(charge.start_time),
-                "location": self._charge_location(charge),
+                "location": await self._charge_location(charge),
                 "ocr_status": (
                     (await self._async_get_ui_translations())[
                         "receipt_upload_ocr_enabled"
@@ -1801,14 +1813,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders=self._charge_result,
         )
 
-    @staticmethod
-    def _format_charge_label(charge: Any) -> str:
+    async def _format_charge_label(self, charge: Any) -> str:
         """Return a short one-line label for a charging session."""
 
-        date_text = FordTriplogOptionsFlow._format_charge_datetime(
+        date_text = self._format_charge_datetime(
             getattr(charge, "start_time", None)
         )
-        location = FordTriplogOptionsFlow._charge_location(charge)
+        location = await self._charge_location(charge)
 
         parts = [
             date_text,
@@ -1858,8 +1869,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return timestamp.strftime("%d.%m.%Y %H:%M")
 
-    @staticmethod
-    def _charge_location(charge: Any) -> str:
+    async def _charge_location(self, charge: Any) -> str:
         """Return a short charging location label."""
 
         for attribute in (
@@ -1916,7 +1926,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if address:
             return str(address).split(",", 1)[0].strip()
 
-        return "Unbekannter Ladeort"
+        return (
+            await self._async_get_ui_translations()
+        )["unknown_charging_location"]
 
     @staticmethod
     def _format_optional_number(
@@ -2128,7 +2140,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         options = [
             selector.SelectOptionDict(
                 value=SELECTION_BACK,
-                label=self._selection_back_label(),
+                label=await self._selection_back_label(),
             ),
             *[
                 selector.SelectOptionDict(
@@ -2333,15 +2345,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders=self._pause_result,
         )
 
-    def _selection_back_label(self) -> str:
-        """Return a localized label for selection-form back entries."""
+    async def _selection_back_label(self) -> str:
+        """Return the translated label for selection-form back entries."""
 
-        language = str(self.hass.config.language or "en").lower()
-        if language.startswith("de"):
-            return "← Zurück"
-        if language.startswith("pl"):
-            return "← Wróć"
-        return "← Back"
+        return (await self._async_get_ui_translations())["selection_back"]
 
     def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
         """Return initialized receipt storage for this config entry."""
@@ -2592,7 +2599,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return [
                 selector.SelectOptionDict(
                     value=str(charge.charge_id),
-                    label=self._format_charge_label(charge),
+                    label=await self._format_charge_label(charge),
                 )
                 for charge in charges
                 if charge.charge_id
@@ -2717,7 +2724,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     getattr(charge, "start_time", None)
                 ) if charge else "—"
                 time_text = ""
-                location = self._charge_location(charge) if charge else "—"
+                location = await self._charge_location(charge) if charge else "—"
                 title = location
                 amount = getattr(charge, "cost_total", None) if charge else None
                 currency = str(getattr(charge, "currency", None) or "") if charge else ""
@@ -2875,17 +2882,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
         suffix = Path(original_filename).suffix.lower()
 
+        ui_text = await self._async_get_ui_translations()
+
         if media_type == "application/pdf" or suffix == ".pdf":
-            document_type = "PDF-Dokument"
+            document_type = ui_text["document_pdf"]
         elif media_type.startswith("image/") or suffix in {
             ".jpg",
             ".jpeg",
             ".png",
             ".webp",
         }:
-            document_type = "Bilddatei"
+            document_type = ui_text["document_image"]
         else:
-            document_type = "Dokument"
+            document_type = ui_text["document_generic"]
 
         receipt_path = f"/api/ford_triplog/receipts/{receipt_id}"
         signed_path = async_sign_path(
@@ -2906,8 +2915,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_receipt_url = f"{base_url}{signed_path}"
         except NoURLAvailableError:
             self._selected_receipt_url = signed_path
-
-        ui_text = await self._async_get_ui_translations()
 
         return self.async_show_form(
             step_id="receipt_detail",
@@ -2989,7 +2996,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return f"✔ {ui_text['receipt_status_values_applied']}"
         if parse_status == "parsed":
             profile = str(
-                receipt.get("parser_profile") or "Profile"
+                receipt.get("parser_profile")
+                or ui_text["profile"]
             )
             return (
                 f"🧾 {ui_text['receipt_status_values_detected']} · "
@@ -3117,7 +3125,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 document_name = str(
                     receipt.get("original_filename")
                     or receipt.get("filename")
-                    or "Beleg"
+                    or (await self._async_get_ui_translations())["receipt"]
                 )
 
                 parser_result = receipt.get("parser_result", {})
@@ -3418,7 +3426,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         placeholders = {
             "charge_id": target_id,
-            "charge_label": self._format_charge_label(charge),
+            "charge_label": await self._format_charge_label(charge),
             "profile": str(parser_result.get("profile_name") or "—"),
             "parsed_station": str(fields.get("station") or "—"),
             "parsed_start": str(fields.get("charging_start") or "—"),
@@ -4931,7 +4939,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         country_options = [
             selector.SelectOptionDict(
                 value=CHARGING_SITE_DATABASE_BACK,
-                label=self._selection_back_label(),
+                label=await self._selection_back_label(),
             ),
             *[
                 selector.SelectOptionDict(
@@ -5127,7 +5135,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             country_options = [
                 selector.SelectOptionDict(
                     value=CHARGING_SITE_DATABASE_BACK,
-                    label=self._selection_back_label(),
+                    label=await self._selection_back_label(),
                 ),
                 *[
                     selector.SelectOptionDict(
