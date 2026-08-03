@@ -6,7 +6,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -154,7 +154,26 @@ class ReceiptParserEngine:
                 continue
             fields[str(field_name)] = value
 
-        field_count = max(1, len(rules))
+        derived_rules = profile.get("derived_fields", {})
+        if isinstance(derived_rules, dict):
+            for field_name, rule in derived_rules.items():
+                if not isinstance(rule, dict):
+                    continue
+                try:
+                    value = self._derive_value(rule, fields)
+                except (TypeError, ValueError) as err:
+                    _LOGGER.warning(
+                        "Receipt parser derived field failed: "
+                        "profile_id=%s field=%s error=%s",
+                        profile.get("profile_id"),
+                        field_name,
+                        err,
+                    )
+                    continue
+                if value is not None and value != "":
+                    fields[str(field_name)] = value
+
+        field_count = max(1, len(rules) + len(derived_rules))
         extracted_ratio = len(fields) / field_count
         confidence = round(
             min(1.0, (match_score * 0.55) + (extracted_ratio * 0.45)),
@@ -263,6 +282,29 @@ class ReceiptParserEngine:
         return None
 
     @staticmethod
+    def _derive_value(
+        rule: dict[str, Any],
+        fields: dict[str, Any],
+    ) -> Any:
+        """Calculate one field from already extracted values."""
+
+        method = str(rule.get("method") or "")
+        if method == "add_seconds":
+            start_value = fields.get(str(rule.get("start_field") or ""))
+            seconds_value = fields.get(str(rule.get("seconds_field") or ""))
+            if start_value is None or seconds_value is None:
+                return None
+            start = datetime.fromisoformat(str(start_value))
+            return (
+                start + timedelta(seconds=int(seconds_value))
+            ).isoformat()
+
+        if method == "copy":
+            return fields.get(str(rule.get("source_field") or ""))
+
+        return None
+
+    @staticmethod
     def _transform(value: Any, transform: Any) -> Any:
         if value is None:
             return None
@@ -311,6 +353,109 @@ class ReceiptParserEngine:
                     str(result).strip(),
                     "%d/%m/%Y",
                 ).date().isoformat()
+            elif name == "datetime_slash_dmy4_at":
+                normalized = re.sub(
+                    r"\s+",
+                    " ",
+                    str(result),
+                ).strip()
+                normalized = normalized.replace(" à ", " ")
+                result = datetime.strptime(
+                    normalized,
+                    "%d/%m/%Y %H:%M",
+                ).isoformat()
+            elif name == "duration_mmss":
+                normalized = str(result).strip()
+                minutes, seconds = normalized.split(":", 1)
+                result = (int(minutes) * 60) + int(seconds)
+            elif name == "date_ordinal_month":
+                normalized = re.sub(
+                    r"(\d{1,2})(?:st|nd|rd|th)",
+                    r"\1",
+                    str(result).strip(),
+                    flags=re.IGNORECASE,
+                )
+                month_map = {
+                    "januar": 1,
+                    "january": 1,
+                    "februar": 2,
+                    "february": 2,
+                    "märz": 3,
+                    "maerz": 3,
+                    "march": 3,
+                    "april": 4,
+                    "mai": 5,
+                    "may": 5,
+                    "juni": 6,
+                    "june": 6,
+                    "juli": 7,
+                    "july": 7,
+                    "august": 8,
+                    "september": 9,
+                    "oktober": 10,
+                    "october": 10,
+                    "november": 11,
+                    "dezember": 12,
+                    "december": 12,
+                }
+                parts = normalized.split()
+                if len(parts) != 3:
+                    raise ValueError(
+                        f"Unsupported ordinal date: {normalized}"
+                    )
+                day = int(parts[0])
+                month = month_map.get(parts[1].casefold())
+                if month is None:
+                    raise ValueError(
+                        f"Unsupported month: {parts[1]}"
+                    )
+                result = datetime(
+                    int(parts[2]),
+                    month,
+                    day,
+                ).date().isoformat()
+            elif name == "datetime_ordinal_month":
+                normalized = re.sub(
+                    r"(\d{1,2})(?:st|nd|rd|th)",
+                    r"\1",
+                    str(result).strip(),
+                    flags=re.IGNORECASE,
+                )
+                parts = normalized.split()
+                if len(parts) != 4:
+                    raise ValueError(
+                        f"Unsupported ordinal datetime: {normalized}"
+                    )
+                month_map = {
+                    "januar": 1, "january": 1,
+                    "februar": 2, "february": 2,
+                    "märz": 3, "maerz": 3, "march": 3,
+                    "april": 4,
+                    "mai": 5, "may": 5,
+                    "juni": 6, "june": 6,
+                    "juli": 7, "july": 7,
+                    "august": 8,
+                    "september": 9,
+                    "oktober": 10, "october": 10,
+                    "november": 11,
+                    "dezember": 12, "december": 12,
+                }
+                month = month_map.get(parts[1].casefold())
+                if month is None:
+                    raise ValueError(
+                        f"Unsupported month: {parts[1]}"
+                    )
+                hour, minute, second = (
+                    int(value) for value in parts[3].split(":")
+                )
+                result = datetime(
+                    int(parts[2]),
+                    month,
+                    int(parts[0]),
+                    hour,
+                    minute,
+                    second,
+                ).isoformat()
             elif name == "datetime_dmy2_comma":
                 result = datetime.strptime(
                     re.sub(r"\s+", "", str(result)),

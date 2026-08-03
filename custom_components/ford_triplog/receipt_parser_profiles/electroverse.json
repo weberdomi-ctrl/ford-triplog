@@ -1,0 +1,139 @@
+{
+  "schema": 1,
+  "profile_id": "electroverse_receipt_v1",
+  "name": "Octopus Electroverse Beleg",
+  "version": "1.0",
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true,
+  "priority": 100,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "ELECTROVERSE",
+      "Charge Session Receipt"
+    ],
+    "optional_contains": [
+      "Amount payable",
+      "Credit Applied",
+      "EVSE"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "Octopus Electroverse"
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "Octopus Electroverse"
+    },
+    "provider": {
+      "patterns": [
+        "Provider\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "receipt_date": {
+      "patterns": [
+        "Receipt Date:\\s*(\\d{1,2}(?:st|nd|rd|th)\\s+\\w+\\s+\\d{4})"
+      ],
+      "transform": "date_ordinal_month"
+    },
+    "invoice_number": {
+      "patterns": [
+        "Receipt\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "evse_id": {
+      "patterns": [
+        "EVSE\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "charging_start": {
+      "patterns": [
+        "Session start\\s*\\n(\\d{1,2}(?:st|nd|rd|th)\\s+\\w+\\s+\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_ordinal_month",
+      "required": true
+    },
+    "charging_end": {
+      "patterns": [
+        "Session end\\s*\\n(\\d{1,2}(?:st|nd|rd|th)\\s+\\w+\\s+\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_ordinal_month"
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Consumption \\[kWh\\]\\s*\\n([\\d.,]+)\\s*CHF\\s*\\n([\\d.,]+)"
+      ],
+      "group": 2,
+      "transform": "decimal",
+      "required": true
+    },
+    "price_per_kwh": {
+      "patterns": [
+        "Consumption \\[kWh\\]\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "subtotal": {
+      "patterns": [
+        "Total\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "vat": {
+      "patterns": [
+        "Total\\s*\\n[\\d.,]+\\s*CHF\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "gross_total": {
+      "patterns": [
+        "Total\\s*\\n[\\d.,]+\\s*CHF\\s*\\n[\\d.,]+\\s*CHF\\s*\\n([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "credit_applied": {
+      "patterns": [
+        "Credit Applied\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "amount_payable": {
+      "patterns": [
+        "Payable After Credit\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "total": {
+      "patterns": [
+        "Payable After Credit\\s*\\nCHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "co2_saved_kg": {
+      "patterns": [
+        "Est\\. C0?2 saved\\s*\\n([\\d.,]+)\\s*kg"
+      ],
+      "transform": "decimal"
+    }
+  }
+}

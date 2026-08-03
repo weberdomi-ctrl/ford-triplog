@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "swisscharge_gofast_v1",
   "name": "Swisscharge / GOFAST Rechnung",
-  "version": "1.0",
+  "version": "1.1",
   "priority": 100,
   "match_threshold": 0.75,
   "match": {
@@ -118,6 +118,31 @@
         "strip",
         "collapse_whitespace"
       ]
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "Swisscharge"
+    },
+    "evse_id": {
+      "patterns": [
+        "ID:\\s*([^;\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace"
+      ]
+    },
+    "payment_method": {
+      "patterns": [
+        "Zahlungsmethode\\s*\\n([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
     }
-  }
+  },
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true
 }

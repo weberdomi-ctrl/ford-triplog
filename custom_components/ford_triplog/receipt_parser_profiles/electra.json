@@ -2,7 +2,7 @@
   "schema": 1,
   "profile_id": "electra_invoice_v1",
   "name": "Electra Rechnung",
-  "version": "1.0",
+  "version": "1.1",
   "priority": 100,
   "match_threshold": 0.75,
   "match": {
@@ -70,21 +70,44 @@
     },
     "charging_start": {
       "patterns": [
-        "(\\d{2}/\\d{2}/\\d{4})\\s+à\\s+(\\d{2}:\\d{2})\\s*-\\s*\\d{2}:\\d{2}"
+        "(\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2})\\s*-\\s*\\d{2}:\\d{2}"
       ],
-      "join_groups": true,
-      "transform": [
-        "remove_whitespace"
-      ]
+      "transform": "datetime_slash_dmy4_at",
+      "required": true
     },
     "station": {
       "patterns": [
-        "\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2}\\s*-\\s*\\d{2}:\\d{2}\\s*\\n([^\\n]+)"
+        "\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2}\\s*-\\s*\\d{2}:\\d{2}\\s*\\n\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2}\\s*\\n([^\\n]+)"
       ],
       "transform": [
         "strip",
         "collapse_whitespace"
-      ]
+      ],
+      "required": true
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "Electra"
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "Electra"
+    },
+    "duration_seconds": {
+      "patterns": [
+        "\\d{2}/\\d{2}/\\d{4}\\s+à\\s+\\d{2}:\\d{2}\\s*-\\s*(\\d{2}:\\d{2})"
+      ],
+      "transform": "duration_mmss"
+    }
+  },
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true,
+  "derived_fields": {
+    "charging_end": {
+      "method": "add_seconds",
+      "start_field": "charging_start",
+      "seconds_field": "duration_seconds"
     }
   }
 }
