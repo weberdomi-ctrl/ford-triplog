@@ -412,10 +412,10 @@
         "description": "**Ladesitzung:** {date} · {location}\n**Charge-ID:** {charge_id}\n**OCR:** {ocr_status}\n\nNach dem Speichern wird direkt der Beleg geöffnet. Bei aktiver OCR werden Text und Parserprofil automatisch ermittelt.",
         "data": {
           "receipt_file": "Belegdatei",
-          "receipt_note": "Notiz"
+          "note": "Notiz"
         },
         "data_description": {
-          "receipt_note": "Optionaler Hinweis zum Beleg."
+          "note": "Optionaler Hinweis zum Beleg."
         }
       },
       "charge_detail": {
@@ -594,13 +594,6 @@
       "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
       "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
       "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
-    },
-    "menu": {
-      "receipt_management": "Receipt management",
-      "receipt_import_type": "Import receipt",
-      "receipt_list": "Belege anzeigen",
-      "receipt_delete": "Delete receipt",
-      "receipt_ocr": "OCR ausführen"
     }
   },
   "entity": {
