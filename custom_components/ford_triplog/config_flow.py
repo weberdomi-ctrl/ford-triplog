@@ -1185,11 +1185,29 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not self._selected_receipt_id:
             return await self.async_step_charge_receipt_list()
 
-        self._selected_receipt_url = await (
-            self._get_receipt_storage().async_signed_url(
-                self._selected_receipt_id
-            )
+        receipt_path = (
+            f"/api/ford_triplog/receipts/{self._selected_receipt_id}"
         )
+        signed_path = async_sign_path(
+            self.hass,
+            receipt_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=True,
+            ).rstrip("/")
+            self._selected_receipt_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            self._selected_receipt_url = signed_path
+
         return self.async_external_step(
             step_id="charge_receipt_open",
             url=self._selected_receipt_url,
