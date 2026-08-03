@@ -447,7 +447,7 @@
       },
       "charge_receipt_detail": {
         "title": "Receipt",
-        "description": "**File:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parser profile:** {profile}\n**Provider:** {provider}\n**Energy:** {energy} kWh\n**Total:** {total} {currency}",
+        "description": "**File:** {filename}\n**Status:** {status}\n**OCR:** {ocr_status}\n**Parser profile:** {profile}\n\n{details}",
         "menu_options": {
           "charge_receipt_open": "Open receipt",
           "charge_receipt_ocr": "Run OCR again",

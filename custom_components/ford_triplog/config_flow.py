@@ -1066,6 +1066,80 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not isinstance(fields, dict):
             fields = {}
 
+        ocr_status = str(
+            receipt.get("ocr_status") or "not_started"
+        ).lower()
+        ocr_status_text = {
+            "completed": "Abgeschlossen",
+            "running": "Läuft",
+            "failed": "Fehlgeschlagen",
+            "not_started": "Noch nicht ausgeführt",
+        }.get(ocr_status, ocr_status)
+
+        detail_lines: list[str] = []
+
+        provider = (
+            fields.get("merchant")
+            or fields.get("provider")
+        )
+        if provider:
+            detail_lines.append(f"Anbieter: {provider}")
+
+        station = fields.get("station")
+        if station:
+            detail_lines.append(f"Ladeort: {station}")
+
+        energy = fields.get("energy_kwh")
+        if isinstance(energy, (int, float)):
+            detail_lines.append(f"Energie: {float(energy):.3f} kWh")
+
+        duration_seconds = fields.get("duration_seconds")
+        if isinstance(duration_seconds, (int, float)):
+            total_seconds = int(duration_seconds)
+            hours, remainder = divmod(total_seconds, 3600)
+            minutes, seconds = divmod(remainder, 60)
+            detail_lines.append(
+                f"Dauer: {hours:02d}:{minutes:02d}:{seconds:02d}"
+            )
+
+        current_a = fields.get("current_limit_a")
+        if isinstance(current_a, (int, float)):
+            detail_lines.append(f"Strom: {float(current_a):g} A")
+
+        voltage_v = fields.get("voltage_v")
+        if isinstance(voltage_v, (int, float)):
+            detail_lines.append(f"Spannung: {float(voltage_v):g} V")
+
+        power_kw = fields.get("power_kw")
+        if isinstance(power_kw, (int, float)):
+            detail_lines.append(f"Leistung: {float(power_kw):g} kW")
+
+        temperature_c = fields.get("temperature_c")
+        if isinstance(temperature_c, (int, float)):
+            detail_lines.append(
+                f"Temperatur: {float(temperature_c):g} °C"
+            )
+
+        price_per_kwh = fields.get("price_per_kwh")
+        currency = str(fields.get("currency") or "CHF")
+        if isinstance(price_per_kwh, (int, float)):
+            detail_lines.append(
+                f"Preis pro kWh: {float(price_per_kwh):.3f} {currency}"
+            )
+
+        total = (
+            fields.get("amount_payable")
+            if fields.get("amount_payable") is not None
+            else fields.get("total")
+        )
+        if isinstance(total, (int, float)):
+            detail_lines.append(
+                f"Gesamt: {float(total):.2f} {currency}"
+            )
+
+        if not detail_lines:
+            detail_lines.append("Keine Parserwerte vorhanden")
+
         placeholders = {
             "filename": str(
                 receipt.get("original_filename")
@@ -1073,26 +1147,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 or "Beleg"
             ),
             "status": self._format_receipt_processing_status(receipt),
-            "ocr_status": str(receipt.get("ocr_status") or "not_started"),
+            "ocr_status": ocr_status_text,
             "profile": str(
-                parser_result.get("profile_name") or "—"
+                parser_result.get("profile_name")
+                or "Kein passendes Profil"
             ),
-            "provider": str(
-                fields.get("merchant")
-                or fields.get("provider")
-                or "—"
-            ),
-            "energy": self._format_optional_number(
-                fields.get("energy_kwh"),
-                3,
-            ),
-            "total": self._format_optional_number(
-                fields.get("amount_payable")
-                if fields.get("amount_payable") is not None
-                else fields.get("total"),
-                2,
-            ),
-            "currency": str(fields.get("currency") or "CHF"),
+            "details": "\n".join(detail_lines),
         }
 
         menu_options = ["charge_receipt_open"]
