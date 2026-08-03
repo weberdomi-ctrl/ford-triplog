@@ -199,6 +199,29 @@ class FordTriplogReceiptStorage:
         return updated
 
 
+    async def async_mark_applied(
+        self,
+        receipt_id: str,
+        *,
+        charge_id: str,
+        applied_values: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Mark parsed receipt values as reviewed and applied."""
+
+        updated = await self._metadata.update_receipt(
+            str(receipt_id).strip(),
+            {
+                "parser_confirmed": True,
+                "applied_to_charge_id": str(charge_id).strip(),
+                "applied_at": datetime.now(timezone.utc).isoformat(),
+                "applied_values": dict(applied_values),
+            },
+        )
+        if updated is None:
+            raise ValueError("Receipt was not found")
+        return updated
+
+
     async def async_get(self, receipt_id: str) -> dict[str, Any] | None:
         """Return one receipt by its stable ID."""
 

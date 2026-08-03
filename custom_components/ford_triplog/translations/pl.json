@@ -254,14 +254,16 @@
           "receipt_list": "Pokaż paragony",
           "receipt_delete": "Usuń paragon",
           "receipt_ocr": "Uruchom OCR",
-          "ocr_settings": "Połączenie OCR"
+          "ocr_settings": "Połączenie OCR",
+          "receipt_apply": "Zastosuj wartości parsera"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Prześlij PDF lub obraz i przypisz go do postoju albo sesji ładowania.",
           "receipt_list": "Pokaż zapisane paragony wraz z przypisaniem i informacjami o pliku.",
           "receipt_delete": "Trwale usuń plik paragonu i jego metadane.",
           "ocr_settings": "Skonfiguruj i przetestuj opcjonalną lokalną usługę OCR.",
-          "receipt_ocr": "Wyślij zapisany paragon do skonfigurowanej usługi OCR."
+          "receipt_ocr": "Wyślij zapisany paragon do skonfigurowanej usługi OCR.",
+          "receipt_apply": "Sprawdź, popraw i zastosuj rozpoznane wartości rozliczeniowe do powiązanej sesji ładowania."
         }
       },
       "receipt_import_type": {
@@ -370,6 +372,26 @@
       "ocr_connection_result": {
         "title": "Połączenie OCR zapisane",
         "description": "**Status:** Połączenie udane\n\n**Usługa:** {service}\n**Wersja:** {version}\n**Silnik:** {engine}\n**Adres:** {url}\n**Maksymalny rozmiar pliku:** {max_file_mb} MB\n**Obsługa PDF:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Zastosuj wartości paragonu",
+        "description": "Wybierz paragon ładowania odczytany przez OCR i poprawnie przetworzony przez parser.",
+        "data": {
+          "receipt_apply_selection": "Paragon"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Sprawdź wartości paragonu",
+        "description": "**Sesja ładowania:** {charge_label}\n**ID ładowania:** {charge_id}\n**Profil parsera:** {profile}\n\n**Lokalizacja na paragonie:** {parsed_station}\n**Początek na paragonie:** {parsed_start}\n**Koniec na paragonie:** {parsed_end}\n\n**Rozliczona energia:** obecnie {current_energy} kWh · paragon {parsed_energy} kWh\n**Koszt całkowity:** obecnie {current_total} {currency} · paragon {parsed_total} {currency}\n\nWartości można poprawić przed zapisaniem. Czasy i dane techniczne pojazdu nie są nadpisywane.",
+        "data": {
+          "receipt_apply_energy": "Rozliczona energia",
+          "receipt_apply_total": "Koszt całkowity",
+          "receipt_apply_currency": "Waluta"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Zastosowano wartości paragonu",
+        "description": "**Paragon:** {document}\n**Sesja ładowania:** {charge_id}\n**Profil parsera:** {profile}\n**Rozliczona energia:** {energy} kWh\n**Koszt całkowity:** {total} {currency}\n\nParagon oznaczono jako sprawdzony i zastosowany."
       }
     },
     "error": {
@@ -403,7 +425,10 @@
       "ocr_connection_failed": "Usługa OCR jest niedostępna. Sprawdź adres, port, kontener i sieć.",
       "ocr_invalid_response": "Usługa OCR nie zwróciła prawidłowej odpowiedzi health.",
       "ocr_not_configured": "OCR jest wyłączone lub nie zostało skonfigurowane.",
-      "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie."
+      "receipt_ocr_response_failed": "Usługa OCR odrzuciła plik lub żądanie.",
+      "receipt_no_parsed_charge_receipts": "Brak poprawnie przetworzonych paragonów ładowania.",
+      "receipt_not_charge": "Ten paragon nie jest przypisany do sesji ładowania.",
+      "receipt_apply_failed": "Nie udało się zastosować wartości do sesji ładowania."
     },
     "menu": {
       "receipt_management": "Zarządzanie paragonami",

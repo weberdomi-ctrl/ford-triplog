@@ -254,14 +254,16 @@
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
           "receipt_ocr": "Run OCR",
-          "ocr_settings": "OCR connection"
+          "ocr_settings": "OCR connection",
+          "receipt_apply": "Apply parsed values"
         },
         "menu_option_descriptions": {
           "receipt_import_type": "Upload a PDF or image and assign it to a pause or charging session.",
           "receipt_list": "View stored receipts with assignment and file information.",
           "receipt_delete": "Permanently delete a receipt file and its metadata.",
           "ocr_settings": "Configure and test the optional local OCR service.",
-          "receipt_ocr": "Send a stored receipt to the configured OCR service."
+          "receipt_ocr": "Send a stored receipt to the configured OCR service.",
+          "receipt_apply": "Review, correct and apply recognized billing values to the associated charging session."
         }
       },
       "receipt_import_type": {
@@ -370,6 +372,26 @@
       "ocr_connection_result": {
         "title": "OCR connection saved",
         "description": "**Status:** Connection successful\n\n**Service:** {service}\n**Version:** {version}\n**Engine:** {engine}\n**Address:** {url}\n**Maximum file size:** {max_file_mb} MB\n**PDF processing:** {pdf_mode}"
+      },
+      "receipt_apply": {
+        "title": "Apply receipt values",
+        "description": "Select a charging receipt that has already been read by OCR and successfully parsed. Previously applied receipts remain available for review.",
+        "data": {
+          "receipt_apply_selection": "Receipt"
+        }
+      },
+      "receipt_apply_edit": {
+        "title": "Review receipt values",
+        "description": "**Charging session:** {charge_label}\n**Charge ID:** {charge_id}\n**Parser profile:** {profile}\n\n**Receipt location:** {parsed_station}\n**Receipt start:** {parsed_start}\n**Receipt end:** {parsed_end}\n\n**Billed energy:** current {current_energy} kWh · receipt {parsed_energy} kWh\n**Total cost:** current {current_total} {currency} · receipt {parsed_total} {currency}\n\nThe values can be corrected before saving. Start time, end time and technical vehicle data are not overwritten.",
+        "data": {
+          "receipt_apply_energy": "Billed energy",
+          "receipt_apply_total": "Total cost",
+          "receipt_apply_currency": "Currency"
+        }
+      },
+      "receipt_apply_result": {
+        "title": "Receipt values applied",
+        "description": "**Receipt:** {document}\n**Charging session:** {charge_id}\n**Parser profile:** {profile}\n**Billed energy:** {energy} kWh\n**Total cost:** {total} {currency}\n\nThe receipt has been marked as reviewed and applied."
       }
     },
     "error": {
@@ -403,7 +425,10 @@
       "ocr_connection_failed": "The OCR service is unreachable. Check the address, port, container and network.",
       "ocr_invalid_response": "The OCR service did not return a valid health response.",
       "ocr_not_configured": "OCR is disabled or has not been configured.",
-      "receipt_ocr_response_failed": "The OCR service rejected the file or request."
+      "receipt_ocr_response_failed": "The OCR service rejected the file or request.",
+      "receipt_no_parsed_charge_receipts": "No successfully parsed charging receipts are available.",
+      "receipt_not_charge": "This receipt is not assigned to a charging session.",
+      "receipt_apply_failed": "The receipt values could not be applied to the charging session."
     },
     "menu": {
       "receipt_management": "Receipt management",

@@ -146,6 +146,10 @@ CONF_RECEIPT_FILE = "receipt_file"
 CONF_RECEIPT_NOTE = "note"
 CONF_RECEIPT_SELECTION = "receipt_selection"
 CONF_RECEIPT_OCR_SELECTION = "receipt_ocr_selection"
+CONF_RECEIPT_APPLY_SELECTION = "receipt_apply_selection"
+CONF_RECEIPT_APPLY_ENERGY = "receipt_apply_energy"
+CONF_RECEIPT_APPLY_TOTAL = "receipt_apply_total"
+CONF_RECEIPT_APPLY_CURRENCY = "receipt_apply_currency"
 CONF_OCR_ENABLED = "ocr_enabled"
 CONF_OCR_URL = "ocr_url"
 CONF_OCR_API_KEY = "ocr_api_key"
@@ -267,6 +271,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
         self._ocr_connection_result: dict[str, str] = {}
+        self._selected_apply_receipt_id: str | None = None
+        self._receipt_apply_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -1271,6 +1277,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         menu_options = ["ocr_settings"]
         if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("receipt_ocr")
+        menu_options.append("receipt_apply")
         menu_options.extend(
             [
                 "receipt_import_type",
@@ -1879,6 +1886,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return "⏳ OCR läuft"
         if ocr_status != "completed":
             return "⬜ Noch nicht gelesen"
+        if bool(receipt.get("parser_confirmed", False)):
+            return "✔ Werte übernommen"
         if parse_status == "parsed":
             profile = str(
                 receipt.get("parser_profile") or "Profil"
@@ -2113,6 +2122,269 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="receipt_ocr_result",
             data_schema=vol.Schema({}),
             description_placeholders=self._receipt_ocr_result,
+        )
+
+    async def async_step_receipt_apply(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a parsed charge receipt for review and application."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            receipts = await self._async_receipt_contexts()
+        except (HomeAssistantError, OSError, RuntimeError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        candidates = [
+            receipt
+            for receipt in receipts
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_CHARGE
+            and str(receipt.get("parse_status") or "") == "parsed"
+        ]
+
+        options = [
+            selector.SelectOptionDict(
+                value=str(receipt.get("receipt_id")),
+                label=(
+                    f"{self._format_receipt_processing_status(receipt)} · "
+                    f"{receipt.get('display_label') or receipt.get('receipt_id')}"
+                ),
+            )
+            for receipt in candidates
+            if receipt.get("receipt_id")
+        ]
+
+        if not options and not errors:
+            errors["base"] = "receipt_no_parsed_charge_receipts"
+
+        if user_input is not None and not errors:
+            self._selected_apply_receipt_id = str(
+                user_input[CONF_RECEIPT_APPLY_SELECTION]
+            )
+            return await self.async_step_receipt_apply_edit()
+
+        schema: dict[Any, Any] = {}
+        if options:
+            schema[
+                vol.Required(
+                    CONF_RECEIPT_APPLY_SELECTION,
+                    default=options[0]["value"],
+                )
+            ] = selector.SelectSelector(
+                selector.SelectSelectorConfig(
+                    options=options,
+                    mode=selector.SelectSelectorMode.DROPDOWN,
+                )
+            )
+
+        return self.async_show_form(
+            step_id="receipt_apply",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+        )
+
+    async def async_step_receipt_apply_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Review parser values and apply billing data to the charge."""
+
+        receipt_id = self._selected_apply_receipt_id
+        if not receipt_id:
+            return await self.async_step_receipt_apply()
+
+        errors: dict[str, str] = {}
+        receipt = await self._get_receipt_storage().async_get(receipt_id)
+        if receipt is None:
+            self._selected_apply_receipt_id = None
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        target_id = str(receipt.get("target_id") or "")
+        if str(receipt.get("target_type") or "") != RECEIPT_TARGET_CHARGE:
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_charge"},
+            )
+
+        charge = await self._get_charge_manager().async_get_charge(target_id)
+        if charge is None:
+            return self.async_show_form(
+                step_id="receipt_apply_edit",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        parser_result = receipt.get("parser_result", {})
+        if not isinstance(parser_result, dict):
+            parser_result = {}
+        fields = parser_result.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
+
+        parsed_energy = fields.get("energy_kwh")
+        parsed_total = (
+            fields.get("amount_payable")
+            if fields.get("amount_payable") is not None
+            else fields.get("total")
+        )
+        parsed_currency = str(fields.get("currency") or "CHF").upper()
+
+        default_energy = (
+            float(parsed_energy)
+            if isinstance(parsed_energy, (int, float))
+            else float(getattr(charge, "energy_billed_kwh", None) or 0.0)
+        )
+        default_total = (
+            float(parsed_total)
+            if isinstance(parsed_total, (int, float))
+            else float(getattr(charge, "cost_total", None) or 0.0)
+        )
+
+        if user_input is not None:
+            energy_billed = float(
+                user_input.get(CONF_RECEIPT_APPLY_ENERGY, 0.0)
+            )
+            total_cost = float(
+                user_input.get(CONF_RECEIPT_APPLY_TOTAL, 0.0)
+            )
+            currency = str(
+                user_input.get(CONF_RECEIPT_APPLY_CURRENCY) or "CHF"
+            ).upper()
+
+            try:
+                result = await self._get_charge_manager().async_set_cost(
+                    target_id,
+                    currency=currency,
+                    cost_total=None,
+                    energy_billed_kwh=energy_billed,
+                    energy_cost=total_cost,
+                    session_fee=0.0,
+                    time_fee=0.0,
+                    blocking_fee=0.0,
+                    parking_fee=0.0,
+                    other_cost=0.0,
+                    energy_billed_source="receipt",
+                )
+            except (HomeAssistantError, OSError, RuntimeError, ValueError):
+                _LOGGER.exception(
+                    "Unable to apply parsed receipt values: receipt_id=%s "
+                    "charge_id=%s",
+                    receipt_id,
+                    target_id,
+                )
+                errors["base"] = "receipt_apply_failed"
+            else:
+                if not result.updated:
+                    errors["base"] = "receipt_apply_failed"
+                else:
+                    await self._get_receipt_storage().async_mark_applied(
+                        receipt_id,
+                        charge_id=target_id,
+                        applied_values={
+                            "energy_billed_kwh": energy_billed,
+                            "cost_total": total_cost,
+                            "currency": currency,
+                        },
+                    )
+                    self._receipt_apply_result = {
+                        "charge_id": target_id,
+                        "document": str(
+                            receipt.get("original_filename")
+                            or receipt.get("filename")
+                            or receipt_id
+                        ),
+                        "energy": f"{energy_billed:.3f}",
+                        "total": f"{total_cost:.2f}",
+                        "currency": currency,
+                        "profile": str(
+                            parser_result.get("profile_name") or "—"
+                        ),
+                    }
+                    self._selected_apply_receipt_id = None
+                    return await self.async_step_receipt_apply_result()
+
+        placeholders = {
+            "charge_id": target_id,
+            "charge_label": self._format_charge_label(charge),
+            "profile": str(parser_result.get("profile_name") or "—"),
+            "parsed_station": str(fields.get("station") or "—"),
+            "parsed_start": str(fields.get("charging_start") or "—"),
+            "parsed_end": str(fields.get("charging_end") or "—"),
+            "current_energy": self._format_optional_number(
+                getattr(charge, "energy_billed_kwh", None),
+                3,
+            ),
+            "parsed_energy": self._format_optional_number(parsed_energy, 3),
+            "current_total": self._format_optional_number(
+                getattr(charge, "cost_total", None),
+                2,
+            ),
+            "parsed_total": self._format_optional_number(parsed_total, 2),
+            "currency": parsed_currency,
+        }
+
+        return self.async_show_form(
+            step_id="receipt_apply_edit",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_ENERGY,
+                        default=default_energy,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=1000,
+                            step=0.001,
+                            unit_of_measurement="kWh",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_TOTAL,
+                        default=default_total,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100000,
+                            step=0.01,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_RECEIPT_APPLY_CURRENCY,
+                        default=parsed_currency,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.TEXT,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders=placeholders,
+        )
+
+    async def async_step_receipt_apply_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show applied receipt values."""
+
+        if user_input is not None:
+            return await self.async_step_receipt_management()
+
+        return self.async_show_form(
+            step_id="receipt_apply_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._receipt_apply_result,
         )
 
     async def async_step_receipt_delete(
