@@ -5,7 +5,8 @@
   "codeowners": ["@weberdomi-ctrl"],
   "config_flow": true,
   "dependencies": [
-    "file_upload"
+    "file_upload",
+    "http"
   ],
   "documentation": "https://github.com/weberdomi-ctrl/ford-triplog",
   "integration_type": "hub",
