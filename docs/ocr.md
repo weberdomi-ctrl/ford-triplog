@@ -69,10 +69,16 @@ services:
     restart: unless-stopped
 
     ports:
-      - "9080:9080"
+      - "9080:8000"
 
     environment:
-      OCR_API_KEY: your-secret-key
+      OCR_API_KEY: your-secret-api-key
+      OCR_MAX_FILE_MB: 20
+      OCR_PDF_DPI: 200
+      OCR_LOG_LEVEL: INFO
+
+    volumes:
+      - ./data:/data
 ```
 
 Start the container:
@@ -81,7 +87,23 @@ Start the container:
 docker compose up -d
 ```
 
----
+### Verify the installation
+
+Open the following URL in your browser:
+
+```
+http://YOUR_SERVER_IP:9080/health
+```
+
+Expected response:
+
+```json
+{
+  "status": "ok",
+  "service": "Ford Triplog OCR",
+  "version": "1.0.0"
+}
+```
 
 # Configuring Home Assistant
 
