@@ -23,36 +23,36 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Select the area you want to edit.",
+        "description": "Select the section you want to configure.",
         "menu_options": {
           "settings": "Settings",
           "journey_management": "Manage journeys",
-          "pause_management": "Edit pauses",
+          "pause_management": "Manage Pauses",
           "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
-          "charging_site_database": "OpenStreetMap charging locations"
+          "charging_site_database": "OpenStreetMap Charging Locations"
         },
         "menu_option_descriptions": {
-          "settings": "Edit trip, charging, vehicle and OCR settings.",
-          "journey_management": "Update, rebuild or delete journeys.",
-          "pause_management": "Add titles, categories, locations, notes and costs to detected pauses.",
-          "charge_management": "View charging sessions, costs and related receipts.",
+          "settings": "Configure trip, charging, vehicle and OCR settings.",
+          "journey_management": "Update, rebuild or delete saved journeys.",
+          "pause_management": "Manage detected pauses, including titles, categories, locations, notes and costs.",
+          "charge_management": "View and manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
-          "charging_site_database": "Download or import the charging-location database."
+          "charging_site_database": "Download or import the charging location database."
         }
       },
       "settings": {
         "title": "Settings",
-        "description": "Select the area you want to configure.",
+        "description": "Select the section you want to configure.",
         "menu_options": {
-          "general_settings": "General settings",
-          "ocr_settings": "OCR connection",
-          "init": "Back to main menu"
+          "general_settings": "General Settings",
+          "ocr_settings": "OCR Connection",
+          "init": "Back to Main Menu"
         },
         "menu_option_descriptions": {
-          "general_settings": "Edit trip, charging, vehicle and tariff options.",
+          "general_settings": "Configure trip, charging, vehicle and tariff settings.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
-          "init": "Return to the Ford Triplog overview."
+          "init": "Return to the Ford Triplog main menu."
         }
       },
       "import_charging_sites": {
@@ -153,18 +153,18 @@
       },
       "journey_management": {
         "title": "Manage journeys",
-        "description": "Select the desired action for the stored journeys.",
+        "description": "Select the action you want to perform on saved journeys.",
         "menu_options": {
-          "journey_update": "Update journeys",
-          "journey_rebuild": "Rebuild journeys",
-          "journey_delete": "Delete journeys",
-          "init": "Back to main menu"
+          "journey_update": "Update Journeys",
+          "journey_rebuild": "Rebuild Journeys",
+          "journey_delete": "Delete Journeys",
+          "init": "Back to Main Menu"
         },
         "menu_option_descriptions": {
-          "journey_update": "Update existing journeys with current data.",
-          "journey_rebuild": "Completely recalculate and save all journeys.",
-          "journey_delete": "Permanently delete stored journeys.",
-          "init": "Return to the Ford Triplog overview."
+          "journey_update": "Update existing journeys with the latest data.",
+          "journey_rebuild": "Recalculate and save all journeys from scratch.",
+          "journey_delete": "Permanently delete saved journeys.",
+          "init": "Return to the Ford Triplog main menu."
         }
       },
       "journey_update": {
@@ -198,7 +198,7 @@
         "description": "Mode: {mode}\n\nTrips: {source_trips} · Charging sessions: {source_charges} · Processed: {processed_records}\n\nJourneys created: {journeys_created} · Journeys deleted: {journeys_deleted}\n\nSkipped source files: {source_files_skipped}\n\nDate range: {start_date} to {end_date}\n\nAffected dates: {affected_dates}"
       },
       "charge_management": {
-        "title": "Charging sessions",
+        "title": "Charging Sessions",
         "description": "Select what you want to do with the stored charging sessions.",
         "menu_options": {
           "charge_selection": "Select charging session",
@@ -210,15 +210,15 @@
         }
       },
       "charge_cost_edit": {
-        "title": "Edit charging costs",
-        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Charging location:** {location}\n**Energy added to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
+        "title": "Edit Charging Costs",
+        "description": "**Charging Session:** {charge_id}\n\n**Date:** {date}\n**Charging Location:** {location}\n**Energy Delivered to Vehicle:** {energy_kwh} kWh\n**State of Charge:** {start_soc} % → {end_soc} %\n\n**Billed Energy:** {current_energy_billed_kwh} kWh\n**Charging Loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current Cost:** {current_cost} {current_currency}\n**Energy Price per kWh:** {current_energy_price_per_kwh}\n**Effective Price per kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Total cost",
           "currency": "Currency",
           "action": "Action",
           "energy_billed_kwh": "Billed energy",
           "energy_cost": "Energy cost",
-          "session_fee": "Start / session fee",
+          "session_fee": "Session Fee",
           "time_fee": "Time fee",
           "blocking_fee": "Blocking fee",
           "parking_fee": "Parking fee",
@@ -228,9 +228,9 @@
           "cost_total": "Optional total for simple or older entries. When detailed cost components are entered, the total is calculated automatically.",
           "currency": "Three-letter currency code, for example CHF or EUR.",
           "action": "Save costs or remove all stored cost information.",
-          "energy_billed_kwh": "Energy shown on the invoice, charging station or charging app. Used to calculate charging losses.",
+          "energy_billed_kwh": "Energy shown on the invoice, charging station, or charging app. Used to calculate charging losses.",
           "energy_cost": "Energy-only cost excluding additional fees.",
-          "session_fee": "One-time start or session fee.",
+          "session_fee": "One-time session fee charged at the start of charging.",
           "time_fee": "Time-based charging fee.",
           "blocking_fee": "Fee for occupying the charging point.",
           "parking_fee": "Additional parking fee.",
@@ -296,15 +296,15 @@
         }
       },
       "pause_management": {
-        "title": "Pauses",
-        "description": "Select what you want to do with the detected pauses.",
+        "title": "Manage Pauses",
+        "description": "Select an action for the detected pauses.",
         "menu_options": {
-          "pause_selection": "Select and edit pause",
-          "init": "Back to main menu"
+          "pause_selection": "Select and Edit a Pause",
+          "init": "Back to Main Menu"
         },
         "menu_option_descriptions": {
-          "pause_selection": "Select an automatically detected pause and add a title, category, location, note or costs.",
-          "init": "Return to the Ford Triplog overview."
+          "pause_selection": "Select an automatically detected pause and add or edit its title, category, location, notes and costs.",
+          "init": "Return to the Ford Triplog main menu."
         }
       },
       "pause_edit": {
@@ -402,19 +402,19 @@
         }
       },
       "charge_detail": {
-        "title": "Charging session",
-        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR completed: {completed_count} · Values applied: {applied_count}",
+        "title": "Charging Session",
+        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed Energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR Completed: {completed_count} · Values Applied: {applied_count}",
         "menu_options": {
-          "charge_technical": "Technical data",
+          "charge_technical": "Technical Data",
           "charge_cost_edit": "Costs",
           "charge_receipts": "Receipts",
-          "charge_selection": "Back to charging sessions"
+          "charge_selection": "Back to Charging Sessions"
         },
         "menu_option_descriptions": {
-          "charge_technical": "View stored technical charging data.",
+          "charge_technical": "View the technical details of this charging session.",
           "charge_cost_edit": "Edit costs and billed energy.",
-          "charge_receipts": "View receipts or add a new receipt.",
-          "charge_selection": "Return to the stored charging-session selection."
+          "charge_receipts": "View existing receipts or add a new one.",
+          "charge_selection": "Return to the list of charging sessions."
         }
       },
       "charge_technical": {
@@ -492,7 +492,7 @@
         }
       },
       "charge_selection": {
-        "title": "Select charging session",
+        "title": "Select Charging Session",
         "description": "Select a stored charging session.",
         "data": {
           "charge_selection": "Charging session"
@@ -523,7 +523,7 @@
         "description": "Create a new custom charging location."
       },
       "charging_site_database": {
-        "title": "OpenStreetMap charging locations",
+        "title": "OpenStreetMap Charging Locations",
         "description": "Select the desired action for the charging-location database.",
         "menu_options": {
           "download_charging_sites": "Download charging locations",
@@ -705,10 +705,10 @@
         "name": "Average Charging Duration"
       },
       "average_charge_start_soc": {
-        "name": "Average Charge Start State of Charge"
+        "name": "Average Start State of Charge"
       },
       "average_charge_end_soc": {
-        "name": "Average Charge End State of Charge"
+        "name": "Average End State of Charge"
       },
       "average_trip_distance": {
         "name": "Average Trip Distance"
@@ -717,13 +717,13 @@
         "name": "Average Trip Duration"
       },
       "average_trip_energy": {
-        "name": "Average Energy Used per Trip"
+        "name": "Average Energy Used"
       },
       "average_trip_soc_used": {
-        "name": "Average State of Charge Used per Trip"
+        "name": "Average State of Charge Used"
       },
       "average_trip_consumption": {
-        "name": "Average Trip Consumption"
+        "name": "Average Energy Consumption per Trip"
       },
       "last_charge_energy": {
         "name": "Last Charge Energy"
