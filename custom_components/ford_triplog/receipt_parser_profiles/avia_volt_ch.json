@@ -1,0 +1,167 @@
+{
+  "schema": 1,
+  "profile_id": "avia_volt_ch_receipt_v1",
+  "name": "AVIA VOLT Schweiz Quittung",
+  "version": "1.0",
+  "country": "CH",
+  "status": "tested",
+  "tested_with_real_receipt": true,
+  "priority": 110,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "AVIA VOLT",
+      "Ladevorgangsnummer"
+    ],
+    "optional_contains": [
+      "Standortname",
+      "Geladene Energie",
+      "Rechnungsbetrag",
+      "aviavolt.ch"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "AVIA VOLT"
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "AVIA VOLT"
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "AVIA VOLT"
+    },
+    "receipt_date": {
+      "patterns": [
+        "Quittung\\s*\\n(\\d{2}\\.\\d{2}\\.\\d{4})\\s+\\d{2}:\\d{2}:\\d{2}"
+      ],
+      "transform": "date_dot_dmy4"
+    },
+    "receipt_datetime": {
+      "patterns": [
+        "Quittung\\s*\\n(\\d{2}\\.\\d{2}\\.\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_dot_dmy4_seconds"
+    },
+    "station": {
+      "patterns": [
+        "Standortname:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ],
+      "required": true
+    },
+    "station_id": {
+      "patterns": [
+        "Standort-ID:\\s*([A-Z0-9_-]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace",
+        "upper"
+      ]
+    },
+    "address": {
+      "patterns": [
+        "Adresse:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "session_id": {
+      "patterns": [
+        "Ladevorgangsnummer:\\s*([A-Z0-9_-]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace",
+        "upper"
+      ],
+      "required": true
+    },
+    "charging_start": {
+      "patterns": [
+        "Ladevorgang gestartet:\\s*(\\d{2}\\.\\d{2}\\.\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_dot_dmy4_seconds",
+      "required": true
+    },
+    "charging_end": {
+      "patterns": [
+        "Ladevorgang beendet:\\s*(\\d{2}\\.\\d{2}\\.\\d{4}\\s+\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "transform": "datetime_dot_dmy4_seconds"
+    },
+    "duration_seconds": {
+      "patterns": [
+        "Gesamtdauer:\\s*(\\d+)\\s*Minuten?,\\s*(\\d+)\\s*Sekunden?"
+      ],
+      "groups": [
+        1,
+        2
+      ],
+      "transform": "duration_minutes_seconds"
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Geladene Energie:\\s*([\\d.,]+)\\s*kWh"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "energy_cost": {
+      "patterns": [
+        "Zwischensummen\\s*\\nEnergie:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "total": {
+      "patterns": [
+        "Rechnungsbetrag\\s*\\(inkl\\.\\s*MwSt\\.\\)\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    },
+    "authorization_method": {
+      "patterns": [
+        "Autorisierungsmethode:\\s*([^\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "contract_number": {
+      "patterns": [
+        "Vertragsnummer:\\s*([A-Z0-9_-]+)"
+      ],
+      "transform": [
+        "strip",
+        "remove_whitespace",
+        "upper"
+      ]
+    },
+    "website": {
+      "patterns": [
+        "Website:\\s*(https?://[^\\s]+)"
+      ],
+      "transform": "strip"
+    },
+    "email": {
+      "patterns": [
+        "E-Mail:\\s*([^\\s]+)"
+      ],
+      "transform": "strip"
+    }
+  }
+}
