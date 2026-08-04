@@ -615,136 +615,136 @@
   "entity": {
     "sensor": {
       "trip_count": {
-        "name": "Trip count"
+        "name": "Trip Count"
       },
       "total_distance": {
-        "name": "Total distance"
+        "name": "Total Distance"
       },
       "total_energy_used": {
-        "name": "Total energy used"
+        "name": "Total Energy Used"
       },
       "average_consumption": {
-        "name": "Average consumption"
+        "name": "Average Energy Consumption"
       },
       "total_duration": {
-        "name": "Total duration"
+        "name": "Total Duration"
       },
       "total_driving_time": {
-        "name": "Total driving time"
+        "name": "Total Driving Time"
       },
       "last_distance": {
-        "name": "Last trip distance"
+        "name": "Last Trip Distance"
       },
       "last_energy_used": {
-        "name": "Energy used on last trip"
+        "name": "Energy Used on Last Trip"
       },
       "last_consumption": {
-        "name": "Last trip consumption"
+        "name": "Last Trip Consumption"
       },
       "last_average_speed": {
-        "name": "Last trip average speed"
+        "name": "Average Speed of Last Trip"
       },
       "last_duration": {
-        "name": "Last trip duration"
+        "name": "Last Trip Duration"
       },
       "last_driving_time": {
-        "name": "Last trip driving time"
+        "name": "Last Trip Driving Time"
       },
       "last_start_address": {
-        "name": "Last trip start address"
+        "name": "Last Trip Start Address"
       },
       "last_destination": {
-        "name": "Last destination"
+        "name": "Last Trip Destination"
       },
       "last_start_time": {
-        "name": "Last trip start time"
+        "name": "Last Trip Start Time"
       },
       "last_end_time": {
-        "name": "Last trip end time"
+        "name": "Last Trip End Time"
       },
       "last_charge_start_time": {
-        "name": "Last charging session start time"
+        "name": "Last Charge Start Time"
       },
       "last_charge_end_time": {
-        "name": "Last charging session end time"
+        "name": "Last Charge End Time"
       },
       "last_charge_start_soc": {
-        "name": "Last charging session start state of charge"
+        "name": "Last Charge Start State of Charge"
       },
       "last_charge_end_soc": {
-        "name": "Last charging session end state of charge"
+        "name": "Last Charge End State of Charge"
       },
       "last_charge_soc_added": {
-        "name": "State of charge added in last charging session"
+        "name": "State of Charge Added During Last Charge"
       },
       "last_charge_duration": {
-        "name": "Last charging session duration"
+        "name": "Last Charging Duration"
       },
       "last_charging_location": {
-        "name": "Last charging location"
+        "name": "Last Charging Location"
       },
       "last_charging_site": {
-        "name": "Last charging station"
+        "name": "Last Charging Site"
       },
       "last_trip_start_soc": {
-        "name": "Last trip start state of charge"
+        "name": "Last Trip Start State of Charge"
       },
       "last_trip_end_soc": {
-        "name": "Last trip end state of charge"
+        "name": "Last Trip End State of Charge"
       },
       "last_trip_soc_used": {
-        "name": "State of charge used on last trip"
+        "name": "State of Charge Used on Last Trip"
       },
       "charge_count": {
-        "name": "Charging session count"
+        "name": "Charging Session Count"
       },
       "average_charge_soc_added": {
-        "name": "Average state of charge added"
+        "name": "Average State of Charge Added"
       },
       "average_charge_duration": {
-        "name": "Average charging duration"
+        "name": "Average Charging Duration"
       },
       "average_charge_start_soc": {
-        "name": "Average state of charge at charging start"
+        "name": "Average Charge Start State of Charge"
       },
       "average_charge_end_soc": {
-        "name": "Average state of charge at charging end"
+        "name": "Average Charge End State of Charge"
       },
       "average_trip_distance": {
-        "name": "Average trip distance"
+        "name": "Average Trip Distance"
       },
       "average_trip_duration": {
-        "name": "Average trip duration"
+        "name": "Average Trip Duration"
       },
       "average_trip_energy": {
-        "name": "Average energy used per trip"
+        "name": "Average Energy Used per Trip"
       },
       "average_trip_soc_used": {
-        "name": "Average state of charge used per trip"
+        "name": "Average State of Charge Used per Trip"
       },
       "average_trip_consumption": {
-        "name": "Average consumption per trip"
+        "name": "Average Trip Consumption"
       },
       "last_charge_energy": {
-        "name": "Last charging energy"
+        "name": "Last Charge Energy"
       },
       "last_charge_energy_fordpass": {
-        "name": "Last charging energy from FordPass"
+        "name": "Last Charge Energy (FordPass)"
       },
       "last_charge_energy_calculated": {
-        "name": "Calculated energy of last charging session"
+        "name": "Calculated Energy of Last Charge"
       },
       "last_charge_energy_source": {
-        "name": "Last charging energy source"
+        "name": "Last Charge Energy Source"
       },
       "last_journey": {
-        "name": "Last journey"
+        "name": "Last Journey"
       },
       "last_charge": {
-        "name": "Last charging session"
+        "name": "Last Charge"
       },
       "last_journey_overview": {
-        "name": "Last journey overview"
+        "name": "Last Journey Overview"
       }
     }
   },
