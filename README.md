@@ -79,6 +79,22 @@ Features include:
 
 ------------------------------------------------------------------------
 
+## ⏸️ Pause Management
+
+Detected pauses can be enriched with additional information.
+
+Features include:
+
+- Title
+- Category
+- Location
+- Notes
+- Costs
+- Manual editing
+- Journey timeline integration
+
+------------------------------------------------------------------------
+
 ## 🔋 Charging History
 
 Automatically records every charging session including:
@@ -98,8 +114,32 @@ Automatically records every charging session including:
 -   Energy delivered vs. billed
 -   Detailed charging cost breakdown
 -   Automatic home charging cost calculation
+-   Receipt management
+-   Multiple receipts per charging session
+-   PDF and image receipt upload
+-   Optional OCR support
+-   OCR parser profiles
 
 ------------------------------------------------------------------------
+
+
+## 🧾 Receipt Management
+
+Ford Triplog can manage charging receipts directly inside Home Assistant.
+
+Features include:
+
+- PDF and image receipt upload
+- Multiple receipts per charging session
+- Receipt browser
+- Open stored receipts
+- Delete receipts
+- OCR integration (optional)
+- User parser profiles
+- Automatic charging data extraction
+
+------------------------------------------------------------------------
+
 
 ## 📍 Intelligent Charging Location Recognition
 
@@ -171,6 +211,11 @@ Features include:
 -   Ready-to-use Markdown dashboard examples
 -   Persistent local storage
 -   HACS support
+-   Receipt management
+-   OCR configuration
+-   Charging session editor
+-   Pause editor
+-   User charging location manager
 
 
 ------------------------------------------------------------------------
@@ -296,6 +341,12 @@ See the complete installation guide:
   - Charging cost breakdown
   - Effective charging price
 - 📊 Journey statistics for Home Assistant dashboards
+- 🧾 Receipt management
+- 📄 PDF and image receipt support
+- 🔍 Optional OCR integration
+- ✏️ Pause management
+- 💵 Charging cost editor
+- 🧮 Charging loss calculation
 - ⚖️ Journey energy balance
 - 💰 Journey charging costs
 - 🗺️ Offline charging station database
@@ -329,16 +380,14 @@ Simply copy the content into a Home Assistant Markdown card and adjust the entit
 
 # Roadmap
 
-## Version 1.8
+## Version 2.x
 
--   Journey energy balance
--   Charging cost calculation
--   Maintenance and rebuild tools
--   Automatic charging database country switching
--   Extended statistics
--   Optional database backend
--   Long-term history
--   Multi-vehicle enhancements
+- Route tracking
+- Advanced journey editing
+- Additional dashboard examples
+- Multi-vehicle enhancements
+- Optional database backend
+- Long-term history improvements
 
 Complete roadmap:
 
