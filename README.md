@@ -268,8 +268,9 @@ Everything remains inside your Home Assistant installation.
   [Privacy](docs/privacy.md)                   Privacy information
 
   [Automatation](docs/automation_examples.md)   Automation examples
+
+  [OCR](docs/ocr.md)   OCR Receipt Recognition
      
-  -------------------------------------------------------------------------------
 
 ------------------------------------------------------------------------
 
