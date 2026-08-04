@@ -1,0 +1,13 @@
+app.py
+Dockerfile
+docker-compose.yml
+requirements.txt
+requirements-dev.txt
+README.md
+LICENSE
+.env.example
+.gitignore
+.dockerignore
+docs/api.md
+tests/test_api.py
+data/temp/.gitkeep
