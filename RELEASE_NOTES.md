@@ -1,3 +1,105 @@
+# Ford Triplog 1.9.0
+
+This release focuses on charging management, receipt handling, pause management, internationalization, and a significantly improved configuration interface.
+
+## ✨ New Features
+
+### Charging Cost Management
+- Added a complete charging cost editor.
+- Supports:
+  - billed energy
+  - energy costs
+  - session fees
+  - time-based fees
+  - blocking fees
+  - parking fees
+  - other costs
+- Automatic calculation of:
+  - charging losses
+  - effective price per kWh
+  - energy price per kWh
+
+### Receipt Management
+- Upload PDF and image receipts directly from Home Assistant.
+- Multiple receipts per charging session supported.
+- Receipt overview and management dialogs.
+- Open stored receipts directly from Home Assistant.
+- Delete receipts individually.
+
+### OCR Integration
+- Optional connection to a local OCR service.
+- Built-in connection test.
+- Automatic OCR processing after receipt upload.
+- Manual OCR reprocessing.
+- OCR status and processing information.
+- User parser profiles for custom receipt formats.
+
+### Pause Management
+- Edit detected pauses.
+- Add:
+  - title
+  - category
+  - location
+  - notes
+  - costs
+- Clear manually entered pause information.
+
+### Journey Management
+- Improved journey rebuild workflow.
+- Improved journey update workflow.
+- Better management dialogs.
+
+### Charging Location Management
+- Download charging location databases directly from OpenStreetMap.
+- Import charging location databases.
+- Improved custom charging location management.
+
+## 🌍 Internationalization
+
+- German translations updated.
+- English translations completely revised.
+- Polish translations updated.
+- Improved wording and consistency throughout the configuration interface.
+
+## 🎨 User Interface
+
+- New structured options menu.
+- Improved configuration dialogs.
+- Better charging session overview.
+- Improved charging cost editor.
+- Improved receipt dialogs.
+- More consistent terminology.
+- Cleaner English user interface.
+
+## ⚙ Improvements
+
+- Added HTTP dependency to the integration manifest.
+- Improved translation structure.
+- Updated configuration menus.
+- Improved charging session details.
+- Improved charging statistics presentation.
+- Improved OCR configuration workflow.
+
+## 🛠 Fixes
+
+- Fixed translation validation issues reported by Hassfest.
+- Removed obsolete translation entries.
+- Updated translations to the latest Home Assistant format.
+- Fixed manifest validation.
+- Fixed configuration menu structure.
+- Improved overall translation consistency.
+
+## ✅ Validation
+
+- Hassfest validation passed.
+- Updated German translations.
+- Updated English translations.
+- Updated Polish translations.
+
+---
+
+**Ford Triplog 1.9** continues to evolve into a complete trip, charging and energy management solution for Ford electric vehicles within Home Assistant.
+
 # Ford Triplog 1.8
 
 ## 🚀 Major New Features
