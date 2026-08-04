@@ -43,11 +43,13 @@
 {% set start_time = state_attr(s, 'start_time') %}
 {% set end_time = state_attr(s, 'end_time') %}
 {% set duration = state_attr(s, 'duration') %}
+{% if start_time not in [none, '', 'unknown', 'unavailable'] %} {% set start_dt = as_datetime(start_time) | as_local %} {% set charge_date = start_dt.strftime('%d.%m.%Y') %} {% set charge_start_clock = start_dt.strftime('%H:%M') %} {% else %} {% set charge_date = '—' %} {% set charge_start_clock = '—' %} {% endif %}
+{% if end_time not in [none, '', 'unknown', 'unavailable'] %} {% set end_dt = as_datetime(end_time) | as_local %} {% set charge_end_clock = end_dt.strftime('%H:%M') %} {% else %} {% set charge_end_clock = '—' %} {% endif %}
 
 {% set cost_source_text =
     '🏠 Heimtarif' if cost_source == 'home_tariff'
     else '✍️ Manuell erfasst' if cost_source == 'manual'
-    else '📄 OCR  Beleg' if cost_source == 'ocr'
+    else '📄 OCR / Beleg' if cost_source == 'ocr'
     else '🏢 Arbeitstarif' if cost_source == 'work_tariff'
     else cost_source
 %}
@@ -59,24 +61,25 @@
 %}
 
 # ⚡ {{ location }}
+## 📅 {{ charge_date }} · {{ charge_start_clock }}–{{ charge_end_clock }}
 
 {% if start_soc is not none and end_soc is not none %}
-🔋 {{ start_soc  round(0)  int }} → {{ end_soc  round(0)  int }} %
+🔋 **{{ start_soc | round(0) | int }} → {{ end_soc | round(0) | int }} %**
 {% if soc_added is not none %}
-· +{{ soc_added  round(0)  int }} %
+· **+{{ soc_added | round(0) | int }} %**
 {% endif %}
 {% endif %}
 
 {% if energy_added is not none %}
-⚡ {{ energy_added  round(2) }} kWh
+⚡ **{{ energy_added | round(2) }} kWh**
 {% endif %}
 
 {% if total_cost is not none %}
-💳 {{ total_cost  round(2) }} {{ currency }}
+💳 **{{ total_cost | round(2) }} {{ currency }}**
 {% endif %}
 
 {% if effective_price is not none %}
-📊 {{ effective_price  round(4) }} {{ currency }}kWh
+📊 **{{ effective_price | round(4) }} {{ currency }}/kWh**
 {% endif %}
 
 ---
@@ -84,42 +87,42 @@
 ## 📊 Ladevorgang
 
 {% if start_soc is not none %}
-- 🔋 Start-SOC {{ start_soc  round(1) }} %
+- 🔋 Start-SOC: **{{ start_soc | round(1) }} %**
 {% endif %}
 
 {% if end_soc is not none %}
-- 🏁 End-SOC {{ end_soc  round(1) }} %
+- 🏁 End-SOC: **{{ end_soc | round(1) }} %**
 {% endif %}
 
 {% if soc_added is not none %}
-- 📈 SOC geladen +{{ soc_added  round(1) }} %
+- 📈 SOC geladen: **+{{ soc_added | round(1) }} %**
 {% endif %}
 
 {% if energy_added is not none %}
-- ⚡ Energie im Fahrzeug {{ energy_added  round(2) }} kWh
+- ⚡ Energie im Fahrzeug: **{{ energy_added | round(2) }} kWh**
 {% endif %}
 
 {% if energy_billed is not none %}
-- 🧾 Abgerechnete Energie {{ energy_billed  round(2) }} kWh
+- 🧾 Abgerechnete Energie: **{{ energy_billed | round(2) }} kWh**
 {% endif %}
 
-{% if loss_kwh is not none and loss_kwh  0 %}
-- ♻️ Ladeverlust {{ loss_kwh  round(2) }} kWh
+{% if loss_kwh is not none and loss_kwh > 0 %}
+- ♻️ Ladeverlust: **{{ loss_kwh | round(2) }} kWh**
   {% if loss_percent is not none %}
-  ({{ loss_percent  round(1) }} %)
+  (**{{ loss_percent | round(1) }} %**)
   {% endif %}
 {% endif %}
 
 {% if duration %}
-- ⏱️ Ladedauer {{ duration }}
+- ⏱️ Ladedauer: **{{ duration }}**
 {% endif %}
 
 {% if energy_source %}
-- 🗂️ Energiequelle {{ energy_source_text }}
+- 🗂️ Energiequelle: **{{ energy_source_text }}**
 {% endif %}
 
 {% if billed_source and billed_source != 'none' %}
-- 🧾 Abrechnungsquelle {{ billed_source }}
+- 🧾 Abrechnungsquelle: **{{ billed_source }}**
 {% endif %}
 
 {% if total_cost is not none %}
@@ -129,37 +132,37 @@
 ## 💰 Ladekosten
 
 {% if energy_cost is not none %}
-- ⚡ Energiekosten {{ energy_cost  round(2) }} {{ currency }}
+- ⚡ Energiekosten: **{{ energy_cost | round(2) }} {{ currency }}**
 {% endif %}
 
-{% if session_fee is not none and session_fee  0 %}
-- ▶️ Sessiongebühr {{ session_fee  round(2) }} {{ currency }}
+{% if session_fee is not none and session_fee > 0 %}
+- ▶️ Sessiongebühr: **{{ session_fee | round(2) }} {{ currency }}**
 {% endif %}
 
-{% if time_fee is not none and time_fee  0 %}
-- ⏱️ Zeitgebühr {{ time_fee  round(2) }} {{ currency }}
+{% if time_fee is not none and time_fee > 0 %}
+- ⏱️ Zeitgebühr: **{{ time_fee | round(2) }} {{ currency }}**
 {% endif %}
 
-{% if blocking_fee is not none and blocking_fee  0 %}
-- 🚧 Blockiergebühr {{ blocking_fee  round(2) }} {{ currency }}
+{% if blocking_fee is not none and blocking_fee > 0 %}
+- 🚧 Blockiergebühr: **{{ blocking_fee | round(2) }} {{ currency }}**
 {% endif %}
 
-{% if parking_fee is not none and parking_fee  0 %}
-- 🅿️ Parkgebühr {{ parking_fee  round(2) }} {{ currency }}
+{% if parking_fee is not none and parking_fee > 0 %}
+- 🅿️ Parkgebühr: **{{ parking_fee | round(2) }} {{ currency }}**
 {% endif %}
 
-{% if other_cost is not none and other_cost  0 %}
-- ➕ Sonstige Kosten {{ other_cost  round(2) }} {{ currency }}
+{% if other_cost is not none and other_cost > 0 %}
+- ➕ Sonstige Kosten: **{{ other_cost | round(2) }} {{ currency }}**
 {% endif %}
 
-- 💳 Gesamtkosten {{ total_cost  round(2) }} {{ currency }}
+- 💳 Gesamtkosten: **{{ total_cost | round(2) }} {{ currency }}**
 
 {% if energy_price is not none %}
-- ⚡ Energiepreis {{ energy_price  round(4) }} {{ currency }}kWh
+- ⚡ Energiepreis: **{{ energy_price | round(4) }} {{ currency }}/kWh**
 {% endif %}
 
 {% if effective_price is not none %}
-- 📊 Effektiver Preis {{ effective_price  round(4) }} {{ currency }}kWh
+- 📊 Effektiver Preis: **{{ effective_price | round(4) }} {{ currency }}/kWh**
 {% endif %}
 
 {% if cost_source %}
@@ -176,7 +179,7 @@
 
 ## 📍 Ladeort
 
-{{ location }}
+**{{ location }}**
 
 {% if address and address != location %}
 {{ address }}
@@ -184,10 +187,10 @@
 
 {% if latitude is not none and longitude is not none %}
 
-Koordinaten  
+**Koordinaten:**  
 {{ latitude }}, {{ longitude }}
 
-[Auf Karte anzeigen](httpswww.openstreetmap.orgmlat={{ latitude }}&mlon={{ longitude }}#map=17{{ latitude }}{{ longitude }})
+[Auf Karte anzeigen](https://www.openstreetmap.org/?mlat={{ latitude }}&mlon={{ longitude }}#map=17/{{ latitude }}/{{ longitude }})
 
 {% endif %}
 
@@ -196,22 +199,22 @@ Koordinaten
 ## 🕒 Ladezeiten
 
 {% if start_time %}
-Ladebeginn  
-{{ (as_datetime(start_time)  as_local).strftime('%d.%m.%Y %H%M') }}
+**Ladebeginn:**  
+{{ (as_datetime(start_time) | as_local).strftime('%d.%m.%Y %H:%M') }}
 {% endif %}
 
 {% if end_time %}
 
-Ladeende  
-{{ (as_datetime(end_time)  as_local).strftime('%d.%m.%Y %H%M') }}
+**Ladeende:**  
+{{ (as_datetime(end_time) | as_local).strftime('%d.%m.%Y %H:%M') }}
 {% endif %}
 
 {% if duration %}
 
-Dauer  
+**Dauer:**  
 {{ duration }}
 {% endif %}
 
 ---
 
-smallDatenquelle Ford Triplogsmall
+<small>Datenquelle: Ford Triplog</small>
