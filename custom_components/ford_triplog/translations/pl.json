@@ -57,7 +57,7 @@
       },
       "import_charging_sites": {
         "title": "Importuj bazę lokalizacji ładowania",
-        "description": "Wybierz bazę lokalizacji ładowania Ford Triplog w formacie JSON. Istniejąca baza zostanie automatycznie zabezpieczona i zastąpiona po pomyślnej weryfikacji.\n\nAktualne bazy danych dla poszczególnych krajów znajdziesz w [folderze GitHub projektu Ford Triplog](https://github.com/weberdomi-ctrl/ford-triplog/tree/main/charging_sites).",
+        "description": "Wybierz bazę lokalizacji ładowania Ford Triplog w formacie JSON. Istniejąca baza zostanie automatycznie zabezpieczona i zastąpiona po pomyślnej weryfikacji.\n\nAktualne bazy danych dla poszczególnych krajów znajdziesz w [folderze GitHub projektu Ford Triplog]({github_url}).",
         "data": {
           "charging_site_file": "Plik JSON"
         },
