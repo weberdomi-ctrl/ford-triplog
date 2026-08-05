@@ -28,4 +28,5 @@ COUNTRIES = {
     "PT": {"iso_code": "PT", "name": "Portugal"},
     "GB": {"iso_code": "GB", "name": "United Kingdom"},
     "IE": {"iso_code": "IE", "name": "Ireland"},
+    "PL": {"iso_code": "PL", "name": "Poland"},
     }
