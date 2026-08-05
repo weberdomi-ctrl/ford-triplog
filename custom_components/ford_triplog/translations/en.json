@@ -57,7 +57,7 @@
       },
       "import_charging_sites": {
         "title": "Import charging-location database",
-        "description": "Select a Ford Triplog charging-location database in JSON format. The existing database is backed up automatically and replaced after successful validation.",
+        "description": "Select a Ford Triplog charging-location database in JSON format. The existing database is backed up automatically and replaced after successful validation.\n\nThe latest country databases are available in the [Ford Triplog GitHub charging_sites folder]({github_url}).",
         "data": {
           "charging_site_file": "JSON file"
         },
@@ -832,7 +832,7 @@
   "services": {
     "import_charging_sites": {
       "name": "Import charging stations",
-      "description": "Select a Ford Triplog charging-location database in JSON format. The existing database is backed up automatically and replaced after successful validation.\n\nThe latest country databases are available in the [Ford Triplog GitHub charging_sites folder](https://github.com/weberdomi-ctrl/ford-triplog/tree/main/charging_sites)",
+      "description": "Imports a charging-station database from a JSON file in the Home Assistant configuration directory.",
       "fields": {
         "file": {
           "name": "File",
