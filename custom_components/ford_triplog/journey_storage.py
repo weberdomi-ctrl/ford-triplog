@@ -11,6 +11,7 @@ Release: 1.6b
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -55,6 +56,7 @@ class FordTriplogJourneyStorage:
             self._base_directory / LAST_JOURNEY_FILE
         )
         self._metadata_storage = FordTriplogMetadataStorage(hass)
+        self._archive_lock = asyncio.Lock()
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
@@ -116,36 +118,103 @@ class FordTriplogJourneyStorage:
         *,
         preserve_pause_overrides: bool = True,
     ) -> Path:
-        """Archive a completed journey and update last_journey.json.
+        """Archive a completed journey without creating duplicates."""
 
-        Newly generated journeys inherit manual pause data from any archived
-        journey of the same day when the stable pause identifier still exists.
-        This makes pause edits survive every journey creation path, including
-        automatic rebuilds that generate a new journey identifier.
-        """
+        async with self._archive_lock:
+            data = self._normalize_journey_data(journey)
 
-        data = self._normalize_journey_data(journey)
+            if preserve_pause_overrides:
+                data = await self._inherit_pause_overrides(data)
 
-        if preserve_pause_overrides:
-            data = await self._inherit_pause_overrides(data)
+            matching_paths = await self._find_matching_journey_paths(data)
 
-        journey_id = str(data["journey_id"]).strip()
+            if matching_paths:
+                archive_path = matching_paths[0]
+                existing_data = await self._async_load_json(archive_path)
 
-        archive_path = (
-            self._journeys_directory
-            / f"{self._safe_filename(journey_id)}.json"
+                if isinstance(existing_data, dict):
+                    existing_id = str(
+                        existing_data.get("journey_id", "")
+                    ).strip()
+                    if existing_id:
+                        data["journey_id"] = existing_id
+
+                    if existing_data.get("created"):
+                        data["created"] = existing_data["created"]
+            else:
+                journey_id = str(data["journey_id"]).strip()
+                archive_path = (
+                    self._journeys_directory
+                    / f"{self._safe_filename(journey_id)}.json"
+                )
+
+            await self._async_write_json(archive_path, data)
+            await self._async_write_json(self._last_journey_path, data)
+
+            for duplicate_path in matching_paths[1:]:
+                await self.hass.async_add_executor_job(
+                    self._unlink_file,
+                    duplicate_path,
+                )
+                _LOGGER.warning(
+                    "Removed duplicate journey archive %s; canonical=%s",
+                    duplicate_path.name,
+                    archive_path.name,
+                )
+
+            return archive_path
+
+    async def _find_matching_journey_paths(
+        self,
+        data: dict[str, Any],
+    ) -> list[Path]:
+        """Return archived journeys with identical source references."""
+
+        signature = self._journey_signature(data)
+        if signature is None:
+            return []
+
+        matching: list[Path] = []
+
+        for path in await self.list_journey_files():
+            existing = await self._async_load_json(path)
+            if (
+                isinstance(existing, dict)
+                and self._journey_signature(existing) == signature
+            ):
+                matching.append(path)
+
+        return sorted(matching)
+
+    @staticmethod
+    def _journey_signature(
+        data: dict[str, Any],
+    ) -> tuple[tuple[str, ...], tuple[str, ...]] | None:
+        """Return a stable signature from ordered trip and charge IDs."""
+
+        raw_trip_ids = data.get("trip_ids")
+        raw_charge_ids = data.get("charge_ids")
+
+        if not isinstance(raw_trip_ids, list):
+            return None
+        if not isinstance(raw_charge_ids, list):
+            return None
+
+        trip_ids = tuple(
+            str(item_id).strip()
+            for item_id in raw_trip_ids
+            if str(item_id).strip()
+        )
+        charge_ids = tuple(
+            str(item_id).strip()
+            for item_id in raw_charge_ids
+            if str(item_id).strip()
         )
 
-        await self._async_write_json(
-            archive_path,
-            data,
-        )
-        await self._async_write_json(
-            self._last_journey_path,
-            data,
-        )
+        if not trip_ids:
+            return None
 
-        return archive_path
+        return trip_ids, charge_ids
 
     async def load_last_journey(
         self,
