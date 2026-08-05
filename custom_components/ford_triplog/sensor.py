@@ -975,17 +975,18 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             },
         }
 
-        compact_timeline: list[dict[str, Any]] = []
-        for entry in timeline:
-            item_type = str(entry.get("type") or "")
-            fields = allowed_fields.get(item_type, {"type"})
-            compact_timeline.append(
-                {
-                    key: value
-                    for key, value in entry.items()
-                    if key in fields and value is not None
-                }
-            )
+        compact_timeline = [
+            {
+                key: value
+                for key, value in entry.items()
+                if key in allowed_fields.get(
+                    str(entry.get("type") or ""),
+                    {"type"},
+                )
+                and value is not None
+            }
+            for entry in timeline
+        ]
 
         return compact_timeline, total_pause_seconds
 
@@ -995,7 +996,32 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         if self.storage is None:
             self._journey = None
             self._attr_native_value = None
-            self._attributes = {
+            self._attributes = {}
+            return
+
+        self._journey = await self.storage.load_last_journey()
+
+        if self._journey is None:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        journey = self._journey
+        timeline, pause_seconds = self._build_timeline(journey)
+
+        distance = round(float(journey.distance_km or 0), 1)
+        total_duration = int(journey.total_duration_seconds or 0)
+
+        items = list(journey.items)
+        first_item = items[0] if items else None
+        last_item = items[-1] if items else None
+
+        self._attr_native_value = (
+            f"{distance:g} km · "
+            f"{self._format_duration_compact(total_duration)}"
+        )
+
+        self._attributes = {
             "date": journey.date,
             "distance_km": distance,
             "total_duration": format_duration(total_duration),
