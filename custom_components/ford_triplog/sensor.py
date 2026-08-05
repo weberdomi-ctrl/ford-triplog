@@ -909,7 +909,85 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             }
         )
 
-        return timeline, total_pause_seconds
+        allowed_fields = {
+            "start": {
+                "type",
+                "time_formatted",
+                "location",
+            },
+            "trip": {
+                "type",
+                "start_time_formatted",
+                "end_time_formatted",
+                "duration",
+                "distance_km",
+                "start_soc",
+                "end_soc",
+                "soc_used",
+                "energy_used_kwh",
+                "consumption_kwh_100km",
+                "start_location",
+                "end_location",
+            },
+            "pause": {
+                "type",
+                "start_time_formatted",
+                "duration",
+                "title",
+                "category",
+                "location",
+                "note",
+                "soc_start",
+                "soc_end",
+                "soc_delta",
+                "battery_energy_change_kwh",
+                "cost_total",
+                "currency",
+                "edited",
+            },
+            "charge": {
+                "type",
+                "start_time_formatted",
+                "end_time_formatted",
+                "arrival_buffer_seconds",
+                "arrival_buffer",
+                "duration",
+                "departure_buffer_seconds",
+                "departure_buffer",
+                "total_stop_duration_seconds",
+                "total_stop_duration",
+                "start_soc",
+                "end_soc",
+                "soc_added",
+                "energy_charged_kwh",
+                "energy_billed_kwh",
+                "cost_total",
+                "currency",
+                "energy_price_per_kwh",
+                "effective_price_per_kwh",
+                "cost_source",
+                "location",
+            },
+            "end": {
+                "type",
+                "time_formatted",
+                "location",
+            },
+        }
+
+        compact_timeline: list[dict[str, Any]] = []
+        for entry in timeline:
+            item_type = str(entry.get("type") or "")
+            fields = allowed_fields.get(item_type, {"type"})
+            compact_timeline.append(
+                {
+                    key: value
+                    for key, value in entry.items()
+                    if key in fields and value is not None
+                }
+            )
+
+        return compact_timeline, total_pause_seconds
 
     async def _async_refresh(self) -> None:
         """Load and prepare the last completed Journey."""
@@ -917,103 +995,24 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         if self.storage is None:
             self._journey = None
             self._attr_native_value = None
-            self._attributes = {}
-            return
-
-        self._journey = await self.storage.load_last_journey()
-
-        if self._journey is None:
-            self._attr_native_value = None
-            self._attributes = {}
-            return
-
-        journey = self._journey
-        timeline, pause_seconds = self._build_timeline(journey)
-
-        distance = round(float(journey.distance_km or 0), 1)
-        total_duration = int(journey.total_duration_seconds or 0)
-
-        items = list(journey.items)
-        first_item = items[0] if items else None
-        last_item = items[-1] if items else None
-
-        self._attr_native_value = (
-            f"{distance:g} km · "
-            f"{self._format_duration_compact(total_duration)}"
-        )
-
-        self._attributes = {
-            "journey_id": journey.journey_id,
+            self._attributes = {
             "date": journey.date,
-            "start": {
-                "time": journey.start_time,
-                "time_formatted": self._format_clock(journey.start_time),
-                "location": (
-                    self._item_start_location(first_item)
-                    if first_item is not None
-                    else self._short_address(journey.start_address)
-                ),
-                "display_location": (
-                    self._item_start_location(first_item)
-                    if first_item is not None
-                    else self._short_address(journey.start_address)
-                ),
-                "address": self._short_address(journey.start_address),
-                "latitude": journey.start_latitude,
-                "longitude": journey.start_longitude,
-            },
-            "end": {
-                "time": journey.end_time,
-                "time_formatted": self._format_clock(journey.end_time),
-                "location": (
-                    self._item_end_location(last_item)
-                    if last_item is not None
-                    else self._short_address(journey.end_address)
-                ),
-                "display_location": (
-                    self._item_end_location(last_item)
-                    if last_item is not None
-                    else self._short_address(journey.end_address)
-                ),
-                "address": self._short_address(journey.end_address),
-                "latitude": journey.end_latitude,
-                "longitude": journey.end_longitude,
-            },
             "distance_km": distance,
-            "total_duration_seconds": total_duration,
             "total_duration": format_duration(total_duration),
-            "driving_duration_seconds": journey.driving_duration_seconds,
             "driving_duration": format_duration(
                 journey.driving_duration_seconds
             ),
-            "pause_duration_seconds": pause_seconds,
             "pause_duration": format_duration(pause_seconds),
-            "charging_duration_seconds": journey.charging_duration_seconds,
             "charging_duration": format_duration(
                 journey.charging_duration_seconds
             ),
-            "trip_count": journey.trip_count,
-            "charge_count": journey.charge_count,
             "energy_used_kwh": journey.energy_used_kwh,
             "energy_charged_kwh": journey.energy_charged_kwh,
-            "start_soc": journey.start_soc,
-            "end_soc": journey.end_soc,
-            "soc_delta": journey.soc_delta,
-            "soc_used": journey.soc_used,
-            "soc_charged": journey.soc_charged,
-            "soc_adjustment": journey.soc_adjustment,
-            "battery_capacity_kwh": journey.battery_capacity_kwh,
-            "battery_energy_delta_kwh": (
-                journey.battery_energy_delta_kwh
-            ),
-            "soc_adjustment_kwh": journey.soc_adjustment_kwh,
             "battery_energy_balance_kwh": (
                 journey.battery_energy_balance_kwh
             ),
             "total_energy_flow_kwh": journey.total_energy_flow_kwh,
-            "average_consumption_kwh_100km": (
-                journey.average_consumption_kwh_100km
-            ),
+            "currency": journey.currency,
             "charging_cost_total": journey.charging_cost_total,
             "charging_energy_cost": journey.charging_energy_cost,
             "charging_additional_cost": (
@@ -1022,7 +1021,20 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "average_charging_price_per_kwh": (
                 journey.average_charging_price_per_kwh
             ),
-            "currency": journey.currency,
+            "battery_capacity_kwh": journey.battery_capacity_kwh,
+            "start_soc": journey.start_soc,
+            "end_soc": journey.end_soc,
+            "soc_delta": journey.soc_delta,
+            "battery_energy_delta_kwh": (
+                journey.battery_energy_delta_kwh
+            ),
+            "soc_used": journey.soc_used,
+            "soc_charged": journey.soc_charged,
+            "soc_adjustment": journey.soc_adjustment,
+            "soc_adjustment_kwh": journey.soc_adjustment_kwh,
+            "average_consumption_kwh_100km": (
+                journey.average_consumption_kwh_100km
+            ),
             "timeline": timeline,
         }
 
