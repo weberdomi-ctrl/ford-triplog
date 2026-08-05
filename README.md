@@ -171,6 +171,12 @@ Features include:
 -   Fast local lookups
 -   No internet required during normal operation
 
+### Additional countries
+
+The list of supported countries is defined in `countries.py`.
+
+Advanced users can add additional countries manually by extending the `COUNTRIES` dictionary and generating the corresponding charging-site database.
+
 ------------------------------------------------------------------------
 
 ## 📊 Statistics
