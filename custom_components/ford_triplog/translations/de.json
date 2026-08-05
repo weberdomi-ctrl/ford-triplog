@@ -57,7 +57,7 @@
       },
       "import_charging_sites": {
         "title": "Ladeort-Datenbank importieren",
-        "description": "Wähle eine Ford-Triplog-Ladeort-Datenbank im JSON-Format aus. Die bestehende Datenbank wird automatisch gesichert und nach erfolgreicher Prüfung ersetzt.",
+        "description": "Wähle eine Ford-Triplog-Ladeort-Datenbank im JSON-Format aus. Die bestehende Datenbank wird automatisch gesichert und nach erfolgreicher Prüfung ersetzt.\n\nDie aktuellen Ladeort-Datenbanken für die unterstützten Länder findest du im GitHub-Ordner „charging_sites“:\nhttps://github.com/weberdomi-ctrl/ford-triplog/tree/main/charging_sites",
         "data": {
           "charging_site_file": "JSON-Datei"
         },
