@@ -1,3 +1,13 @@
+# Ford Triplog 1.9.1
+
+### OpenStreetMap charging-site database
+
+- Added manual import of Ford Triplog charging-site databases (`charging_sites_*.json`).
+- Country databases can now be downloaded from the Ford Triplog GitHub repository and imported directly from the Home Assistant options flow.
+- Imported databases are validated automatically (format, version, country and data integrity) before replacing the existing database.
+- Existing databases are backed up automatically before import.
+- Added a direct GitHub download link to the import dialog using Home Assistant translation placeholders.
+
 # Ford Triplog 1.9.0
 
 This release focuses on charging management, receipt handling, pause management, internationalization, and a significantly improved configuration interface.
