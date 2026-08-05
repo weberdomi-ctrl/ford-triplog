@@ -4883,6 +4883,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 }
             ),
             errors=errors,
+            description_placeholders={
+                "github_url": (
+                    "https://github.com/weberdomi-ctrl/ford-triplog/tree/main/charging_sites"
+                ),
+            },
         )
 
     async def async_step_import_charging_sites_success(
