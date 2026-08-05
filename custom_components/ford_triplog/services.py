@@ -3,8 +3,8 @@ Ford Triplog
 
 Charging-site service actions.
 
-Version: 1.8.2
-Release: 1.8.2 - Charge cost actions
+Version: 1.9.1
+Release: 1.9.1 - Manual charging-site database import
 """
 
 from __future__ import annotations
@@ -166,25 +166,62 @@ CLEAR_PAUSE_EDIT_SCHEMA = vol.Schema(
 # ---------------------------------------------------------------------------
 
 def _detect_country_code(path: Path) -> str:
-    """Extract country_code from imported JSON file."""
+    """Extract and validate the country code from an imported database."""
+
     try:
-        with path.open("r", encoding="utf-8") as f:
-            data = json.load(f)
+        with path.open("r", encoding="utf-8") as file_handle:
+            database = json.load(file_handle)
     except Exception as error:
         raise ServiceValidationError(
             f"Could not read JSON file: {error}"
         ) from error
 
-    code = str(data.get("country_code", "")).strip().upper()
+    if not isinstance(database, dict):
+        raise ServiceValidationError(
+            "The imported file does not contain a valid JSON object."
+        )
+
+    metadata = database.get("metadata")
+
+    if not isinstance(metadata, dict):
+        raise ServiceValidationError(
+            "The imported database does not contain a metadata section."
+        )
+
+    database_format = str(metadata.get("format", "")).strip()
+
+    if database_format != "ford_triplog_charging_sites":
+        raise ServiceValidationError(
+            "The imported file is not a Ford Triplog charging-site database."
+        )
+
+    database_format_version = str(
+        metadata.get("database_format_version", "")
+    ).strip()
+
+    if database_format_version != "1":
+        raise ServiceValidationError(
+            "Unsupported charging-site database format version "
+            f"'{database_format_version or 'unknown'}'."
+        )
+
+    code = str(metadata.get("country_code", "")).strip().upper()
 
     if not code:
         raise ServiceValidationError(
-            "The imported database does not contain a country_code field."
+            "The imported database metadata does not contain a country_code."
         )
 
     if code not in COUNTRIES:
         raise ServiceValidationError(
             f"Unsupported country code '{code}' in imported database."
+        )
+
+    database_data = database.get("data")
+
+    if not isinstance(database_data, list) or not database_data:
+        raise ServiceValidationError(
+            "The imported charging-site database does not contain any data."
         )
 
     return code
