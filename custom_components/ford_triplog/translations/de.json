@@ -473,7 +473,7 @@
       },
       "charge_receipt_open": {
         "title": "Beleg anzeigen",
-        "description": "[Beleg in einem neuen Fenster öffnen]({receipt_url})\n\nDer Link ist 10 Minuten gültig. Mit **OK** kehrst du anschließend zum Beleg zurück."
+        "description": "[Beleg öffnen]({receipt_url})\n\nDer Link ist 10 Minuten gültig.\n\n**Hinweis:** Aufgrund einer Einschränkung von Home Assistant wird der Link in manchen Browsern beim direkten Anklicken nicht korrekt geöffnet. In diesem Fall den Link mit der rechten Maustaste anklicken und **„Link in neuem Tab öffnen“** auswählen."
       },
       "charge_receipt_parser_create": {
         "title": "Parserprofil erstellen",
