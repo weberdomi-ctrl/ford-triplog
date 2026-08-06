@@ -473,7 +473,7 @@
       },
       "charge_receipt_open": {
         "title": "View receipt",
-        "description": "[Open receipt in a new window]({receipt_url})\n\nThe link is valid for 10 minutes. Select **OK** afterwards to return to the receipt."
+        "description": "[Open receipt]({receipt_url})\n\nThe link is valid for 10 minutes.\n\n**Note:** Due to a Home Assistant limitation, some browsers may not open the link correctly when clicked directly from this dialog. If this happens, right-click the link and select **Open link in new tab**."
       },
       "charge_receipt_parser_create": {
         "title": "Create parser profile",

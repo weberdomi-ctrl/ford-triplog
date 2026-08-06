@@ -473,7 +473,7 @@
       },
       "charge_receipt_open": {
         "title": "Wyświetl paragon",
-        "description": "[Otwórz paragon w nowym oknie]({receipt_url})\n\nLink jest ważny przez 10 minut. Następnie wybierz **OK**, aby wrócić do paragonu."
+        "description": "[Otwórz paragon]({receipt_url})\n\nLink jest ważny przez 10 minut.\n\n**Uwaga:** Z powodu ograniczenia Home Assistant w niektórych przeglądarkach link może nie otworzyć się poprawnie po zwykłym kliknięciu w tym oknie. W takim przypadku kliknij link prawym przyciskiem myszy i wybierz **„Otwórz link w nowej karcie”**."
       },
       "charge_receipt_parser_create": {
         "title": "Utwórz profil parsera",
