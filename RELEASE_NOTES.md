@@ -1,3 +1,15 @@
+# Ford Triplog 1.9.2
+
+### Fixed
+
+- Fixed a race condition that could create duplicate Journey files during automatic Journey rebuilds.
+- Reduced the size of the **Last Journey Overview** sensor attributes to stay below Home Assistant Recorder limits and avoid recorder warnings.
+
+### Improvements
+
+- Added a helpful note to the receipt viewer explaining a Home Assistant browser limitation when opening receipts. If direct opening does not work, users can open the receipt via **Open link in new tab**.
+
+
 # Ford Triplog 1.9.1
 
 ### OpenStreetMap charging-site database
