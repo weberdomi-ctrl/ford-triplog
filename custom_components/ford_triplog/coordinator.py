@@ -263,6 +263,23 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         ):
             self._resume_pending_charge_from_recovery()
 
+    async def async_shutdown(self) -> None:
+        """Stop listeners, timers and pending coordinator work."""
+
+        if self.remove_listener is not None:
+            self.remove_listener()
+            self.remove_listener = None
+
+        if self.smart_trip_timer is not None:
+            self.smart_trip_timer.cancel()
+            self.smart_trip_timer = None
+
+        self._cancel_last_charge_timer()
+        self._cancel_last_charge_timeout_timer()
+        self._gps_update_event.set()
+
+        _LOGGER.debug("Ford Triplog coordinator shut down")
+
     def _resolve_charging_site_database(self) -> Path:
         """Return the configured country's charging-site database path."""
 
