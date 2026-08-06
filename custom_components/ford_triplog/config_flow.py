@@ -1298,13 +1298,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show a signed receipt link without leaving the options flow."""
+        """Open the signed receipt URL using a Home Assistant external step."""
 
         if not self._selected_receipt_id:
             return await self.async_step_charge_receipt_list()
-
-        if user_input is not None:
-            return await self.async_step_charge_receipt_detail()
 
         receipt_path = (
             f"/api/ford_triplog/receipts/{self._selected_receipt_id}"
@@ -1329,12 +1326,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         except NoURLAvailableError:
             receipt_url = signed_path
 
-        return self.async_show_form(
+        return self.async_external_step(
             step_id="charge_receipt_open",
-            data_schema=vol.Schema({}),
-            description_placeholders={
-                "receipt_url": receipt_url,
-            },
+            url=receipt_url,
         )
 
     async def async_step_charge_receipt_ocr(
