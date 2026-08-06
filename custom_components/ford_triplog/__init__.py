@@ -197,6 +197,15 @@ async def async_unload_entry(
 ) -> bool:
     """Unload a config entry."""
 
+    runtime_data = hass.data.get(DOMAIN, {}).get(
+        entry.entry_id,
+        {},
+    )
+    coordinator = runtime_data.get("coordinator")
+
+    if coordinator is not None:
+        await coordinator.async_shutdown()
+
     unload_ok = await hass.config_entries.async_unload_platforms(
         entry,
         PLATFORMS,
