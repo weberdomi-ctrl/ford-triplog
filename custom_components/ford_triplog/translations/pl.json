@@ -773,6 +773,9 @@
       },
       "last_journey_overview": {
         "name": "Przegląd ostatniej podróży"
+      },
+      "last_route": {
+        "name": "Ostatnia trasa"
       }
     }
   },
