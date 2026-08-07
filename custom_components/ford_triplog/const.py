@@ -18,7 +18,7 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "1.9.2"
+VERSION: Final = "2.0.0"
 
 #
 # Storage
@@ -72,6 +72,24 @@ CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
+
+
+#
+# Route Tracker
+#
+
+ROUTE_SCHEMA_VERSION: Final = 1
+ROUTES_DIR: Final = "routes"
+
+CONF_ROUTE_TRACKER_ENABLED: Final = "route_tracker_enabled"
+CONF_ROUTE_SOURCE_TYPE: Final = "route_source_type"
+
+CONF_ROUTE_LATITUDE_ENTITY: Final = "route_latitude_entity"
+CONF_ROUTE_LONGITUDE_ENTITY: Final = "route_longitude_entity"
+CONF_ROUTE_GEOCODED_ENTITY: Final = "route_geocoded_entity"
+
+ROUTE_SOURCE_ABRP: Final = "abrp"
+ROUTE_SOURCE_HA_GEOCODED: Final = "ha_geocoded"
 
 
 CONF_SMART_TRIP: Final = "smart_trip"

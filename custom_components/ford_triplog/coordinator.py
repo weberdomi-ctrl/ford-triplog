@@ -210,6 +210,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Issue #15: assigned during integration setup after the Journey
         # infrastructure has been initialized.
         self.journey_rebuilder: Any | None = None
+        self.route_tracker: Any | None = None
        
 
     async def async_setup(self):
@@ -1130,6 +1131,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.trip_end_time = None
             self.trip_end_state = None
            
+            if self.route_tracker is not None and self.current_trip.trip_id:
+                await self.route_tracker.async_start(
+                    self.current_trip.trip_id
+                )
+
             await self.storage.save_current_trip(
                 self.current_trip.to_dict()
             )           
@@ -1156,6 +1162,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=addr,
         )
 
+        if self.route_tracker is not None and self.current_trip.trip_id:
+            await self.route_tracker.async_start(
+                self.current_trip.trip_id
+            )
+
         await self.storage.save_current_trip(self.current_trip.to_dict())
 
     async def finish_trip(self):
@@ -1168,6 +1179,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         trip = self.current_trip
         if trip is None:
             return
+
+        if self.route_tracker is not None:
+            await self.route_tracker.async_stop()
 
         self._trip_finishing = True
 

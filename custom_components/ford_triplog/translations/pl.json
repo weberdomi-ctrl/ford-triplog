@@ -46,11 +46,13 @@
         "description": "Wybierz obszar, który chcesz skonfigurować.",
         "menu_options": {
           "general_settings": "Ustawienia ogólne",
+          "route_tracker_settings": "Rejestrator trasy",
           "ocr_settings": "Połączenie OCR",
           "init": "Wróć do menu głównego"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
+          "route_tracker_settings": "Skonfiguruj oddzielne źródło GPS do rejestrowania trasy. Istniejący tracker pojazdu pozostaje bez zmian.",
           "ocr_settings": "Skonfiguruj opcjonalną lokalną usługę OCR i sprawdź połączenie.",
           "init": "Wróć do przeglądu Ford Triplog."
         }
@@ -534,6 +536,32 @@
           "download_charging_sites": "Pobierz, przetwórz i aktywuj lokalizacje ładowania wybranego kraju bezpośrednio z OpenStreetMap.",
           "import_charging_sites": "Zaimportuj istniejącą bazę lokalizacji ładowania Ford Triplog z pliku JSON.",
           "init": "Wróć do przeglądu Ford Triplog."
+        }
+      },
+      "route_tracker_settings": {
+        "title": "Rejestrator trasy",
+        "description": "Włącz oddzielne rejestrowanie trasy i wybierz źródło pozycji. To ustawienie nie zastępuje istniejącego trackera pojazdu Ford Triplog.",
+        "data": {
+          "route_tracker_enabled": "Włącz rejestrator trasy",
+          "route_source_type": "Źródło pozycji"
+        },
+        "data_description": {
+          "route_tracker_enabled": "Rejestruje punkty GPS podczas jazdy przy użyciu oddzielnego źródła pozycji.",
+          "route_source_type": "Wybierz integrację, z której rejestrator trasy pobiera współrzędne GPS."
+        }
+      },
+      "route_tracker_source": {
+        "title": "Źródło pozycji rejestratora trasy",
+        "description": "Skonfiguruj encje dla wybranego źródła pozycji: {source_type}.",
+        "data": {
+          "route_latitude_entity": "Sensor szerokości geograficznej",
+          "route_longitude_entity": "Sensor długości geograficznej",
+          "route_geocoded_entity": "Sensor Geocoded Location"
+        },
+        "data_description": {
+          "route_latitude_entity": "Sensor podający aktualną szerokość geograficzną.",
+          "route_longitude_entity": "Sensor podający aktualną długość geograficzną.",
+          "route_geocoded_entity": "Sensor Geocoded Location aplikacji Home Assistant Companion z atrybutem „location”."
         }
       },
       "general_settings": {

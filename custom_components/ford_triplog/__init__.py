@@ -43,6 +43,8 @@ from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
 from .charge_manager import FordTriplogChargeManager
 from .receipt_storage import FordTriplogReceiptStorage, FordTriplogReceiptView
+from .route_storage import FordTriplogRouteStorage
+from .route_tracker import FordTriplogRouteTracker
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +89,15 @@ async def async_setup_entry(
     )
 
     await coordinator.async_setup()
+
+    route_storage = FordTriplogRouteStorage(hass)
+    route_tracker = FordTriplogRouteTracker(
+        hass=hass,
+        storage=route_storage,
+        config=config,
+    )
+    await route_tracker.async_setup()
+    coordinator.route_tracker = route_tracker
 
     journey_storage = FordTriplogJourneyStorage(
         hass,
@@ -171,6 +182,8 @@ async def async_setup_entry(
         "journey_rebuilder": journey_rebuilder,
         "charge_manager": charge_manager,
         "receipt_storage": receipt_storage,
+        "route_storage": route_storage,
+        "route_tracker": route_tracker,
     }
 
     entry.async_on_unload(
@@ -202,6 +215,11 @@ async def async_unload_entry(
         {},
     )
     coordinator = runtime_data.get("coordinator")
+
+    route_tracker = runtime_data.get("route_tracker")
+
+    if route_tracker is not None:
+        await route_tracker.async_shutdown()
 
     if coordinator is not None:
         await coordinator.async_shutdown()

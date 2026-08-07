@@ -46,11 +46,13 @@
         "description": "Wähle den Bereich aus, den du konfigurieren möchtest.",
         "menu_options": {
           "general_settings": "Allgemeine Einstellungen",
+          "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR-Verbindung",
           "init": "Zurück zum Hauptmenü"
         },
         "menu_option_descriptions": {
           "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
+          "route_tracker_settings": "Separate GPS-Quelle für die Routenaufzeichnung konfigurieren. Der bestehende Fahrzeug-Tracker bleibt unverändert.",
           "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
@@ -534,6 +536,32 @@
           "download_charging_sites": "Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und aktivieren.",
           "import_charging_sites": "Eine vorhandene Ford-Triplog-Ladeort-Datenbank als JSON-Datei importieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "route_tracker_settings": {
+        "title": "Route Tracker",
+        "description": "Aktiviere die separate Routenaufzeichnung und wähle die Positionsquelle. Diese Einstellung ersetzt nicht den bestehenden Fahrzeug-Tracker von Ford Triplog.",
+        "data": {
+          "route_tracker_enabled": "Route Tracker aktivieren",
+          "route_source_type": "Positionsquelle"
+        },
+        "data_description": {
+          "route_tracker_enabled": "Zeichnet während einer Fahrt GPS-Punkte über eine separate Positionsquelle auf.",
+          "route_source_type": "Wähle die Integration, aus der der Route Tracker seine GPS-Koordinaten erhält."
+        }
+      },
+      "route_tracker_source": {
+        "title": "Route-Tracker-Positionsquelle",
+        "description": "Konfiguriere die Entities für die ausgewählte Positionsquelle: {source_type}.",
+        "data": {
+          "route_latitude_entity": "Breitengrad-Sensor",
+          "route_longitude_entity": "Längengrad-Sensor",
+          "route_geocoded_entity": "Geocoded-Location-Sensor"
+        },
+        "data_description": {
+          "route_latitude_entity": "Sensor, der den aktuellen Breitengrad liefert.",
+          "route_longitude_entity": "Sensor, der den aktuellen Längengrad liefert.",
+          "route_geocoded_entity": "Geocoded-Location-Sensor der Home Assistant Companion App mit dem Attribut „location“."
         }
       },
       "general_settings": {

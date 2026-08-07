@@ -43,33 +43,18 @@
       },
       "settings": {
         "title": "Einstellungen",
-        "description": "Ford Triplog konfigurieren.",
-        "data": {
-          "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
-          "charging": "Ladestatus-Sensor",
-          "battery_capacity_kwh": "Verfügbare Akkukapazität (kWh)",
-          "soh": "Batteriezustand (SOH)",
-          "journey_home_zone": "Tour-Basis",
-          "journey_home_timeout_minutes": "Mindestaufenthalt an Tour-Basis",
-          "journey_max_gap_hours": "Maximale Tour-Pause",
-          "home_tariff_enabled": "Automatic home charging costs",
-          "home_tariff_summer_price": "Summer tariff (1 April to 30 September)",
-          "home_tariff_winter_price": "Winter tariff (1 October to 31 March)",
-          "home_tariff_currency": "Home tariff currency"
+        "description": "Wähle den Bereich aus, den du konfigurieren möchtest.",
+        "menu_options": {
+          "general_settings": "Allgemeine Einstellungen",
+          "route_tracker_settings": "Route Tracker",
+          "ocr_settings": "OCR-Verbindung",
+          "init": "Zurück zum Hauptmenü"
         },
-        "data_description": {
-          "smart_trip": "Kurze Zwischenstopps werden automatisch zu einer Fahrt zusammengefasst.",
-          "smart_trip_timeout": "Empfohlen: 300 Sekunden (5 Minuten). Mindestwert: 30 Sekunden.",
-          "charging": "Ladestatus-Sensor (nur für Ford-Pass-Elektrofahrzeuge verfügbar).",
-          "battery_capacity_kwh": "Die nutzbare Akkukapazität des Fahrzeugs. Standard: 77 kWh.",
-          "journey_home_zone": "Zone, deren Erreichen eine Tour beenden kann.",
-          "journey_home_timeout_minutes": "Die Tour wird erst beendet, wenn sich das Fahrzeug mindestens diese Zeit in der Tour-Basis befindet. 0 Minuten beendet die Tour sofort.",
-          "journey_max_gap_hours": "Maximale Zeit zwischen zwei Fahrten, bevor eine neue Tour begonnen wird. Dieser Wert dient als Fallback, wenn keine Tour-Basis verwendet werden kann.",
-          "home_tariff_enabled": "Automatically calculates costs for charging sessions at the Journey base.",
-          "home_tariff_summer_price": "Price per kWh for charging sessions from 1 April to 30 September.",
-          "home_tariff_winter_price": "Price per kWh for charging sessions from 1 October to 31 March.",
-          "home_tariff_currency": "Currency used for automatically calculated home charging costs."
+        "menu_option_descriptions": {
+          "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
+          "route_tracker_settings": "Separate GPS-Quelle für die Routenaufzeichnung konfigurieren. Der bestehende Fahrzeug-Tracker bleibt unverändert.",
+          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
       "import_charging_sites": {
@@ -551,6 +536,32 @@
           "download_charging_sites": "Ladeorte eines Landes direkt von OpenStreetMap herunterladen, aufbereiten und aktivieren.",
           "import_charging_sites": "Eine vorhandene Ford-Triplog-Ladeort-Datenbank als JSON-Datei importieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "route_tracker_settings": {
+        "title": "Route Tracker",
+        "description": "Aktiviere die separate Routenaufzeichnung und wähle die Positionsquelle. Diese Einstellung ersetzt nicht den bestehenden Fahrzeug-Tracker von Ford Triplog.",
+        "data": {
+          "route_tracker_enabled": "Route Tracker aktivieren",
+          "route_source_type": "Positionsquelle"
+        },
+        "data_description": {
+          "route_tracker_enabled": "Zeichnet während einer Fahrt GPS-Punkte über eine separate Positionsquelle auf.",
+          "route_source_type": "Wähle die Integration, aus der der Route Tracker seine GPS-Koordinaten erhält."
+        }
+      },
+      "route_tracker_source": {
+        "title": "Route-Tracker-Positionsquelle",
+        "description": "Konfiguriere die Entities für die ausgewählte Positionsquelle: {source_type}.",
+        "data": {
+          "route_latitude_entity": "Breitengrad-Sensor",
+          "route_longitude_entity": "Längengrad-Sensor",
+          "route_geocoded_entity": "Geocoded-Location-Sensor"
+        },
+        "data_description": {
+          "route_latitude_entity": "Sensor, der den aktuellen Breitengrad liefert.",
+          "route_longitude_entity": "Sensor, der den aktuellen Längengrad liefert.",
+          "route_geocoded_entity": "Geocoded-Location-Sensor der Home Assistant Companion App mit dem Attribut „location“."
         }
       }
     },

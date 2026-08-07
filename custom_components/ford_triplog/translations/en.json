@@ -46,11 +46,13 @@
         "description": "Select the section you want to configure.",
         "menu_options": {
           "general_settings": "General Settings",
+          "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR Connection",
           "init": "Back to Main Menu"
         },
         "menu_option_descriptions": {
           "general_settings": "Configure trip, charging, vehicle and tariff settings.",
+          "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog main menu."
         }
@@ -534,6 +536,32 @@
           "download_charging_sites": "Download, process and activate charging locations for a country directly from OpenStreetMap.",
           "import_charging_sites": "Import an existing Ford Triplog charging-location database as a JSON file.",
           "init": "Return to the Ford Triplog overview."
+        }
+      },
+      "route_tracker_settings": {
+        "title": "Route Tracker",
+        "description": "Enable separate route recording and select the position source. This setting does not replace the existing Ford Triplog vehicle tracker.",
+        "data": {
+          "route_tracker_enabled": "Enable Route Tracker",
+          "route_source_type": "Position source"
+        },
+        "data_description": {
+          "route_tracker_enabled": "Records GPS points during a trip using a separate position source.",
+          "route_source_type": "Select the integration from which the Route Tracker receives its GPS coordinates."
+        }
+      },
+      "route_tracker_source": {
+        "title": "Route Tracker position source",
+        "description": "Configure the entities for the selected position source: {source_type}.",
+        "data": {
+          "route_latitude_entity": "Latitude sensor",
+          "route_longitude_entity": "Longitude sensor",
+          "route_geocoded_entity": "Geocoded Location sensor"
+        },
+        "data_description": {
+          "route_latitude_entity": "Sensor that provides the current latitude.",
+          "route_longitude_entity": "Sensor that provides the current longitude.",
+          "route_geocoded_entity": "Home Assistant Companion App Geocoded Location sensor with the “location” attribute."
         }
       },
       "general_settings": {
