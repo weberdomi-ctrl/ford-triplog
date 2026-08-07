@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.8.7 - Unified display locations
+Version: 2.0 Phase 1 GeoJSON 01 - Last Route GeoJSON sensor
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from .icons import (
 
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
+from .route_storage import FordTriplogRouteStorage
 from .journey import build_pause_id
 
 async def async_setup_entry(
@@ -64,6 +65,7 @@ async def async_setup_entry(
     coordinator = data["coordinator"]
     history = data["history"]
     journey_storage = data.get("journey_storage")
+    route_storage = data.get("route_storage")
 
     translations = await async_get_translations(
         hass,
@@ -101,6 +103,10 @@ async def async_setup_entry(
             FordTriplogLastJourneyOverviewSensor(
                 journey_storage,
                 common_translations,
+            ),
+            FordTriplogLastRouteSensor(
+                coordinator,
+                route_storage,
             ),
 
             # Last trip
@@ -1075,6 +1081,138 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         """Return dashboard-ready Journey attributes."""
 
         return self._attributes
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogLastRouteSensor(SensorEntity):
+    """Expose the last stored Route Tracker track as GeoJSON."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Last route"
+    _attr_unique_id = "ford_triplog_last_route"
+    _attr_icon = "mdi:map-marker-path"
+
+    def __init__(
+        self,
+        coordinator,
+        storage: FordTriplogRouteStorage | None,
+    ) -> None:
+        self.coordinator = coordinator
+        self.storage = storage
+        self._route: dict[str, Any] | None = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        """Load the latest route and refresh after coordinator updates."""
+
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self._handle_update)
+        )
+        await self._async_refresh()
+
+    def _handle_update(self) -> None:
+        """Refresh the route sensor after coordinator activity."""
+
+        self.hass.async_create_task(self._async_refresh_and_write())
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh and write the current route state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        """Load the most recently stored route and build GeoJSON."""
+
+        if self.storage is None:
+            self._route = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        route = await self.storage.async_load_latest_route()
+        if not route:
+            self._route = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        valid_points: list[dict[str, Any]] = []
+        coordinates: list[list[float]] = []
+
+        for point in route.get("points", []):
+            if not isinstance(point, dict):
+                continue
+            try:
+                latitude = float(point.get("latitude"))
+                longitude = float(point.get("longitude"))
+            except (TypeError, ValueError):
+                continue
+
+            coordinates.append([longitude, latitude])
+            valid_points.append(point)
+
+        if not coordinates:
+            self._route = route
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        trip_id = str(route.get("trip_id") or "")
+        source_type = route.get("source_type")
+        start_time = valid_points[0].get("timestamp")
+        end_time = valid_points[-1].get("timestamp")
+
+        geojson = {
+            "type": "Feature",
+            "properties": {
+                "trip_id": trip_id,
+                "source_type": source_type,
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": coordinates,
+            },
+        }
+
+        self._route = route
+        self._attr_native_value = trip_id or len(coordinates)
+        self._attributes = {
+            "trip_id": trip_id or None,
+            "source_type": source_type,
+            "point_count": len(coordinates),
+            "start_time": start_time,
+            "end_time": end_time,
+            "geojson": geojson,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether a stored route is available."""
+
+        return self._route is not None and bool(self._attributes)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return route metadata and the map-ready GeoJSON feature."""
+
+        return {
+            key: value
+            for key, value in self._attributes.items()
+            if value is not None
+        }
 
     @property
     def device_info(self):
