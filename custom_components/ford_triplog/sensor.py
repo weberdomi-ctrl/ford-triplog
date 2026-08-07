@@ -1099,7 +1099,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
     _attr_has_entity_name = True
-    _attr_name = "Last route"
+    _attr_translation_key = "last_route"
     _attr_unique_id = "ford_triplog_last_route"
     _attr_icon = "mdi:map-marker-path"
 
