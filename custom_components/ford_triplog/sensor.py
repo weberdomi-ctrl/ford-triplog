@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0 Phase 1 GeoJSON 01 - Last Route GeoJSON sensor
+Version: 2.0 Phase 1 GeoJSON 02 - Add route center latitude/longitude for map cards
 """
 
 from __future__ import annotations
@@ -1189,12 +1189,19 @@ class FordTriplogLastRouteSensor(SensorEntity):
 
         self._route = route
         self._attr_native_value = trip_id or len(coordinates)
+        # Geographic center of the stored track.  Exposing latitude/longitude
+        # also makes this sensor usable as a geographic entity by map cards.
+        center_latitude = sum(coord[1] for coord in coordinates) / len(coordinates)
+        center_longitude = sum(coord[0] for coord in coordinates) / len(coordinates)
+
         self._attributes = {
             "trip_id": trip_id or None,
             "source_type": source_type,
             "point_count": len(coordinates),
             "start_time": start_time,
             "end_time": end_time,
+            "latitude": center_latitude,
+            "longitude": center_longitude,
             "geojson": geojson,
         }
 
