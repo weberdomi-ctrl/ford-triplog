@@ -1,6 +1,6 @@
 # Ford Triplog 2.0
-# Route Tracker – Phase 1 Fix 01
-# Fix Home Assistant executor call for creation of the routes storage directory.
+# Route Tracker – Phase 1 GeoJSON 01
+# Add latest-route lookup for the Home Assistant GeoJSON route sensor.
 
 """Ford Triplog Route Tracker storage."""
 
@@ -88,3 +88,35 @@ class FordTriplogRouteStorage:
             return data if isinstance(data, dict) else None
 
         return await self.hass.async_add_executor_job(_read)
+
+    async def async_load_latest_route(self) -> dict[str, Any] | None:
+        """Load the most recently written stored route."""
+
+        def _read_latest() -> dict[str, Any] | None:
+            if not self.base_path.is_dir():
+                return None
+
+            route_files = [
+                path
+                for path in self.base_path.glob("*.json")
+                if path.is_file()
+            ]
+            if not route_files:
+                return None
+
+            latest_path = max(
+                route_files,
+                key=lambda path: path.stat().st_mtime_ns,
+            )
+
+            try:
+                data = json.loads(
+                    latest_path.read_text(encoding="utf-8")
+                )
+            except (OSError, json.JSONDecodeError):
+                return None
+
+            return data if isinstance(data, dict) else None
+
+        return await self.hass.async_add_executor_job(_read_latest)
+
