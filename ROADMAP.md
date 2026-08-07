@@ -1,113 +1,90 @@
-# Ford Triplog 1.8
+# Version 2.0
 
-## 🚀 New Features
+## Planned Features
 
-### ⚡ Charging Costs
+### Route Tracker
 
-Ford Triplog now supports comprehensive charging cost tracking.
+Introduce an optional and fully independent route tracking subsystem.
 
-New capabilities include:
+The Route Tracker will operate separately from the existing Trip and Journey processing and will not modify the current trip detection logic.
 
-- Manual charging cost editor
-- Automatic total cost calculation
-- Energy costs
-- Session fees
-- Time-based fees
-- Blocking fees
-- Parking fees
-- Additional costs
-- Cost verification flag
-- Receipt support
-- Currency support
+Planned features:
 
-### 🏠 Home Charging Tariffs
+- Automatic route tracking using the existing IGNITION ON/OFF signals
+- Separate route storage using dedicated JSON files
+- Separate Route Tracker sensors
+- Direct association of recorded routes with the corresponding Trip ID
+- Route visualization in Home Assistant
+- Journey route generation by combining the routes of individual trips
+- Optional route tracking that does not affect normal Triplog operation if disabled or unavailable
 
-Home charging costs can now be calculated automatically.
+#### Position Sources
 
-Features:
+Route tracking will use an extensible source adapter architecture.
 
-- Two configurable seasonal tariffs
-- Summer tariff with configurable date range
-- Winter tariff with configurable date range
-- Automatic tariff selection based on charging date
-- Automatic cost calculation for charging sessions inside the configured Home zone
+Initial supported source types:
 
-### 🔋 Energy Tracking
+- ABRP using separate latitude and longitude entities
+- Home Assistant Companion App using Geocoded Location data
 
-Charging sessions now distinguish between:
+All position sources will internally be normalized to:
 
-- Energy stored in the vehicle
-- Energy billed by the charging provider
-- Charging losses
-- Effective charging price
-- Energy source tracking
+- Timestamp
+- Latitude
+- Longitude
 
-### 🚗 Journey Enhancements
+The adapter architecture allows additional position sources to be added later without changing the Route Tracker itself.
 
-Journeys now include extended energy and charging statistics.
+Potential future sources include:
 
-New Journey attributes:
-
-- Charging cost total
-- Charging energy cost
-- Additional charging cost
-- Average charging price
-- Battery energy balance
-- Total energy flow
-- Battery energy delta
-- Billed charging energy
-
-### 📊 Dashboard Improvements
-
-The supplied Home Assistant dashboard examples have been extended with:
-
-- Journey charging costs
-- Average charging price
-- Billed charging energy
-- Improved Last Charge dashboard
-- Improved Journey dashboard
-- Unified charging location display
+- Ford / FordPass location data
+- Home Assistant device trackers
+- Traccar
+- MQTT based GPS trackers
+- Other vehicle integrations
 
 ---
 
-## ✨ Improvements
+### Trip History
 
-- Unified charging location display
-- Home Assistant zones are preferred over charging site names
-- Improved Journey timeline
-- Improved Last Charge sensor
-- Richer Journey sensor attributes
-- Better charging location handling
-- Improved cost calculations
-- Cleaner dashboard presentation
+Provide access to historical trip information directly from the Home Assistant dashboard.
 
----
+Planned features:
 
-## 🛠 Fixes
-
-- Correct average charging price calculation using billed energy when available
-- Improved Journey cost aggregation
-- Better handling of manually entered charging costs
-- Ignore invalid charging sessions during Journey processing
-- Improved handling of unavailable SOC values
-- Multiple stability improvements in charging session processing
+- Browse previous trips
+- Select trips by date or time period
+- Display trip details
+- Display recorded routes when Route Tracker data is available
+- Efficient access to historical data without exposing large histories through sensor attributes
 
 ---
 
-## 🌍 Translations
+### Location Statistics
 
-Updated translations for:
+Add statistics based on historical trip and charging locations.
 
-- English
-- German
-- Polish
+Planned statistics:
 
-including all charging cost related user interface elements.
+- Top starting locations
+- Top destinations
+- Top charging locations
+- Number of visits / trips
+- Charging sessions per location
+- Charged energy per charging location
+- Charging costs per charging location
+
+Home and Work zones should be grouped consistently using the existing Ford Triplog location handling.
 
 ---
 
-## ❤️ Thank You
+# Version Overview
 
-Thank you to everyone testing Ford Triplog and providing ideas and feedback.
-
-Your reports and suggestions continue to shape the development of the integration.
+| Version | Status      | Focus                                                   |
+| ------- | ----------- | ------------------------------------------------------- |
+| 1.5     | Released    | Charging locations, Smart Trip, documentation           |
+| 1.6     | Released    | Automation, charging database improvements, dashboards  |
+| 1.7     | Released    | Journey improvements, maintenance, charging integration |
+| 1.8     | Released    | Charging costs, energy tracking, reporting              |
+| 1.9     | Released    | Pause management, receipts, charging site improvements  |
+| 2.0     | Development | Route tracking, trip history, location statistics       |
+| Future  | Research    | Multi-vehicle support, exports, maintenance tracking    |
