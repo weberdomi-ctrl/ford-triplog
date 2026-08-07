@@ -1,12 +1,31 @@
-"""Ford Triplog independent Route Tracker."""
+"""
+Ford Triplog
+
+Route Tracker
+
+Version: 2.0.0-dev
+Phase: Route Tracker Phase 1
+Build: Fix 04 - ABRP coordinate synchronization
+
+Changes:
+- Debounces separate ABRP latitude/longitude entity updates.
+- Reads both ABRP coordinates only after the update pair has settled.
+- Rejects ABRP coordinate pairs whose timestamps differ by more than 2 seconds.
+- Rejects stale initial/final coordinates older than 120 seconds.
+- Keeps the Home Assistant Companion Geocoded Location source unchanged.
+- Keeps Route Tracker storage, Trip detection and Journey logic unchanged.
+"""
 
 from __future__ import annotations
 
+import asyncio
 import logging
+from datetime import datetime
 from typing import Any
 
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ROUTE_GEOCODED_ENTITY,
@@ -20,6 +39,10 @@ from .const import (
 from .route_storage import FordTriplogRouteStorage
 
 _LOGGER = logging.getLogger(__name__)
+
+ABRP_DEBOUNCE_SECONDS = 0.75
+ABRP_MAX_PAIR_DELTA_SECONDS = 2.0
+ROUTE_MAX_EDGE_POINT_AGE_SECONDS = 120.0
 
 
 class FordTriplogRouteTracker:
@@ -35,14 +58,9 @@ class FordTriplogRouteTracker:
         self.storage = storage
         self.config = config
 
-        self.enabled = bool(
-            config.get(CONF_ROUTE_TRACKER_ENABLED, False)
-        )
+        self.enabled = bool(config.get(CONF_ROUTE_TRACKER_ENABLED, False))
         self.source_type = str(
-            config.get(
-                CONF_ROUTE_SOURCE_TYPE,
-                ROUTE_SOURCE_ABRP,
-            )
+            config.get(CONF_ROUTE_SOURCE_TYPE, ROUTE_SOURCE_ABRP)
             or ROUTE_SOURCE_ABRP
         )
 
@@ -54,6 +72,7 @@ class FordTriplogRouteTracker:
         self.points: list[dict[str, Any]] = []
         self._remove_listener = None
         self._last_coordinate: tuple[float, float] | None = None
+        self._debounce_task: asyncio.Task | None = None
 
     async def async_setup(self) -> None:
         """Set up route storage and source listeners."""
@@ -85,6 +104,8 @@ class FordTriplogRouteTracker:
 
     async def async_shutdown(self) -> None:
         """Remove Route Tracker listeners."""
+
+        self._cancel_debounce()
 
         if self._remove_listener is not None:
             self._remove_listener()
@@ -120,11 +141,16 @@ class FordTriplogRouteTracker:
                 return
             await self.async_stop()
 
+        self._cancel_debounce()
+
         self.active_trip_id = str(trip_id)
         self.points = []
         self._last_coordinate = None
 
-        await self._capture_current_point()
+        # Keep a current coordinate only if it is genuinely fresh.
+        await self._capture_current_point(
+            max_age_seconds=ROUTE_MAX_EDGE_POINT_AGE_SECONDS,
+        )
 
         _LOGGER.info(
             "Route Tracker started for trip %s",
@@ -138,9 +164,20 @@ class FordTriplogRouteTracker:
         if trip_id is None:
             return
 
-        await self._capture_current_point()
+        pending_task = self._debounce_task
+        if pending_task is not None:
+            try:
+                await pending_task
+            except asyncio.CancelledError:
+                pass
+
+        await self._capture_current_point(
+            max_age_seconds=ROUTE_MAX_EDGE_POINT_AGE_SECONDS,
+        )
 
         points = list(self.points)
+
+        self._cancel_debounce()
         self.active_trip_id = None
         self.points = []
         self._last_coordinate = None
@@ -170,13 +207,52 @@ class FordTriplogRouteTracker:
         if self.active_trip_id is None:
             return
 
+        if self.source_type == ROUTE_SOURCE_ABRP:
+            self._schedule_abrp_capture()
+            return
+
         await self._capture_current_point(
             event.data.get("new_state")
         )
 
+    def _schedule_abrp_capture(self) -> None:
+        """Debounce split ABRP latitude/longitude state updates."""
+
+        self._cancel_debounce()
+        self._debounce_task = self.hass.async_create_task(
+            self._debounced_abrp_capture()
+        )
+
+    async def _debounced_abrp_capture(self) -> None:
+        """Wait briefly for both ABRP coordinate entities to settle."""
+
+        try:
+            await asyncio.sleep(ABRP_DEBOUNCE_SECONDS)
+
+            if self.active_trip_id is None:
+                return
+
+            await self._capture_current_point()
+        except asyncio.CancelledError:
+            return
+        finally:
+            current_task = asyncio.current_task()
+            if self._debounce_task is current_task:
+                self._debounce_task = None
+
+    def _cancel_debounce(self) -> None:
+        """Cancel a pending ABRP coordinate capture."""
+
+        if self._debounce_task is not None:
+            if not self._debounce_task.done():
+                self._debounce_task.cancel()
+            self._debounce_task = None
+
     async def _capture_current_point(
         self,
         changed_state: State | None = None,
+        *,
+        max_age_seconds: float | None = None,
     ) -> None:
         """Capture one point if valid and different from the previous one."""
 
@@ -184,7 +260,20 @@ class FordTriplogRouteTracker:
         if coordinates is None:
             return
 
-        latitude, longitude, timestamp = coordinates
+        latitude, longitude, timestamp, source_updated_at = coordinates
+
+        if max_age_seconds is not None:
+            age_seconds = (
+                dt_util.utcnow() - source_updated_at
+            ).total_seconds()
+
+            if age_seconds > max_age_seconds:
+                _LOGGER.debug(
+                    "Route Tracker ignored stale edge point: age=%.1fs",
+                    age_seconds,
+                )
+                return
+
         coordinate_key = (latitude, longitude)
 
         if coordinate_key == self._last_coordinate:
@@ -199,10 +288,17 @@ class FordTriplogRouteTracker:
         )
         self._last_coordinate = coordinate_key
 
+        _LOGGER.debug(
+            "Route Tracker point: trip=%s lat=%.7f lon=%.7f",
+            self.active_trip_id,
+            latitude,
+            longitude,
+        )
+
     def _read_coordinates(
         self,
         changed_state: State | None = None,
-    ) -> tuple[float, float, str] | None:
+    ) -> tuple[float, float, str, datetime] | None:
         """Return normalized coordinates from the configured source."""
 
         if self.source_type == ROUTE_SOURCE_HA_GEOCODED:
@@ -235,6 +331,7 @@ class FordTriplogRouteTracker:
                 latitude,
                 longitude,
                 state.last_updated.isoformat(),
+                state.last_updated,
             )
 
         latitude_state = (
@@ -257,9 +354,29 @@ class FordTriplogRouteTracker:
         except (TypeError, ValueError):
             return None
 
-        timestamp = max(
+        pair_delta_seconds = abs(
+            (
+                latitude_state.last_updated
+                - longitude_state.last_updated
+            ).total_seconds()
+        )
+
+        if pair_delta_seconds > ABRP_MAX_PAIR_DELTA_SECONDS:
+            _LOGGER.debug(
+                "Route Tracker waiting for synchronized ABRP pair: "
+                "delta=%.3fs",
+                pair_delta_seconds,
+            )
+            return None
+
+        source_updated_at = max(
             latitude_state.last_updated,
             longitude_state.last_updated,
-        ).isoformat()
+        )
 
-        return latitude, longitude, timestamp
+        return (
+            latitude,
+            longitude,
+            source_updated_at.isoformat(),
+            source_updated_at,
+        )
