@@ -740,6 +740,9 @@
       },
       "last_journey_overview": {
         "name": "Letzte Tour Übersicht"
+      },
+      "last_route": {
+        "name": "Last route"
       }
     }
   },
