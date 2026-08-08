@@ -8,6 +8,8 @@ Phase: Route Tracker Phase 1
 Build: Fix 02 - Smart Trip reload recovery
 
 Changes:
+- Route Tracker uses Trip start GPS as first route point and finalized fresh Trip end GPS as last route point.
+- Smart Trip pauses route capture without discarding collected ABRP points.
 - Persists Smart Trip pause recovery data inside current_trip.json.
 - Restores the paused Trip, captured end state and remaining timeout after
   a Home Assistant or integration reload.
@@ -1268,7 +1270,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         if self.route_tracker is not None and self.current_trip.trip_id:
             await self.route_tracker.async_start(
-                self.current_trip.trip_id
+                self.current_trip.trip_id,
+                start_latitude=state.get("latitude"),
+                start_longitude=state.get("longitude"),
+                start_timestamp=self.current_trip.start_time,
             )
 
         await self.storage.save_current_trip(self.current_trip.to_dict())
@@ -1285,7 +1290,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         if self.route_tracker is not None:
-            await self.route_tracker.async_stop()
+            await self.route_tracker.async_pause()
 
         self._trip_finishing = True
 
@@ -1962,6 +1967,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=end_state.get("address"),
             end_time=end_state.get("end_time"),
         )
+
+        if self.route_tracker is not None:
+            await self.route_tracker.async_finalize(
+                end_latitude=end_state.get("latitude"),
+                end_longitude=end_state.get("longitude"),
+                end_timestamp=end_state.get("end_time"),
+            )
 
         await self._finalize_trip(end_state)
 
