@@ -5,7 +5,7 @@ Route Tracker
 
 Version: 2.0.0-dev
 Phase: Route Tracker Phase 1
-Build: Fix 04 - ABRP coordinate synchronization
+Build: Fix 05 - Trip GPS endpoints
 
 Changes:
 - Debounces separate ABRP latitude/longitude entity updates.
@@ -13,7 +13,9 @@ Changes:
 - Rejects ABRP coordinate pairs whose timestamps differ by more than 2 seconds.
 - Rejects stale initial/final coordinates older than 120 seconds.
 - Keeps the Home Assistant Companion Geocoded Location source unchanged.
-- Keeps Route Tracker storage, Trip detection and Journey logic unchanged.
+- Uses the normal Trip tracker GPS as authoritative route start/end points.
+- Pauses capture during Smart Trip without discarding collected ABRP points.
+- Keeps ABRP debounce/synchronization from Fix 04 unchanged.
 """
 
 from __future__ import annotations
@@ -69,6 +71,7 @@ class FordTriplogRouteTracker:
         self.geocoded_entity = config.get(CONF_ROUTE_GEOCODED_ENTITY)
 
         self.active_trip_id: str | None = None
+        self.paused_trip_id: str | None = None
         self.points: list[dict[str, Any]] = []
         self._remove_listener = None
         self._last_coordinate: tuple[float, float] | None = None
@@ -130,37 +133,76 @@ class FordTriplogRouteTracker:
             if entity_id
         ]
 
-    async def async_start(self, trip_id: str) -> None:
-        """Start recording points for one Trip ID."""
+    async def async_start(
+        self,
+        trip_id: str,
+        *,
+        start_latitude: Any = None,
+        start_longitude: Any = None,
+        start_timestamp: Any = None,
+    ) -> None:
+        """Start or resume recording points for one Trip ID."""
 
         if not self.enabled:
+            return
+
+        trip_id = str(trip_id)
+
+        if self.paused_trip_id == trip_id:
+            self.paused_trip_id = None
+            self.active_trip_id = trip_id
+            _LOGGER.info(
+                "Route Tracker resumed for trip %s with %s GPS points",
+                trip_id,
+                len(self.points),
+            )
             return
 
         if self.active_trip_id is not None:
             if self.active_trip_id == trip_id:
                 return
-            await self.async_stop()
+            await self.async_finalize()
 
         self._cancel_debounce()
-
-        self.active_trip_id = str(trip_id)
+        self.active_trip_id = trip_id
+        self.paused_trip_id = None
         self.points = []
         self._last_coordinate = None
 
-        # Keep a current coordinate only if it is genuinely fresh.
-        await self._capture_current_point(
-            max_age_seconds=ROUTE_MAX_EDGE_POINT_AGE_SECONDS,
+        self._append_external_point(
+            start_latitude,
+            start_longitude,
+            start_timestamp,
         )
+
+        _LOGGER.info("Route Tracker started for trip %s", trip_id)
+
+    async def async_pause(self) -> None:
+        """Pause capture for Smart Trip without saving/resetting points."""
+
+        if self.active_trip_id is None:
+            return
+
+        self._cancel_debounce()
+        self.paused_trip_id = self.active_trip_id
+        self.active_trip_id = None
 
         _LOGGER.info(
-            "Route Tracker started for trip %s",
-            self.active_trip_id,
+            "Route Tracker paused for Smart Trip %s with %s GPS points",
+            self.paused_trip_id,
+            len(self.points),
         )
 
-    async def async_stop(self) -> None:
-        """Save and close the active route."""
+    async def async_finalize(
+        self,
+        *,
+        end_latitude: Any = None,
+        end_longitude: Any = None,
+        end_timestamp: Any = None,
+    ) -> None:
+        """Append authoritative Trip end GPS and save the route."""
 
-        trip_id = self.active_trip_id
+        trip_id = self.active_trip_id or self.paused_trip_id
         if trip_id is None:
             return
 
@@ -171,20 +213,23 @@ class FordTriplogRouteTracker:
             except asyncio.CancelledError:
                 pass
 
-        await self._capture_current_point(
-            max_age_seconds=ROUTE_MAX_EDGE_POINT_AGE_SECONDS,
+        self._append_external_point(
+            end_latitude,
+            end_longitude,
+            end_timestamp,
         )
 
         points = list(self.points)
 
         self._cancel_debounce()
         self.active_trip_id = None
+        self.paused_trip_id = None
         self.points = []
         self._last_coordinate = None
 
         if not points:
             _LOGGER.warning(
-                "Route Tracker stopped for trip %s without GPS points",
+                "Route Tracker finalized trip %s without GPS points",
                 trip_id,
             )
             return
@@ -200,6 +245,10 @@ class FordTriplogRouteTracker:
             len(points),
             trip_id,
         )
+
+    async def async_stop(self) -> None:
+        """Compatibility wrapper."""
+        await self.async_finalize()
 
     async def _source_changed(self, event: Event) -> None:
         """Capture one normalized point when the source updates."""
@@ -247,6 +296,43 @@ class FordTriplogRouteTracker:
             if not self._debounce_task.done():
                 self._debounce_task.cancel()
             self._debounce_task = None
+
+    def _append_external_point(
+        self,
+        latitude_value: Any,
+        longitude_value: Any,
+        timestamp_value: Any,
+    ) -> None:
+        """Append a Trip start/end point if valid and not duplicated."""
+
+        if latitude_value is None or longitude_value is None:
+            return
+
+        try:
+            latitude = float(latitude_value)
+            longitude = float(longitude_value)
+        except (TypeError, ValueError):
+            return
+
+        coordinate_key = (latitude, longitude)
+        if coordinate_key == self._last_coordinate:
+            return
+
+        if isinstance(timestamp_value, datetime):
+            timestamp = timestamp_value.isoformat()
+        elif timestamp_value:
+            timestamp = str(timestamp_value)
+        else:
+            timestamp = dt_util.utcnow().isoformat()
+
+        self.points.append(
+            {
+                "timestamp": timestamp,
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+        )
+        self._last_coordinate = coordinate_key
 
     async def _capture_current_point(
         self,
