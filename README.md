@@ -146,7 +146,7 @@ For larger OSRM datasets, preprocessing should preferably be performed on a PC o
 
 An example DACH setup for Germany, Austria and Switzerland is available in:
 
-`examples/osrm/`
+`docs/examples/osrm/`
 
 The example includes instructions for building the dataset externally and deploying the finished OSRM files to a Docker host.
 
