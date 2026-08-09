@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor
+Phase: 3 - Historical route date selection and sensor (Fix 02)
 """
 
 from __future__ import annotations
@@ -1347,27 +1347,42 @@ class FordTriplogRouteHistorySensor(SensorEntity):
             async_dispatcher_connect(
                 self.hass,
                 f"{DOMAIN}_route_history_date_changed_{self.entry_id}",
-                self._handle_update,
+                self._handle_history_date_changed,
             )
         )
         await self._async_refresh()
 
     def _handle_update(self, *_args: Any) -> None:
+        """Refresh using the currently stored selection."""
         self.hass.async_create_task(self._async_refresh_and_write())
 
-    async def _async_refresh_and_write(self) -> None:
-        await self._async_refresh()
+    def _handle_history_date_changed(self, selected_date: str) -> None:
+        """Refresh immediately for the date delivered by the select."""
+        self.hass.async_create_task(
+            self._async_refresh_and_write(selected_date)
+        )
+
+    async def _async_refresh_and_write(
+        self,
+        selected_date: str | None = None,
+    ) -> None:
+        await self._async_refresh(selected_date)
         self.async_write_ha_state()
 
-    async def _async_refresh(self) -> None:
+    async def _async_refresh(
+        self,
+        selected_date: str | None = None,
+    ) -> None:
         if self.storage is None:
             self._attr_native_value = None
             self._attributes = {}
             return
 
-        selected_date = self.hass.data[DOMAIN][self.entry_id].get(
-            self._selection_key
-        )
+        if selected_date is None:
+            selected_date = self.hass.data[DOMAIN][self.entry_id].get(
+                self._selection_key
+            )
+
         if not selected_date:
             self._attr_native_value = None
             self._attributes = {}
