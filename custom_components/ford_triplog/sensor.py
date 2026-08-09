@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor (Fix 06)
+Phase: 4 - Shared History date + Journey History sensor
 """
 
 from __future__ import annotations
@@ -116,6 +116,11 @@ async def async_setup_entry(
             FordTriplogRouteHistorySensor(
                 coordinator,
                 route_storage,
+                entry.entry_id,
+            ),
+            FordTriplogJourneyHistorySensor(
+                journey_storage,
+                common_translations,
                 entry.entry_id,
             ),
 
@@ -1103,6 +1108,120 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             "model": "Triplog",
             "sw_version": VERSION,
         }
+
+
+class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
+    """Expose the archived Journey for the selected History date."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Journey History"
+    _attr_translation_key = None
+    _attr_unique_id = "ford_triplog_journey_history"
+    _attr_icon = "mdi:map-clock-outline"
+
+    def __init__(self, storage, translations, entry_id: str) -> None:
+        super().__init__(storage, translations)
+        self.entry_id = entry_id
+        self._selected_date = None
+        self._journeys = []
+
+    @property
+    def _selection_key(self) -> str:
+        return f"route_history_selected_date_{self.entry_id}"
+
+    async def async_added_to_hass(self) -> None:
+        data = self.hass.data[DOMAIN][self.entry_id]
+        data["journey_history_sensor"] = self
+        self._selected_date = data.get(self._selection_key)
+        await self._async_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
+        if data.get("journey_history_sensor") is self:
+            data.pop("journey_history_sensor", None)
+
+    async def async_set_selected_date(self, selected_date: str) -> None:
+        self._selected_date = selected_date
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        if self.storage is None or not self._selected_date:
+            self._journey = None
+            self._journeys = []
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        all_journeys = await self.storage.get_all_journeys()
+        matches = [
+            journey for journey in all_journeys
+            if str(journey.date or "") == self._selected_date
+        ]
+        matches.sort(key=lambda j: (j.start_time or "", j.journey_id))
+        self._journeys = matches
+        self._attr_native_value = self._selected_date
+
+        if not matches:
+            self._journey = None
+            self._attributes = {
+                "date": self._selected_date,
+                "journey_count": 0,
+                "journeys": [],
+            }
+            return
+
+        primary = matches[-1]
+        self._journey = primary
+        timeline, pause_seconds = self._build_timeline(primary)
+        total_duration = int(primary.total_duration_seconds or 0)
+
+        self._attributes = {
+            "date": self._selected_date,
+            "journey_count": len(matches),
+            "journey_id": primary.journey_id,
+            "distance_km": round(float(primary.distance_km or 0), 1),
+            "total_duration": format_duration(total_duration),
+            "driving_duration": format_duration(primary.driving_duration_seconds),
+            "pause_duration": format_duration(pause_seconds),
+            "charging_duration": format_duration(primary.charging_duration_seconds),
+            "energy_used_kwh": primary.energy_used_kwh,
+            "energy_charged_kwh": primary.energy_charged_kwh,
+            "battery_energy_balance_kwh": primary.battery_energy_balance_kwh,
+            "total_energy_flow_kwh": primary.total_energy_flow_kwh,
+            "currency": primary.currency,
+            "charging_cost_total": primary.charging_cost_total,
+            "charging_energy_cost": primary.charging_energy_cost,
+            "charging_additional_cost": primary.charging_additional_cost,
+            "average_charging_price_per_kwh": primary.average_charging_price_per_kwh,
+            "battery_capacity_kwh": primary.battery_capacity_kwh,
+            "start_soc": primary.start_soc,
+            "end_soc": primary.end_soc,
+            "soc_delta": primary.soc_delta,
+            "battery_energy_delta_kwh": primary.battery_energy_delta_kwh,
+            "soc_used": primary.soc_used,
+            "soc_charged": primary.soc_charged,
+            "soc_adjustment": primary.soc_adjustment,
+            "soc_adjustment_kwh": primary.soc_adjustment_kwh,
+            "average_consumption_kwh_100km": primary.average_consumption_kwh_100km,
+            "timeline": timeline,
+            "journeys": [
+                {
+                    "journey_id": j.journey_id,
+                    "date": j.date,
+                    "start_time": j.start_time,
+                    "end_time": j.end_time,
+                    "distance_km": j.distance_km,
+                    "trip_count": j.trip_count,
+                    "charge_count": j.charge_count,
+                }
+                for j in matches
+            ],
+        }
+
+    @property
+    def available(self) -> bool:
+        return bool(self._selected_date)
 
 
 class FordTriplogLastRouteSensor(SensorEntity):
