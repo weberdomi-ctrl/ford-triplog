@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0 Phase 1 GeoJSON 02 - Add route center latitude/longitude for map cards
+Version: 2.0 OSRM Step 04 - Prefer matched route with raw fallback
 """
 
 from __future__ import annotations
@@ -1175,33 +1175,105 @@ class FordTriplogLastRouteSensor(SensorEntity):
         start_time = valid_points[0].get("timestamp")
         end_time = valid_points[-1].get("timestamp")
 
+        # Prefer the optional OSRM geometry when a completed route contains
+        # a valid match. Raw GPS coordinates always remain the fallback.
+        display_coordinates = coordinates
+        geometry_source = "raw"
+        osrm_distance_km = None
+        osrm_confidence = None
+        osrm_matched_tracepoints = None
+        osrm_unmatched_tracepoints = None
+
+        matched_route = route.get("matched_route")
+        if isinstance(matched_route, dict):
+            matched_geometry = matched_route.get("geometry")
+            matched_coordinates = (
+                matched_geometry.get("coordinates")
+                if isinstance(matched_geometry, dict)
+                and matched_geometry.get("type") == "LineString"
+                else None
+            )
+
+            if isinstance(matched_coordinates, list) and len(matched_coordinates) >= 2:
+                valid_matched_coordinates: list[list[float]] = []
+
+                for coordinate in matched_coordinates:
+                    if (
+                        not isinstance(coordinate, (list, tuple))
+                        or len(coordinate) < 2
+                    ):
+                        continue
+
+                    try:
+                        longitude = float(coordinate[0])
+                        latitude = float(coordinate[1])
+                    except (TypeError, ValueError):
+                        continue
+
+                    valid_matched_coordinates.append(
+                        [longitude, latitude]
+                    )
+
+                if len(valid_matched_coordinates) >= 2:
+                    display_coordinates = valid_matched_coordinates
+                    geometry_source = "osrm"
+
+                    try:
+                        osrm_distance_km = round(
+                            float(matched_route.get("distance_m")) / 1000.0,
+                            3,
+                        )
+                    except (TypeError, ValueError):
+                        osrm_distance_km = None
+
+                    osrm_confidence = matched_route.get("confidence")
+                    osrm_matched_tracepoints = matched_route.get(
+                        "matched_tracepoints"
+                    )
+                    osrm_unmatched_tracepoints = matched_route.get(
+                        "unmatched_tracepoints"
+                    )
+
         geojson = {
             "type": "Feature",
             "properties": {
                 "trip_id": trip_id,
                 "source_type": source_type,
+                "geometry_source": geometry_source,
             },
             "geometry": {
                 "type": "LineString",
-                "coordinates": coordinates,
+                "coordinates": display_coordinates,
             },
         }
 
         self._route = route
-        self._attr_native_value = trip_id or len(coordinates)
-        # Geographic center of the stored track.  Exposing latitude/longitude
-        # also makes this sensor usable as a geographic entity by map cards.
-        center_latitude = sum(coord[1] for coord in coordinates) / len(coordinates)
-        center_longitude = sum(coord[0] for coord in coordinates) / len(coordinates)
+        self._attr_native_value = trip_id or len(display_coordinates)
+
+        # Geographic center of the geometry currently exposed to the map.
+        center_latitude = (
+            sum(coord[1] for coord in display_coordinates)
+            / len(display_coordinates)
+        )
+        center_longitude = (
+            sum(coord[0] for coord in display_coordinates)
+            / len(display_coordinates)
+        )
 
         self._attributes = {
             "trip_id": trip_id or None,
             "source_type": source_type,
-            "point_count": len(coordinates),
+            "geometry_source": geometry_source,
+            "point_count": len(display_coordinates),
+            "raw_point_count": len(coordinates),
             "start_time": start_time,
             "end_time": end_time,
             "latitude": center_latitude,
             "longitude": center_longitude,
+            "osrm_distance_km": osrm_distance_km,
+            "osrm_confidence": osrm_confidence,
+            "osrm_matched_tracepoints": osrm_matched_tracepoints,
+            "osrm_unmatched_tracepoints": osrm_unmatched_tracepoints,
             "geojson": geojson,
         }
 
