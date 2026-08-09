@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor (Fix 02)
+Phase: 3 - Historical route date selection and sensor (Fix 03)
 """
 
 from __future__ import annotations
@@ -1330,6 +1330,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         self.coordinator = coordinator
         self.storage = storage
         self.entry_id = entry_id
+        self._selected_date: str | None = None
         self._attr_native_value = None
         self._attributes: dict[str, Any] = {}
 
@@ -1338,11 +1339,8 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         return f"route_history_selected_date_{self.entry_id}"
 
     async def async_added_to_hass(self) -> None:
-        """Load history and refresh after coordinator/select changes."""
+        """Load history once and then react only to date-selection changes."""
 
-        self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_update)
-        )
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
@@ -1350,39 +1348,36 @@ class FordTriplogRouteHistorySensor(SensorEntity):
                 self._handle_history_date_changed,
             )
         )
-        await self._async_refresh()
 
-    def _handle_update(self, *_args: Any) -> None:
-        """Refresh using the currently stored selection."""
-        self.hass.async_create_task(self._async_refresh_and_write())
+        self._selected_date = self.hass.data[DOMAIN][self.entry_id].get(
+            self._selection_key
+        )
+        _LOGGER.debug(
+            "Route History initial date: %s",
+            self._selected_date,
+        )
+        await self._async_refresh()
 
     def _handle_history_date_changed(self, selected_date: str) -> None:
         """Refresh immediately for the date delivered by the select."""
-        self.hass.async_create_task(
-            self._async_refresh_and_write(selected_date)
+        self._selected_date = selected_date
+        _LOGGER.debug(
+            "Route History date changed to %s",
+            selected_date,
         )
+        self.hass.async_create_task(self._async_refresh_and_write())
 
-    async def _async_refresh_and_write(
-        self,
-        selected_date: str | None = None,
-    ) -> None:
-        await self._async_refresh(selected_date)
+    async def _async_refresh_and_write(self) -> None:
+        await self._async_refresh()
         self.async_write_ha_state()
 
-    async def _async_refresh(
-        self,
-        selected_date: str | None = None,
-    ) -> None:
+    async def _async_refresh(self) -> None:
         if self.storage is None:
             self._attr_native_value = None
             self._attributes = {}
             return
 
-        if selected_date is None:
-            selected_date = self.hass.data[DOMAIN][self.entry_id].get(
-                self._selection_key
-            )
-
+        selected_date = self._selected_date
         if not selected_date:
             self._attr_native_value = None
             self._attributes = {}
@@ -1401,6 +1396,15 @@ class FordTriplogRouteHistorySensor(SensorEntity):
             journey_date=selected_date,
         )
         properties = collection.get("properties", {})
+
+        _LOGGER.debug(
+            "Route History loaded date=%s routes=%s osrm=%s raw=%s missing=%s",
+            selected_date,
+            properties.get("route_count", 0),
+            properties.get("osrm_route_count", 0),
+            properties.get("raw_route_count", 0),
+            properties.get("missing_route_count", 0),
+        )
 
         coordinates: list[list[float]] = []
         for feature in collection.get("features", []):
