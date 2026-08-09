@@ -48,13 +48,15 @@
           "general_settings": "Allgemeine Einstellungen",
           "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR-Verbindung",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "osrm_settings": "OSRM-Routenglättung"
         },
         "menu_option_descriptions": {
           "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
           "route_tracker_settings": "Separate GPS-Quelle für die Routenaufzeichnung konfigurieren. Der bestehende Fahrzeug-Tracker bleibt unverändert.",
           "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
-          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
+          "osrm_settings": "Optionalen lokalen OSRM-Dienst für die Routenglättung einrichten und Verbindung testen."
         }
       },
       "import_charging_sites": {
@@ -596,6 +598,24 @@
           "home_tariff_winter_price": "Preis pro kWh für Ladevorgänge vom 1. Oktober bis 31. März.",
           "home_tariff_currency": "Währung für automatisch berechnete Heimladekosten."
         }
+      },
+      "osrm_settings": {
+        "title": "OSRM-Routenglättung",
+        "description": "Ford Triplog kann aufgezeichnete GPS-Routen optional über einen externen lokalen OSRM-Dienst an das OpenStreetMap-Straßennetz anpassen. Ohne aktivierte OSRM-Verbindung bleibt die vorhandene Rohroute vollständig verfügbar.\n\nBeim Speichern wird die Verbindung getestet. Standardmäßig wird ein Matching-Radius von 15 Metern verwendet.",
+        "data": {
+          "osrm_enabled": "OSRM aktivieren",
+          "osrm_url": "OSRM-Dienst-URL",
+          "osrm_match_radius": "Matching-Radius"
+        },
+        "data_description": {
+          "osrm_enabled": "Aktiviert die optionale lokale Routenglättung über OSRM.",
+          "osrm_url": "Zum Beispiel http://192.168.1.20:5005",
+          "osrm_match_radius": "Suchradius pro GPS-Punkt. Empfohlen und Standard: 15 m."
+        }
+      },
+      "osrm_connection_result": {
+        "title": "OSRM-Verbindung gespeichert",
+        "description": "**Status:** {status}\n\n**Adresse:** {url}\n**Matching-Radius:** {radius} m\n**Teststraße:** {road}\n**Abstand zum Testpunkt:** {distance} m"
       }
     },
     "error": {
@@ -637,7 +657,10 @@
       "user_parser_required_fields": "Profilname und Erkennungstext sind erforderlich.",
       "user_parser_match_not_found": "Der Erkennungstext kommt im OCR-Text nicht vor.",
       "user_parser_create_failed": "Das Benutzerprofil konnte nicht gespeichert werden.",
-      "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten."
+      "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg aber nicht erfolgreich auswerten.",
+      "osrm_invalid_url": "Die OSRM-Adresse ist ungültig. Verwende eine vollständige HTTP- oder HTTPS-Adresse.",
+      "osrm_connection_failed": "Der OSRM-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
+      "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert."
     }
   },
   "entity": {

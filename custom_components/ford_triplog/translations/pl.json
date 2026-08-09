@@ -48,13 +48,15 @@
           "general_settings": "Ustawienia ogólne",
           "route_tracker_settings": "Rejestrator trasy",
           "ocr_settings": "Połączenie OCR",
-          "init": "Wróć do menu głównego"
+          "init": "Wróć do menu głównego",
+          "osrm_settings": "Wygładzanie trasy OSRM"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
           "route_tracker_settings": "Skonfiguruj oddzielne źródło GPS do rejestrowania trasy. Istniejący tracker pojazdu pozostaje bez zmian.",
           "ocr_settings": "Skonfiguruj opcjonalną lokalną usługę OCR i sprawdź połączenie.",
-          "init": "Wróć do przeglądu Ford Triplog."
+          "init": "Wróć do przeglądu Ford Triplog.",
+          "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie."
         }
       },
       "import_charging_sites": {
@@ -596,6 +598,24 @@
           "home_tariff_winter_price": "Cena za kWh dla sesji ładowania od 1 października do 31 marca.",
           "home_tariff_currency": "Waluta używana do automatycznie obliczanych kosztów ładowania w domu."
         }
+      },
+      "osrm_settings": {
+        "title": "Wygładzanie trasy OSRM",
+        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów.",
+        "data": {
+          "osrm_enabled": "Włącz OSRM",
+          "osrm_url": "Adres URL usługi OSRM",
+          "osrm_match_radius": "Promień dopasowania"
+        },
+        "data_description": {
+          "osrm_enabled": "Włącza opcjonalne lokalne wygładzanie trasy za pomocą OSRM.",
+          "osrm_url": "Na przykład http://192.168.1.20:5005",
+          "osrm_match_radius": "Promień wyszukiwania dla każdego punktu GPS. Zalecane i domyślne: 15 m."
+        }
+      },
+      "osrm_connection_result": {
+        "title": "Połączenie OSRM zapisane",
+        "description": "**Status:** {status}\n\n**Adres:** {url}\n**Promień dopasowania:** {radius} m\n**Droga testowa:** {road}\n**Odległość od punktu testowego:** {distance} m"
       }
     },
     "error": {
@@ -637,7 +657,10 @@
       "user_parser_required_fields": "Nazwa profilu i tekst dopasowania są wymagane.",
       "user_parser_match_not_found": "Tekst dopasowania nie występuje w tekście OCR.",
       "user_parser_create_failed": "Nie udało się zapisać profilu użytkownika.",
-      "user_parser_test_failed": "Profil został zapisany, ale nie przetworzył poprawnie bieżącego paragonu."
+      "user_parser_test_failed": "Profil został zapisany, ale nie przetworzył poprawnie bieżącego paragonu.",
+      "osrm_invalid_url": "Adres OSRM jest nieprawidłowy. Użyj pełnego adresu HTTP lub HTTPS.",
+      "osrm_connection_failed": "Usługa OSRM jest niedostępna. Sprawdź adres, port, kontener i sieć.",
+      "osrm_invalid_response": "Usługa OSRM nie zwróciła prawidłowej odpowiedzi."
     }
   },
   "entity": {
