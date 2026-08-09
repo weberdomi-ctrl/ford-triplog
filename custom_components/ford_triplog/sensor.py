@@ -4,14 +4,14 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 6 - Charging History receipt integration
+Phase: 6 - Charging History receipt integration (Fix 01 signed URLs)
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
 import logging
 
@@ -32,6 +32,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
+from homeassistant.components.http.auth import async_sign_path
+from homeassistant.helpers.network import get_url
 from .utils import (
     format_address,
     format_address_short,
@@ -1349,6 +1351,17 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 if not target_id or not receipt_id:
                     continue
 
+                receipt_path = (
+                    f"/api/ford_triplog/receipts/{receipt_id}"
+                )
+                signed_path = async_sign_path(
+                    self.hass,
+                    receipt_path,
+                    timedelta(hours=24),
+                    use_content_user=True,
+                )
+                receipt_url = f"{get_url(self.hass)}{signed_path}"
+
                 receipt_entry = {
                     "receipt_id": receipt_id,
                     "filename": (
@@ -1362,9 +1375,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                     "created_at": receipt.get("created_at"),
                     "note": receipt.get("note"),
                     "ocr_status": receipt.get("ocr_status"),
-                    "api_path": (
-                        f"/api/ford_triplog/receipts/{receipt_id}"
-                    ),
+                    "receipt_url": receipt_url,
                 }
                 receipts_by_charge.setdefault(target_id, []).append(
                     {
