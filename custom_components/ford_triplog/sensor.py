@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 5 - Shared History date + Charging History sensor
+Phase: 6 - Charging History receipt integration
 """
 
 from __future__ import annotations
@@ -72,6 +72,7 @@ async def async_setup_entry(
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
+    receipt_storage = data.get("receipt_storage")
 
     translations = await async_get_translations(
         hass,
@@ -126,6 +127,7 @@ async def async_setup_entry(
             ),
             FordTriplogChargingHistorySensor(
                 charge_manager,
+                receipt_storage,
                 entry.entry_id,
             ),
 
@@ -1237,8 +1239,14 @@ class FordTriplogChargingHistorySensor(SensorEntity):
     _attr_unique_id = "ford_triplog_charging_history"
     _attr_icon = "mdi:ev-station"
 
-    def __init__(self, charge_manager, entry_id: str) -> None:
+    def __init__(
+        self,
+        charge_manager,
+        receipt_storage,
+        entry_id: str,
+    ) -> None:
         self.charge_manager = charge_manager
+        self.receipt_storage = receipt_storage
         self.entry_id = entry_id
         self._selected_date: str | None = None
         self._attr_native_value = None
@@ -1330,6 +1338,42 @@ class FordTriplogChargingHistorySensor(SensorEntity):
             newest_first=False
         )
 
+        receipts_by_charge: dict[str, list[dict[str, Any]]] = {}
+        if self.receipt_storage is not None:
+            all_receipts = await self.receipt_storage.async_list()
+            for receipt in all_receipts:
+                if str(receipt.get("target_type") or "") != "charge":
+                    continue
+                target_id = str(receipt.get("target_id") or "").strip()
+                receipt_id = str(receipt.get("receipt_id") or "").strip()
+                if not target_id or not receipt_id:
+                    continue
+
+                receipt_entry = {
+                    "receipt_id": receipt_id,
+                    "filename": (
+                        receipt.get("original_filename")
+                        or receipt.get("filename")
+                        or receipt_id
+                    ),
+                    "stored_filename": receipt.get("filename"),
+                    "media_type": receipt.get("media_type"),
+                    "size_bytes": receipt.get("size_bytes"),
+                    "created_at": receipt.get("created_at"),
+                    "note": receipt.get("note"),
+                    "ocr_status": receipt.get("ocr_status"),
+                    "api_path": (
+                        f"/api/ford_triplog/receipts/{receipt_id}"
+                    ),
+                }
+                receipts_by_charge.setdefault(target_id, []).append(
+                    {
+                        key: value
+                        for key, value in receipt_entry.items()
+                        if value is not None
+                    }
+                )
+
         selected = []
         for charge in charges:
             data = charge.to_dict()
@@ -1408,6 +1452,10 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "cost_source": data.get("cost_source"),
                 "cost_verified": data.get("cost_verified"),
                 "receipt_filename": data.get("receipt_filename"),
+                "receipts": receipts_by_charge.get(
+                    str(data.get("charge_id") or ""),
+                    [],
+                ),
                 "charging_site_id": data.get("charging_site_id"),
                 "charging_site_name": data.get("charging_site_name"),
                 "charging_site_brand": data.get("charging_site_brand"),
@@ -1424,10 +1472,16 @@ class FordTriplogChargingHistorySensor(SensorEntity):
 
         currency = next(iter(currencies)) if len(currencies) == 1 else None
 
+        receipt_count = sum(
+            len(entry.get("receipts", []))
+            for entry in charge_entries
+        )
+
         self._attr_native_value = self._selected_date
         self._attributes = {
             "date": self._selected_date,
             "charge_count": len(charge_entries),
+            "receipt_count": receipt_count,
             "charging_duration_seconds": total_duration_seconds,
             "charging_duration": format_duration(total_duration_seconds),
             "energy_added_kwh": round(total_vehicle_energy, 2),
