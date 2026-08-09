@@ -3,7 +3,7 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 1.8.7 - Unified display locations
+Version: 2.0 OSRM Step 04 - Prefer matched route with raw fallback
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ from .icons import (
 
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
+from .route_storage import FordTriplogRouteStorage
 from .journey import build_pause_id
 
 async def async_setup_entry(
@@ -64,6 +65,7 @@ async def async_setup_entry(
     coordinator = data["coordinator"]
     history = data["history"]
     journey_storage = data.get("journey_storage")
+    route_storage = data.get("route_storage")
 
     translations = await async_get_translations(
         hass,
@@ -101,6 +103,10 @@ async def async_setup_entry(
             FordTriplogLastJourneyOverviewSensor(
                 journey_storage,
                 common_translations,
+            ),
+            FordTriplogLastRouteSensor(
+                coordinator,
+                route_storage,
             ),
 
             # Last trip
@@ -1075,6 +1081,217 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         """Return dashboard-ready Journey attributes."""
 
         return self._attributes
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogLastRouteSensor(SensorEntity):
+    """Expose the last stored Route Tracker track as GeoJSON."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "last_route"
+    _attr_unique_id = "ford_triplog_last_route"
+    _attr_icon = "mdi:map-marker-path"
+
+    def __init__(
+        self,
+        coordinator,
+        storage: FordTriplogRouteStorage | None,
+    ) -> None:
+        self.coordinator = coordinator
+        self.storage = storage
+        self._route: dict[str, Any] | None = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        """Load the latest route and refresh after coordinator updates."""
+
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self._handle_update)
+        )
+        await self._async_refresh()
+
+    def _handle_update(self) -> None:
+        """Refresh the route sensor after coordinator activity."""
+
+        self.hass.async_create_task(self._async_refresh_and_write())
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh and write the current route state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        """Load the most recently stored route and build GeoJSON."""
+
+        if self.storage is None:
+            self._route = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        route = await self.storage.async_load_latest_route()
+        if not route:
+            self._route = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        valid_points: list[dict[str, Any]] = []
+        coordinates: list[list[float]] = []
+
+        for point in route.get("points", []):
+            if not isinstance(point, dict):
+                continue
+            try:
+                latitude = float(point.get("latitude"))
+                longitude = float(point.get("longitude"))
+            except (TypeError, ValueError):
+                continue
+
+            coordinates.append([longitude, latitude])
+            valid_points.append(point)
+
+        if not coordinates:
+            self._route = route
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        trip_id = str(route.get("trip_id") or "")
+        source_type = route.get("source_type")
+        start_time = valid_points[0].get("timestamp")
+        end_time = valid_points[-1].get("timestamp")
+
+        # Prefer the optional OSRM geometry when a completed route contains
+        # a valid match. Raw GPS coordinates always remain the fallback.
+        display_coordinates = coordinates
+        geometry_source = "raw"
+        osrm_distance_km = None
+        osrm_confidence = None
+        osrm_matched_tracepoints = None
+        osrm_unmatched_tracepoints = None
+
+        matched_route = route.get("matched_route")
+        if isinstance(matched_route, dict):
+            matched_geometry = matched_route.get("geometry")
+            matched_coordinates = (
+                matched_geometry.get("coordinates")
+                if isinstance(matched_geometry, dict)
+                and matched_geometry.get("type") == "LineString"
+                else None
+            )
+
+            if isinstance(matched_coordinates, list) and len(matched_coordinates) >= 2:
+                valid_matched_coordinates: list[list[float]] = []
+
+                for coordinate in matched_coordinates:
+                    if (
+                        not isinstance(coordinate, (list, tuple))
+                        or len(coordinate) < 2
+                    ):
+                        continue
+
+                    try:
+                        longitude = float(coordinate[0])
+                        latitude = float(coordinate[1])
+                    except (TypeError, ValueError):
+                        continue
+
+                    valid_matched_coordinates.append(
+                        [longitude, latitude]
+                    )
+
+                if len(valid_matched_coordinates) >= 2:
+                    display_coordinates = valid_matched_coordinates
+                    geometry_source = "osrm"
+
+                    try:
+                        osrm_distance_km = round(
+                            float(matched_route.get("distance_m")) / 1000.0,
+                            3,
+                        )
+                    except (TypeError, ValueError):
+                        osrm_distance_km = None
+
+                    osrm_confidence = matched_route.get("confidence")
+                    osrm_matched_tracepoints = matched_route.get(
+                        "matched_tracepoints"
+                    )
+                    osrm_unmatched_tracepoints = matched_route.get(
+                        "unmatched_tracepoints"
+                    )
+
+        geojson = {
+            "type": "Feature",
+            "properties": {
+                "trip_id": trip_id,
+                "source_type": source_type,
+                "geometry_source": geometry_source,
+            },
+            "geometry": {
+                "type": "LineString",
+                "coordinates": display_coordinates,
+            },
+        }
+
+        self._route = route
+        self._attr_native_value = trip_id or len(display_coordinates)
+
+        # Geographic center of the geometry currently exposed to the map.
+        center_latitude = (
+            sum(coord[1] for coord in display_coordinates)
+            / len(display_coordinates)
+        )
+        center_longitude = (
+            sum(coord[0] for coord in display_coordinates)
+            / len(display_coordinates)
+        )
+
+        self._attributes = {
+            "trip_id": trip_id or None,
+            "source_type": source_type,
+            "geometry_source": geometry_source,
+            "point_count": len(display_coordinates),
+            "raw_point_count": len(coordinates),
+            "start_time": start_time,
+            "end_time": end_time,
+            "latitude": center_latitude,
+            "longitude": center_longitude,
+            "osrm_distance_km": osrm_distance_km,
+            "osrm_confidence": osrm_confidence,
+            "osrm_matched_tracepoints": osrm_matched_tracepoints,
+            "osrm_unmatched_tracepoints": osrm_unmatched_tracepoints,
+            "geojson": geojson,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether a stored route is available."""
+
+        return self._route is not None and bool(self._attributes)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return route metadata and the map-ready GeoJSON feature."""
+
+        return {
+            key: value
+            for key, value in self._attributes.items()
+            if value is not None
+        }
 
     @property
     def device_info(self):

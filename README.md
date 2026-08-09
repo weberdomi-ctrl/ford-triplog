@@ -95,6 +95,61 @@ Features include:
 
 ------------------------------------------------------------------------
 
+## 🛰️ Route Tracker
+
+Ford Triplog 2.0 introduces optional route recording for individual trips.
+
+The Route Tracker records GPS points from a separate Home Assistant position source and stores the driven route together with the corresponding Trip ID.
+
+Supported position sources include:
+
+- ABRP latitude and longitude entities
+- Home Assistant Companion App Geocoded Location
+
+Route recording is independent from the normal Ford Triplog vehicle tracker.
+
+Features include:
+
+- Automatic start and stop together with the Trip
+- Persistent route storage
+- Smart Trip pause and resume support
+- Automatic recovery after Home Assistant restart or integration reload
+- Ford Triplog Trip GPS coordinates as authoritative start and end points
+- Native Last Route sensor
+- GeoJSON output for Home Assistant map cards
+- Raw GPS points are always preserved
+
+Route data is stored locally inside Home Assistant.
+
+---
+
+## 🗺️ Optional OSRM Route Matching
+
+Ford Triplog can optionally use a local OSRM server to match recorded GPS points to the road network.
+
+This improves route visualization when the position source provides only a limited number of GPS points.
+
+Features include:
+
+- Optional local OSRM server
+- Configurable server URL
+- Configurable matching radius
+- Automatic matching after trip completion
+- Raw and matched route data stored separately
+- Matching confidence and diagnostics
+- Manual rebuild of the latest route
+- No dependency on a public routing service
+
+OSRM is completely optional. Without OSRM, Ford Triplog continues to store and display the recorded raw GPS route.
+
+For larger OSRM datasets, preprocessing should preferably be performed on a PC or server with sufficient RAM and SSD/NVMe storage. The finished dataset can then be copied to the Docker host running OSRM.
+
+An example DACH setup for Germany, Austria and Switzerland is available in:
+
+`examples/osrm/`
+
+The example includes instructions for building the dataset externally and deploying the finished OSRM files to a Docker host.
+
 ## 🔋 Charging History
 
 Automatically records every charging session including:

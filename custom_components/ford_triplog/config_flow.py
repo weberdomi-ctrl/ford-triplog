@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 1.8.4
+Version: 2.0.0
 Phase: Detailed charging costs GUI
-Build: 01
-Release: 1.8.4
+Build: OSRM Step 02
+Release: 2.0.0
 
 Changes:
 - Uses compact one-line labels because Home Assistant select labels ignore line breaks.
@@ -59,6 +59,11 @@ from .ocr_client import (
     FordTriplogOCRConnectionError,
     FordTriplogOCRResponseError,
 )
+from .osrm_client import (
+    FordTriplogOSRMClient,
+    FordTriplogOSRMConnectionError,
+    FordTriplogOSRMResponseError,
+)
 
 from .services import (
     async_download_charging_database,
@@ -74,6 +79,19 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    CONF_ROUTE_TRACKER_ENABLED,
+    CONF_ROUTE_SOURCE_TYPE,
+    CONF_ROUTE_LATITUDE_ENTITY,
+    CONF_ROUTE_LONGITUDE_ENTITY,
+    CONF_ROUTE_GEOCODED_ENTITY,
+    ROUTE_SOURCE_ABRP,
+    ROUTE_SOURCE_HA_GEOCODED,
+    CONF_OSRM_ENABLED,
+    CONF_OSRM_URL,
+    CONF_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_ENABLED,
+    DEFAULT_OSRM_URL,
+    DEFAULT_OSRM_MATCH_RADIUS,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -290,9 +308,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
         self._ocr_connection_result: dict[str, str] = {}
+        self._osrm_connection_result: dict[str, str] = {}
         self._selected_apply_receipt_id: str | None = None
         self._receipt_apply_result: dict[str, str] = {}
         self._ui_translations: dict[str, str] | None = None
+        self._route_tracker_draft: dict[str, Any] = {}
 
     async def async_step_init(
         self,
@@ -3778,10 +3798,362 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="settings",
             menu_options=[
                 "general_settings",
+                "route_tracker_settings",
+                "osrm_settings",
                 "ocr_settings",
                 "init",
             ],
         )
+
+    async def async_step_osrm_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure and test the optional local OSRM service."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            enabled = bool(
+                user_input.get(
+                    CONF_OSRM_ENABLED,
+                    DEFAULT_OSRM_ENABLED,
+                )
+            )
+            url = str(
+                user_input.get(CONF_OSRM_URL) or ""
+            ).strip().rstrip("/")
+            radius = float(
+                user_input.get(
+                    CONF_OSRM_MATCH_RADIUS,
+                    DEFAULT_OSRM_MATCH_RADIUS,
+                )
+            )
+
+            if enabled:
+                try:
+                    client = FordTriplogOSRMClient(
+                        self.hass,
+                        url,
+                        radius_meters=radius,
+                    )
+                    result = await client.async_test_connection()
+                except ValueError:
+                    errors["base"] = "osrm_invalid_url"
+                except FordTriplogOSRMConnectionError:
+                    errors["base"] = "osrm_connection_failed"
+                except FordTriplogOSRMResponseError:
+                    errors["base"] = "osrm_invalid_response"
+                else:
+                    updated_options = dict(
+                        self._config_entry.options
+                    )
+                    updated_options.update(
+                        {
+                            CONF_OSRM_ENABLED: True,
+                            CONF_OSRM_URL: client.base_url,
+                            CONF_OSRM_MATCH_RADIUS: radius,
+                        }
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        options=updated_options,
+                    )
+                    self._options.update(updated_options)
+                    self._osrm_connection_result = {
+                        "status": "OK",
+                        "url": client.base_url,
+                        "radius": f"{radius:g}",
+                        "road": str(result.get("name") or "—"),
+                        "distance": (
+                            f"{float(result['distance_m']):.1f}"
+                            if result.get("distance_m") is not None
+                            else "—"
+                        ),
+                    }
+                    return await self.async_step_osrm_connection_result()
+            else:
+                updated_options = dict(
+                    self._config_entry.options
+                )
+                updated_options.update(
+                    {
+                        CONF_OSRM_ENABLED: False,
+                        CONF_OSRM_URL: url,
+                        CONF_OSRM_MATCH_RADIUS: radius,
+                    }
+                )
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._osrm_connection_result = {
+                    "status": "Disabled",
+                    "url": url or "—",
+                    "radius": f"{radius:g}",
+                    "road": "—",
+                    "distance": "—",
+                }
+                return await self.async_step_osrm_connection_result()
+
+        current_enabled = bool(
+            self._options.get(
+                CONF_OSRM_ENABLED,
+                DEFAULT_OSRM_ENABLED,
+            )
+        )
+        current_url = str(
+            self._options.get(
+                CONF_OSRM_URL,
+                DEFAULT_OSRM_URL,
+            )
+        )
+        current_radius = float(
+            self._options.get(
+                CONF_OSRM_MATCH_RADIUS,
+                DEFAULT_OSRM_MATCH_RADIUS,
+            )
+        )
+
+        return self.async_show_form(
+            step_id="osrm_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_OSRM_ENABLED,
+                        default=current_enabled,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_OSRM_URL,
+                        default=current_url,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.URL,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OSRM_MATCH_RADIUS,
+                        default=current_radius,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=100,
+                            step=1,
+                            unit_of_measurement="m",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_osrm_connection_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the local OSRM connection result."""
+
+        if user_input is not None:
+            return await self.async_step_settings()
+
+        return self.async_show_form(
+            step_id="osrm_connection_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._osrm_connection_result,
+        )
+
+
+    async def async_step_route_tracker_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure the optional Route Tracker and select its source type."""
+
+        current_enabled = bool(
+            self._options.get(CONF_ROUTE_TRACKER_ENABLED, False)
+        )
+        current_source_type = str(
+            self._options.get(
+                CONF_ROUTE_SOURCE_TYPE,
+                ROUTE_SOURCE_ABRP,
+            )
+            or ROUTE_SOURCE_ABRP
+        )
+
+        if user_input is not None:
+            enabled = bool(
+                user_input.get(CONF_ROUTE_TRACKER_ENABLED, False)
+            )
+            source_type = str(
+                user_input.get(
+                    CONF_ROUTE_SOURCE_TYPE,
+                    ROUTE_SOURCE_ABRP,
+                )
+            )
+
+            self._route_tracker_draft = {
+                CONF_ROUTE_TRACKER_ENABLED: enabled,
+                CONF_ROUTE_SOURCE_TYPE: source_type,
+            }
+
+            if not enabled:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(self._route_tracker_draft)
+
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._route_tracker_draft = {}
+
+                return await self.async_step_settings()
+
+            return await self.async_step_route_tracker_source()
+
+        return self.async_show_form(
+            step_id="route_tracker_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_TRACKER_ENABLED,
+                        default=current_enabled,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_ROUTE_SOURCE_TYPE,
+                        default=current_source_type,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=[
+                                selector.SelectOptionDict(
+                                    value=ROUTE_SOURCE_ABRP,
+                                    label="ABRP",
+                                ),
+                                selector.SelectOptionDict(
+                                    value=ROUTE_SOURCE_HA_GEOCODED,
+                                    label=(
+                                        "Home Assistant Companion App "
+                                        "(Geocoded Location)"
+                                    ),
+                                ),
+                            ],
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+        )
+
+    async def async_step_route_tracker_source(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure entities for the selected Route Tracker source."""
+
+        if not self._route_tracker_draft:
+            self._route_tracker_draft = {
+                CONF_ROUTE_TRACKER_ENABLED: bool(
+                    self._options.get(
+                        CONF_ROUTE_TRACKER_ENABLED,
+                        False,
+                    )
+                ),
+                CONF_ROUTE_SOURCE_TYPE: str(
+                    self._options.get(
+                        CONF_ROUTE_SOURCE_TYPE,
+                        ROUTE_SOURCE_ABRP,
+                    )
+                    or ROUTE_SOURCE_ABRP
+                ),
+            }
+
+        source_type = str(
+            self._route_tracker_draft.get(
+                CONF_ROUTE_SOURCE_TYPE,
+                ROUTE_SOURCE_ABRP,
+            )
+        )
+
+        if user_input is not None:
+            updated_options = dict(self._config_entry.options)
+            updated_options.update(self._route_tracker_draft)
+
+            if source_type == ROUTE_SOURCE_ABRP:
+                updated_options[CONF_ROUTE_LATITUDE_ENTITY] = user_input[
+                    CONF_ROUTE_LATITUDE_ENTITY
+                ]
+                updated_options[CONF_ROUTE_LONGITUDE_ENTITY] = user_input[
+                    CONF_ROUTE_LONGITUDE_ENTITY
+                ]
+                updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
+
+            elif source_type == ROUTE_SOURCE_HA_GEOCODED:
+                updated_options[CONF_ROUTE_GEOCODED_ENTITY] = user_input[
+                    CONF_ROUTE_GEOCODED_ENTITY
+                ]
+                updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
+                updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options=updated_options,
+            )
+            self._options.update(updated_options)
+            self._route_tracker_draft = {}
+
+            return await self.async_step_settings()
+
+        if source_type == ROUTE_SOURCE_HA_GEOCODED:
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_GEOCODED_ENTITY,
+                        default=self._options.get(
+                            CONF_ROUTE_GEOCODED_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                        )
+                    ),
+                }
+            )
+        else:
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_LATITUDE_ENTITY,
+                        default=self._options.get(
+                            CONF_ROUTE_LATITUDE_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                        )
+                    ),
+                    vol.Required(
+                        CONF_ROUTE_LONGITUDE_ENTITY,
+                        default=self._options.get(
+                            CONF_ROUTE_LONGITUDE_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="sensor",
+                        )
+                    ),
+                }
+            )
+
+        return self.async_show_form(
+            step_id="route_tracker_source",
+            data_schema=schema,
+            description_placeholders={
+                "source_type": source_type,
+            },
+        )
+
 
     async def async_step_general_settings(
         self,

@@ -1,3 +1,83 @@
+# Ford Triplog 2.0.0
+
+Ford Triplog 2.0 introduces GPS route recording and optional local road matching.
+
+This release adds a separate Route Tracker that records the driven route for individual trips, stores it persistently and makes the latest route available to Home Assistant as GeoJSON.
+
+## 🛰️ Route Tracker
+
+New capabilities include:
+
+- Optional GPS route recording for individual trips
+- Automatic start and stop together with Ford Triplog trips
+- Route association using the Ford Triplog Trip ID
+- Support for ABRP latitude/longitude entities
+- Support for Home Assistant Companion App position data
+- Persistent route storage
+- Smart Trip pause and resume support
+- Automatic recovery after Home Assistant or integration restart
+- Trip start and end GPS points used as route endpoints
+- Native **Last Route** sensor
+- GeoJSON output for Home Assistant map visualization
+- Raw GPS points are always preserved
+
+The Route Tracker operates independently from the normal Ford vehicle tracker and can be enabled only when required.
+
+## 🗺️ Optional OSRM Route Matching
+
+Ford Triplog can now optionally use a local OSRM server to match recorded GPS points to the road network.
+
+Features include:
+
+- Configurable OSRM server URL
+- Configurable matching radius
+- Automatic matching when a route is finalized
+- Raw and matched route data stored separately
+- Route matching diagnostics
+- Raw and matched point counts
+- Route distance
+- Matching confidence
+- Unmatched tracepoint information
+- Manual rebuild of the latest route
+
+OSRM is optional. Raw GPS route recording continues to work without an OSRM server.
+
+For regular use, a local OSRM instance is recommended instead of relying on a public routing service.
+
+## 🐳 Local OSRM / DACH Example
+
+Documentation and an example workflow are provided for building a combined Germany, Austria and Switzerland (DACH) OSRM dataset.
+
+For large datasets, preprocessing can require substantial memory. Building the dataset on a PC or server with sufficient RAM and SSD/NVMe storage and copying the finished files to the production Docker host is recommended.
+
+The example is available under:
+
+`examples/osrm/`
+
+## ⚙️ Reliability Improvements
+
+- Improved synchronization of separate ABRP latitude and longitude updates
+- Added debounce handling for position updates
+- Protection against mismatched latitude/longitude timestamps
+- Improved handling of stale GPS coordinates at trip start and trip end
+- Active and paused routes are persisted continuously
+- Route recording survives Smart Trip pauses
+- Route recovery after Home Assistant restart or integration reload
+
+## 🔒 Privacy
+
+Route data remains local.
+
+Ford Triplog does not require a cloud routing backend. When a local OSRM server is configured, route recording and road matching can remain entirely inside the local network.
+
+## ⬆️ Upgrade Notes
+
+Route tracking and OSRM are optional.
+
+Existing trip, charging and Journey data remain compatible and no migration to an external database is required.
+
+---
+
 # Ford Triplog 1.9.2
 
 ### Fixed

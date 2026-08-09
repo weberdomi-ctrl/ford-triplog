@@ -5,8 +5,13 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.8.0
-Release: 1.8.0 - Step 3
+Version: 2.0.0-dev
+Phase: Route Tracker Phase 1
+Build: Fix 06 - Route persistence and recovery
+
+Changes:
+- Restores the Route Tracker from the Coordinator's active or paused Trip
+  after a Home Assistant/integration reload.
 """
 
 from __future__ import annotations
@@ -43,6 +48,8 @@ from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
 from .charge_manager import FordTriplogChargeManager
 from .receipt_storage import FordTriplogReceiptStorage, FordTriplogReceiptView
+from .route_storage import FordTriplogRouteStorage
+from .route_tracker import FordTriplogRouteTracker
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -87,6 +94,35 @@ async def async_setup_entry(
     )
 
     await coordinator.async_setup()
+
+    route_storage = FordTriplogRouteStorage(hass)
+    route_tracker = FordTriplogRouteTracker(
+        hass=hass,
+        storage=route_storage,
+        config=config,
+    )
+    await route_tracker.async_setup()
+    coordinator.route_tracker = route_tracker
+
+    # Route Tracker Fix 06:
+    # The Coordinator restores current_trip / Smart Trip pause state first.
+    # Reattach the independent Route Tracker to that Trip and reload its
+    # persisted GPS points before normal platform setup continues.
+    recovery_trip = coordinator.current_trip
+    recovery_paused = False
+
+    if recovery_trip is None and coordinator.trip_pause_data is not None:
+        recovery_trip = coordinator.trip_pause_data
+        recovery_paused = True
+
+    if recovery_trip is not None and recovery_trip.trip_id:
+        await route_tracker.async_recover(
+            recovery_trip.trip_id,
+            paused=recovery_paused,
+            start_latitude=recovery_trip.start_latitude,
+            start_longitude=recovery_trip.start_longitude,
+            start_timestamp=recovery_trip.start_time,
+        )
 
     journey_storage = FordTriplogJourneyStorage(
         hass,
@@ -171,6 +207,8 @@ async def async_setup_entry(
         "journey_rebuilder": journey_rebuilder,
         "charge_manager": charge_manager,
         "receipt_storage": receipt_storage,
+        "route_storage": route_storage,
+        "route_tracker": route_tracker,
     }
 
     entry.async_on_unload(
@@ -202,6 +240,11 @@ async def async_unload_entry(
         {},
     )
     coordinator = runtime_data.get("coordinator")
+
+    route_tracker = runtime_data.get("route_tracker")
+
+    if route_tracker is not None:
+        await route_tracker.async_shutdown()
 
     if coordinator is not None:
         await coordinator.async_shutdown()

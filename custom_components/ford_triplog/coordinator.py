@@ -3,15 +3,19 @@ Ford Triplog
 
 Coordinator
 
-Version: 1.8.5
-Phase: Automatic home charging costs - Phase 2
-Build: 002
+Version: 2.0.0-dev
+Phase: Route Tracker Phase 1
+Build: Fix 02 - Smart Trip reload recovery
 
 Changes:
-- Automatically rebuilds the affected Journey day after a trip is saved.
-- Uses the configured Home Assistant local timezone for the Journey date.
-- Reuses the existing Journey rebuilder instead of calling the service layer.
-- Keeps trip finalization successful if the Journey rebuild fails.
+- Route Tracker uses Trip start GPS as first route point and finalized fresh Trip end GPS as last route point.
+- Smart Trip pauses route capture without discarding collected ABRP points.
+- Persists Smart Trip pause recovery data inside current_trip.json.
+- Restores the paused Trip, captured end state and remaining timeout after
+  a Home Assistant or integration reload.
+- Finalizes immediately when the original Smart Trip timeout has already
+  expired during the reload.
+- Keeps the existing Trip, Journey and Route Tracker flow unchanged.
 """
 
 from __future__ import annotations
@@ -210,6 +214,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Issue #15: assigned during integration setup after the Journey
         # infrastructure has been initialized.
         self.journey_rebuilder: Any | None = None
+        self.route_tracker: Any | None = None
        
 
     async def async_setup(self):
@@ -220,7 +225,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         data = await self.storage.load_current_trip()
         if data:
+            recovery = data.pop("_smart_trip_recovery", None)
             self.current_trip = Trip.from_dict(data)
+
+            if isinstance(recovery, dict) and recovery.get("paused"):
+                self._restore_smart_trip_recovery(recovery)
 
           
         data = await self.storage.load_current_charge()
@@ -262,6 +271,104 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             and self.current_charge.end_time
         ):
             self._resume_pending_charge_from_recovery()
+
+    def _smart_trip_recovery_payload(self) -> dict[str, Any] | None:
+        """Return JSON-safe Smart Trip pause recovery metadata."""
+
+        if (
+            self.trip_pause_data is None
+            or self.trip_end_state is None
+            or self.trip_end_time is None
+        ):
+            return None
+
+        end_state = dict(self.trip_end_state)
+
+        end_time_value = end_state.get("end_time")
+        if isinstance(end_time_value, datetime):
+            end_state["end_time"] = end_time_value.isoformat()
+
+        gps_updated_at = end_state.get("gps_updated_at")
+        if isinstance(gps_updated_at, datetime):
+            end_state["gps_updated_at"] = gps_updated_at.isoformat()
+
+        deadline = self.trip_end_time + timedelta(
+            seconds=self.smart_trip_timeout
+        )
+
+        return {
+            "paused": True,
+            "deadline": deadline.isoformat(),
+            "end_state": end_state,
+        }
+
+    def _restore_smart_trip_recovery(
+        self,
+        recovery: dict[str, Any],
+    ) -> None:
+        """Restore a paused Smart Trip after HA/integration reload."""
+
+        if self.current_trip is None:
+            return
+
+        raw_end_state = recovery.get("end_state")
+        raw_deadline = recovery.get("deadline")
+
+        if not isinstance(raw_end_state, dict):
+            _LOGGER.warning(
+                "Smart Trip recovery ignored: end-state snapshot missing"
+            )
+            return
+
+        deadline = dt_util.parse_datetime(str(raw_deadline or ""))
+        end_time = dt_util.parse_datetime(
+            str(raw_end_state.get("end_time") or "")
+        )
+
+        if deadline is None or end_time is None:
+            _LOGGER.warning(
+                "Smart Trip recovery ignored: timestamps are invalid"
+            )
+            return
+
+        if deadline.tzinfo is None:
+            deadline = deadline.replace(tzinfo=dt_util.UTC)
+        if end_time.tzinfo is None:
+            end_time = end_time.replace(tzinfo=dt_util.UTC)
+
+        restored_end_state = dict(raw_end_state)
+        restored_end_state["end_time"] = end_time
+
+        self.trip_pause_data = self.current_trip
+        self.current_trip = None
+        self.trip_end_state = restored_end_state
+        self.trip_end_time = end_time
+
+        now = dt_util.now()
+        remaining = max(0.0, (deadline - now).total_seconds())
+        elapsed = max(
+            0.0,
+            float(self.smart_trip_timeout) - remaining,
+        )
+        self.trip_pause_time = self.hass.loop.time() - elapsed
+
+        self.smart_trip_timer = self.hass.loop.call_later(
+            remaining,
+            lambda: self.hass.async_create_task(
+                self._smart_trip_timeout()
+            ),
+        )
+
+        if remaining <= 0:
+            _LOGGER.info(
+                "Recovered paused Smart Trip; original timeout already "
+                "expired, finalizing now"
+            )
+        else:
+            _LOGGER.info(
+                "Recovered paused Smart Trip; %.1fs remaining",
+                remaining,
+            )
 
     async def async_shutdown(self) -> None:
         """Stop listeners, timers and pending coordinator work."""
@@ -1130,6 +1237,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.trip_end_time = None
             self.trip_end_state = None
            
+            if self.route_tracker is not None and self.current_trip.trip_id:
+                await self.route_tracker.async_start(
+                    self.current_trip.trip_id
+                )
+
             await self.storage.save_current_trip(
                 self.current_trip.to_dict()
             )           
@@ -1156,6 +1268,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=addr,
         )
 
+        if self.route_tracker is not None and self.current_trip.trip_id:
+            await self.route_tracker.async_start(
+                self.current_trip.trip_id,
+                start_latitude=state.get("latitude"),
+                start_longitude=state.get("longitude"),
+                start_timestamp=self.current_trip.start_time,
+            )
+
         await self.storage.save_current_trip(self.current_trip.to_dict())
 
     async def finish_trip(self):
@@ -1168,6 +1288,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         trip = self.current_trip
         if trip is None:
             return
+
+        if self.route_tracker is not None:
+            await self.route_tracker.async_pause()
 
         self._trip_finishing = True
 
@@ -1203,12 +1326,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             # Smart Trip pauses the captured trip object. The timeout only
             # decides whether this snapshot is finalized or discarded.
             self.trip_pause_data = trip
-
-            await self.storage.save_current_trip(trip.to_dict())
-
-            self.current_trip = None
             self.trip_pause_time = self.hass.loop.time()
             self.trip_end_time = end_time
+
+            recovery_data = trip.to_dict()
+            recovery_payload = self._smart_trip_recovery_payload()
+            if recovery_payload is not None:
+                recovery_data["_smart_trip_recovery"] = recovery_payload
+
+            await self.storage.save_current_trip(recovery_data)
+
+            self.current_trip = None
 
             _LOGGER.info(
                 "Trip paused for Smart Trip (%ss), end SOC=%s, odometer=%s",
@@ -1839,6 +1967,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=end_state.get("address"),
             end_time=end_state.get("end_time"),
         )
+
+        if self.route_tracker is not None:
+            await self.route_tracker.async_finalize(
+                end_latitude=end_state.get("latitude"),
+                end_longitude=end_state.get("longitude"),
+                end_timestamp=end_state.get("end_time"),
+            )
 
         await self._finalize_trip(end_state)
 

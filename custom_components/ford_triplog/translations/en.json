@@ -46,13 +46,17 @@
         "description": "Select the section you want to configure.",
         "menu_options": {
           "general_settings": "General Settings",
+          "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR Connection",
-          "init": "Back to Main Menu"
+          "init": "Back to Main Menu",
+          "osrm_settings": "OSRM Route Smoothing"
         },
         "menu_option_descriptions": {
           "general_settings": "Configure trip, charging, vehicle and tariff settings.",
+          "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
-          "init": "Return to the Ford Triplog main menu."
+          "init": "Return to the Ford Triplog main menu.",
+          "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection."
         }
       },
       "import_charging_sites": {
@@ -536,6 +540,32 @@
           "init": "Return to the Ford Triplog overview."
         }
       },
+      "route_tracker_settings": {
+        "title": "Route Tracker",
+        "description": "Enable separate route recording and select the position source. This setting does not replace the existing Ford Triplog vehicle tracker.",
+        "data": {
+          "route_tracker_enabled": "Enable Route Tracker",
+          "route_source_type": "Position source"
+        },
+        "data_description": {
+          "route_tracker_enabled": "Records GPS points during a trip using a separate position source.",
+          "route_source_type": "Select the integration from which the Route Tracker receives its GPS coordinates."
+        }
+      },
+      "route_tracker_source": {
+        "title": "Route Tracker position source",
+        "description": "Configure the entities for the selected position source: {source_type}.",
+        "data": {
+          "route_latitude_entity": "Latitude sensor",
+          "route_longitude_entity": "Longitude sensor",
+          "route_geocoded_entity": "Geocoded Location sensor"
+        },
+        "data_description": {
+          "route_latitude_entity": "Sensor that provides the current latitude.",
+          "route_longitude_entity": "Sensor that provides the current longitude.",
+          "route_geocoded_entity": "Home Assistant Companion App Geocoded Location sensor with the “location” attribute."
+        }
+      },
       "general_settings": {
         "title": "General settings",
         "description": "Configure Ford Triplog.",
@@ -568,6 +598,24 @@
           "home_tariff_winter_price": "Price per kWh for charging sessions from 1 October to 31 March.",
           "home_tariff_currency": "Currency used for automatically calculated home charging costs."
         }
+      },
+      "osrm_settings": {
+        "title": "OSRM Route Smoothing",
+        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 metres is used by default.",
+        "data": {
+          "osrm_enabled": "Enable OSRM",
+          "osrm_url": "OSRM service URL",
+          "osrm_match_radius": "Matching radius"
+        },
+        "data_description": {
+          "osrm_enabled": "Enables optional local route smoothing using OSRM.",
+          "osrm_url": "For example http://192.168.1.20:5005",
+          "osrm_match_radius": "Search radius per GPS point. Recommended and default: 15 m."
+        }
+      },
+      "osrm_connection_result": {
+        "title": "OSRM connection saved",
+        "description": "**Status:** {status}\n\n**Address:** {url}\n**Matching radius:** {radius} m\n**Test road:** {road}\n**Distance from test point:** {distance} m"
       }
     },
     "error": {
@@ -609,7 +657,10 @@
       "user_parser_required_fields": "Profile name and matching text are required.",
       "user_parser_match_not_found": "The matching text does not occur in the OCR text.",
       "user_parser_create_failed": "The user profile could not be saved.",
-      "user_parser_test_failed": "The profile was saved but could not successfully parse the current receipt."
+      "user_parser_test_failed": "The profile was saved but could not successfully parse the current receipt.",
+      "osrm_invalid_url": "The OSRM address is invalid. Use a complete HTTP or HTTPS address.",
+      "osrm_connection_failed": "The OSRM service is not reachable. Check address, port, container and network.",
+      "osrm_invalid_response": "The OSRM service did not return a valid response."
     }
   },
   "entity": {
@@ -745,6 +796,9 @@
       },
       "last_journey_overview": {
         "name": "Last Journey Overview"
+      },
+      "last_route": {
+        "name": "Last route"
       }
     }
   },
