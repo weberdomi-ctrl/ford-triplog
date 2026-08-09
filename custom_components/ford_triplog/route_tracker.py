@@ -5,17 +5,16 @@ Route Tracker
 
 Version: 2.0.0-dev
 Phase: Route Tracker Phase 1
-Build: Fix 05 - Trip GPS endpoints
+Build: Fix 06 - Route persistence and recovery
 
 Changes:
-- Debounces separate ABRP latitude/longitude entity updates.
-- Reads both ABRP coordinates only after the update pair has settled.
-- Rejects ABRP coordinate pairs whose timestamps differ by more than 2 seconds.
-- Rejects stale initial/final coordinates older than 120 seconds.
-- Keeps the Home Assistant Companion Geocoded Location source unchanged.
-- Uses the normal Trip tracker GPS as authoritative route start/end points.
-- Pauses capture during Smart Trip without discarding collected ABRP points.
-- Keeps ABRP debounce/synchronization from Fix 04 unchanged.
+- Persists the route JSON immediately when a Trip starts.
+- Persists every accepted GPS point while driving.
+- Persists Smart Trip pause/resume state.
+- Restores active or paused route points after HA/integration reload.
+- Keeps Trip start/end GPS endpoint logic from Fix 05.
+- Keeps ABRP coordinate debounce/synchronization from Fix 04.
+- Raw route points remain independent from Trip/Journey storage.
 """
 
 from __future__ import annotations
@@ -44,7 +43,6 @@ _LOGGER = logging.getLogger(__name__)
 
 ABRP_DEBOUNCE_SECONDS = 0.75
 ABRP_MAX_PAIR_DELTA_SECONDS = 2.0
-ROUTE_MAX_EDGE_POINT_AGE_SECONDS = 120.0
 
 
 class FordTriplogRouteTracker:
@@ -60,22 +58,37 @@ class FordTriplogRouteTracker:
         self.storage = storage
         self.config = config
 
-        self.enabled = bool(config.get(CONF_ROUTE_TRACKER_ENABLED, False))
+        self.enabled = bool(
+            config.get(CONF_ROUTE_TRACKER_ENABLED, False)
+        )
         self.source_type = str(
-            config.get(CONF_ROUTE_SOURCE_TYPE, ROUTE_SOURCE_ABRP)
+            config.get(
+                CONF_ROUTE_SOURCE_TYPE,
+                ROUTE_SOURCE_ABRP,
+            )
             or ROUTE_SOURCE_ABRP
         )
+        self.route_source_type = self.source_type
 
-        self.latitude_entity = config.get(CONF_ROUTE_LATITUDE_ENTITY)
-        self.longitude_entity = config.get(CONF_ROUTE_LONGITUDE_ENTITY)
-        self.geocoded_entity = config.get(CONF_ROUTE_GEOCODED_ENTITY)
+        self.latitude_entity = config.get(
+            CONF_ROUTE_LATITUDE_ENTITY
+        )
+        self.longitude_entity = config.get(
+            CONF_ROUTE_LONGITUDE_ENTITY
+        )
+        self.geocoded_entity = config.get(
+            CONF_ROUTE_GEOCODED_ENTITY
+        )
 
         self.active_trip_id: str | None = None
         self.paused_trip_id: str | None = None
         self.points: list[dict[str, Any]] = []
+
         self._remove_listener = None
         self._last_coordinate: tuple[float, float] | None = None
         self._debounce_task: asyncio.Task | None = None
+        self._persist_lock = asyncio.Lock()
+        self._route_created_at: str | None = None
 
     async def async_setup(self) -> None:
         """Set up route storage and source listeners."""
@@ -106,7 +119,12 @@ class FordTriplogRouteTracker:
         )
 
     async def async_shutdown(self) -> None:
-        """Remove Route Tracker listeners."""
+        """Persist current state and remove Route Tracker listeners."""
+
+        if self.active_trip_id is not None:
+            await self._persist_current_route("active")
+        elif self.paused_trip_id is not None:
+            await self._persist_current_route("paused")
 
         self._cancel_debounce()
 
@@ -133,6 +151,105 @@ class FordTriplogRouteTracker:
             if entity_id
         ]
 
+    async def async_recover(
+        self,
+        trip_id: str,
+        *,
+        paused: bool,
+        start_latitude: Any = None,
+        start_longitude: Any = None,
+        start_timestamp: Any = None,
+    ) -> None:
+        """Restore one active/paused route after integration reload."""
+
+        if not self.enabled:
+            return
+
+        trip_id = str(trip_id)
+        stored = await self.storage.async_load_route(trip_id)
+
+        if isinstance(stored, dict):
+            stored_status = str(
+                stored.get("status") or "completed"
+            )
+
+            if stored_status in ("active", "paused"):
+                raw_points = stored.get("points", [])
+                self.points = [
+                    dict(point)
+                    for point in raw_points
+                    if isinstance(point, dict)
+                ]
+
+                stored_source = str(
+                    stored.get("source_type")
+                    or self.source_type
+                )
+                self.route_source_type = (
+                    stored_source
+                    if stored_source == self.source_type
+                    else "mixed"
+                )
+                self._route_created_at = (
+                    stored.get("created_at")
+                    or dt_util.now().isoformat()
+                )
+
+                self._last_coordinate = (
+                    self._coordinate_from_point(
+                        self.points[-1]
+                    )
+                    if self.points
+                    else None
+                )
+
+                if paused:
+                    self.paused_trip_id = trip_id
+                    self.active_trip_id = None
+                    status = "paused"
+                else:
+                    self.active_trip_id = trip_id
+                    self.paused_trip_id = None
+                    status = "active"
+
+                await self._persist_current_route(status)
+
+                _LOGGER.info(
+                    "Route Tracker recovered %s route for trip %s "
+                    "with %s GPS points",
+                    status,
+                    trip_id,
+                    len(self.points),
+                )
+                return
+
+        # No recoverable route exists yet. Create one from the authoritative
+        # Trip start GPS so a reload can no longer lose the entire route.
+        self.active_trip_id = None if paused else trip_id
+        self.paused_trip_id = trip_id if paused else None
+        self.points = []
+        self._last_coordinate = None
+        self.route_source_type = self.source_type
+        self._route_created_at = dt_util.now().isoformat()
+
+        self._append_external_point(
+            start_latitude,
+            start_longitude,
+            start_timestamp,
+        )
+
+        await self._persist_current_route(
+            "paused" if paused else "active"
+        )
+
+        _LOGGER.info(
+            "Route Tracker recovery created %s route for trip %s "
+            "with %s GPS points",
+            "paused" if paused else "active",
+            trip_id,
+            len(self.points),
+        )
+
     async def async_start(
         self,
         trip_id: str,
@@ -151,6 +268,8 @@ class FordTriplogRouteTracker:
         if self.paused_trip_id == trip_id:
             self.paused_trip_id = None
             self.active_trip_id = trip_id
+            await self._persist_current_route("active")
+
             _LOGGER.info(
                 "Route Tracker resumed for trip %s with %s GPS points",
                 trip_id,
@@ -163,11 +282,29 @@ class FordTriplogRouteTracker:
                 return
             await self.async_finalize()
 
+        # Also recover automatically if the route file already exists.
+        stored = await self.storage.async_load_route(trip_id)
+        if (
+            isinstance(stored, dict)
+            and stored.get("status") in ("active", "paused")
+        ):
+            await self.async_recover(
+                trip_id,
+                paused=False,
+                start_latitude=start_latitude,
+                start_longitude=start_longitude,
+                start_timestamp=start_timestamp,
+            )
+            return
+
         self._cancel_debounce()
+
         self.active_trip_id = trip_id
         self.paused_trip_id = None
         self.points = []
         self._last_coordinate = None
+        self.route_source_type = self.source_type
+        self._route_created_at = dt_util.now().isoformat()
 
         self._append_external_point(
             start_latitude,
@@ -175,10 +312,16 @@ class FordTriplogRouteTracker:
             start_timestamp,
         )
 
-        _LOGGER.info("Route Tracker started for trip %s", trip_id)
+        # Fix 06: create the recovery file immediately.
+        await self._persist_current_route("active")
+
+        _LOGGER.info(
+            "Route Tracker started for trip %s",
+            trip_id,
+        )
 
     async def async_pause(self) -> None:
-        """Pause capture for Smart Trip without saving/resetting points."""
+        """Pause capture for Smart Trip without discarding points."""
 
         if self.active_trip_id is None:
             return
@@ -186,6 +329,8 @@ class FordTriplogRouteTracker:
         self._cancel_debounce()
         self.paused_trip_id = self.active_trip_id
         self.active_trip_id = None
+
+        await self._persist_current_route("paused")
 
         _LOGGER.info(
             "Route Tracker paused for Smart Trip %s with %s GPS points",
@@ -200,7 +345,7 @@ class FordTriplogRouteTracker:
         end_longitude: Any = None,
         end_timestamp: Any = None,
     ) -> None:
-        """Append authoritative Trip end GPS and save the route."""
+        """Append authoritative Trip end GPS and complete the route."""
 
         trip_id = self.active_trip_id or self.paused_trip_id
         if trip_id is None:
@@ -220,25 +365,26 @@ class FordTriplogRouteTracker:
         )
 
         points = list(self.points)
+        source_type = self.route_source_type
+        created_at = self._route_created_at
+
+        # Persist completed state before clearing in-memory recovery data.
+        async with self._persist_lock:
+            await self.storage.async_save_route(
+                trip_id=trip_id,
+                source_type=source_type,
+                points=points,
+                status="completed",
+                created_at=created_at,
+            )
 
         self._cancel_debounce()
         self.active_trip_id = None
         self.paused_trip_id = None
         self.points = []
         self._last_coordinate = None
-
-        if not points:
-            _LOGGER.warning(
-                "Route Tracker finalized trip %s without GPS points",
-                trip_id,
-            )
-            return
-
-        await self.storage.async_save_route(
-            trip_id=trip_id,
-            source_type=self.source_type,
-            points=points,
-        )
+        self._route_created_at = None
+        self.route_source_type = self.source_type
 
         _LOGGER.info(
             "Route Tracker saved %s GPS points for trip %s",
@@ -297,33 +443,47 @@ class FordTriplogRouteTracker:
                 self._debounce_task.cancel()
             self._debounce_task = None
 
+    @staticmethod
+    def _coordinate_from_point(
+        point: dict[str, Any],
+    ) -> tuple[float, float] | None:
+        """Return coordinate tuple from one stored route point."""
+
+        try:
+            return (
+                float(point["latitude"]),
+                float(point["longitude"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            return None
+
     def _append_external_point(
         self,
         latitude_value: Any,
         longitude_value: Any,
         timestamp_value: Any,
-    ) -> None:
+    ) -> bool:
         """Append a Trip start/end point if valid and not duplicated."""
 
         if latitude_value is None or longitude_value is None:
-            return
+            return False
 
         try:
             latitude = float(latitude_value)
             longitude = float(longitude_value)
         except (TypeError, ValueError):
-            return
+            return False
 
         coordinate_key = (latitude, longitude)
         if coordinate_key == self._last_coordinate:
-            return
+            return False
 
         if isinstance(timestamp_value, datetime):
             timestamp = timestamp_value.isoformat()
         elif timestamp_value:
             timestamp = str(timestamp_value)
         else:
-            timestamp = dt_util.utcnow().isoformat()
+            timestamp = dt_util.now().isoformat()
 
         self.points.append(
             {
@@ -333,33 +493,19 @@ class FordTriplogRouteTracker:
             }
         )
         self._last_coordinate = coordinate_key
+        return True
 
     async def _capture_current_point(
         self,
         changed_state: State | None = None,
-        *,
-        max_age_seconds: float | None = None,
     ) -> None:
-        """Capture one point if valid and different from the previous one."""
+        """Capture and immediately persist one new GPS point."""
 
         coordinates = self._read_coordinates(changed_state)
         if coordinates is None:
             return
 
-        latitude, longitude, timestamp, source_updated_at = coordinates
-
-        if max_age_seconds is not None:
-            age_seconds = (
-                dt_util.utcnow() - source_updated_at
-            ).total_seconds()
-
-            if age_seconds > max_age_seconds:
-                _LOGGER.debug(
-                    "Route Tracker ignored stale edge point: age=%.1fs",
-                    age_seconds,
-                )
-                return
-
+        latitude, longitude, timestamp = coordinates
         coordinate_key = (latitude, longitude)
 
         if coordinate_key == self._last_coordinate:
@@ -374,17 +520,39 @@ class FordTriplogRouteTracker:
         )
         self._last_coordinate = coordinate_key
 
+        # Fix 06: one ~60 s ABRP point means one small atomic JSON write.
+        # This is intentionally simple and makes crash/reload recovery robust.
+        await self._persist_current_route("active")
+
         _LOGGER.debug(
-            "Route Tracker point: trip=%s lat=%.7f lon=%.7f",
+            "Route Tracker point persisted: trip=%s points=%s",
             self.active_trip_id,
-            latitude,
-            longitude,
+            len(self.points),
         )
+
+    async def _persist_current_route(
+        self,
+        status: str,
+    ) -> None:
+        """Persist the current route snapshot atomically."""
+
+        trip_id = self.active_trip_id or self.paused_trip_id
+        if trip_id is None:
+            return
+
+        async with self._persist_lock:
+            await self.storage.async_save_route(
+                trip_id=trip_id,
+                source_type=self.route_source_type,
+                points=list(self.points),
+                status=status,
+                created_at=self._route_created_at,
+            )
 
     def _read_coordinates(
         self,
         changed_state: State | None = None,
-    ) -> tuple[float, float, str, datetime] | None:
+    ) -> tuple[float, float, str] | None:
         """Return normalized coordinates from the configured source."""
 
         if self.source_type == ROUTE_SOURCE_HA_GEOCODED:
@@ -417,7 +585,6 @@ class FordTriplogRouteTracker:
                 latitude,
                 longitude,
                 state.last_updated.isoformat(),
-                state.last_updated,
             )
 
         latitude_state = (
@@ -455,14 +622,9 @@ class FordTriplogRouteTracker:
             )
             return None
 
-        source_updated_at = max(
+        timestamp = max(
             latitude_state.last_updated,
             longitude_state.last_updated,
-        )
+        ).isoformat()
 
-        return (
-            latitude,
-            longitude,
-            source_updated_at.isoformat(),
-            source_updated_at,
-        )
+        return latitude, longitude, timestamp

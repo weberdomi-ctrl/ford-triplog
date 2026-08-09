@@ -5,8 +5,13 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 1.8.0
-Release: 1.8.0 - Step 3
+Version: 2.0.0-dev
+Phase: Route Tracker Phase 1
+Build: Fix 06 - Route persistence and recovery
+
+Changes:
+- Restores the Route Tracker from the Coordinator's active or paused Trip
+  after a Home Assistant/integration reload.
 """
 
 from __future__ import annotations
@@ -98,6 +103,26 @@ async def async_setup_entry(
     )
     await route_tracker.async_setup()
     coordinator.route_tracker = route_tracker
+
+    # Route Tracker Fix 06:
+    # The Coordinator restores current_trip / Smart Trip pause state first.
+    # Reattach the independent Route Tracker to that Trip and reload its
+    # persisted GPS points before normal platform setup continues.
+    recovery_trip = coordinator.current_trip
+    recovery_paused = False
+
+    if recovery_trip is None and coordinator.trip_pause_data is not None:
+        recovery_trip = coordinator.trip_pause_data
+        recovery_paused = True
+
+    if recovery_trip is not None and recovery_trip.trip_id:
+        await route_tracker.async_recover(
+            recovery_trip.trip_id,
+            paused=recovery_paused,
+            start_latitude=recovery_trip.start_latitude,
+            start_longitude=recovery_trip.start_longitude,
+            start_timestamp=recovery_trip.start_time,
+        )
 
     journey_storage = FordTriplogJourneyStorage(
         hass,
