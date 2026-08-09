@@ -293,7 +293,7 @@ if ($RemoteCount -ne $OsrmFiles.Count) {
 
 Step "Restart production OSRM container"
 
-$RemoteRestart = "docker stop $NasContainer >/dev/null 2>&1 || true; docker rm $NasContainer >/dev/null 2>&1 || true; docker run -d --name $NasContainer --restart unless-stopped -p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
+$RemoteRestart = "docker stop $NasContainer >/dev/null 2>&1 || true; docker rm $NasContainer >/dev/null 2>&1 || true; docker run -d --name $NasContainer --restart unless-stopped --memory=6g -p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
 
 & $Plink -batch -i $SshKey "${NasUser}@${NasHost}" $RemoteRestart
 if ($LASTEXITCODE -ne 0) {
