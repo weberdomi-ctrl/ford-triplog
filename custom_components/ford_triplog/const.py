@@ -91,6 +91,15 @@ CONF_ROUTE_GEOCODED_ENTITY: Final = "route_geocoded_entity"
 ROUTE_SOURCE_ABRP: Final = "abrp"
 ROUTE_SOURCE_HA_GEOCODED: Final = "ha_geocoded"
 
+# Optional local OSRM map matching
+CONF_OSRM_ENABLED: Final = "osrm_enabled"
+CONF_OSRM_URL: Final = "osrm_url"
+CONF_OSRM_MATCH_RADIUS: Final = "osrm_match_radius"
+
+DEFAULT_OSRM_ENABLED: Final = False
+DEFAULT_OSRM_URL: Final = ""
+DEFAULT_OSRM_MATCH_RADIUS: Final = 15
+
 
 CONF_SMART_TRIP: Final = "smart_trip"
 CONF_SMART_TRIP_TIMEOUT: Final = "smart_trip_timeout"
