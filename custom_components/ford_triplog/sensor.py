@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor (Fix 03)
+Phase: 3 - Historical route date selection and sensor (Fix 04)
 """
 
 from __future__ import annotations
@@ -13,6 +13,7 @@ from typing import Any
 
 from datetime import datetime
 import math
+import logging
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -54,6 +55,8 @@ from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
