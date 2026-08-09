@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.0.0
 Phase: Detailed charging costs GUI
-Build: 01
+Build: Route Matching Step 02
 Release: 2.0.0
 
 Changes:
@@ -59,6 +59,11 @@ from .ocr_client import (
     FordTriplogOCRConnectionError,
     FordTriplogOCRResponseError,
 )
+from .osrm_client import (
+    FordTriplogOSRMClient,
+    FordTriplogOSRMConnectionError,
+    FordTriplogOSRMResponseError,
+)
 
 from .services import (
     async_download_charging_database,
@@ -81,6 +86,13 @@ from .const import (
     CONF_ROUTE_GEOCODED_ENTITY,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
+    CONF_ROUTE_SMOOTHING_ENABLED,
+    CONF_OSRM_BASE_URL,
+    CONF_OSRM_MATCH_RADIUS,
+    CONF_OSRM_TIMEOUT,
+    DEFAULT_OSRM_BASE_URL,
+    DEFAULT_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -297,6 +309,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_receipt_url: str | None = None
         self._receipt_ocr_result: dict[str, str] = {}
         self._ocr_connection_result: dict[str, str] = {}
+        self._osrm_connection_result: dict[str, str] = {}
         self._selected_apply_receipt_id: str | None = None
         self._receipt_apply_result: dict[str, str] = {}
         self._ui_translations: dict[str, str] | None = None
@@ -3787,10 +3800,190 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=[
                 "general_settings",
                 "route_tracker_settings",
+                "osrm_settings",
                 "ocr_settings",
                 "init",
             ],
         )
+
+    async def async_step_osrm_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure and test optional local OSRM route smoothing."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            enabled = bool(
+                user_input.get(CONF_ROUTE_SMOOTHING_ENABLED, False)
+            )
+            url = str(
+                user_input.get(CONF_OSRM_BASE_URL) or ""
+            ).strip().rstrip("/")
+            radius = float(
+                user_input.get(
+                    CONF_OSRM_MATCH_RADIUS,
+                    DEFAULT_OSRM_MATCH_RADIUS,
+                )
+            )
+            timeout_seconds = int(
+                user_input.get(
+                    CONF_OSRM_TIMEOUT,
+                    DEFAULT_OSRM_TIMEOUT,
+                )
+            )
+
+            if enabled:
+                try:
+                    client = FordTriplogOSRMClient(
+                        self.hass,
+                        url,
+                        timeout_seconds=timeout_seconds,
+                        radius_meters=radius,
+                    )
+                    result = await client.async_test_connection()
+                except ValueError:
+                    errors["base"] = "osrm_invalid_url"
+                except FordTriplogOSRMConnectionError:
+                    errors["base"] = "osrm_connection_failed"
+                except FordTriplogOSRMResponseError:
+                    errors["base"] = "osrm_invalid_response"
+                else:
+                    updated_options = dict(self._config_entry.options)
+                    updated_options.update(
+                        {
+                            CONF_ROUTE_SMOOTHING_ENABLED: True,
+                            CONF_OSRM_BASE_URL: client.base_url,
+                            CONF_OSRM_MATCH_RADIUS: radius,
+                            CONF_OSRM_TIMEOUT: timeout_seconds,
+                        }
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        options=updated_options,
+                    )
+                    self._options.update(updated_options)
+                    self._osrm_connection_result = {
+                        "status": "OK",
+                        "url": client.base_url,
+                        "radius": f"{radius:g} m",
+                        "timeout": f"{timeout_seconds} s",
+                        "road": str(result.get("name") or "—"),
+                        "distance": (
+                            f"{float(result['distance_m']):.1f} m"
+                            if result.get("distance_m") is not None
+                            else "—"
+                        ),
+                    }
+                    return await self.async_step_osrm_connection_result()
+            else:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(
+                    {
+                        CONF_ROUTE_SMOOTHING_ENABLED: False,
+                        CONF_OSRM_BASE_URL: url,
+                        CONF_OSRM_MATCH_RADIUS: radius,
+                        CONF_OSRM_TIMEOUT: timeout_seconds,
+                    }
+                )
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._osrm_connection_result = {
+                    "status": "Disabled",
+                    "url": url or "—",
+                    "radius": f"{radius:g} m",
+                    "timeout": f"{timeout_seconds} s",
+                    "road": "—",
+                    "distance": "—",
+                }
+                return await self.async_step_osrm_connection_result()
+
+        current_enabled = bool(
+            self._options.get(CONF_ROUTE_SMOOTHING_ENABLED, False)
+        )
+        current_url = str(
+            self._options.get(
+                CONF_OSRM_BASE_URL,
+                DEFAULT_OSRM_BASE_URL,
+            )
+        )
+        current_radius = float(
+            self._options.get(
+                CONF_OSRM_MATCH_RADIUS,
+                DEFAULT_OSRM_MATCH_RADIUS,
+            )
+        )
+        current_timeout = int(
+            self._options.get(
+                CONF_OSRM_TIMEOUT,
+                DEFAULT_OSRM_TIMEOUT,
+            )
+        )
+
+        return self.async_show_form(
+            step_id="osrm_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_SMOOTHING_ENABLED,
+                        default=current_enabled,
+                    ): selector.BooleanSelector(),
+                    vol.Required(
+                        CONF_OSRM_BASE_URL,
+                        default=current_url,
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(
+                            type=selector.TextSelectorType.URL,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OSRM_MATCH_RADIUS,
+                        default=current_radius,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=1,
+                            max=100,
+                            step=1,
+                            unit_of_measurement="m",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OSRM_TIMEOUT,
+                        default=current_timeout,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=3,
+                            max=120,
+                            step=1,
+                            unit_of_measurement="s",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_osrm_connection_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the local OSRM connection result."""
+
+        if user_input is not None:
+            return await self.async_step_settings()
+
+        return self.async_show_form(
+            step_id="osrm_connection_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._osrm_connection_result,
+        )
+
 
     async def async_step_route_tracker_settings(
         self,
