@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant select platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection
+Phase: 3 - Historical route date selection (Fix 01)
 
 Changes:
 - Adds a Route History Date select entity.
@@ -54,6 +54,7 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
     _attr_name = "Route History Date"
     _attr_unique_id = "ford_triplog_route_history_date"
     _attr_icon = "mdi:calendar-search"
+    _attr_should_poll = False
 
     def __init__(
         self,
@@ -62,20 +63,33 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
     ) -> None:
         self.storage = storage
         self.entry_id = entry_id
-        self._attr_options = []
-        self._attr_current_option = None
+        self._options: list[str] = []
+        self._current_option: str | None = None
 
     @property
     def _selection_key(self) -> str:
         return f"route_history_selected_date_{self.entry_id}"
 
+    @property
+    def options(self) -> list[str]:
+        """Return available route-history dates."""
+        return self._options
+
+    @property
+    def current_option(self) -> str | None:
+        """Return the currently selected route-history date."""
+        return self._current_option
+
     async def async_added_to_hass(self) -> None:
+        """Load available dates after the entity is added."""
+        await super().async_added_to_hass()
         await self._async_refresh_options()
+        self.async_write_ha_state()
 
     async def _async_refresh_options(self) -> None:
         if self.storage is None:
-            self._attr_options = []
-            self._attr_current_option = None
+            self._options = []
+            self._current_option = None
             return
 
         routes = await self.storage.async_list_routes()
@@ -89,24 +103,26 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
                 timestamp = timestamp.replace(tzinfo=dt_util.UTC)
             dates.add(dt_util.as_local(timestamp).date().isoformat())
 
-        options = sorted(dates, reverse=True)
-        self._attr_options = options
+        self._options = sorted(dates, reverse=True)
 
         data = self.hass.data[DOMAIN][self.entry_id]
         selected = data.get(self._selection_key)
 
-        if selected not in options:
-            selected = options[0] if options else None
+        # Only choose the newest date when there is no valid selection yet.
+        if selected not in self._options:
+            selected = self._options[0] if self._options else None
             data[self._selection_key] = selected
 
-        self._attr_current_option = selected
+        self._current_option = selected
 
     async def async_select_option(self, option: str) -> None:
-        if option not in self._attr_options:
+        """Select a route-history date."""
+        if option not in self._options:
             raise ValueError(f"Invalid route history date: {option}")
 
-        self._attr_current_option = option
+        self._current_option = option
         self.hass.data[DOMAIN][self.entry_id][self._selection_key] = option
+
         self.async_write_ha_state()
 
         async_dispatcher_send(
