@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant select platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection (Fix 05)
+Phase: 3 - Historical route date selection (Fix 01)
 
 Changes:
 - Adds a Route History Date select entity.
@@ -20,6 +20,7 @@ from typing import Any
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, VERSION
@@ -80,17 +81,10 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
         return self._current_option
 
     async def async_added_to_hass(self) -> None:
-        """Load available dates and initialize the shared History sensor."""
+        """Load available dates after the entity is added."""
         await super().async_added_to_hass()
         await self._async_refresh_options()
         self.async_write_ha_state()
-
-        if self._current_option:
-            sensor = self.hass.data[DOMAIN][self.entry_id].get(
-                "route_history_sensor"
-            )
-            if sensor is not None:
-                await sensor.async_set_selected_date(self._current_option)
 
     async def _async_refresh_options(self) -> None:
         if self.storage is None:
@@ -131,11 +125,10 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
 
         self.async_write_ha_state()
 
-        sensor = self.hass.data[DOMAIN][self.entry_id].get(
-            "route_history_sensor"
+        async_dispatcher_send(
+            self.hass,
+            f"{DOMAIN}_route_history_date_changed_{self.entry_id}",
         )
-        if sensor is not None:
-            await sensor.async_set_selected_date(option)
 
     @property
     def device_info(self):
