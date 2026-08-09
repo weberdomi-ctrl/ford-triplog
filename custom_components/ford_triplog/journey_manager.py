@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 1.8.6
-Release: 1.8.6 - Journey billed-energy price fix
+Version: 2.0.1
+Release: 2.0.1 - Reduce Journey diagnostic log noise
 """
 
 from __future__ import annotations
@@ -155,7 +155,7 @@ class FordTriplogJourneyManager:
         start_time = self._required_datetime(data, "start_time")
         end_time = self._required_datetime(data, "end_time")
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey debug: process trip %s (%s -> %s), current=%s, items=%s",
             trip_id,
             start_time.isoformat(),
@@ -205,7 +205,7 @@ class FordTriplogJourneyManager:
                         reason="returned_to_home_zone_next_trip",
                     )
 
-                _LOGGER.info(
+                _LOGGER.debug(
                     "Journey home confirmation by next trip ignored because "
                     "minimum stay was not reached: journey=%s stay=%.1fs "
                     "required=%ss",
@@ -263,7 +263,7 @@ class FordTriplogJourneyManager:
                 charge_data,
                 data,
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey debug: charge %s -> trip %s match=%s reason=%s",
                 last_item.item_id,
                 trip_id,
@@ -327,7 +327,7 @@ class FordTriplogJourneyManager:
             )
 
         matches, reason = self._trip_matches_trip(previous_trip, data)
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey debug: trip %s -> trip %s match=%s reason=%s",
             last_item.item_id,
             trip_id,
@@ -380,7 +380,7 @@ class FordTriplogJourneyManager:
         start_time = self._required_datetime(data, "start_time")
         end_time = self._required_datetime(data, "end_time")
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey debug: process charge %s (%s -> %s), previous_trip_id=%s, current=%s, items=%s",
             charge_id,
             start_time.isoformat(),
@@ -391,7 +391,7 @@ class FordTriplogJourneyManager:
         )
 
         if not self._is_valid_charge_for_journey(data):
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey ignored empty charging session %s",
                 charge_id,
             )
@@ -432,7 +432,7 @@ class FordTriplogJourneyManager:
                 trip_data,
                 data,
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey debug: trip %s -> charge %s match=%s reason=%s, trip.next_charge_id=%s, charge.previous_trip_id=%s",
                 last_item.item_id,
                 charge_id,
@@ -455,7 +455,7 @@ class FordTriplogJourneyManager:
                 previous_charge,
                 data,
             )
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey debug: charge %s -> charge %s match=%s reason=%s",
                 last_item.item_id,
                 charge_id,
@@ -596,7 +596,7 @@ class FordTriplogJourneyManager:
         self._remove_cached_source_data(journey)
 
         if not self.is_complete_journey(journey):
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey debug: discarded incomplete journey %s: reason=%s, trips=%s, charges=%s, items=%s",
                 journey.journey_id,
                 reason,
@@ -801,7 +801,7 @@ class FordTriplogJourneyManager:
         arrival_time = self._required_datetime(last_trip, "end_time")
 
         if self.home_timeout_seconds <= 0:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey home confirmed: journey=%s reason=%s, "
                 "completing immediately",
                 journey.journey_id,
@@ -871,7 +871,7 @@ class FordTriplogJourneyManager:
             _async_finish_after_home_timeout,
         )
 
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey home timeout started: journey=%s arrival=%s "
             "delay=%.1fs reason=%s",
             journey.journey_id,
@@ -894,7 +894,7 @@ class FordTriplogJourneyManager:
         self._home_arrival_time = None
 
         if had_pending_timeout:
-            _LOGGER.info(
+            _LOGGER.debug(
                 "Journey home timeout cancelled: reason=%s",
                 reason,
             )
@@ -950,7 +950,7 @@ class FordTriplogJourneyManager:
                 self._add_charge(rebuilt, source)
 
         self.current_journey = rebuilt
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey trailing charges removed before home completion: "
             "journey=%s items=%s",
             rebuilt.journey_id,
@@ -1095,7 +1095,7 @@ class FordTriplogJourneyManager:
             return False
 
         inside_home = distance <= radius
-        _LOGGER.info(
+        _LOGGER.debug(
             "Journey home-zone check: source=%s item=%s zone=%s "
             "distance=%.1fm radius=%.1fm inside=%s",
             source,
