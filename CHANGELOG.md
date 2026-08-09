@@ -1,5 +1,42 @@
 # Changelog
 
+## 2.0.0
+
+### Added
+
+- Route Tracker for recording the driven route independently from the normal Ford vehicle tracker
+- Support for ABRP latitude/longitude entities as a Route Tracker position source
+- Support for Home Assistant Companion App Geocoded Location as a Route Tracker position source
+- Persistent route storage linked to the corresponding Trip ID
+- Automatic route recovery after Home Assistant or integration restart
+- Smart Trip pause and resume support for route recording
+- Trip start and end GPS points as authoritative route endpoints
+- Native Last Route sensor with GeoJSON route data
+- Optional local OSRM integration for road-based route matching
+- Configurable OSRM server URL and matching radius
+- Automatic OSRM matching when a route is finalized
+- Raw GPS points are always preserved independently from the matched route
+- `ford_triplog.rebuild_last_route` service to rebuild the latest route using the configured OSRM server
+- Route matching diagnostics including raw/matched point counts, route distance, confidence and unmatched tracepoints
+
+### Improved
+
+- ABRP latitude and longitude synchronization using debounce handling
+- Protection against mismatched latitude/longitude update timestamps
+- Protection against stale GPS coordinates at trip start and trip end
+- Route recording survives Smart Trip pauses without losing previously collected points
+- Active and paused routes are persisted continuously instead of only when a trip ends
+- Route storage remains independent from Trip and Journey storage
+- Local-first route processing with no external routing service required when using a local OSRM instance
+
+### Notes
+
+- Route Tracker is optional and does not replace the existing Ford Triplog vehicle tracker.
+- OSRM route matching is optional. Raw GPS route recording works without OSRM.
+- A local OSRM server is recommended for regular route matching.
+- OSRM preprocessing can require substantial memory for large map regions. Building large datasets on a PC/server and running the finished dataset on a smaller Docker host is recommended.
+
+
 ## 1.9.2
 
 ### Fixed
