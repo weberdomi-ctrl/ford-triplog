@@ -22,13 +22,15 @@ $SwitzerlandUrl = "https://download.geofabrik.de/europe/switzerland-latest.osm.p
 
 $Pscp = "C:\Program Files\PuTTY\pscp.exe"
 $Plink = "C:\Program Files\PuTTY\plink.exe"
-$SshKey = "C:\Users\XXX\.ssh\XX.ppk"
+$SshKey = "C:\Users\xxx\.ssh\xxx.ppk"
 
-$NasUser = "USER"
-$NasHost = "192.168.0.1"
+$NasUser = "xxx"
+$NasHost = "192.168.1.1"
 $NasTarget = "/volume1/docker/osrm"
 $NasContainer = "OSRM-Triplog"
 $NasPort = 5005
+
+$RemoteDocker = "/usr/local/bin/docker"
 
 $LocalTestPort = 5006
 $LocalTestContainer = "OSRM-DACH-Test"
@@ -293,7 +295,7 @@ if ($RemoteCount -ne $OsrmFiles.Count) {
 
 Step "Restart production OSRM container"
 
-$RemoteRestart = "docker stop $NasContainer >/dev/null 2>&1 || true; docker rm $NasContainer >/dev/null 2>&1 || true; docker run -d --name $NasContainer --restart unless-stopped --memory=6g -p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
+$RemoteRestart = "$RemoteDocker stop $NasContainer >/dev/null 2>&1 || true; $RemoteDocker rm $NasContainer >/dev/null 2>&1 || true; $RemoteDocker run -d --name $NasContainer --restart unless-stopped --memory=6g -p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
 
 & $Plink -batch -i $SshKey "${NasUser}@${NasHost}" $RemoteRestart
 if ($LASTEXITCODE -ne 0) {
