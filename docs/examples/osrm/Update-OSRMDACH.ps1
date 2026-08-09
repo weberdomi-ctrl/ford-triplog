@@ -1,5 +1,5 @@
 # Ford Triplog - OSRM DACH Update
-# Version: 1.2
+# Version: 1.3
 #
 # Builds Germany + Austria + Switzerland OSRM data on Windows,
 # tests it locally, uploads it to Synology, restarts OSRM and tests again.
@@ -22,15 +22,15 @@ $SwitzerlandUrl = "https://download.geofabrik.de/europe/switzerland-latest.osm.p
 
 $Pscp = "C:\Program Files\PuTTY\pscp.exe"
 $Plink = "C:\Program Files\PuTTY\plink.exe"
-$SshKey = "C:\Users\xxx\.ssh\xxx.ppk"
+$SshKey = "C:\Users\x\.ssh\xxx.ppk"
 
-$NasUser = "xxx"
-$NasHost = "192.168.1.1"
+$NasUser = "admin"
+$NasHost = "192.168..1.1"
 $NasTarget = "/volume1/docker/osrm"
 $NasContainer = "OSRM-Triplog"
 $NasPort = 5005
 
-$RemoteDocker = "/usr/local/bin/docker"
+$RemoteDocker = "sudo /usr/local/bin/docker"
 
 $LocalTestPort = 5006
 $LocalTestContainer = "OSRM-DACH-Test"
@@ -145,6 +145,12 @@ if (-not (Test-Path $SshKey)) { Fail "SSH key not found: $SshKey" }
 Run "docker" @("version")
 Run "docker" @("pull", $Image)
 Run "docker" @("pull", $OsmiumImage)
+
+Step "Check Synology Docker permissions"
+& $Plink -batch -i $SshKey "${NasUser}@${NasHost}" "$RemoteDocker ps >/dev/null"
+if ($LASTEXITCODE -ne 0) {
+    Fail "Synology Docker access failed. Check SSH key and passwordless sudo for /usr/local/bin/docker."
+}
 
 $GermanyFile = Join-Path $WorkDir "germany-latest.osm.pbf"
 $AustriaFile = Join-Path $WorkDir "austria-latest.osm.pbf"
