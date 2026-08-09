@@ -5,7 +5,7 @@ Route Tracker
 
 Version: 2.0.0-dev
 Phase: Route Tracker Phase 1
-Build: Fix 06 - Route persistence and recovery
+Build: OSRM Step 03 - Finalize matching
 
 Changes:
 - Persists the route JSON immediately when a Trip starts.
@@ -34,10 +34,20 @@ from .const import (
     CONF_ROUTE_LONGITUDE_ENTITY,
     CONF_ROUTE_SOURCE_TYPE,
     CONF_ROUTE_TRACKER_ENABLED,
+    CONF_OSRM_ENABLED,
+    CONF_OSRM_URL,
+    CONF_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_ENABLED,
+    DEFAULT_OSRM_URL,
+    DEFAULT_OSRM_MATCH_RADIUS,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
 )
 from .route_storage import FordTriplogRouteStorage
+from .osrm_client import (
+    FordTriplogOSRMClient,
+    FordTriplogOSRMError,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +88,19 @@ class FordTriplogRouteTracker:
         )
         self.geocoded_entity = config.get(
             CONF_ROUTE_GEOCODED_ENTITY
+        )
+
+        self.osrm_enabled = bool(
+            config.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)
+        )
+        self.osrm_url = str(
+            config.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
+        ).strip().rstrip("/")
+        self.osrm_match_radius = float(
+            config.get(
+                CONF_OSRM_MATCH_RADIUS,
+                DEFAULT_OSRM_MATCH_RADIUS,
+            )
         )
 
         self.active_trip_id: str | None = None
@@ -368,6 +391,66 @@ class FordTriplogRouteTracker:
         source_type = self.route_source_type
         created_at = self._route_created_at
 
+        # Optional OSRM matching is deliberately performed only after the
+        # authoritative Trip end point has been appended. Raw points always
+        # remain the primary stored source and therefore the safe fallback.
+        matched_route: dict[str, Any] | None = None
+
+        if self.osrm_enabled and self.osrm_url and len(points) >= 2:
+            try:
+                osrm_client = FordTriplogOSRMClient(
+                    self.hass,
+                    self.osrm_url,
+                    radius_meters=self.osrm_match_radius,
+                )
+                match_result = await osrm_client.async_match(points)
+
+                if self._osrm_match_is_plausible(
+                    points,
+                    match_result.distance_m,
+                    match_result.unmatched_tracepoints,
+                ):
+                    matched_route = {
+                        "provider": "osrm",
+                        "url": self.osrm_url,
+                        "radius_m": self.osrm_match_radius,
+                        "distance_m": match_result.distance_m,
+                        "duration_s": match_result.duration_s,
+                        "confidence": match_result.confidence,
+                        "matched_tracepoints": match_result.matched_tracepoints,
+                        "unmatched_tracepoints": match_result.unmatched_tracepoints,
+                        "geometry": match_result.geometry,
+                    }
+                    _LOGGER.info(
+                        "OSRM matched route for trip %s: raw_points=%s "
+                        "matched_points=%s distance=%.1fm confidence=%s",
+                        trip_id,
+                        len(points),
+                        len(match_result.geometry.get("coordinates", [])),
+                        match_result.distance_m,
+                        match_result.confidence,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "OSRM result rejected as implausible for trip %s; "
+                        "raw route will be used",
+                        trip_id,
+                    )
+
+            except FordTriplogOSRMError as err:
+                _LOGGER.warning(
+                    "OSRM matching failed for trip %s: %s; "
+                    "raw route will be used",
+                    trip_id,
+                    err,
+                )
+            except Exception:
+                _LOGGER.exception(
+                    "Unexpected OSRM matching error for trip %s; "
+                    "raw route will be used",
+                    trip_id,
+                )
+
         # Persist completed state before clearing in-memory recovery data.
         async with self._persist_lock:
             await self.storage.async_save_route(
@@ -376,6 +459,7 @@ class FordTriplogRouteTracker:
                 points=points,
                 status="completed",
                 created_at=created_at,
+                matched_route=matched_route,
             )
 
         self._cancel_debounce()
@@ -391,6 +475,49 @@ class FordTriplogRouteTracker:
             len(points),
             trip_id,
         )
+
+    @staticmethod
+    def _osrm_match_is_plausible(
+        points: list[dict[str, Any]],
+        matched_distance_m: float,
+        unmatched_tracepoints: int,
+    ) -> bool:
+        """Apply conservative sanity checks before accepting OSRM geometry."""
+
+        if matched_distance_m <= 0:
+            return False
+
+        if unmatched_tracepoints > max(1, len(points) // 5):
+            return False
+
+        # Compare against straight-line distance between the authoritative
+        # route endpoints. A road route must not be shorter than this, while
+        # an extreme detour usually indicates a bad match.
+        try:
+            from math import asin, cos, radians, sin, sqrt
+
+            lat1 = radians(float(points[0]["latitude"]))
+            lon1 = radians(float(points[0]["longitude"]))
+            lat2 = radians(float(points[-1]["latitude"]))
+            lon2 = radians(float(points[-1]["longitude"]))
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            a = (
+                sin(dlat / 2) ** 2
+                + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+            )
+            direct_distance_m = 6371000.0 * 2 * asin(sqrt(a))
+        except (KeyError, TypeError, ValueError):
+            return True
+
+        if direct_distance_m > 100:
+            if matched_distance_m < direct_distance_m * 0.95:
+                return False
+            if matched_distance_m > direct_distance_m * 8.0:
+                return False
+
+        return True
 
     async def async_stop(self) -> None:
         """Compatibility wrapper."""
