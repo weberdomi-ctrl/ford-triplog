@@ -5,13 +5,14 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.0.0-dev
-Phase: Route Tracker Phase 1
-Build: Fix 06 - Route persistence and recovery
+Version: 2.0.1-dev
+Phase: 3 - Historical route date selection
+Build: Enable Select platform
 
 Changes:
 - Restores the Route Tracker from the Coordinator's active or paused Trip
   after a Home Assistant/integration reload.
+- Enables the Home Assistant Select platform for Route History date selection.
 """
 
 from __future__ import annotations
@@ -26,6 +27,7 @@ from homeassistant.const import Platform
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
     Platform.BINARY_SENSOR,
+    Platform.SELECT,
 ]
 
 from .const import (
