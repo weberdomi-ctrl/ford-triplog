@@ -113,7 +113,12 @@ The destination system requires:
 
 -   Docker
 -   SSH access
+-   SSH key authentication for unattended deployment
+-   Permission for the SSH user to execute Docker commands
 -   Sufficient storage for the OSRM dataset
+
+When automatic container restart is used on Synology DSM, passwordless
+`sudo` access should be configured specifically for the Docker executable.
 
 A Synology NAS, Linux server or similar Docker host can be used.
 
@@ -257,14 +262,65 @@ Do not store SSH passwords inside the PowerShell script.
 
 ------------------------------------------------------------------------
 
+## Synology SSH / Docker Permissions
+
+The update script connects to the Synology through SSH after uploading
+the finished dataset and restarts the OSRM Docker container.
+
+On Synology DSM, the Docker CLI is typically located at:
+
+``` bash
+/usr/local/bin/docker
+```
+
+A normal SSH user may be able to log in successfully but still receive:
+
+``` text
+permission denied while trying to connect to the Docker daemon socket
+```
+
+For unattended deployment, the SSH user can be granted passwordless
+`sudo` access specifically to the Docker executable.
+
+As `root`, create a dedicated sudoers file:
+
+``` bash
+echo 'YOUR_NAS_USER ALL=(root) NOPASSWD: /usr/local/bin/docker' \
+  > /etc/sudoers.d/docker-osrm
+
+chmod 440 /etc/sudoers.d/docker-osrm
+```
+
+Replace `YOUR_NAS_USER` with the SSH account used by the update script.
+
+Test the configuration while logged in as that user:
+
+``` bash
+sudo /usr/local/bin/docker ps
+```
+
+The command must complete without asking for a password.
+
+The PowerShell script can then use:
+
+``` powershell
+$RemoteDocker = "sudo /usr/local/bin/docker"
+```
+
+Do not store the Synology administrator or root password in the
+PowerShell script.
+
+------------------------------------------------------------------------
+
 ## Example OSRM Container
 
 The destination server can run the finished dataset with:
 
 ``` bash
-docker run -d \
+sudo /usr/local/bin/docker run -d \
   --name OSRM-Triplog \
   --restart unless-stopped \
+  --memory=6g \
   -p 5005:5000 \
   -v /volume1/docker/osrm:/data \
   osrm/osrm-backend:latest \
@@ -278,6 +334,11 @@ http://SERVER-IP:5005
 ```
 
 The paths and ports can be changed to match your environment.
+
+The example limits the running OSRM container to **6 GB RAM**. This is
+a practical starting point for the DACH dataset on a shared Docker host.
+The required runtime memory depends on the dataset and workload, so the
+limit may need to be adjusted for other regions or systems.
 
 ------------------------------------------------------------------------
 
@@ -322,9 +383,53 @@ $NasHost = "192.168.1.100"
 $NasTarget = "/volume1/docker/osrm"
 $NasContainer = "OSRM-Triplog"
 $NasPort = 5005
+
+$RemoteDocker = "sudo /usr/local/bin/docker"
+
+# Reuse downloads/builds up to this age
+$MaxFileAgeDays = 2
 ```
 
 Do not publish your private SSH key or credentials.
+
+------------------------------------------------------------------------
+
+## Reusing Recent Downloads and Builds
+
+The current update script can reuse recently downloaded source files and
+an already completed OSRM build.
+
+By default:
+
+``` powershell
+$MaxFileAgeDays = 2
+```
+
+If the Germany, Austria and Switzerland `.osm.pbf` files are no older
+than this limit, they are reused instead of downloaded again.
+
+A completed `dach-latest.osrm*` build is also reused when:
+
+-   at least the expected OSRM output files are present
+-   the build is no older than the configured limit
+-   the build is newer than the source `.osm.pbf` files
+
+When these conditions are met, the script can continue directly with:
+
+``` text
+Local OSRM test
+        |
+SCP upload
+        |
+Verify uploaded files
+        |
+Restart production OSRM
+        |
+Final NAS test
+```
+
+This is especially useful if a deployment or validation step fails after
+the time-consuming preprocessing has already completed.
 
 ------------------------------------------------------------------------
 
