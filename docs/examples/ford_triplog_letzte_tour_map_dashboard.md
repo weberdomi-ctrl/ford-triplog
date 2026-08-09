@@ -1,0 +1,81 @@
+type: custom:google-map-card
+api_key: xxx
+zoom: 10
+map_type: terrain
+gesture_handling: greedy
+showScale: true
+keyboardShortcuts: true
+cameraControl: true
+cameraControl_position: RIGHT_BOTTOM
+zoomControl: true
+zoomControl_position: RIGHT_BOTTOM
+streetViewControl: false
+streetViewControl_position: RIGHT_BOTTOM
+fullscreenControl: true
+fullscreenControl_position: TOP_RIGHT
+mapTypeControl: false
+mapTypeControl_position: TOP_LEFT
+rotateControl: false
+rotateControl_position: LEFT_BOTTOM
+show_traffic_button: false
+show_traffic_button_position: TOP_RIGHT
+show_weather_button: false
+show_weather_button_position: TOP_RIGHT
+show_recenter_button: true
+show_recenter_button_position: LEFT_BOTTOM
+show_poi_button: true
+show_poi_button_position: TOP_RIGHT
+show_datepicker_button: false
+show_daynight_button: true
+show_daynight_button_position: TOP_RIGHT
+show_waqi_button_position: TOP_RIGHT
+show_rainviewer_button_position: TOP_RIGHT
+show_usgs_button_position: TOP_RIGHT
+show_measure_button_position: TOP_RIGHT
+show_playback_button_position: TOP_RIGHT
+buttons_opacity: 1
+marker_clustering: false
+proximity_clustering: false
+proximity_radius: 150
+spiderfy: true
+show_traffic: true
+weather_layer: none
+geojson_layers:
+  - entity: sensor.garage_ford_triplog_last_route
+    attribute: geojson
+    stroke_color: '#780202'
+    stroke_width: 3
+    stroke_opacity: 1
+    show_popup: true
+zone_opacity: 0.4
+zone_label_opacity: 1
+allow_open_google_maps: true
+hide_map_links: false
+hide_poi_types:
+  - business
+  - attraction
+  - government
+  - medical
+  - park
+  - place_of_worship
+  - school
+  - sports_complex
+  - transit
+travel_panel_enabled: false
+travel_panel_position: above
+show_travel_panel_toggle_button: false
+show_travel_panel_toggle_button_position: LEFT_BOTTOM
+entities:
+  - entity: sensor.garage_ford_triplog_last_route
+    icon_size: 20
+    polyline_color: '#ffffff'
+    polyline_width: 1
+    icon_color: '#780202'
+    background_color: '#ffffff'
+    follow: true
+    show_history_dots: false
+    show_gps_accuracy: false
+    show_gps_accuracy_radius_line: false
+    hours_to_show: 0
+    use_date_range: false
+weather_layer_opacity: 0.6
