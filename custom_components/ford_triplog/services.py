@@ -39,6 +39,19 @@ from .journey_storage import FordTriplogJourneyStorage
 from .journey import build_pause_id
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .charge_manager import FordTriplogChargeManager
+from .route_storage import FordTriplogRouteStorage
+from .osrm_client import (
+    FordTriplogOSRMClient,
+    FordTriplogOSRMError,
+)
+from .const import (
+    CONF_OSRM_ENABLED,
+    CONF_OSRM_URL,
+    CONF_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_ENABLED,
+    DEFAULT_OSRM_URL,
+    DEFAULT_OSRM_MATCH_RADIUS,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -51,6 +64,7 @@ SERVICE_SET_CHARGE_COST = "set_charge_cost"
 SERVICE_CLEAR_CHARGE_COST = "clear_charge_cost"
 SERVICE_EDIT_PAUSE = "edit_pause"
 SERVICE_CLEAR_PAUSE_EDIT = "clear_pause_edit"
+SERVICE_REBUILD_LAST_ROUTE = "rebuild_last_route"
 
 ATTR_FILE = "file"
 ATTR_COUNTRY = "country"
@@ -157,6 +171,16 @@ CLEAR_PAUSE_EDIT_SCHEMA = vol.Schema(
         vol.Optional(ATTR_ENTRY_ID): vol.All(str, vol.Length(min=1)),
         vol.Required(ATTR_JOURNEY_ID): vol.All(str, vol.Length(min=1)),
         vol.Required(ATTR_PAUSE_ID): vol.All(str, vol.Length(min=1)),
+    }
+)
+
+
+REBUILD_LAST_ROUTE_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_ENTRY_ID): vol.All(
+            str,
+            vol.Length(min=1),
+        ),
     }
 )
 
@@ -922,6 +946,168 @@ async def _async_execute_journey_maintenance(
 
     return result_data
 
+
+def _resolve_route_runtime(
+    hass: HomeAssistant,
+    entry_id: str | None,
+) -> tuple[str, Mapping[str, Any]]:
+    """Resolve one loaded Ford Triplog runtime for route maintenance."""
+
+    domain_data = hass.data.get(DOMAIN)
+
+    if not isinstance(domain_data, Mapping):
+        raise HomeAssistantError("Ford Triplog is not initialized")
+
+    candidates: list[tuple[str, Mapping[str, Any]]] = []
+
+    for candidate_entry_id, runtime_data in domain_data.items():
+        if not isinstance(runtime_data, Mapping):
+            continue
+        if isinstance(runtime_data.get("route_storage"), FordTriplogRouteStorage):
+            candidates.append((str(candidate_entry_id), runtime_data))
+
+    if entry_id is not None:
+        normalized = str(entry_id).strip()
+        for candidate_entry_id, runtime_data in candidates:
+            if candidate_entry_id == normalized:
+                return candidate_entry_id, runtime_data
+        raise HomeAssistantError(
+            f"No Route storage exists for config entry {normalized}"
+        )
+
+    if not candidates:
+        raise HomeAssistantError(
+            "No initialized Ford Triplog Route storage was found"
+        )
+
+    if len(candidates) > 1:
+        raise HomeAssistantError(
+            "Several Ford Triplog config entries are active. Specify entry_id."
+        )
+
+    return candidates[0]
+
+
+async def _async_rebuild_last_route(
+    hass: HomeAssistant,
+    call: ServiceCall,
+) -> dict[str, Any]:
+    """Rebuild the most recent stored route using configured local OSRM."""
+
+    entry_id, runtime_data = _resolve_route_runtime(
+        hass,
+        call.data.get(ATTR_ENTRY_ID),
+    )
+
+    storage = runtime_data["route_storage"]
+
+    config_entry = hass.config_entries.async_get_entry(entry_id)
+    if config_entry is None:
+        raise HomeAssistantError(
+            f"Config entry not found: {entry_id}"
+        )
+
+    options = dict(config_entry.options)
+
+    if not bool(options.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)):
+        raise ServiceValidationError(
+            "OSRM route smoothing is disabled for this config entry."
+        )
+
+    osrm_url = str(
+        options.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
+    ).strip().rstrip("/")
+
+    if not osrm_url:
+        raise ServiceValidationError(
+            "No OSRM service URL is configured."
+        )
+
+    try:
+        radius = float(
+            options.get(
+                CONF_OSRM_MATCH_RADIUS,
+                DEFAULT_OSRM_MATCH_RADIUS,
+            )
+        )
+    except (TypeError, ValueError) as error:
+        raise ServiceValidationError(
+            "The configured OSRM matching radius is invalid."
+        ) from error
+
+    route = await storage.async_load_latest_route()
+    if not isinstance(route, dict):
+        raise ServiceValidationError(
+            "No stored route is available."
+        )
+
+    points = route.get("points")
+    if not isinstance(points, list) or len(points) < 2:
+        raise ServiceValidationError(
+            "The latest route does not contain enough raw GPS points."
+        )
+
+    client = FordTriplogOSRMClient(
+        hass,
+        osrm_url,
+        radius_meters=radius,
+    )
+
+    try:
+        result = await client.async_match(points)
+    except FordTriplogOSRMError as error:
+        raise ServiceValidationError(
+            f"OSRM route rebuild failed: {error}"
+        ) from error
+
+    matched_route = {
+        "provider": "osrm",
+        "url": osrm_url,
+        "radius_m": radius,
+        "distance_m": result.distance_m,
+        "duration_s": result.duration_s,
+        "confidence": result.confidence,
+        "matched_tracepoints": result.matched_tracepoints,
+        "unmatched_tracepoints": result.unmatched_tracepoints,
+        "geometry": result.geometry,
+    }
+
+    # Preserve all original route metadata and raw points. Only replace/add
+    # the optional matched_route block.
+    await storage.async_save_route(
+        trip_id=str(route.get("trip_id") or ""),
+        source_type=str(route.get("source_type") or ""),
+        points=points,
+        status=str(route.get("status") or "completed"),
+        created_at=route.get("created_at"),
+        matched_route=matched_route,
+    )
+
+    _LOGGER.info(
+        "Last route rebuilt with OSRM: trip_id=%s raw_points=%s "
+        "matched_points=%s distance=%.1fm confidence=%s",
+        route.get("trip_id"),
+        len(points),
+        len(result.geometry.get("coordinates", [])),
+        result.distance_m,
+        result.confidence,
+    )
+
+    return {
+        "rebuilt": True,
+        "trip_id": route.get("trip_id"),
+        "raw_point_count": len(points),
+        "matched_point_count": len(
+            result.geometry.get("coordinates", [])
+        ),
+        "distance_km": round(result.distance_m / 1000.0, 3),
+        "confidence": result.confidence,
+        "matched_tracepoints": result.matched_tracepoints,
+        "unmatched_tracepoints": result.unmatched_tracepoints,
+        "radius_m": radius,
+    }
+
+
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register Ford Triplog service actions once."""
 
@@ -1121,3 +1307,22 @@ async def async_register_services(hass: HomeAssistant) -> None:
             return await _async_clear_pause_edit(hass, call)
         hass.services.async_register(DOMAIN, SERVICE_CLEAR_PAUSE_EDIT, handle_clear_pause_edit, schema=CLEAR_PAUSE_EDIT_SCHEMA, supports_response=True)
 
+    if not hass.services.has_service(DOMAIN, SERVICE_REBUILD_LAST_ROUTE):
+        async def handle_rebuild_last_route(
+            call: ServiceCall,
+        ) -> dict[str, Any]:
+            return await _async_rebuild_last_route(hass, call)
+
+        hass.services.async_register(
+            DOMAIN,
+            SERVICE_REBUILD_LAST_ROUTE,
+            handle_rebuild_last_route,
+            schema=REBUILD_LAST_ROUTE_SCHEMA,
+            supports_response=True,
+        )
+
+        _LOGGER.debug(
+            "Ford Triplog service registered: %s.%s",
+            DOMAIN,
+            SERVICE_REBUILD_LAST_ROUTE,
+        )
