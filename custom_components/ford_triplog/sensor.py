@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor (Fix 05)
+Phase: 3 - Historical route date selection and sensor (Fix 06)
 """
 
 from __future__ import annotations
@@ -1439,7 +1439,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
                 sum(float(c[0]) for c in coordinates) / len(coordinates)
             )
 
-        self._attr_native_value = properties.get("route_count", 0)
+        self._attr_native_value = selected_date
         self._attributes = attrs
 
     @property
