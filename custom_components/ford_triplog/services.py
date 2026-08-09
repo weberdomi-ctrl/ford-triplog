@@ -1,10 +1,21 @@
 """
 Ford Triplog
 
-Charging-site service actions.
+Home Assistant service actions.
 
-Version: 1.9.1
-Release: 1.9.1 - Manual charging-site database import
+Version: 2.0.0
+Phase: Route Tracker / OSRM
+Build: OSRM Step 05 - Rebuild last route
+
+Changes:
+- Adds ford_triplog.rebuild_last_route.
+- Rebuilds the most recently completed stored route from its raw GPS points.
+- Uses the configured optional local OSRM service and matching radius.
+- Stores the resulting OSRM geometry as matched_route.
+- Preserves all original raw GPS points and route metadata.
+- Returns rebuild diagnostics including raw/matched point counts,
+  route distance, confidence and matched/unmatched tracepoints.
+- Keeps all existing charging-site, Journey, charging-cost and pause services.
 """
 
 from __future__ import annotations
