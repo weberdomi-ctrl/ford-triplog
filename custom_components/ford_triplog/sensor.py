@@ -3,7 +3,8 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0 OSRM Step 04 - Prefer matched route with raw fallback
+Version: 2.0.1-dev
+Phase: 3 - Historical route date selection and sensor
 """
 
 from __future__ import annotations
@@ -51,6 +52,7 @@ from .icons import (
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
+from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
 
 async def async_setup_entry(
@@ -107,6 +109,11 @@ async def async_setup_entry(
             FordTriplogLastRouteSensor(
                 coordinator,
                 route_storage,
+            ),
+            FordTriplogRouteHistorySensor(
+                coordinator,
+                route_storage,
+                entry.entry_id,
             ),
 
             # Last trip
@@ -1297,6 +1304,130 @@ class FordTriplogLastRouteSensor(SensorEntity):
     def device_info(self):
         """Return device information."""
 
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogRouteHistorySensor(SensorEntity):
+    """Expose all stored routes for the selected historical date."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Route History"
+    _attr_unique_id = "ford_triplog_route_history"
+    _attr_icon = "mdi:map-clock-outline"
+
+    def __init__(
+        self,
+        coordinator,
+        storage: FordTriplogRouteStorage | None,
+        entry_id: str,
+    ) -> None:
+        self.coordinator = coordinator
+        self.storage = storage
+        self.entry_id = entry_id
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    @property
+    def _selection_key(self) -> str:
+        return f"route_history_selected_date_{self.entry_id}"
+
+    async def async_added_to_hass(self) -> None:
+        """Load history and refresh after coordinator/select changes."""
+
+        self.async_on_remove(
+            self.coordinator.async_add_listener(self._handle_update)
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                f"{DOMAIN}_route_history_date_changed_{self.entry_id}",
+                self._handle_update,
+            )
+        )
+        await self._async_refresh()
+
+    def _handle_update(self, *_args: Any) -> None:
+        self.hass.async_create_task(self._async_refresh_and_write())
+
+    async def _async_refresh_and_write(self) -> None:
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        if self.storage is None:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        selected_date = self.hass.data[DOMAIN][self.entry_id].get(
+            self._selection_key
+        )
+        if not selected_date:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        routes = await self.storage.async_load_routes_for_date(selected_date)
+        trip_ids = [
+            str(route.get("trip_id"))
+            for route in routes
+            if route.get("trip_id")
+        ]
+
+        collection = await async_build_route_feature_collection(
+            self.storage,
+            trip_ids,
+            journey_date=selected_date,
+        )
+        properties = collection.get("properties", {})
+
+        coordinates: list[list[float]] = []
+        for feature in collection.get("features", []):
+            geometry = feature.get("geometry", {})
+            if geometry.get("type") != "LineString":
+                continue
+            for coordinate in geometry.get("coordinates", []):
+                if isinstance(coordinate, list) and len(coordinate) >= 2:
+                    coordinates.append(coordinate)
+
+        attrs = {
+            "date": selected_date,
+            "trip_ids": trip_ids,
+            "route_count": properties.get("route_count", 0),
+            "osrm_route_count": properties.get("osrm_route_count", 0),
+            "raw_route_count": properties.get("raw_route_count", 0),
+            "missing_route_count": properties.get("missing_route_count", 0),
+            "missing_trip_ids": properties.get("missing_trip_ids", []),
+            "geojson": collection,
+        }
+
+        if coordinates:
+            attrs["latitude"] = (
+                sum(float(c[1]) for c in coordinates) / len(coordinates)
+            )
+            attrs["longitude"] = (
+                sum(float(c[0]) for c in coordinates) / len(coordinates)
+            )
+
+        self._attr_native_value = properties.get("route_count", 0)
+        self._attributes = attrs
+
+    @property
+    def available(self) -> bool:
+        return bool(self._attributes)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+    @property
+    def device_info(self):
         return {
             "identifiers": {(DOMAIN, "ford_triplog")},
             "name": "Ford Triplog",
