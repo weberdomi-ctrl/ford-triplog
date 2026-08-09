@@ -8,6 +8,7 @@ Before using them, adjust the entity IDs to match your installation.
 
 - `ford_triplog_letzte_tour_dashboard.md` – Last Journey Dashboard
 - `ford_triplog_letzte_ladung_dashboard.md` – Last Charging Dashboard
+- `ford_triplog_letzte_tour_map_dashboard` – Last Journey Map Dashboard
 
 ## History dashboards
 
