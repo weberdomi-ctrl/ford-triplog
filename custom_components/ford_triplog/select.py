@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant select platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection (Fix 01)
+Phase: 3 - Historical route date selection (Fix 02)
 
 Changes:
 - Adds a Route History Date select entity.
@@ -128,6 +128,7 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
         async_dispatcher_send(
             self.hass,
             f"{DOMAIN}_route_history_date_changed_{self.entry_id}",
+            option,
         )
 
     @property
