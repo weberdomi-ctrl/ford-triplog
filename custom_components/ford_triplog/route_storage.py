@@ -5,7 +5,7 @@ Route Tracker storage
 
 Version: 2.0.0-dev
 Phase: Route Tracker Phase 1
-Build: Fix 06 - Route persistence and recovery
+Build: OSRM Step 03 - Matched route storage
 
 Changes:
 - Route files can be persisted while active or paused.
@@ -65,6 +65,7 @@ class FordTriplogRouteStorage:
         points: list[dict[str, Any]],
         status: str = "completed",
         created_at: str | None = None,
+        matched_route: dict[str, Any] | None = None,
     ) -> None:
         """Atomically save one route file."""
 
@@ -76,6 +77,7 @@ class FordTriplogRouteStorage:
             "created_at": created_at,
             "updated_at": dt_util.now().isoformat(),
             "points": points,
+            "matched_route": matched_route,
         }
 
         payload = {
