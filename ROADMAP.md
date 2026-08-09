@@ -1,113 +1,48 @@
-# Ford Triplog 1.8
+# Version 2.0
 
-## 🚀 New Features
+## Planned Features
 
-### ⚡ Charging Costs
+### Trip History
 
-Ford Triplog now supports comprehensive charging cost tracking.
+Provide access to historical trip information directly from the Home Assistant dashboard.
 
-New capabilities include:
+Planned features:
 
-- Manual charging cost editor
-- Automatic total cost calculation
-- Energy costs
-- Session fees
-- Time-based fees
-- Blocking fees
-- Parking fees
-- Additional costs
-- Cost verification flag
-- Receipt support
-- Currency support
-
-### 🏠 Home Charging Tariffs
-
-Home charging costs can now be calculated automatically.
-
-Features:
-
-- Two configurable seasonal tariffs
-- Summer tariff with configurable date range
-- Winter tariff with configurable date range
-- Automatic tariff selection based on charging date
-- Automatic cost calculation for charging sessions inside the configured Home zone
-
-### 🔋 Energy Tracking
-
-Charging sessions now distinguish between:
-
-- Energy stored in the vehicle
-- Energy billed by the charging provider
-- Charging losses
-- Effective charging price
-- Energy source tracking
-
-### 🚗 Journey Enhancements
-
-Journeys now include extended energy and charging statistics.
-
-New Journey attributes:
-
-- Charging cost total
-- Charging energy cost
-- Additional charging cost
-- Average charging price
-- Battery energy balance
-- Total energy flow
-- Battery energy delta
-- Billed charging energy
-
-### 📊 Dashboard Improvements
-
-The supplied Home Assistant dashboard examples have been extended with:
-
-- Journey charging costs
-- Average charging price
-- Billed charging energy
-- Improved Last Charge dashboard
-- Improved Journey dashboard
-- Unified charging location display
+- Browse previous trips
+- Select trips by date or time period
+- Display trip details
+- Display recorded routes when Route Tracker data is available
+- Efficient access to historical data without exposing large histories through sensor attributes
 
 ---
 
-## ✨ Improvements
+### Location Statistics
 
-- Unified charging location display
-- Home Assistant zones are preferred over charging site names
-- Improved Journey timeline
-- Improved Last Charge sensor
-- Richer Journey sensor attributes
-- Better charging location handling
-- Improved cost calculations
-- Cleaner dashboard presentation
+Add statistics based on historical trip and charging locations.
 
----
+Planned statistics:
 
-## 🛠 Fixes
+- Top starting locations
+- Top destinations
+- Top charging locations
+- Number of visits / trips
+- Charging sessions per location
+- Charged energy per charging location
+- Charging costs per charging location
 
-- Correct average charging price calculation using billed energy when available
-- Improved Journey cost aggregation
-- Better handling of manually entered charging costs
-- Ignore invalid charging sessions during Journey processing
-- Improved handling of unavailable SOC values
-- Multiple stability improvements in charging session processing
+Home and Work zones should be grouped consistently using the existing Ford Triplog location handling.
 
 ---
 
-## 🌍 Translations
+# Version Overview
 
-Updated translations for:
-
-- English
-- German
-- Polish
-
-including all charging cost related user interface elements.
-
----
-
-## ❤️ Thank You
-
-Thank you to everyone testing Ford Triplog and providing ideas and feedback.
-
-Your reports and suggestions continue to shape the development of the integration.
+| Version | Status      | Focus                                                   |
+| ------- | ----------- | ------------------------------------------------------- |
+| 1.5     | Released    | Charging locations, Smart Trip, documentation           |
+| 1.6     | Released    | Automation, charging database improvements, dashboards  |
+| 1.7     | Released    | Journey improvements, maintenance, charging integration |
+| 1.8     | Released    | Charging costs, energy tracking, reporting              |
+| 1.9     | Released    | Pause management, receipts, charging site improvements  |
+| 2.0.0   | Released    | Route tracking                                          |
+| 2.0.1   | Released    | trip history, location statistics                       |
+| Future  | Research    | Multi-vehicle support, exports, maintenance tracking    |
