@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 3 - Historical route date selection and sensor (Fix 04)
+Phase: 3 - Historical route date selection and sensor (Fix 05)
 """
 
 from __future__ import annotations
@@ -1342,33 +1342,35 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         return f"route_history_selected_date_{self.entry_id}"
 
     async def async_added_to_hass(self) -> None:
-        """Load history once and then react only to date-selection changes."""
+        """Register this sensor for direct updates from the date select."""
 
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                f"{DOMAIN}_route_history_date_changed_{self.entry_id}",
-                self._handle_history_date_changed,
-            )
-        )
+        data = self.hass.data[DOMAIN][self.entry_id]
+        data["route_history_sensor"] = self
 
-        self._selected_date = self.hass.data[DOMAIN][self.entry_id].get(
-            self._selection_key
-        )
+        self._selected_date = data.get(self._selection_key)
         _LOGGER.debug(
             "Route History initial date: %s",
             self._selected_date,
         )
         await self._async_refresh()
 
-    def _handle_history_date_changed(self, selected_date: str) -> None:
-        """Refresh immediately for the date delivered by the select."""
+    async def async_will_remove_from_hass(self) -> None:
+        """Remove the shared sensor reference on unload."""
+
+        data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
+        if data.get("route_history_sensor") is self:
+            data.pop("route_history_sensor", None)
+
+    async def async_set_selected_date(self, selected_date: str) -> None:
+        """Set the selected date and refresh the history immediately."""
+
         self._selected_date = selected_date
         _LOGGER.debug(
-            "Route History date changed to %s",
+            "Route History direct date update to %s",
             selected_date,
         )
-        self.hass.async_create_task(self._async_refresh_and_write())
+        await self._async_refresh()
+        self.async_write_ha_state()
 
     async def _async_refresh_and_write(self) -> None:
         await self._async_refresh()
