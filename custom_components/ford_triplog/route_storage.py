@@ -3,21 +3,23 @@ Ford Triplog
 
 Route Tracker storage
 
-Version: 2.0.0-dev
-Phase: Route Tracker Phase 1
-Build: OSRM Step 03 - Matched route storage
+Version: 2.0.1-dev
+Phase: Historical Route Index
+Build: Phase 1 - Historical route loading
 
 Changes:
-- Route files can be persisted while active or paused.
-- Adds route status and updated_at metadata.
-- Existing route files without status remain backward compatible.
-- Last Route lookup prefers completed/legacy routes and ignores active
-  recovery files.
+- Keeps the Ford Triplog 2.0.0 route storage format unchanged.
+- Adds loading of all completed historical routes.
+- Adds loading of routes for a selected local calendar date.
+- Adds loading of routes for a supplied list of Trip IDs.
+- Legacy route files without a status field remain compatible.
+- Active and paused recovery files are excluded from history queries.
 """
 
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -56,6 +58,69 @@ class FordTriplogRouteStorage:
             if char.isalnum() or char in ("_", "-")
         )
         return self.base_path / f"{safe_trip_id}.json"
+
+    @staticmethod
+    def _read_route_file(path: Path) -> dict[str, Any] | None:
+        """Read and validate one route JSON file."""
+
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return None
+
+        return data if isinstance(data, dict) else None
+
+    @staticmethod
+    def _is_completed_route(route: dict[str, Any]) -> bool:
+        """Return whether a route is suitable for historical display."""
+
+        return route.get("status") in (None, "completed")
+
+    @staticmethod
+    def _route_timestamp(route: dict[str, Any]) -> datetime | None:
+        """Return the best available timestamp for chronological sorting."""
+
+        candidates: list[Any] = [
+            route.get("created_at"),
+        ]
+
+        points = route.get("points")
+        if isinstance(points, list):
+            for point in points:
+                if isinstance(point, dict) and point.get("timestamp"):
+                    candidates.append(point.get("timestamp"))
+                    break
+
+        candidates.append(route.get("updated_at"))
+
+        for value in candidates:
+            if not value:
+                continue
+
+            try:
+                parsed = dt_util.parse_datetime(str(value))
+            except (TypeError, ValueError):
+                parsed = None
+
+            if parsed is not None:
+                return parsed
+
+        return None
+
+    def _route_local_date(
+        self,
+        route: dict[str, Any],
+    ) -> date | None:
+        """Return the Home Assistant local calendar date for a route."""
+
+        timestamp = self._route_timestamp(route)
+        if timestamp is None:
+            return None
+
+        if timestamp.tzinfo is None:
+            timestamp = timestamp.replace(tzinfo=dt_util.UTC)
+
+        return dt_util.as_local(timestamp).date()
 
     async def async_save_route(
         self,
@@ -113,15 +178,7 @@ class FordTriplogRouteStorage:
         def _read() -> dict[str, Any] | None:
             if not path.is_file():
                 return None
-
-            try:
-                data = json.loads(
-                    path.read_text(encoding="utf-8")
-                )
-            except (OSError, json.JSONDecodeError):
-                return None
-
-            return data if isinstance(data, dict) else None
+            return self._read_route_file(path)
 
         return await self.hass.async_add_executor_job(_read)
 
@@ -130,7 +187,7 @@ class FordTriplogRouteStorage:
 
         Legacy route files without a status field are treated as completed.
         Active/paused recovery files are intentionally ignored so the
-        "Last route" sensor keeps representing the last finished route.
+        Last Route sensor keeps representing the last finished route.
         """
 
         def _read_latest() -> dict[str, Any] | None:
@@ -143,18 +200,8 @@ class FordTriplogRouteStorage:
                 if not path.is_file():
                     continue
 
-                try:
-                    data = json.loads(
-                        path.read_text(encoding="utf-8")
-                    )
-                except (OSError, json.JSONDecodeError):
-                    continue
-
-                if not isinstance(data, dict):
-                    continue
-
-                status = data.get("status")
-                if status not in (None, "completed"):
+                data = self._read_route_file(path)
+                if data is None or not self._is_completed_route(data):
                     continue
 
                 try:
@@ -170,3 +217,77 @@ class FordTriplogRouteStorage:
             return max(candidates, key=lambda item: item[0])[1]
 
         return await self.hass.async_add_executor_job(_read_latest)
+
+    async def async_list_routes(self) -> list[dict[str, Any]]:
+        """Load all completed historical routes in chronological order."""
+
+        def _read_all() -> list[dict[str, Any]]:
+            if not self.base_path.is_dir():
+                return []
+
+            routes: list[dict[str, Any]] = []
+
+            for path in self.base_path.glob("*.json"):
+                if not path.is_file():
+                    continue
+
+                data = self._read_route_file(path)
+                if data is None or not self._is_completed_route(data):
+                    continue
+
+                routes.append(data)
+
+            routes.sort(
+                key=lambda route: (
+                    self._route_timestamp(route)
+                    or datetime.min.replace(tzinfo=dt_util.UTC)
+                )
+            )
+            return routes
+
+        return await self.hass.async_add_executor_job(_read_all)
+
+    async def async_load_routes_for_date(
+        self,
+        route_date: date | str,
+    ) -> list[dict[str, Any]]:
+        """Load completed routes belonging to one HA-local calendar date."""
+
+        if isinstance(route_date, str):
+            try:
+                selected_date = date.fromisoformat(route_date)
+            except ValueError:
+                return []
+        elif isinstance(route_date, date):
+            selected_date = route_date
+        else:
+            return []
+
+        routes = await self.async_list_routes()
+
+        return [
+            route
+            for route in routes
+            if self._route_local_date(route) == selected_date
+        ]
+
+    async def async_load_routes_for_trip_ids(
+        self,
+        trip_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Load completed routes for Trip IDs, preserving requested order."""
+
+        routes: list[dict[str, Any]] = []
+
+        for trip_id in trip_ids:
+            normalized = str(trip_id).strip()
+            if not normalized:
+                continue
+
+            route = await self.async_load_route(normalized)
+            if route is None or not self._is_completed_route(route):
+                continue
+
+            routes.append(route)
+
+        return routes

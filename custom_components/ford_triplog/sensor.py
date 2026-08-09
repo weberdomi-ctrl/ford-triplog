@@ -3,15 +3,17 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0 OSRM Step 04 - Prefer matched route with raw fallback
+Version: 2.0.1-dev
+Phase: 6 - Charging History receipt integration (Fix 01 signed URLs)
 """
 
 from __future__ import annotations
 
 from typing import Any
 
-from datetime import datetime
+from datetime import datetime, timedelta
 import math
+import logging
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -30,6 +32,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
+from homeassistant.components.http.auth import async_sign_path
+from homeassistant.helpers.network import get_url
 from .utils import (
     format_address,
     format_address_short,
@@ -51,7 +55,10 @@ from .icons import (
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
+from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
+
+_LOGGER = logging.getLogger(__name__)
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -66,6 +73,8 @@ async def async_setup_entry(
     history = data["history"]
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
+    charge_manager = data.get("charge_manager")
+    receipt_storage = data.get("receipt_storage")
 
     translations = await async_get_translations(
         hass,
@@ -107,6 +116,21 @@ async def async_setup_entry(
             FordTriplogLastRouteSensor(
                 coordinator,
                 route_storage,
+            ),
+            FordTriplogRouteHistorySensor(
+                coordinator,
+                route_storage,
+                entry.entry_id,
+            ),
+            FordTriplogJourneyHistorySensor(
+                journey_storage,
+                common_translations,
+                entry.entry_id,
+            ),
+            FordTriplogChargingHistorySensor(
+                charge_manager,
+                receipt_storage,
+                entry.entry_id,
             ),
 
             # Last trip
@@ -1095,6 +1119,408 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         }
 
 
+class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
+    """Expose the archived Journey for the selected History date."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Journey History"
+    _attr_translation_key = None
+    _attr_unique_id = "ford_triplog_journey_history"
+    _attr_icon = "mdi:map-clock-outline"
+
+    def __init__(self, storage, translations, entry_id: str) -> None:
+        super().__init__(storage, translations)
+        self.entry_id = entry_id
+        self._selected_date = None
+        self._journeys = []
+
+    @property
+    def _selection_key(self) -> str:
+        return f"route_history_selected_date_{self.entry_id}"
+
+    async def async_added_to_hass(self) -> None:
+        data = self.hass.data[DOMAIN][self.entry_id]
+        data["journey_history_sensor"] = self
+        self._selected_date = data.get(self._selection_key)
+        await self._async_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
+        if data.get("journey_history_sensor") is self:
+            data.pop("journey_history_sensor", None)
+
+    async def async_set_selected_date(self, selected_date: str) -> None:
+        self._selected_date = selected_date
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        if self.storage is None or not self._selected_date:
+            self._journey = None
+            self._journeys = []
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        all_journeys = await self.storage.get_all_journeys()
+        matches = [
+            journey for journey in all_journeys
+            if str(journey.date or "") == self._selected_date
+        ]
+        matches.sort(key=lambda j: (j.start_time or "", j.journey_id))
+        self._journeys = matches
+        self._attr_native_value = self._selected_date
+
+        if not matches:
+            self._journey = None
+            self._attributes = {
+                "date": self._selected_date,
+                "journey_count": 0,
+                "journeys": [],
+            }
+            return
+
+        primary = matches[-1]
+        self._journey = primary
+        timeline, pause_seconds = self._build_timeline(primary)
+        total_duration = int(primary.total_duration_seconds or 0)
+
+        self._attributes = {
+            "date": self._selected_date,
+            "journey_count": len(matches),
+            "journey_id": primary.journey_id,
+            "distance_km": round(float(primary.distance_km or 0), 1),
+            "total_duration": format_duration(total_duration),
+            "driving_duration": format_duration(primary.driving_duration_seconds),
+            "pause_duration": format_duration(pause_seconds),
+            "charging_duration": format_duration(primary.charging_duration_seconds),
+            "energy_used_kwh": primary.energy_used_kwh,
+            "energy_charged_kwh": primary.energy_charged_kwh,
+            "battery_energy_balance_kwh": primary.battery_energy_balance_kwh,
+            "total_energy_flow_kwh": primary.total_energy_flow_kwh,
+            "currency": primary.currency,
+            "charging_cost_total": primary.charging_cost_total,
+            "charging_energy_cost": primary.charging_energy_cost,
+            "charging_additional_cost": primary.charging_additional_cost,
+            "average_charging_price_per_kwh": primary.average_charging_price_per_kwh,
+            "battery_capacity_kwh": primary.battery_capacity_kwh,
+            "start_soc": primary.start_soc,
+            "end_soc": primary.end_soc,
+            "soc_delta": primary.soc_delta,
+            "battery_energy_delta_kwh": primary.battery_energy_delta_kwh,
+            "soc_used": primary.soc_used,
+            "soc_charged": primary.soc_charged,
+            "soc_adjustment": primary.soc_adjustment,
+            "soc_adjustment_kwh": primary.soc_adjustment_kwh,
+            "average_consumption_kwh_100km": primary.average_consumption_kwh_100km,
+            "timeline": timeline,
+            "journeys": [
+                {
+                    "journey_id": j.journey_id,
+                    "date": j.date,
+                    "start_time": j.start_time,
+                    "end_time": j.end_time,
+                    "distance_km": j.distance_km,
+                    "trip_count": j.trip_count,
+                    "charge_count": j.charge_count,
+                }
+                for j in matches
+            ],
+        }
+
+    @property
+    def available(self) -> bool:
+        return bool(self._selected_date)
+
+
+class FordTriplogChargingHistorySensor(SensorEntity):
+    """Expose archived charging sessions for the selected History date."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Charging History"
+    _attr_unique_id = "ford_triplog_charging_history"
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(
+        self,
+        charge_manager,
+        receipt_storage,
+        entry_id: str,
+    ) -> None:
+        self.charge_manager = charge_manager
+        self.receipt_storage = receipt_storage
+        self.entry_id = entry_id
+        self._selected_date: str | None = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    @property
+    def _selection_key(self) -> str:
+        return f"route_history_selected_date_{self.entry_id}"
+
+    async def async_added_to_hass(self) -> None:
+        """Register for direct updates from the shared History date select."""
+        data = self.hass.data[DOMAIN][self.entry_id]
+        data["charging_history_sensor"] = self
+        self._selected_date = data.get(self._selection_key)
+        await self._async_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
+        if data.get("charging_history_sensor") is self:
+            data.pop("charging_history_sensor", None)
+
+    async def async_set_selected_date(self, selected_date: str) -> None:
+        self._selected_date = selected_date
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _parse_datetime(value: Any) -> datetime | None:
+        if not value:
+            return None
+        try:
+            parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        except (TypeError, ValueError):
+            return None
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+        return parsed
+
+    @classmethod
+    def _local_date(cls, value: Any) -> str | None:
+        parsed = cls._parse_datetime(value)
+        if parsed is None:
+            return None
+        return dt_util.as_local(parsed).date().isoformat()
+
+    @classmethod
+    def _duration_seconds(cls, start: Any, end: Any) -> int | None:
+        start_dt = cls._parse_datetime(start)
+        end_dt = cls._parse_datetime(end)
+        if start_dt is None or end_dt is None:
+            return None
+        return max(0, int((end_dt - start_dt).total_seconds()))
+
+    @staticmethod
+    def _optional_float(value: Any, digits: int = 2) -> float | None:
+        if value is None:
+            return None
+        try:
+            return round(float(value), digits)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _display_location(data: dict[str, Any]) -> str | None:
+        for key in (
+            "charging_site_name",
+            "charging_site_brand",
+            "charging_site_operator",
+            "charging_site_network",
+        ):
+            value = data.get(key)
+            if value and str(value).strip().upper() != "UNKNOWN":
+                return str(value).strip()
+
+        address = data.get("start_address")
+        if isinstance(address, dict):
+            return format_address_short(address) or None
+        if address:
+            return str(address).strip() or None
+        return None
+
+    async def _async_refresh(self) -> None:
+        if self.charge_manager is None or not self._selected_date:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        charges = await self.charge_manager.async_get_charges(
+            newest_first=False
+        )
+
+        receipts_by_charge: dict[str, list[dict[str, Any]]] = {}
+        if self.receipt_storage is not None:
+            all_receipts = await self.receipt_storage.async_list()
+            for receipt in all_receipts:
+                if str(receipt.get("target_type") or "") != "charge":
+                    continue
+                target_id = str(receipt.get("target_id") or "").strip()
+                receipt_id = str(receipt.get("receipt_id") or "").strip()
+                if not target_id or not receipt_id:
+                    continue
+
+                receipt_path = (
+                    f"/api/ford_triplog/receipts/{receipt_id}"
+                )
+                signed_path = async_sign_path(
+                    self.hass,
+                    receipt_path,
+                    timedelta(hours=24),
+                    use_content_user=True,
+                )
+                receipt_url = f"{get_url(self.hass)}{signed_path}"
+
+                receipt_entry = {
+                    "receipt_id": receipt_id,
+                    "filename": (
+                        receipt.get("original_filename")
+                        or receipt.get("filename")
+                        or receipt_id
+                    ),
+                    "stored_filename": receipt.get("filename"),
+                    "media_type": receipt.get("media_type"),
+                    "size_bytes": receipt.get("size_bytes"),
+                    "created_at": receipt.get("created_at"),
+                    "note": receipt.get("note"),
+                    "ocr_status": receipt.get("ocr_status"),
+                    "receipt_url": receipt_url,
+                }
+                receipts_by_charge.setdefault(target_id, []).append(
+                    {
+                        key: value
+                        for key, value in receipt_entry.items()
+                        if value is not None
+                    }
+                )
+
+        selected = []
+        for charge in charges:
+            data = charge.to_dict()
+            charge_date = self._local_date(
+                data.get("start_time") or data.get("created")
+            )
+            if charge_date == self._selected_date:
+                selected.append(data)
+
+        selected.sort(
+            key=lambda item: (
+                str(item.get("start_time") or ""),
+                str(item.get("charge_id") or ""),
+            )
+        )
+
+        charge_entries: list[dict[str, Any]] = []
+        total_vehicle_energy = 0.0
+        total_billed_energy = 0.0
+        total_cost = 0.0
+        total_duration_seconds = 0
+        currencies: set[str] = set()
+
+        for data in selected:
+            duration_seconds = self._duration_seconds(
+                data.get("start_time"),
+                data.get("end_time"),
+            )
+            vehicle_energy = self._optional_float(data.get("energy_added_kwh"))
+            billed_energy = self._optional_float(data.get("energy_billed_kwh"))
+            cost_total = self._optional_float(data.get("cost_total"))
+            currency = str(data.get("currency") or "").strip().upper()
+
+            if vehicle_energy is not None:
+                total_vehicle_energy += vehicle_energy
+            if billed_energy is not None:
+                total_billed_energy += billed_energy
+            if cost_total is not None:
+                total_cost += cost_total
+            if duration_seconds is not None:
+                total_duration_seconds += duration_seconds
+            if currency:
+                currencies.add(currency)
+
+            entry = {
+                "charge_id": data.get("charge_id"),
+                "start_time": data.get("start_time"),
+                "end_time": data.get("end_time"),
+                "duration_seconds": duration_seconds,
+                "duration": (
+                    format_duration(duration_seconds)
+                    if duration_seconds is not None
+                    else None
+                ),
+                "location": self._display_location(data),
+                "start_latitude": data.get("start_latitude"),
+                "start_longitude": data.get("start_longitude"),
+                "start_soc": data.get("start_soc"),
+                "end_soc": data.get("end_soc"),
+                "energy_added_kwh": data.get("energy_added_kwh"),
+                "energy_billed_kwh": data.get("energy_billed_kwh"),
+                "energy_source": data.get("energy_source"),
+                "energy_billed_source": data.get("energy_billed_source"),
+                "charging_loss_kwh": data.get("charging_loss_kwh"),
+                "charging_loss_percent": data.get("charging_loss_percent"),
+                "energy_cost": data.get("energy_cost"),
+                "session_fee": data.get("session_fee"),
+                "time_fee": data.get("time_fee"),
+                "blocking_fee": data.get("blocking_fee"),
+                "parking_fee": data.get("parking_fee"),
+                "other_cost": data.get("other_cost"),
+                "cost_total": data.get("cost_total"),
+                "currency": data.get("currency"),
+                "energy_price_per_kwh": data.get("energy_price_per_kwh"),
+                "effective_price_per_kwh": data.get("effective_price_per_kwh"),
+                "cost_source": data.get("cost_source"),
+                "cost_verified": data.get("cost_verified"),
+                "receipt_filename": data.get("receipt_filename"),
+                "receipts": receipts_by_charge.get(
+                    str(data.get("charge_id") or ""),
+                    [],
+                ),
+                "charging_site_id": data.get("charging_site_id"),
+                "charging_site_name": data.get("charging_site_name"),
+                "charging_site_brand": data.get("charging_site_brand"),
+                "charging_site_operator": data.get("charging_site_operator"),
+                "charging_site_network": data.get("charging_site_network"),
+                "trip_id": data.get("trip_id"),
+                "previous_trip_id": data.get("previous_trip_id"),
+                "notes": data.get("notes"),
+                "tags": data.get("tags"),
+            }
+            charge_entries.append(
+                {key: value for key, value in entry.items() if value is not None}
+            )
+
+        currency = next(iter(currencies)) if len(currencies) == 1 else None
+
+        receipt_count = sum(
+            len(entry.get("receipts", []))
+            for entry in charge_entries
+        )
+
+        self._attr_native_value = self._selected_date
+        self._attributes = {
+            "date": self._selected_date,
+            "charge_count": len(charge_entries),
+            "receipt_count": receipt_count,
+            "charging_duration_seconds": total_duration_seconds,
+            "charging_duration": format_duration(total_duration_seconds),
+            "energy_added_kwh": round(total_vehicle_energy, 2),
+            "energy_billed_kwh": round(total_billed_energy, 2),
+            "cost_total": round(total_cost, 2),
+            "currency": currency,
+            "charges": charge_entries,
+        }
+
+    @property
+    def available(self) -> bool:
+        return bool(self._selected_date)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
 class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
@@ -1297,6 +1723,151 @@ class FordTriplogLastRouteSensor(SensorEntity):
     def device_info(self):
         """Return device information."""
 
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogRouteHistorySensor(SensorEntity):
+    """Expose all stored routes for the selected historical date."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Route History"
+    _attr_unique_id = "ford_triplog_route_history"
+    _attr_icon = "mdi:map-clock-outline"
+
+    def __init__(
+        self,
+        coordinator,
+        storage: FordTriplogRouteStorage | None,
+        entry_id: str,
+    ) -> None:
+        self.coordinator = coordinator
+        self.storage = storage
+        self.entry_id = entry_id
+        self._selected_date: str | None = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    @property
+    def _selection_key(self) -> str:
+        return f"route_history_selected_date_{self.entry_id}"
+
+    async def async_added_to_hass(self) -> None:
+        """Register this sensor for direct updates from the date select."""
+
+        data = self.hass.data[DOMAIN][self.entry_id]
+        data["route_history_sensor"] = self
+
+        self._selected_date = data.get(self._selection_key)
+        _LOGGER.debug(
+            "Route History initial date: %s",
+            self._selected_date,
+        )
+        await self._async_refresh()
+
+    async def async_will_remove_from_hass(self) -> None:
+        """Remove the shared sensor reference on unload."""
+
+        data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
+        if data.get("route_history_sensor") is self:
+            data.pop("route_history_sensor", None)
+
+    async def async_set_selected_date(self, selected_date: str) -> None:
+        """Set the selected date and refresh the history immediately."""
+
+        self._selected_date = selected_date
+        _LOGGER.debug(
+            "Route History direct date update to %s",
+            selected_date,
+        )
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh_and_write(self) -> None:
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    async def _async_refresh(self) -> None:
+        if self.storage is None:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        selected_date = self._selected_date
+        if not selected_date:
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        routes = await self.storage.async_load_routes_for_date(selected_date)
+        trip_ids = [
+            str(route.get("trip_id"))
+            for route in routes
+            if route.get("trip_id")
+        ]
+
+        collection = await async_build_route_feature_collection(
+            self.storage,
+            trip_ids,
+            journey_date=selected_date,
+        )
+        properties = collection.get("properties", {})
+
+        _LOGGER.debug(
+            "Route History loaded date=%s routes=%s osrm=%s raw=%s missing=%s",
+            selected_date,
+            properties.get("route_count", 0),
+            properties.get("osrm_route_count", 0),
+            properties.get("raw_route_count", 0),
+            properties.get("missing_route_count", 0),
+        )
+
+        coordinates: list[list[float]] = []
+        for feature in collection.get("features", []):
+            geometry = feature.get("geometry", {})
+            if geometry.get("type") != "LineString":
+                continue
+            for coordinate in geometry.get("coordinates", []):
+                if isinstance(coordinate, list) and len(coordinate) >= 2:
+                    coordinates.append(coordinate)
+
+        attrs = {
+            "date": selected_date,
+            "trip_ids": trip_ids,
+            "route_count": properties.get("route_count", 0),
+            "osrm_route_count": properties.get("osrm_route_count", 0),
+            "raw_route_count": properties.get("raw_route_count", 0),
+            "missing_route_count": properties.get("missing_route_count", 0),
+            "missing_trip_ids": properties.get("missing_trip_ids", []),
+            "geojson": collection,
+        }
+
+        if coordinates:
+            attrs["latitude"] = (
+                sum(float(c[1]) for c in coordinates) / len(coordinates)
+            )
+            attrs["longitude"] = (
+                sum(float(c[0]) for c in coordinates) / len(coordinates)
+            )
+
+        self._attr_native_value = selected_date
+        self._attributes = attrs
+
+    @property
+    def available(self) -> bool:
+        return bool(self._attributes)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+    @property
+    def device_info(self):
         return {
             "identifiers": {(DOMAIN, "ford_triplog")},
             "name": "Ford Triplog",
