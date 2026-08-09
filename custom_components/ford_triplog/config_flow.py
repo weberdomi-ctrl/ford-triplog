@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.0.0
 Phase: Detailed charging costs GUI
-Build: Route Matching Step 02
+Build: OSRM Step 02
 Release: 2.0.0
 
 Changes:
@@ -86,13 +86,12 @@ from .const import (
     CONF_ROUTE_GEOCODED_ENTITY,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
-    CONF_ROUTE_SMOOTHING_ENABLED,
-    CONF_OSRM_BASE_URL,
+    CONF_OSRM_ENABLED,
+    CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
-    CONF_OSRM_TIMEOUT,
-    DEFAULT_OSRM_BASE_URL,
+    DEFAULT_OSRM_ENABLED,
+    DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
-    DEFAULT_OSRM_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -3810,27 +3809,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Configure and test optional local OSRM route smoothing."""
+        """Configure and test the optional local OSRM service."""
 
         errors: dict[str, str] = {}
 
         if user_input is not None:
             enabled = bool(
-                user_input.get(CONF_ROUTE_SMOOTHING_ENABLED, False)
+                user_input.get(
+                    CONF_OSRM_ENABLED,
+                    DEFAULT_OSRM_ENABLED,
+                )
             )
             url = str(
-                user_input.get(CONF_OSRM_BASE_URL) or ""
+                user_input.get(CONF_OSRM_URL) or ""
             ).strip().rstrip("/")
             radius = float(
                 user_input.get(
                     CONF_OSRM_MATCH_RADIUS,
                     DEFAULT_OSRM_MATCH_RADIUS,
-                )
-            )
-            timeout_seconds = int(
-                user_input.get(
-                    CONF_OSRM_TIMEOUT,
-                    DEFAULT_OSRM_TIMEOUT,
                 )
             )
 
@@ -3839,7 +3835,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     client = FordTriplogOSRMClient(
                         self.hass,
                         url,
-                        timeout_seconds=timeout_seconds,
                         radius_meters=radius,
                     )
                     result = await client.async_test_connection()
@@ -3850,13 +3845,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 except FordTriplogOSRMResponseError:
                     errors["base"] = "osrm_invalid_response"
                 else:
-                    updated_options = dict(self._config_entry.options)
+                    updated_options = dict(
+                        self._config_entry.options
+                    )
                     updated_options.update(
                         {
-                            CONF_ROUTE_SMOOTHING_ENABLED: True,
-                            CONF_OSRM_BASE_URL: client.base_url,
+                            CONF_OSRM_ENABLED: True,
+                            CONF_OSRM_URL: client.base_url,
                             CONF_OSRM_MATCH_RADIUS: radius,
-                            CONF_OSRM_TIMEOUT: timeout_seconds,
                         }
                     )
                     self.hass.config_entries.async_update_entry(
@@ -3867,24 +3863,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     self._osrm_connection_result = {
                         "status": "OK",
                         "url": client.base_url,
-                        "radius": f"{radius:g} m",
-                        "timeout": f"{timeout_seconds} s",
+                        "radius": f"{radius:g}",
                         "road": str(result.get("name") or "—"),
                         "distance": (
-                            f"{float(result['distance_m']):.1f} m"
+                            f"{float(result['distance_m']):.1f}"
                             if result.get("distance_m") is not None
                             else "—"
                         ),
                     }
                     return await self.async_step_osrm_connection_result()
             else:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(
+                    self._config_entry.options
+                )
                 updated_options.update(
                     {
-                        CONF_ROUTE_SMOOTHING_ENABLED: False,
-                        CONF_OSRM_BASE_URL: url,
+                        CONF_OSRM_ENABLED: False,
+                        CONF_OSRM_URL: url,
                         CONF_OSRM_MATCH_RADIUS: radius,
-                        CONF_OSRM_TIMEOUT: timeout_seconds,
                     }
                 )
                 self.hass.config_entries.async_update_entry(
@@ -3895,20 +3891,22 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._osrm_connection_result = {
                     "status": "Disabled",
                     "url": url or "—",
-                    "radius": f"{radius:g} m",
-                    "timeout": f"{timeout_seconds} s",
+                    "radius": f"{radius:g}",
                     "road": "—",
                     "distance": "—",
                 }
                 return await self.async_step_osrm_connection_result()
 
         current_enabled = bool(
-            self._options.get(CONF_ROUTE_SMOOTHING_ENABLED, False)
+            self._options.get(
+                CONF_OSRM_ENABLED,
+                DEFAULT_OSRM_ENABLED,
+            )
         )
         current_url = str(
             self._options.get(
-                CONF_OSRM_BASE_URL,
-                DEFAULT_OSRM_BASE_URL,
+                CONF_OSRM_URL,
+                DEFAULT_OSRM_URL,
             )
         )
         current_radius = float(
@@ -3917,23 +3915,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
         )
-        current_timeout = int(
-            self._options.get(
-                CONF_OSRM_TIMEOUT,
-                DEFAULT_OSRM_TIMEOUT,
-            )
-        )
 
         return self.async_show_form(
             step_id="osrm_settings",
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_ROUTE_SMOOTHING_ENABLED,
+                        CONF_OSRM_ENABLED,
                         default=current_enabled,
                     ): selector.BooleanSelector(),
                     vol.Required(
-                        CONF_OSRM_BASE_URL,
+                        CONF_OSRM_URL,
                         default=current_url,
                     ): selector.TextSelector(
                         selector.TextSelectorConfig(
@@ -3949,18 +3941,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             max=100,
                             step=1,
                             unit_of_measurement="m",
-                            mode=selector.NumberSelectorMode.BOX,
-                        )
-                    ),
-                    vol.Required(
-                        CONF_OSRM_TIMEOUT,
-                        default=current_timeout,
-                    ): selector.NumberSelector(
-                        selector.NumberSelectorConfig(
-                            min=3,
-                            max=120,
-                            step=1,
-                            unit_of_measurement="s",
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
