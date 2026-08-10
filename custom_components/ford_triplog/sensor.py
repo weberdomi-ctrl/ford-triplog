@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 3 - Top Statistics / Top Charging (Fix 01)
+Phase: 3 - Top Statistics / Top Charging (Fix 02)
 Changes:
 - Keep Top Trip and Top Journey.
 - Shorten Top Journey display addresses to street/POI, postal code and city.
@@ -13,7 +13,8 @@ Changes:
 - Attributes expose Top 5 providers, Top 5 charging locations and the
   largest charging session with sessions, energy and cost aggregates.
 - Fix 01: remove undefined SIGNAL_CHARGE_UPDATED dependency.
-- Top Charging now uses the existing coordinator listener for refreshes.
+- Fix 02: use the real archived charging-site and address field names
+  already used by Ford Triplog 2.0.1.
 """
 
 from __future__ import annotations
@@ -1989,9 +1990,12 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
     @staticmethod
     def _charge_provider(charge: dict[str, Any]) -> str:
-        """Return the best available provider label."""
+        """Return the best available charging provider label."""
 
         for key in (
+            "charging_site_brand",
+            "charging_site_operator",
+            "charging_site_network",
             "provider",
             "charging_provider",
             "operator",
@@ -1999,19 +2003,36 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             "tariff_provider",
         ):
             value = charge.get(key)
-            if value:
+            if (
+                value
+                and str(value).strip()
+                and str(value).strip().upper() != "UNKNOWN"
+            ):
                 return str(value).strip()
 
         if charge.get("is_home") or charge.get("charge_type") == "home":
             return "Home"
 
+        start_address = charge.get("start_address")
+        if isinstance(start_address, dict):
+            source = str(start_address.get("source") or "").lower()
+            display_name = str(
+                start_address.get("display_name")
+                or start_address.get("display")
+                or ""
+            ).strip()
+
+            if source == "zone" and display_name:
+                return display_name
+
         return "Unknown"
 
     @staticmethod
     def _charge_location(charge: dict[str, Any]) -> str:
-        """Return a compact charging location."""
+        """Return the best available compact charging location."""
 
         for key in (
+            "charging_site_name",
             "location",
             "charging_location",
             "site_name",
@@ -2019,17 +2040,42 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             "display_location",
         ):
             value = charge.get(key)
-            if value:
+            if (
+                value
+                and str(value).strip()
+                and str(value).strip().upper() != "UNKNOWN"
+            ):
                 return str(value).strip()
 
-        address = charge.get("address")
+        address = charge.get("start_address") or charge.get("address")
+
         if isinstance(address, dict):
+            display_name = (
+                address.get("display_name")
+                or address.get("display")
+            )
+            if display_name:
+                return str(display_name).strip()
+
             short = format_address_short(address)
             if short:
                 return short
 
         if address:
             return str(address).strip()
+
+        for key in (
+            "charging_site_brand",
+            "charging_site_operator",
+            "charging_site_network",
+        ):
+            value = charge.get(key)
+            if (
+                value
+                and str(value).strip()
+                and str(value).strip().upper() != "UNKNOWN"
+            ):
+                return str(value).strip()
 
         return "Unknown"
 
@@ -2062,6 +2108,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     @classmethod
     def _price_per_kwh(cls, charge: dict[str, Any]) -> float:
         for key in (
+            "energy_price_per_kwh",
+            "effective_price_per_kwh",
             "price_per_kwh",
             "cost_per_kwh",
             "tariff_per_kwh",
