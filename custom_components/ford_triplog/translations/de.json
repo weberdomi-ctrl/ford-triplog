@@ -814,6 +814,12 @@
       },
       "charging_history": {
         "name": "Ladehistorie"
+      },
+      "journey_history": {
+        "name": "Tour-Historie"
+      },
+      "route_history": {
+        "name": "Routen-Historie"
       }
     },
     "binary_sensor": {
