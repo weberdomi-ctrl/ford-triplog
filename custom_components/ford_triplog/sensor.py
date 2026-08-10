@@ -4,14 +4,15 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 2 - Top Statistics / Top Journey
+Phase: 3 - Top Statistics / Top Charging
 Changes:
-- Keep Phase 1 Top Trip unchanged.
-- Add one compact Top Journey sensor based on archived completed Journeys.
-- State is the longest recorded Journey distance in km.
-- Attributes expose duration, start/end, trip/charge counts, energy used,
-  energy charged, consumption, charging cost and Journey ID.
-- Top Journey refreshes when Journey data changes.
+- Keep Top Trip and Top Journey.
+- Shorten Top Journey display addresses to street/POI, postal code and city.
+- Add one compact Top Charging sensor based on archived charging sessions.
+- State is the most-used charging provider.
+- Attributes expose Top 5 providers, Top 5 charging locations and the
+  largest charging session with sessions, energy and cost aggregates.
+- Top Charging refreshes when charging data changes.
 """
 
 from __future__ import annotations
@@ -171,6 +172,11 @@ async def async_setup_entry(
             FordTriplogTopTripSensor(coordinator, history, common_translations),
             FordTriplogTopJourneySensor(
                 journey_storage,
+                common_translations,
+            ),
+            FordTriplogTopChargingSensor(
+                coordinator,
+                history,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -1962,6 +1968,283 @@ class FordTriplogSensorBase(SensorEntity):
         }
 
 
+class FordTriplogTopChargingSensor(FordTriplogSensorBase):
+    """Expose compact Top Charging statistics."""
+
+    _attr_name = "Top Charging"
+    _attr_unique_id = "ford_triplog_top_charging"
+    _attr_icon = "mdi:ev-station"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _number(value: Any, digits: int = 2) -> float:
+        try:
+            return round(float(value or 0), digits)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _charge_provider(charge: dict[str, Any]) -> str:
+        """Return the best available provider label."""
+
+        for key in (
+            "provider",
+            "charging_provider",
+            "operator",
+            "network",
+            "tariff_provider",
+        ):
+            value = charge.get(key)
+            if value:
+                return str(value).strip()
+
+        if charge.get("is_home") or charge.get("charge_type") == "home":
+            return "Home"
+
+        return "Unknown"
+
+    @staticmethod
+    def _charge_location(charge: dict[str, Any]) -> str:
+        """Return a compact charging location."""
+
+        for key in (
+            "location",
+            "charging_location",
+            "site_name",
+            "station_name",
+            "display_location",
+        ):
+            value = charge.get(key)
+            if value:
+                return str(value).strip()
+
+        address = charge.get("address")
+        if isinstance(address, dict):
+            short = format_address_short(address)
+            if short:
+                return short
+
+        if address:
+            return str(address).strip()
+
+        return "Unknown"
+
+    @classmethod
+    def _energy_kwh(cls, charge: dict[str, Any]) -> float:
+        for key in (
+            "energy_added_kwh",
+            "energy_kwh",
+            "charged_energy_kwh",
+            "energy_charged_kwh",
+        ):
+            if charge.get(key) is not None:
+                return cls._number(charge.get(key), 3)
+
+        return 0.0
+
+    @classmethod
+    def _total_cost(cls, charge: dict[str, Any]) -> float:
+        for key in (
+            "total_cost",
+            "cost_total",
+            "charging_cost",
+            "cost",
+        ):
+            if charge.get(key) is not None:
+                return cls._number(charge.get(key), 2)
+
+        return 0.0
+
+    @classmethod
+    def _price_per_kwh(cls, charge: dict[str, Any]) -> float:
+        for key in (
+            "price_per_kwh",
+            "cost_per_kwh",
+            "tariff_per_kwh",
+        ):
+            if charge.get(key) is not None:
+                return cls._number(charge.get(key), 4)
+
+        energy = cls._energy_kwh(charge)
+        cost = cls._total_cost(charge)
+        return round(cost / energy, 4) if energy > 0 else 0.0
+
+    @staticmethod
+    def _charge_id(charge: dict[str, Any]) -> Any:
+        return (
+            charge.get("charge_id")
+            or charge.get("id")
+            or charge.get("session_id")
+        )
+
+    async def async_added_to_hass(self) -> None:
+        """Register charge update listener and load Top Charging."""
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_CHARGE_UPDATED,
+                self._handle_charge_update,
+            )
+        )
+        await self._async_refresh_top_charging()
+        await super().async_added_to_hass()
+
+    def _handle_charge_update(self, *_args: Any) -> None:
+        self.hass.add_job(self._async_refresh_and_write)
+
+    async def _async_refresh_and_write(self) -> None:
+        await self._async_refresh_top_charging()
+        self.async_write_ha_state()
+
+    async def _async_refresh_top_charging(self) -> None:
+        """Aggregate archived charging sessions."""
+
+        charges = await self.history.get_all_charges()
+
+        valid_charges = [
+            charge
+            for charge in charges
+            if charge.get("include_in_statistics", True)
+        ]
+
+        if not valid_charges:
+            self._value = None
+            self._attributes = {}
+            return
+
+        providers: dict[str, dict[str, Any]] = {}
+        locations: dict[str, dict[str, Any]] = {}
+        largest: dict[str, Any] | None = None
+        largest_energy = -1.0
+
+        for charge in valid_charges:
+            provider = self._charge_provider(charge)
+            location = self._charge_location(charge)
+            energy = self._energy_kwh(charge)
+            cost = self._total_cost(charge)
+
+            provider_row = providers.setdefault(
+                provider,
+                {
+                    "provider": provider,
+                    "sessions": 0,
+                    "energy_kwh": 0.0,
+                    "total_cost": 0.0,
+                },
+            )
+            provider_row["sessions"] += 1
+            provider_row["energy_kwh"] += energy
+            provider_row["total_cost"] += cost
+
+            location_key = f"{location}|{provider}"
+            location_row = locations.setdefault(
+                location_key,
+                {
+                    "location": location,
+                    "provider": provider,
+                    "sessions": 0,
+                    "energy_kwh": 0.0,
+                    "total_cost": 0.0,
+                },
+            )
+            location_row["sessions"] += 1
+            location_row["energy_kwh"] += energy
+            location_row["total_cost"] += cost
+
+            if energy > largest_energy:
+                largest_energy = energy
+                largest = {
+                    "charge_id": self._charge_id(charge),
+                    "provider": provider,
+                    "location": location,
+                    "start_time": charge.get("start_time"),
+                    "end_time": charge.get("end_time"),
+                    "energy_kwh": round(energy, 2),
+                    "price_per_kwh": self._price_per_kwh(charge),
+                    "total_cost": round(cost, 2),
+                    "currency": charge.get("currency"),
+                }
+
+        provider_rows = []
+        for row in providers.values():
+            energy = row["energy_kwh"]
+            cost = row["total_cost"]
+            provider_rows.append(
+                {
+                    "provider": row["provider"],
+                    "sessions": row["sessions"],
+                    "energy_kwh": round(energy, 2),
+                    "total_cost": round(cost, 2),
+                    "avg_price_per_kwh": (
+                        round(cost / energy, 4)
+                        if energy > 0
+                        else 0.0
+                    ),
+                }
+            )
+
+        provider_rows.sort(
+            key=lambda row: (
+                row["sessions"],
+                row["energy_kwh"],
+            ),
+            reverse=True,
+        )
+
+        location_rows = []
+        for row in locations.values():
+            energy = row["energy_kwh"]
+            cost = row["total_cost"]
+            location_rows.append(
+                {
+                    "location": row["location"],
+                    "provider": row["provider"],
+                    "sessions": row["sessions"],
+                    "energy_kwh": round(energy, 2),
+                    "total_cost": round(cost, 2),
+                }
+            )
+
+        location_rows.sort(
+            key=lambda row: (
+                row["sessions"],
+                row["energy_kwh"],
+            ),
+            reverse=True,
+        )
+
+        top_providers = provider_rows[:5]
+        top_locations = location_rows[:5]
+
+        self._value = (
+            top_providers[0]["provider"]
+            if top_providers
+            else None
+        )
+        self._attributes = {
+            "top_providers": top_providers,
+            "top_locations": top_locations,
+            "largest_session": largest,
+            "session_count": len(valid_charges),
+        }
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        """Top Charging is refreshed from the charging archive."""
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
 class FordTriplogTopJourneySensor(SensorEntity):
     """Expose the longest archived completed Journey."""
 
@@ -2019,7 +2302,37 @@ class FordTriplogTopJourneySensor(SensorEntity):
             return format_address_short(value) or None
 
         text = str(value).strip()
-        return text or None
+        if not text:
+            return None
+
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) <= 3:
+            return text
+
+        postal_index = next(
+            (
+                index
+                for index, part in enumerate(parts)
+                if any(char.isdigit() for char in part)
+                and 3 <= len(part) <= 12
+            ),
+            None,
+        )
+
+        if postal_index is not None and postal_index > 0:
+            street_or_poi = parts[0]
+            city = parts[1] if len(parts) > 1 else None
+            postal = parts[postal_index]
+
+            compact = [street_or_poi]
+            if postal:
+                compact.append(postal)
+            if city and city != postal:
+                compact.append(city)
+
+            return ", ".join(compact)
+
+        return ", ".join(parts[:3])
 
     @staticmethod
     def _optional_number(
