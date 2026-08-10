@@ -779,9 +779,6 @@
       "last_charge_energy": {
         "name": "Energia ostatniego ładowania"
       },
-      "last_charge_energy_fordpass": {
-        "name": "Energia ostatniego ładowania z FordPass"
-      },
       "last_charge_energy_calculated": {
         "name": "Obliczona energia ostatniego ładowania"
       },
@@ -799,6 +796,37 @@
       },
       "last_route": {
         "name": "Ostatnia trasa"
+      },
+      "top_trip": {
+        "name": "Najlepszy przejazd"
+      },
+      "top_journey": {
+        "name": "Najlepsza podróż"
+      },
+      "top_charging": {
+        "name": "Najlepsze ładowanie"
+      },
+      "top_day": {
+        "name": "Najlepszy dzień"
+      },
+      "charging_history": {
+        "name": "Historia ładowania"
+      },
+      "journey_history": {
+        "name": "Historia podróży"
+      },
+      "route_history": {
+        "name": "Historia tras"
+      }
+    },
+    "binary_sensor": {
+      "trip_active": {
+        "name": "Przejazd aktywny"
+      }
+    },
+    "select": {
+      "route_history_date": {
+        "name": "Data historii"
       }
     }
   },
