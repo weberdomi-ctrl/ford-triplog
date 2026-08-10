@@ -4,17 +4,20 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 3 - Top Statistics / Top Charging (Fix 02)
+Phase: 3 - Top Statistics / Top Charging (Fix 04)
 Changes:
 - Keep Top Trip and Top Journey.
-- Shorten Top Journey display addresses to street/POI, postal code and city.
 - Add one compact Top Charging sensor based on archived charging sessions.
 - State is the most-used charging provider.
 - Attributes expose Top 5 providers, Top 5 charging locations and the
   largest charging session with sessions, energy and cost aggregates.
 - Fix 01: remove undefined SIGNAL_CHARGE_UPDATED dependency.
-- Fix 02: use the real archived charging-site and address field names
-  already used by Ford Triplog 2.0.1.
+- Fix 02: use the real archived charging-site and address field names.
+- Fix 03: resolve Home Assistant zones for historic charges, group home
+  charging as Home, compact long OSM addresses and aggregate locations
+  independently from provider.
+- Fix 04: exclude Unknown from the Top Provider ranking while retaining
+  unknown-provider session totals; format postal code and city together.
 """
 
 from __future__ import annotations
@@ -1989,8 +1992,194 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             return 0.0
 
     @staticmethod
-    def _charge_provider(charge: dict[str, Any]) -> str:
+    def _distance_m(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Calculate distance between two coordinates in metres."""
+
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value),
+            math.sqrt(1 - value),
+        )
+
+    def _resolve_zone_name(
+        self,
+        charge: dict[str, Any],
+    ) -> str | None:
+        """Return the closest matching Home Assistant zone."""
+
+        latitude = (
+            charge.get("start_latitude")
+            if charge.get("start_latitude") is not None
+            else charge.get("end_latitude")
+        )
+        longitude = (
+            charge.get("start_longitude")
+            if charge.get("start_longitude") is not None
+            else charge.get("end_longitude")
+        )
+
+        try:
+            charge_latitude = float(latitude)
+            charge_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone: tuple[float, str] | None = None
+
+        for zone_state in self.hass.states.async_all("zone"):
+            zone_latitude = zone_state.attributes.get("latitude")
+            zone_longitude = zone_state.attributes.get("longitude")
+            zone_radius = zone_state.attributes.get("radius", 100)
+
+            try:
+                distance = self._distance_m(
+                    charge_latitude,
+                    charge_longitude,
+                    float(zone_latitude),
+                    float(zone_longitude),
+                )
+                radius = max(0.0, float(zone_radius))
+            except (TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            zone_name = str(
+                zone_state.attributes.get(
+                    "friendly_name",
+                    zone_state.name,
+                )
+            ).strip()
+
+            if not zone_name:
+                continue
+
+            if matching_zone is None or distance < matching_zone[0]:
+                matching_zone = (distance, zone_name)
+
+        return matching_zone[1] if matching_zone else None
+
+    @staticmethod
+    def _compact_address(value: Any) -> str | None:
+        """Return street/POI, postal code and city for dashboard output."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            road = (
+                value.get("road")
+                or value.get("pedestrian")
+                or value.get("path")
+                or value.get("amenity")
+                or value.get("name")
+            )
+            house = value.get("house_number")
+            postcode = value.get("postcode")
+            city = (
+                value.get("city")
+                or value.get("town")
+                or value.get("village")
+                or value.get("municipality")
+            )
+
+            street = " ".join(
+                str(part).strip()
+                for part in (road, house)
+                if part
+            ).strip()
+
+            postal_city = " ".join(
+                str(part).strip()
+                for part in (postcode, city)
+                if part
+            ).strip()
+
+            parts = [
+                part
+                for part in (
+                    street or None,
+                    postal_city or None,
+                )
+                if part
+            ]
+            if parts:
+                return ", ".join(parts)
+
+            value = (
+                value.get("display_name")
+                or value.get("display")
+            )
+
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) <= 3:
+            return text
+
+        postcode_index = next(
+            (
+                index
+                for index, part in enumerate(parts)
+                if part.isdigit() and 4 <= len(part) <= 5
+            ),
+            None,
+        )
+
+        if postcode_index is not None:
+            postcode = parts[postcode_index]
+
+            # OSM often returns "house number, street, city, ... postcode".
+            if len(parts) >= 3 and parts[0].isdigit():
+                street = f"{parts[1]} {parts[0]}".strip()
+                city = parts[2]
+            else:
+                street = parts[0]
+                city = parts[1] if len(parts) > 1 else None
+
+            postal_city = " ".join(
+                part for part in (postcode, city) if part
+            )
+            return ", ".join(
+                part for part in (street, postal_city) if part
+            )
+
+        return ", ".join(parts[:3])
+
+    def _charge_provider(self, charge: dict[str, Any]) -> str:
         """Return the best available charging provider label."""
+
+        zone_name = self._resolve_zone_name(charge)
+        cost_source = str(charge.get("cost_source") or "").strip().lower()
+
+        # Home tariff is definitive. A charge inside the HA Home zone is also
+        # treated as Home so older historic sessions are grouped correctly.
+        if cost_source == "home_tariff":
+            return "Home"
+
+        if zone_name and zone_name.lower() == "home":
+            return "Home"
 
         for key in (
             "charging_site_brand",
@@ -2010,26 +2199,17 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             ):
                 return str(value).strip()
 
-        if charge.get("is_home") or charge.get("charge_type") == "home":
-            return "Home"
-
-        start_address = charge.get("start_address")
-        if isinstance(start_address, dict):
-            source = str(start_address.get("source") or "").lower()
-            display_name = str(
-                start_address.get("display_name")
-                or start_address.get("display")
-                or ""
-            ).strip()
-
-            if source == "zone" and display_name:
-                return display_name
+        if zone_name:
+            return zone_name
 
         return "Unknown"
 
-    @staticmethod
-    def _charge_location(charge: dict[str, Any]) -> str:
+    def _charge_location(self, charge: dict[str, Any]) -> str:
         """Return the best available compact charging location."""
+
+        zone_name = self._resolve_zone_name(charge)
+        if zone_name:
+            return zone_name
 
         for key in (
             "charging_site_name",
@@ -2048,21 +2228,9 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 return str(value).strip()
 
         address = charge.get("start_address") or charge.get("address")
-
-        if isinstance(address, dict):
-            display_name = (
-                address.get("display_name")
-                or address.get("display")
-            )
-            if display_name:
-                return str(display_name).strip()
-
-            short = format_address_short(address)
-            if short:
-                return short
-
-        if address:
-            return str(address).strip()
+        compact = self._compact_address(address)
+        if compact:
+            return compact
 
         for key in (
             "charging_site_brand",
@@ -2159,12 +2327,20 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         locations: dict[str, dict[str, Any]] = {}
         largest: dict[str, Any] | None = None
         largest_energy = -1.0
+        unknown_provider_sessions = 0
+        unknown_provider_energy = 0.0
+        unknown_provider_cost = 0.0
 
         for charge in valid_charges:
             provider = self._charge_provider(charge)
             location = self._charge_location(charge)
             energy = self._energy_kwh(charge)
             cost = self._total_cost(charge)
+
+            if provider == "Unknown":
+                unknown_provider_sessions += 1
+                unknown_provider_energy += energy
+                unknown_provider_cost += cost
 
             provider_row = providers.setdefault(
                 provider,
@@ -2179,9 +2355,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             provider_row["energy_kwh"] += energy
             provider_row["total_cost"] += cost
 
-            location_key = f"{location}|{provider}"
             location_row = locations.setdefault(
-                location_key,
+                location,
                 {
                     "location": location,
                     "provider": provider,
@@ -2190,6 +2365,12 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                     "total_cost": 0.0,
                 },
             )
+            if (
+                location_row.get("provider") == "Unknown"
+                and provider != "Unknown"
+            ):
+                location_row["provider"] = provider
+
             location_row["sessions"] += 1
             location_row["energy_kwh"] += energy
             location_row["total_cost"] += cost
@@ -2225,6 +2406,12 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                     ),
                 }
             )
+
+        provider_rows = [
+            row
+            for row in provider_rows
+            if row["provider"] != "Unknown"
+        ]
 
         provider_rows.sort(
             key=lambda row: (
@@ -2269,6 +2456,15 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             "top_locations": top_locations,
             "largest_session": largest,
             "session_count": len(valid_charges),
+            "unknown_provider_sessions": unknown_provider_sessions,
+            "unknown_provider_energy_kwh": round(
+                unknown_provider_energy,
+                2,
+            ),
+            "unknown_provider_total_cost": round(
+                unknown_provider_cost,
+                2,
+            ),
         }
 
     def update_values(
