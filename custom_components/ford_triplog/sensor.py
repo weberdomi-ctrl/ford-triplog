@@ -3,8 +3,13 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0.1-dev
-Phase: 6 - Charging History receipt integration (Fix 02 relative signed URLs)
+Version: 2.0.2-dev
+Phase: 1 - Top Statistics / Top Trip
+Changes:
+- Add one compact Top Trip sensor instead of multiple record entities.
+- State is the longest recorded trip distance in km.
+- Attributes expose duration, start/end, energy use, consumption and trip ID.
+- Existing 2.0.1 statistics are rebuilt once when top_trip is not yet present.
 """
 
 from __future__ import annotations
@@ -161,6 +166,7 @@ async def async_setup_entry(
             FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
 
             # Statistics
+            FordTriplogTopTripSensor(coordinator, history, common_translations),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
             FordTriplogTotalEnergySensor(coordinator, history, common_translations),
             FordTriplogAverageConsumptionSensor(coordinator, history, common_translations),
@@ -1947,6 +1953,88 @@ class FordTriplogSensorBase(SensorEntity):
             "manufacturer": "Ford",
             "model": "Triplog",
             "sw_version": VERSION,
+        }
+
+
+class FordTriplogTopTripSensor(FordTriplogSensorBase):
+    """Expose the longest recorded trip as one compact statistics sensor."""
+
+    _attr_name = "Top Trip"
+    _attr_unique_id = "ford_triplog_top_trip"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:trophy-outline"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._top_trip: dict[str, Any] | None = None
+        self._statistics_initialized = False
+
+    async def async_added_to_hass(self) -> None:
+        """Ensure 2.0.1 statistics contain the new Top Trip record."""
+
+        statistics, _, _ = await self.history.get_sensor_data()
+
+        if "top_trip" not in statistics:
+            await self.history.refresh_statistics()
+
+        self._statistics_initialized = True
+        await super().async_added_to_hass()
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        top_trip = statistics.get("top_trip") if statistics else None
+
+        if not isinstance(top_trip, dict):
+            self._top_trip = None
+            self._value = None
+            return
+
+        self._top_trip = top_trip
+
+        try:
+            self._value = round(float(top_trip.get("distance_km")), 1)
+        except (TypeError, ValueError):
+            self._value = None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return dashboard-ready details of the longest trip."""
+
+        if not self._top_trip:
+            return {}
+
+        trip = self._top_trip
+        duration_seconds = int(trip.get("duration_seconds") or 0)
+
+        start_address = format_address_short(trip.get("start_address"))
+        end_address = format_address_short(trip.get("end_address"))
+
+        attributes = {
+            "trip_id": trip.get("trip_id"),
+            "distance_km": trip.get("distance_km"),
+            "duration_seconds": duration_seconds,
+            "duration": format_duration(duration_seconds),
+            "start_time": trip.get("start_time"),
+            "end_time": trip.get("end_time"),
+            "start_location": start_address,
+            "end_location": end_address,
+            "energy_used_kwh": trip.get("energy_used_kwh"),
+            "consumption_kwh_100km": trip.get(
+                "consumption_kwh_100km"
+            ),
+        }
+
+        return {
+            key: value
+            for key, value in attributes.items()
+            if value is not None
         }
 
 
