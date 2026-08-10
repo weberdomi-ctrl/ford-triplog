@@ -18,8 +18,7 @@
 
 <p align="center">
 
-**Automatic Trip Logging • Journey Management • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
-
+**Automatic Trip Logging • Journey Management • GPS Route Tracking • Daily History • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
 
 ------------------------------------------------------------------------
 
@@ -28,8 +27,8 @@ records every trip and charging session of your Ford electric vehicle.
 
 Built on top of the community-maintained FordPass integration, it
 creates a permanent local driving history including detailed trip
-statistics, charging history, energy calculations and charging location
-recognition.
+statistics, charging history, GPS routes, energy calculations and
+charging location recognition.
 
 All data is stored locally inside Home Assistant.
 
@@ -45,18 +44,18 @@ Your data always remains under your control.
 
 ## 🚗 Automatic Trip Logging
 
--   Automatic trip detection
--   Start and end timestamps
--   Distance travelled
--   Driving duration
--   Average speed
--   State of Charge (SOC) consumption
--   Estimated energy consumption
--   Smart Trip support
+- Automatic trip detection
+- Start and end timestamps
+- Distance travelled
+- Driving duration
+- Average speed
+- State of Charge (SOC) consumption
+- Estimated energy consumption
+- Smart Trip support
 
 ## 🛣️ Journey Management
 
-Ford Triplog automatically combines related trips and charging sessions into a single Journey
+Ford Triplog automatically combines related trips and charging sessions into a single Journey.
 
 Features include:
 
@@ -79,6 +78,23 @@ Features include:
 
 ------------------------------------------------------------------------
 
+## 🕓 Daily History
+
+Ford Triplog 2.0.1 adds a shared date-based History view for stored driving and charging data.
+
+Features include:
+
+- Shared History date selection
+- Daily Journey history
+- Daily Route history
+- Daily Charging history
+- Charging-only days
+- Charging receipt access
+- Synchronized History sensors
+- Home Assistant local calendar dates
+
+------------------------------------------------------------------------
+
 ## ⏸️ Pause Management
 
 Detected pauses can be enriched with additional information.
@@ -97,86 +113,80 @@ Features include:
 
 ## 🛰️ Route Tracker
 
-Ford Triplog 2.0 introduces optional route recording for individual trips.
+Ford Triplog provides optional GPS route recording for individual trips.
 
-The Route Tracker records GPS points from a separate Home Assistant position source and stores the driven route together with the corresponding Trip ID.
-
-Supported position sources include:
-
-- ABRP latitude and longitude entities
-- Home Assistant Companion App Geocoded Location
-
-Route recording is independent from the normal Ford Triplog vehicle tracker.
+The Route Tracker records position points from a separate Home Assistant position source and links the resulting route to the corresponding Trip ID.
 
 Features include:
 
 - Automatic start and stop together with the Trip
+- Support for ABRP latitude/longitude entities
+- Support for Home Assistant Companion App position data
 - Persistent route storage
 - Smart Trip pause and resume support
 - Automatic recovery after Home Assistant restart or integration reload
-- Ford Triplog Trip GPS coordinates as authoritative start and end points
+- Trip start and end GPS points as route endpoints
 - Native Last Route sensor
-- GeoJSON output for Home Assistant map cards
+- Native Route History sensor
+- GeoJSON route output for Home Assistant maps
+- Historical routes by selected date
 - Raw GPS points are always preserved
 
-Route data is stored locally inside Home Assistant.
+Route tracking is optional and independent from the normal Ford Triplog vehicle tracker.
 
----
+------------------------------------------------------------------------
 
 ## 🗺️ Optional OSRM Route Matching
 
 Ford Triplog can optionally use a local OSRM server to match recorded GPS points to the road network.
 
-This improves route visualization when the position source provides only a limited number of GPS points.
+This is especially useful when the selected GPS source provides only a limited number of position updates.
 
 Features include:
 
-- Optional local OSRM server
-- Configurable server URL
+- Configurable local OSRM server
 - Configurable matching radius
 - Automatic matching after trip completion
 - Raw and matched route data stored separately
-- Matching confidence and diagnostics
+- Matching diagnostics
 - Manual rebuild of the latest route
 - No dependency on a public routing service
 
 OSRM is completely optional. Without OSRM, Ford Triplog continues to store and display the recorded raw GPS route.
 
-For larger OSRM datasets, preprocessing should preferably be performed on a PC or server with sufficient RAM and SSD/NVMe storage. The finished dataset can then be copied to the Docker host running OSRM.
+A DACH example for Germany, Austria and Switzerland is available in:
 
-An example DACH setup for Germany, Austria and Switzerland is available in:
+`examples/osrm/`
 
-`docs/examples/osrm/`
-
-The example includes instructions for building the dataset externally and deploying the finished OSRM files to a Docker host.
+------------------------------------------------------------------------
 
 ## 🔋 Charging History
 
 Automatically records every charging session including:
 
--   Charging duration
--   Start and end SOC
--   Estimated charged energy
--   Charging location
--   Charging provider
--   Linked trip (when available)
--   Journey integration
--   Charging station recognition
--   Manual charging cost editor
--   Seasonal home charging tariffs
--   Energy billed by charging provider
--   Charging loss calculation
--   Energy delivered vs. billed
--   Detailed charging cost breakdown
--   Automatic home charging cost calculation
--   Receipt management
--   Multiple receipts per charging session
--   PDF and image receipt upload
--   Optional OCR support
--   OCR parser profiles
+- Charging duration
+- Start and end SOC
+- Estimated charged energy
+- Charging location
+- Charging provider
+- Linked trip (when available)
+- Journey integration
+- Charging station recognition
+- Manual charging cost editor
+- Seasonal home charging tariffs
+- Energy billed by charging provider
+- Charging loss calculation
+- Energy delivered vs. billed
+- Detailed charging cost breakdown
+- Automatic home charging cost calculation
+- Receipt management
+- Multiple receipts per charging session
+- PDF and image receipt upload
+- Optional OCR support
+- OCR parser profiles
+- Date-based Charging History sensor
 
 ------------------------------------------------------------------------
-
 
 ## 🧾 Receipt Management
 
@@ -188,6 +198,7 @@ Features include:
 - Multiple receipts per charging session
 - Receipt browser
 - Open stored receipts
+- Open receipts from the History dashboard
 - Delete receipts
 - OCR integration (optional)
 - User parser profiles
@@ -195,42 +206,16 @@ Features include:
 
 ------------------------------------------------------------------------
 
-
 ## 📍 Intelligent Charging Location Recognition
 
 Charging locations are resolved automatically using multiple sources.
 
 Priority order:
 
-1.  Home Assistant zones
-2.  FordPass charging information
-3.  Local OpenStreetMap charging database
-4.  Address fallback
-
-This provides highly reliable charging location detection while allowing
-complete user customization.
-
-------------------------------------------------------------------------
-
-## 🗺️ OpenStreetMap Charging Database
-
-Ford Triplog includes an offline charging location database based on
-OpenStreetMap.
-
-Features include:
-
--   Offline operation
--   Country-specific databases
--   Automatic download
--   Geohash indexing
--   Fast local lookups
--   No internet required during normal operation
-
-### Additional countries
-
-The list of supported countries is defined in `countries.py`.
-
-Advanced users can add additional countries manually by extending the `COUNTRIES` dictionary and generating the corresponding charging-site database.
+1. Home Assistant zones
+2. FordPass charging information
+3. Local OpenStreetMap charging database
+4. Address fallback
 
 ------------------------------------------------------------------------
 
@@ -238,129 +223,26 @@ Advanced users can add additional countries manually by extending the `COUNTRIES
 
 Ford Triplog continuously maintains:
 
--   Trip statistics
--   Charging statistics
--   Lifetime statistics
--   Energy consumption
--   Average efficiency
--   Native Home Assistant sensors
--   Journey energy balance
--   Journey charging costs
--   Average charging price
--   Battery energy delta
--   Total battery energy flow
-
-------------------------------------------------------------------------
-
-## 🏠 Home Assistant Integration
-
-Designed specifically for Home Assistant.
-
-Features include:
-
--   Native entities
--   Device diagnostics
--   Configuration Flow
--   Options Flow
--   Automatic recovery
--   Journey overview sensor
--   Rich Journey timeline attributes
--   Native Last Charge sensor
--   Native Journey overview sensor
--   Charging cost attributes
--   Journey energy attributes
--   Ready-to-use Markdown dashboard examples
--   Persistent local storage
--   HACS support
--   Receipt management
--   OCR configuration
--   Charging session editor
--   Pause editor
--   User charging location manager
-
-
-------------------------------------------------------------------------
-
-## 🔒 Privacy
-
-Privacy is one of the core design goals.
-
-Ford Triplog never uploads:
-
--   Trip history
--   Charging history
--   Vehicle statistics
--   Location history
-
-Everything remains inside your Home Assistant installation.
-
-------------------------------------------------------------------------
-
-# Documentation
-
-  -------------------------------------------------------------------------------
-  Documentation                                Description
-  -------------------------------------------- ----------------------------------
-  [Installation](docs/installation.md)         Install Ford Triplog using HACS
-
-  [Configuration](docs/configuration.md)       Configure the integration
-
-  [Architecture](docs/architecture.md)         Internal architecture and data
-                                               flow
-
-  [Smart Trip](docs/smart_trip.md)             Smart Trip functionality
-
-  [Journeys](docs/journeys.md)                 Journey management and history |
-
-  [Charging Sessions](docs/charging.md)        Charging session documentation
-
-  [Charging                                    User charging locations and
-  Locations](docs/charging_locations.md)       recognition
-
-  [Charging                                    OpenStreetMap charging database
-  Database](docs/charging_database.md)         
-
-  [Sensors](docs/sensors.md)                   Complete entity reference
-
-  [Dashboard Examples](docs/dashboard.md)      Example Home Assistant dashboards
-
-  [Storage](docs/storage.md)                   Local storage structure
-
-  [Privacy](docs/privacy.md)                   Privacy information
-
-  [Automatation](docs/automation_examples.md)   Automation examples
-
-  [OCR](docs/ocr.md)   OCR Receipt Recognition
-     
-
-------------------------------------------------------------------------
-
-# Supported Vehicles
-
-## Officially Tested
-
-  Vehicle             Status
-  ------------------ --------
-  Ford Explorer EV      ✅
-
-## Community Tested
-
-  Vehicle           Status
-  ---------------- --------
-  Ford Capri EV       ✅
-  Mustang Mach-E      🧪
-  Puma Gen-E          🧪
-
-Additional Ford electric vehicles are welcome.
+- Trip statistics
+- Charging statistics
+- Lifetime statistics
+- Energy consumption
+- Average efficiency
+- Native Home Assistant sensors
+- Journey energy balance
+- Journey charging costs
+- Average charging price
+- Battery energy delta
+- Total battery energy flow
 
 ------------------------------------------------------------------------
 
 # Requirements
 
--   Home Assistant 2026.6 or newer
--   HACS
--   FordPass Home Assistant integration
--   Python 3.12+
+- Home Assistant 2026.6 or newer
+- HACS
+- FordPass Home Assistant integration
+- Python 3.12+
 
 ------------------------------------------------------------------------
 
@@ -372,56 +254,13 @@ See the complete installation guide:
 
 ➡ **[Installation Guide](docs/installation.md)**
 
-
-------------------------------------------------------------------------
-
-## Features
-
-- 🚗 Automatic trip detection using FordPass vehicle data
-- 🧠 Smart Trip mode merges short stops into a single journey
-- 🛣️ Journey Management with complete trip timelines
-- ⚡ Automatic charging session detection
-- 📍 Intelligent location recognition using:
-  - Home Assistant zones
-  - FordPass charging information
-  - Offline OpenStreetMap charging database
-  - Address fallback
-- 🔋 Detailed trip metrics:
-  - Distance
-  - Duration
-  - Energy consumption
-  - Consumption (kWh/100 km)
-  - Start and end State of Charge (SOC)
-- ⚡ Detailed charging metrics:
-  - Charged energy
-  - Charging duration
-  - SOC before and after charging
-  - Energy billed by charger
-  - Charging losses
-  - Manual charging costs
-  - Seasonal home charging tariffs
-  - Charging cost breakdown
-  - Effective charging price
-- 📊 Journey statistics for Home Assistant dashboards
-- 🧾 Receipt management
-- 📄 PDF and image receipt support
-- 🔍 Optional OCR integration
-- ✏️ Pause management
-- 💵 Charging cost editor
-- 🧮 Charging loss calculation
-- ⚖️ Journey energy balance
-- 💰 Journey charging costs
-- 🗺️ Offline charging station database
-- 🌍 Multi-language support (English, German and Polish)
-- 🔒 Local-first architecture with local JSON storage
-- 🏠 Full Home Assistant integration
-- 📦 HACS compatible
-
 ------------------------------------------------------------------------
 
 ## Dashboard Examples
 
 Ready-to-use Home Assistant dashboard examples are available in:
+
+`docs/examples/`
 
 Examples include:
 
@@ -430,13 +269,23 @@ Examples include:
 - Last Charge
 - Last Journey
 - Journey timeline
-- Charging history
+- Last Route map
+- History date selection
+- Journey History
+- Route History map
+- Charging History
+- Charging receipt History
 - Charging cost overview
 - Journey energy balance
 
-`docs/examples/`
+The **Route History map** example requires these HACS custom cards:
 
-Simply copy the content into a Home Assistant Markdown card and adjust the entity IDs to match your installation.
+- **Google Map Card**
+- **Config Template Card**
+
+The Route History map can be hidden automatically when the selected day contains no route data.
+
+Simply copy the example configuration into Home Assistant and adjust the entity IDs to match your installation.
 
 ------------------------------------------------------------------------
 
@@ -444,11 +293,11 @@ Simply copy the content into a Home Assistant Markdown card and adjust the entit
 
 ## Version 2.x
 
-- Route tracking
+- Top statistics and additional statistical sensors
 - Advanced journey editing
-- Additional dashboard examples
+- Additional dashboard examples and statistics
 - Multi-vehicle enhancements
-- Optional database backend
+- Optional SQLite acceleration layer
 - Long-term history improvements
 
 Complete roadmap:
@@ -469,8 +318,7 @@ Contribution guide:
 
 # Support
 
-If Ford Triplog is useful to you, consider supporting future
-development.
+If Ford Triplog is useful to you, consider supporting future development.
 
 ➡ **[Buy me a Coffee](https://ko-fi.com/dompressor)**
 
@@ -514,12 +362,10 @@ Ford Triplog is an independent community project.
 
 It is not affiliated with or endorsed by Ford Motor Company.
 
-Ford®, FordPass® and all related trademarks belong to their respective
-owners.
+Ford®, FordPass® and all related trademarks belong to their respective owners.
 
 ------------------------------------------------------------------------
 
 # Made for the Home Assistant Community ❤️
 
 If you like Ford Triplog, consider giving the project a ⭐ on GitHub.
-
