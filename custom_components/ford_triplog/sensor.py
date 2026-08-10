@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 3 - Top Statistics / Top Charging
+Phase: 3 - Top Statistics / Top Charging (Fix 01)
 Changes:
 - Keep Top Trip and Top Journey.
 - Shorten Top Journey display addresses to street/POI, postal code and city.
@@ -12,7 +12,8 @@ Changes:
 - State is the most-used charging provider.
 - Attributes expose Top 5 providers, Top 5 charging locations and the
   largest charging session with sessions, energy and cost aggregates.
-- Top Charging refreshes when charging data changes.
+- Fix 01: remove undefined SIGNAL_CHARGE_UPDATED dependency.
+- Top Charging now uses the existing coordinator listener for refreshes.
 """
 
 from __future__ import annotations
@@ -2081,24 +2082,14 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         )
 
     async def async_added_to_hass(self) -> None:
-        """Register charge update listener and load Top Charging."""
+        """Register the existing coordinator listener and load Top Charging."""
 
-        self.async_on_remove(
-            async_dispatcher_connect(
-                self.hass,
-                SIGNAL_CHARGE_UPDATED,
-                self._handle_charge_update,
-            )
-        )
-        await self._async_refresh_top_charging()
         await super().async_added_to_hass()
 
-    def _handle_charge_update(self, *_args: Any) -> None:
-        self.hass.add_job(self._async_refresh_and_write)
+    async def async_update(self) -> None:
+        """Refresh Top Charging directly from the charging archive."""
 
-    async def _async_refresh_and_write(self) -> None:
         await self._async_refresh_top_charging()
-        self.async_write_ha_state()
 
     async def _async_refresh_top_charging(self) -> None:
         """Aggregate archived charging sessions."""
