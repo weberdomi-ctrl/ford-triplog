@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 03)
+Phase: 4 - Top Statistics / Top Day (Fix 05)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -35,6 +35,9 @@ Changes:
   Top Charging and Top Day instead of fixed English entity names.
 - Fix 03: make Charging History translatable via charging_history key;
   Trip Active is handled by binary_sensor.py via trip_active key.
+- Fix 04: remove redundant FordPass last-charge energy entity. The raw
+  FordPass value remains stored internally and in last-charge attributes.
+- Fix 05: make Journey History and Route History entity names translatable.
 """
 
 from __future__ import annotations
@@ -181,7 +184,6 @@ async def async_setup_entry(
             FordTriplogLastChargeSocAddedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeDurationSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySensor(coordinator, history, common_translations),
-            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySourceSensor(coordinator, history, common_translations),
             FordTriplogLastChargeStartAddressSensor(coordinator, history, common_translations),
@@ -1167,8 +1169,7 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
     """Expose the archived Journey for the selected History date."""
 
     _attr_has_entity_name = True
-    _attr_name = "Journey History"
-    _attr_translation_key = None
+    _attr_translation_key = "journey_history"
     _attr_unique_id = "ford_triplog_journey_history"
     _attr_icon = "mdi:map-clock-outline"
 
@@ -1780,7 +1781,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
     """Expose all stored routes for the selected historical date."""
 
     _attr_has_entity_name = True
-    _attr_name = "Route History"
+    _attr_translation_key = "route_history"
     _attr_unique_id = "ford_triplog_route_history"
     _attr_icon = "mdi:map-clock-outline"
 
@@ -4163,31 +4164,6 @@ class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     ):
         self._value = (
             last_charge.get("energy_added_kwh")
-            if last_charge
-            else None
-        )
-
-
-class FordTriplogLastChargeEnergyFordPassSensor(
-    FordTriplogSensorBase
-):
-    """FordPass energy value of the last charging session."""
-
-    _attr_translation_key = "last_charge_energy_fordpass"
-    _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
-    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_suggested_display_precision = 2
-    _attr_icon = "mdi:car-connected"
-
-    def update_values(
-        self,
-        statistics,
-        last_trip,
-        last_charge,
-    ):
-        self._value = (
-            last_charge.get("energy_added_kwh_fordpass")
             if last_charge
             else None
         )
