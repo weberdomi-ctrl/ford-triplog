@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.1-dev
-Phase: 6 - Charging History receipt integration (Fix 01 signed URLs)
+Phase: 6 - Charging History receipt integration (Fix 02 relative signed URLs)
 """
 
 from __future__ import annotations
@@ -33,7 +33,6 @@ from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 from homeassistant.components.http.auth import async_sign_path
-from homeassistant.helpers.network import get_url
 from .utils import (
     format_address,
     format_address_short,
@@ -1360,7 +1359,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                     timedelta(hours=24),
                     use_content_user=True,
                 )
-                receipt_url = f"{get_url(self.hass)}{signed_path}"
+                receipt_url = signed_path
 
                 receipt_entry = {
                     "receipt_id": receipt_id,
