@@ -793,6 +793,11 @@
       "trip_active": {
         "name": "Trip Active"
       }
+    },
+    "select": {
+      "route_history_date": {
+        "name": "History Date"
+      }
     }
   },
   "common": {

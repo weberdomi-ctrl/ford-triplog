@@ -826,6 +826,11 @@
       "trip_active": {
         "name": "Fahrt aktiv"
       }
+    },
+    "select": {
+      "route_history_date": {
+        "name": "Datum der Historie"
+      }
     }
   },
   "common": {
