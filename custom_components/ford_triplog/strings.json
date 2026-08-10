@@ -778,6 +778,14 @@
       },
       "top_day": {
         "name": "Top Day"
+      },
+      "charging_history": {
+        "name": "Charging History"
+      }
+    },
+    "binary_sensor": {
+      "trip_active": {
+        "name": "Trip Active"
       }
     }
   },
