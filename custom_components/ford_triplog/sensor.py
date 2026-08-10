@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 02)
+Phase: 4 - Top Statistics / Top Day (Fix 03)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -33,6 +33,8 @@ Changes:
   postal code + city, matching the other Top Statistics sensors.
 - Fix 02: use Home Assistant translation keys for Top Trip, Top Journey,
   Top Charging and Top Day instead of fixed English entity names.
+- Fix 03: make Charging History translatable via charging_history key;
+  Trip Active is handled by binary_sensor.py via trip_active key.
 """
 
 from __future__ import annotations
@@ -1279,7 +1281,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
     """Expose archived charging sessions for the selected History date."""
 
     _attr_has_entity_name = True
-    _attr_name = "Charging History"
+    _attr_translation_key = "charging_history"
     _attr_unique_id = "ford_triplog_charging_history"
     _attr_icon = "mdi:ev-station"
 

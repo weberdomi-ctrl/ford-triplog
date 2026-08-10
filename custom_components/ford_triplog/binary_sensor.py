@@ -5,7 +5,7 @@ Track your Ford.
 
 Home Assistant binary sensor platform.
 
-Version: 1.3.2
+Version: 2.0.2
 """
 
 from __future__ import annotations
@@ -47,7 +47,7 @@ class FordTriplogActiveTripBinarySensor(
     """Binary sensor showing active trip state."""
 
     _attr_has_entity_name = True
-    _attr_name = "Trip Active"
+    _attr_translation_key = "trip_active"
     _attr_unique_id = "ford_triplog_trip_active"
     _attr_icon = "mdi:car-connected"
 
