@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 01)
+Phase: 4 - Top Statistics / Top Day (Fix 02)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -31,6 +31,8 @@ Changes:
   recorder attributes.
 - Fix 01: compact Top Day start/end location strings to street/POI and
   postal code + city, matching the other Top Statistics sensors.
+- Fix 02: use Home Assistant translation keys for Top Trip, Top Journey,
+  Top Charging and Top Day instead of fixed English entity names.
 """
 
 from __future__ import annotations
@@ -1995,7 +1997,7 @@ class FordTriplogTopDaySensor(SensorEntity):
     """Expose the calendar day with the highest total Journey distance."""
 
     _attr_has_entity_name = True
-    _attr_name = "Top Day"
+    _attr_translation_key = "top_day"
     _attr_unique_id = "ford_triplog_top_day"
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
@@ -2423,7 +2425,7 @@ class FordTriplogTopDaySensor(SensorEntity):
 class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     """Expose compact Top Charging statistics."""
 
-    _attr_name = "Top Charging"
+    _attr_translation_key = "top_charging"
     _attr_unique_id = "ford_triplog_top_charging"
     _attr_icon = "mdi:ev-station"
 
@@ -3148,7 +3150,7 @@ class FordTriplogTopJourneySensor(SensorEntity):
     """Expose the longest archived completed Journey."""
 
     _attr_has_entity_name = True
-    _attr_name = "Top Journey"
+    _attr_translation_key = "top_journey"
     _attr_unique_id = "ford_triplog_top_journey"
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
@@ -3405,7 +3407,7 @@ class FordTriplogTopJourneySensor(SensorEntity):
 class FordTriplogTopTripSensor(FordTriplogSensorBase):
     """Expose the longest recorded trip as one compact statistics sensor."""
 
-    _attr_name = "Top Trip"
+    _attr_translation_key = "top_trip"
     _attr_unique_id = "ford_triplog_top_trip"
     _attr_device_class = SensorDeviceClass.DISTANCE
     _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
