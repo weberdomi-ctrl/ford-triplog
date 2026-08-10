@@ -4,12 +4,14 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 1 - Top Statistics / Top Trip
+Phase: 2 - Top Statistics / Top Journey
 Changes:
-- Add one compact Top Trip sensor instead of multiple record entities.
-- State is the longest recorded trip distance in km.
-- Attributes expose duration, start/end, energy use, consumption and trip ID.
-- Existing 2.0.1 statistics are rebuilt once when top_trip is not yet present.
+- Keep Phase 1 Top Trip unchanged.
+- Add one compact Top Journey sensor based on archived completed Journeys.
+- State is the longest recorded Journey distance in km.
+- Attributes expose duration, start/end, trip/charge counts, energy used,
+  energy charged, consumption, charging cost and Journey ID.
+- Top Journey refreshes when Journey data changes.
 """
 
 from __future__ import annotations
@@ -167,6 +169,10 @@ async def async_setup_entry(
 
             # Statistics
             FordTriplogTopTripSensor(coordinator, history, common_translations),
+            FordTriplogTopJourneySensor(
+                journey_storage,
+                common_translations,
+            ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
             FordTriplogTotalEnergySensor(coordinator, history, common_translations),
             FordTriplogAverageConsumptionSensor(coordinator, history, common_translations),
@@ -1949,6 +1955,234 @@ class FordTriplogSensorBase(SensorEntity):
                     "ford_triplog",
                 )
             },
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogTopJourneySensor(SensorEntity):
+    """Expose the longest archived completed Journey."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Top Journey"
+    _attr_unique_id = "ford_triplog_top_journey"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:trophy-variant-outline"
+
+    def __init__(
+        self,
+        storage: FordTriplogJourneyStorage | None,
+        translations: dict[str, str],
+    ) -> None:
+        self.storage = storage
+        self.translations = translations
+        self._journey = None
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        """Load the record and refresh it when Journey data changes."""
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+        await self._async_refresh()
+
+    def _handle_journey_update(self, *_args: Any) -> None:
+        """Schedule a refresh after Journey data changes."""
+
+        self.hass.add_job(self._async_refresh_and_write)
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh Top Journey and write the entity state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _short_address(value: Any) -> str | None:
+        """Return a compact display address."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            return format_address_short(value) or None
+
+        text = str(value).strip()
+        return text or None
+
+    @staticmethod
+    def _optional_number(
+        value: Any,
+        digits: int = 1,
+    ) -> float | None:
+        """Return a rounded optional number."""
+
+        if value is None:
+            return None
+
+        try:
+            return round(float(value), digits)
+        except (TypeError, ValueError):
+            return None
+
+    async def _async_refresh(self) -> None:
+        """Find and expose the longest archived Journey."""
+
+        if self.storage is None:
+            self._journey = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        journeys = await self.storage.get_all_journeys()
+
+        if not journeys:
+            self._journey = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        def journey_distance(journey) -> float:
+            try:
+                return float(journey.distance_km or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        journey = max(journeys, key=journey_distance)
+        distance_km = round(journey_distance(journey), 1)
+
+        if distance_km <= 0:
+            self._journey = None
+            self._attr_native_value = None
+            self._attributes = {}
+            return
+
+        items = list(journey.items)
+        first_item = items[0] if items else None
+        last_item = items[-1] if items else None
+
+        start_location = (
+            getattr(first_item, "start_location", None)
+            if first_item is not None
+            and getattr(first_item, "item_type", None) == "trip"
+            else None
+        ) or self._short_address(journey.start_address)
+
+        if (
+            last_item is not None
+            and getattr(last_item, "item_type", None) == "trip"
+        ):
+            end_location = (
+                getattr(last_item, "end_location", None)
+                or self._short_address(
+                    getattr(last_item, "end_address", None)
+                )
+                or self._short_address(journey.end_address)
+            )
+        elif last_item is not None:
+            end_location = (
+                getattr(last_item, "location", None)
+                or self._short_address(
+                    getattr(last_item, "address", None)
+                )
+                or self._short_address(journey.end_address)
+            )
+        else:
+            end_location = self._short_address(journey.end_address)
+
+        total_duration_seconds = int(
+            journey.total_duration_seconds or 0
+        )
+        driving_duration_seconds = int(
+            journey.driving_duration_seconds or 0
+        )
+        charging_duration_seconds = int(
+            journey.charging_duration_seconds or 0
+        )
+
+        self._journey = journey
+        self._attr_native_value = distance_km
+
+        attributes = {
+            "journey_id": journey.journey_id,
+            "date": journey.date,
+            "distance_km": distance_km,
+            "start_time": journey.start_time,
+            "end_time": journey.end_time,
+            "start_location": start_location,
+            "end_location": end_location,
+            "total_duration_seconds": total_duration_seconds,
+            "total_duration": format_duration(
+                total_duration_seconds
+            ),
+            "driving_duration_seconds": driving_duration_seconds,
+            "driving_duration": format_duration(
+                driving_duration_seconds
+            ),
+            "charging_duration_seconds": charging_duration_seconds,
+            "charging_duration": format_duration(
+                charging_duration_seconds
+            ),
+            "trip_count": journey.trip_count,
+            "charge_count": journey.charge_count,
+            "energy_used_kwh": self._optional_number(
+                journey.energy_used_kwh,
+                2,
+            ),
+            "energy_charged_kwh": self._optional_number(
+                journey.energy_charged_kwh,
+                2,
+            ),
+            "average_consumption_kwh_100km": self._optional_number(
+                journey.average_consumption_kwh_100km,
+                1,
+            ),
+            "charging_cost_total": self._optional_number(
+                journey.charging_cost_total,
+                2,
+            ),
+            "average_charging_price_per_kwh": self._optional_number(
+                journey.average_charging_price_per_kwh,
+                4,
+            ),
+            "currency": journey.currency,
+        }
+
+        self._attributes = {
+            key: value
+            for key, value in attributes.items()
+            if value is not None
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether Top Journey data is available."""
+
+        return self._journey is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return dashboard-ready Top Journey details."""
+
+        return self._attributes
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
             "name": "Ford Triplog",
             "manufacturer": "Ford",
             "model": "Triplog",
