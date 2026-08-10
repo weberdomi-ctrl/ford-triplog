@@ -781,6 +781,12 @@
       },
       "charging_history": {
         "name": "Charging History"
+      },
+      "journey_history": {
+        "name": "Journey History"
+      },
+      "route_history": {
+        "name": "Route History"
       }
     },
     "binary_sensor": {
