@@ -3,7 +3,12 @@ Ford Triplog
 
 History and statistics.
 
-Version: 1.6.3
+Version: 1.6.4
+Phase: 2.0.2 - Top Statistics / Phase 1 - Top Trip
+Changes:
+- Add longest-trip record to persisted statistics.
+- Store distance, duration, start/end, energy and consumption for Top Trip.
+- Reuse the existing archive scan performed by refresh_statistics().
 """
 
 from __future__ import annotations
@@ -118,6 +123,8 @@ class FordTriplogHistory:
         total_start_soc = 0.0
         total_end_soc = 0.0
         trip_count = 0
+        top_trip: dict[str, Any] | None = None
+        top_trip_distance = -1.0
 
         for charge in charges:
             if not charge.get("include_in_statistics", True):
@@ -153,9 +160,34 @@ class FordTriplogHistory:
 
             trip_count += 1
 
-            total_distance += float(trip.get("distance_km") or 0)
-            total_duration += int(trip.get("duration_seconds") or 0)
-            total_energy += float(trip.get("energy_used_kwh") or 0)
+            distance = float(trip.get("distance_km") or 0)
+            duration_seconds = int(trip.get("duration_seconds") or 0)
+            energy_used = float(trip.get("energy_used_kwh") or 0)
+
+            total_distance += distance
+            total_duration += duration_seconds
+            total_energy += energy_used
+
+            if distance > top_trip_distance:
+                top_trip_distance = distance
+
+                consumption = (
+                    round((energy_used / distance) * 100, 1)
+                    if distance > 0
+                    else None
+                )
+
+                top_trip = {
+                    "trip_id": trip.get("trip_id"),
+                    "distance_km": round(distance, 1),
+                    "duration_seconds": duration_seconds,
+                    "start_time": trip.get("start_time"),
+                    "end_time": trip.get("end_time"),
+                    "start_address": trip.get("start_address"),
+                    "end_address": trip.get("end_address"),
+                    "energy_used_kwh": round(energy_used, 2),
+                    "consumption_kwh_100km": consumption,
+                }
 
             start_soc = trip.get("start_soc")
             end_soc = trip.get("end_soc")
@@ -225,6 +257,7 @@ class FordTriplogHistory:
             "average_soc_added": round(average_soc_added, 1),
             "average_start_soc": round(average_start_soc, 1),
             "average_end_soc": round(average_end_soc, 1),
+            "top_trip": top_trip,
         }
 
     async def refresh_statistics(self):
