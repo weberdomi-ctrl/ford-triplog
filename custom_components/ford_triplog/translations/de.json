@@ -811,6 +811,14 @@
       },
       "top_day": {
         "name": "Top Tag"
+      },
+      "charging_history": {
+        "name": "Ladehistorie"
+      }
+    },
+    "binary_sensor": {
+      "trip_active": {
+        "name": "Fahrt aktiv"
       }
     }
   },
