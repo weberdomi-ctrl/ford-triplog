@@ -799,6 +799,18 @@
       },
       "last_route": {
         "name": "Letzte Route"
+      },
+      "top_trip": {
+        "name": "Top Fahrt"
+      },
+      "top_journey": {
+        "name": "Top Tour"
+      },
+      "top_charging": {
+        "name": "Top Laden"
+      },
+      "top_day": {
+        "name": "Top Tag"
       }
     }
   },

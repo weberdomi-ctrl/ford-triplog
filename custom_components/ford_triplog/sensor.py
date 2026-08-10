@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 3 - Top Statistics / Top Charging (Fix 04)
+Phase: 4 - Top Statistics / Top Day (Fix 01)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -18,6 +18,19 @@ Changes:
   independently from provider.
 - Fix 04: exclude Unknown from the Top Provider ranking while retaining
   unknown-provider session totals; format postal code and city together.
+- Fix 05: re-match historic charging sessions against today's user-defined
+  charging sites and current OSM charging-site database without modifying
+  archived charge files. Matching uses end coordinates first, then start,
+  the configured user-site radius, and the coordinator OSM radius.
+- Phase 4: add one compact Top Day sensor.
+- Top Day aggregates all completed Journeys per local calendar day and selects
+  the day with the highest total Journey distance.
+- Attributes include Journey/trip/charge counts, duration, energy, charging
+  costs, start/end locations and compact route references.
+- Route GeoJSON is intentionally not duplicated into Top Day to avoid large
+  recorder attributes.
+- Fix 01: compact Top Day start/end location strings to street/POI and
+  postal code + city, matching the other Top Statistics sensors.
 """
 
 from __future__ import annotations
@@ -182,6 +195,11 @@ async def async_setup_entry(
             FordTriplogTopChargingSensor(
                 coordinator,
                 history,
+                common_translations,
+            ),
+            FordTriplogTopDaySensor(
+                journey_storage,
+                route_storage,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -1973,6 +1991,435 @@ class FordTriplogSensorBase(SensorEntity):
         }
 
 
+class FordTriplogTopDaySensor(SensorEntity):
+    """Expose the calendar day with the highest total Journey distance."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Top Day"
+    _attr_unique_id = "ford_triplog_top_day"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:calendar-star"
+
+    def __init__(
+        self,
+        journey_storage: FordTriplogJourneyStorage | None,
+        route_storage: FordTriplogRouteStorage | None,
+        translations: dict[str, str],
+    ) -> None:
+        self.journey_storage = journey_storage
+        self.route_storage = route_storage
+        self.translations = translations
+        self._attr_native_value = None
+        self._attributes: dict[str, Any] = {}
+        self._top_date: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        """Load Top Day and refresh it after Journey changes."""
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+        await self._async_refresh()
+
+    def _handle_journey_update(self, *_args: Any) -> None:
+        """Schedule a Top Day refresh after Journey maintenance."""
+
+        self.hass.add_job(self._async_refresh_and_write)
+
+    async def _async_refresh_and_write(self) -> None:
+        """Refresh and write Top Day."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
+
+    @staticmethod
+    def _optional_number(
+        value: Any,
+        digits: int = 2,
+    ) -> float:
+        """Return a numeric value, defaulting to zero."""
+
+        try:
+            return round(float(value or 0), digits)
+        except (TypeError, ValueError):
+            return 0.0
+
+    @staticmethod
+    def _compact_location(value: Any) -> str | None:
+        """Return a compact street/POI, postal code and city."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            road = (
+                value.get("road")
+                or value.get("pedestrian")
+                or value.get("path")
+                or value.get("amenity")
+                or value.get("name")
+            )
+            house = value.get("house_number")
+            postcode = value.get("postcode")
+            city = (
+                value.get("city")
+                or value.get("town")
+                or value.get("village")
+                or value.get("municipality")
+            )
+
+            street = " ".join(
+                str(part).strip()
+                for part in (road, house)
+                if part
+            ).strip()
+            postal_city = " ".join(
+                str(part).strip()
+                for part in (postcode, city)
+                if part
+            ).strip()
+
+            parts = [
+                part
+                for part in (street or None, postal_city or None)
+                if part
+            ]
+            if parts:
+                return ", ".join(parts)
+
+            value = (
+                value.get("display_name")
+                or value.get("display")
+            )
+
+        text = str(value or "").strip()
+        if not text:
+            return None
+
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) <= 3:
+            return text
+
+        postcode_index = next(
+            (
+                index
+                for index, part in enumerate(parts)
+                if part.isdigit() and 4 <= len(part) <= 5
+            ),
+            None,
+        )
+
+        if postcode_index is not None:
+            postcode = parts[postcode_index]
+
+            if len(parts) >= 3 and parts[0].isdigit():
+                street = f"{parts[1]} {parts[0]}".strip()
+                city = parts[2]
+            else:
+                street = parts[0]
+                city = parts[1] if len(parts) > 1 else None
+
+            postal_city = " ".join(
+                part for part in (postcode, city) if part
+            )
+            return ", ".join(
+                part for part in (street, postal_city) if part
+            )
+
+        return ", ".join(parts[:3])
+
+    def _journey_start_location(self, journey) -> str | None:
+        """Return the best start location for one Journey."""
+
+        items = list(journey.items)
+        first_item = items[0] if items else None
+
+        if (
+            first_item is not None
+            and getattr(first_item, "item_type", None) == "trip"
+        ):
+            location = getattr(first_item, "start_location", None)
+            if location:
+                compact = self._compact_location(location)
+                if compact:
+                    return compact
+
+            address = getattr(first_item, "start_address", None)
+            compact = self._compact_location(address)
+            if compact:
+                return compact
+
+        return self._compact_location(journey.start_address)
+
+    def _journey_end_location(self, journey) -> str | None:
+        """Return the best end location for one Journey."""
+
+        items = list(journey.items)
+        last_item = items[-1] if items else None
+
+        if last_item is not None:
+            if getattr(last_item, "item_type", None) == "trip":
+                location = getattr(last_item, "end_location", None)
+                if location:
+                    compact = self._compact_location(location)
+                    if compact:
+                        return compact
+
+                address = getattr(last_item, "end_address", None)
+                compact = self._compact_location(address)
+                if compact:
+                    return compact
+            else:
+                location = getattr(last_item, "location", None)
+                if location:
+                    compact = self._compact_location(location)
+                    if compact:
+                        return compact
+
+                address = getattr(last_item, "address", None)
+                compact = self._compact_location(address)
+                if compact:
+                    return compact
+
+        return self._compact_location(journey.end_address)
+
+    async def _route_summary(
+        self,
+        date_value: str,
+    ) -> dict[str, Any]:
+        """Return compact route references for the selected day."""
+
+        if self.route_storage is None:
+            return {
+                "route_available": False,
+                "route_count": 0,
+                "route_trip_ids": [],
+            }
+
+        try:
+            routes = await self.route_storage.async_load_routes_for_date(
+                date_value
+            )
+        except (OSError, ValueError):
+            routes = []
+
+        trip_ids = [
+            str(route.get("trip_id"))
+            for route in routes
+            if isinstance(route, dict) and route.get("trip_id")
+        ]
+
+        return {
+            "route_available": bool(routes),
+            "route_count": len(routes),
+            "route_trip_ids": trip_ids,
+        }
+
+    async def _async_refresh(self) -> None:
+        """Aggregate Journeys by day and expose the record day."""
+
+        if self.journey_storage is None:
+            self._attr_native_value = None
+            self._attributes = {}
+            self._top_date = None
+            return
+
+        journeys = await self.journey_storage.get_all_journeys()
+
+        if not journeys:
+            self._attr_native_value = None
+            self._attributes = {}
+            self._top_date = None
+            return
+
+        days: dict[str, dict[str, Any]] = {}
+
+        for journey in journeys:
+            date_value = str(journey.date or "").strip()
+            if not date_value:
+                continue
+
+            row = days.setdefault(
+                date_value,
+                {
+                    "date": date_value,
+                    "journeys": [],
+                    "distance_km": 0.0,
+                    "total_duration_seconds": 0,
+                    "driving_duration_seconds": 0,
+                    "charging_duration_seconds": 0,
+                    "journey_count": 0,
+                    "trip_count": 0,
+                    "charge_count": 0,
+                    "energy_used_kwh": 0.0,
+                    "energy_charged_kwh": 0.0,
+                    "charging_cost_total": 0.0,
+                    "journey_ids": [],
+                    "trip_ids": [],
+                    "charge_ids": [],
+                    "currencies": set(),
+                },
+            )
+
+            row["journeys"].append(journey)
+            row["journey_count"] += 1
+            row["distance_km"] += self._optional_number(
+                journey.distance_km,
+                3,
+            )
+            row["total_duration_seconds"] += int(
+                journey.total_duration_seconds or 0
+            )
+            row["driving_duration_seconds"] += int(
+                journey.driving_duration_seconds or 0
+            )
+            row["charging_duration_seconds"] += int(
+                journey.charging_duration_seconds or 0
+            )
+            row["trip_count"] += int(journey.trip_count or 0)
+            row["charge_count"] += int(journey.charge_count or 0)
+            row["energy_used_kwh"] += self._optional_number(
+                journey.energy_used_kwh,
+                3,
+            )
+            row["energy_charged_kwh"] += self._optional_number(
+                journey.energy_charged_kwh,
+                3,
+            )
+            row["charging_cost_total"] += self._optional_number(
+                journey.charging_cost_total,
+                3,
+            )
+
+            row["journey_ids"].append(journey.journey_id)
+            row["trip_ids"].extend(list(journey.trip_ids))
+            row["charge_ids"].extend(list(journey.charge_ids))
+
+            currency = str(journey.currency or "").strip().upper()
+            if currency:
+                row["currencies"].add(currency)
+
+        if not days:
+            self._attr_native_value = None
+            self._attributes = {}
+            self._top_date = None
+            return
+
+        top = max(
+            days.values(),
+            key=lambda row: (
+                row["distance_km"],
+                row["driving_duration_seconds"],
+            ),
+        )
+
+        top_journeys = sorted(
+            top["journeys"],
+            key=lambda journey: (
+                str(journey.start_time or ""),
+                str(journey.journey_id or ""),
+            ),
+        )
+
+        first_journey = top_journeys[0]
+        last_journey = top_journeys[-1]
+
+        distance_km = round(top["distance_km"], 1)
+        energy_used_kwh = round(top["energy_used_kwh"], 2)
+        energy_charged_kwh = round(top["energy_charged_kwh"], 2)
+        charging_cost_total = round(top["charging_cost_total"], 2)
+
+        average_consumption = (
+            round((energy_used_kwh / distance_km) * 100, 1)
+            if distance_km > 0
+            else 0.0
+        )
+
+        route_summary = await self._route_summary(top["date"])
+
+        currencies = sorted(top["currencies"])
+        currency = currencies[0] if len(currencies) == 1 else None
+
+        self._top_date = top["date"]
+        self._attr_native_value = distance_km
+
+        self._attributes = {
+            "date": top["date"],
+            "distance_km": distance_km,
+            "start_time": first_journey.start_time,
+            "end_time": last_journey.end_time,
+            "start_location": self._journey_start_location(
+                first_journey
+            ),
+            "end_location": self._journey_end_location(
+                last_journey
+            ),
+            "total_duration_seconds": top["total_duration_seconds"],
+            "total_duration": format_duration(
+                top["total_duration_seconds"]
+            ),
+            "driving_duration_seconds": top[
+                "driving_duration_seconds"
+            ],
+            "driving_duration": format_duration(
+                top["driving_duration_seconds"]
+            ),
+            "charging_duration_seconds": top[
+                "charging_duration_seconds"
+            ],
+            "charging_duration": format_duration(
+                top["charging_duration_seconds"]
+            ),
+            "journey_count": top["journey_count"],
+            "trip_count": top["trip_count"],
+            "charge_count": top["charge_count"],
+            "energy_used_kwh": energy_used_kwh,
+            "energy_charged_kwh": energy_charged_kwh,
+            "average_consumption_kwh_100km": average_consumption,
+            "charging_cost_total": charging_cost_total,
+            "currency": currency,
+            "journey_ids": top["journey_ids"],
+            "trip_ids": top["trip_ids"],
+            "charge_ids": top["charge_ids"],
+            **route_summary,
+        }
+
+    @property
+    def available(self) -> bool:
+        """Return whether Top Day data is available."""
+
+        return self._top_date is not None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return dashboard-ready Top Day details."""
+
+        return {
+            key: value
+            for key, value in self._attributes.items()
+            if value is not None
+        }
+
+    @property
+    def device_info(self):
+        """Return device information."""
+
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
 class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     """Expose compact Top Charging statistics."""
 
@@ -2167,6 +2614,180 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
         return ", ".join(parts[:3])
 
+    @staticmethod
+    def _charge_coordinates(
+        charge: dict[str, Any],
+    ) -> tuple[float, float] | None:
+        """Return end coordinates first, then start coordinates."""
+
+        for latitude_key, longitude_key in (
+            ("end_latitude", "end_longitude"),
+            ("start_latitude", "start_longitude"),
+        ):
+            latitude = charge.get(latitude_key)
+            longitude = charge.get(longitude_key)
+
+            if latitude is None or longitude is None:
+                continue
+
+            try:
+                return float(latitude), float(longitude)
+            except (TypeError, ValueError):
+                continue
+
+        return None
+
+    async def _async_match_current_user_site(
+        self,
+        charge: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Re-match one historic charge against current user sites."""
+
+        coordinates = self._charge_coordinates(charge)
+        if coordinates is None:
+            return None
+
+        storage = getattr(
+            self.coordinator,
+            "user_charging_site_storage",
+            None,
+        )
+        if storage is None:
+            return None
+
+        try:
+            sites = await storage.async_load()
+        except (OSError, ValueError):
+            return None
+
+        best_site: dict[str, Any] | None = None
+        best_distance: float | None = None
+
+        for site in sites:
+            try:
+                distance = self._distance_m(
+                    coordinates[0],
+                    coordinates[1],
+                    float(site["latitude"]),
+                    float(site["longitude"]),
+                )
+                radius = float(site["radius"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if distance > radius:
+                continue
+
+            if best_distance is None or distance < best_distance:
+                best_site = site
+                best_distance = distance
+
+        if best_site is None:
+            return None
+
+        return {
+            "source": "user",
+            "site_id": best_site.get("site_id"),
+            "name": best_site.get("name"),
+            "brand": best_site.get("brand"),
+            "operator": best_site.get("operator"),
+            "network": best_site.get("network"),
+            "distance_m": (
+                round(best_distance, 1)
+                if best_distance is not None
+                else None
+            ),
+        }
+
+    async def _async_match_current_osm_site(
+        self,
+        charge: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Re-match one historic charge against the current OSM database."""
+
+        coordinates = self._charge_coordinates(charge)
+        if coordinates is None:
+            return None
+
+        lookup = getattr(
+            self.coordinator,
+            "charging_site_lookup",
+            None,
+        )
+        if lookup is None:
+            return None
+
+        radius = float(
+            getattr(
+                self.coordinator,
+                "charging_site_radius",
+                10,
+            )
+        )
+
+        try:
+            site = await self.hass.async_add_executor_job(
+                lookup.find,
+                coordinates[0],
+                coordinates[1],
+                radius,
+            )
+        except (TypeError, ValueError):
+            return None
+
+        if not site:
+            return None
+
+        return {
+            "source": "osm",
+            "site_id": site.get("site_id"),
+            "name": site.get("name"),
+            "brand": site.get("brand"),
+            "operator": site.get("operator"),
+            "network": site.get("network"),
+            "distance_m": site.get("distance_m"),
+        }
+
+    @staticmethod
+    def _provider_from_site(
+        site: dict[str, Any] | None,
+    ) -> str | None:
+        """Return the best provider label from a current site match."""
+
+        if not site:
+            return None
+
+        for key in ("brand", "operator", "network"):
+            value = site.get(key)
+            if (
+                value
+                and str(value).strip()
+                and str(value).strip().upper() != "UNKNOWN"
+            ):
+                return str(value).strip()
+
+        return None
+
+    @staticmethod
+    def _location_from_site(
+        site: dict[str, Any] | None,
+    ) -> str | None:
+        """Return the best location label from a current site match."""
+
+        if not site:
+            return None
+
+        for key in ("name", "brand", "operator", "network"):
+            value = site.get(key)
+            if (
+                value
+                and str(value).strip()
+                and str(value).strip().upper() != "UNKNOWN"
+            ):
+                return str(value).strip()
+
+        return None
+
     def _charge_provider(self, charge: dict[str, Any]) -> str:
         """Return the best available charging provider label."""
 
@@ -2332,8 +2953,46 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         unknown_provider_cost = 0.0
 
         for charge in valid_charges:
-            provider = self._charge_provider(charge)
-            location = self._charge_location(charge)
+            zone_name = self._resolve_zone_name(charge)
+            cost_source = str(
+                charge.get("cost_source") or ""
+            ).strip().lower()
+
+            current_site = None
+
+            # Home remains the highest-priority classification.
+            is_home = (
+                cost_source == "home_tariff"
+                or (
+                    zone_name is not None
+                    and zone_name.lower() == "home"
+                )
+            )
+
+            if is_home:
+                provider = "Home"
+                location = "Home"
+            else:
+                # Current user-defined sites have priority over current OSM,
+                # matching ChargingLocationResolver semantics.
+                current_site = await self._async_match_current_user_site(
+                    charge
+                )
+
+                if current_site is None:
+                    current_site = await self._async_match_current_osm_site(
+                        charge
+                    )
+
+                provider = (
+                    self._provider_from_site(current_site)
+                    or self._charge_provider(charge)
+                )
+                location = (
+                    self._location_from_site(current_site)
+                    or self._charge_location(charge)
+                )
+
             energy = self._energy_kwh(charge)
             cost = self._total_cost(charge)
 
@@ -2381,6 +3040,11 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                     "charge_id": self._charge_id(charge),
                     "provider": provider,
                     "location": location,
+                    "location_source": (
+                        current_site.get("source")
+                        if current_site is not None
+                        else ("home" if is_home else "historic")
+                    ),
                     "start_time": charge.get("start_time"),
                     "end_time": charge.get("end_time"),
                     "energy_kwh": round(energy, 2),
