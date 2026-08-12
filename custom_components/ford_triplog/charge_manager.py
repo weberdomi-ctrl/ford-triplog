@@ -5,8 +5,8 @@ Track your Ford.
 
 Charging-session management and manual cost handling.
 
-Version: 1.8.4
-Release: 1.8.4 - Detailed charging costs
+Version: 2.0.2
+Release: 2.0.2 - Charge data update notifications
 """
 
 from __future__ import annotations
@@ -17,8 +17,10 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .charge import Charge
+from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .storage import FordTriplogStorage
 
 _LOGGER = logging.getLogger(__name__)
@@ -254,6 +256,8 @@ class FordTriplogChargeManager:
             charge.effective_price_per_kwh,
         )
 
+        async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
+
         return ChargeManagerResult(
             action="set_cost",
             charge_id=normalized_id,
@@ -317,6 +321,8 @@ class FordTriplogChargeManager:
             normalized_id,
         )
 
+        async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
+
         return ChargeManagerResult(
             action="clear_cost",
             charge_id=normalized_id,
@@ -341,6 +347,9 @@ class FordTriplogChargeManager:
             normalized_id,
             charge.to_dict(),
         )
+
+        if saved:
+            async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
 
         return ChargeManagerResult(
             action="update_charge",
