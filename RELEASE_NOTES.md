@@ -94,6 +94,11 @@ Improvements include:
 
 ## ⚙️ Improvements and Fixes
 
+- Fixed Journey History aggregation when multiple separate Journeys exist on the same calendar date
+  - Distance, durations, energy, SoC and charging costs are now aggregated across all Journeys
+  - Journey timelines are merged chronologically instead of showing only the last Journey
+  - Average consumption and average charging price are recalculated from the aggregated totals
+  - Start SoC is taken from the first available Journey value and end SoC from the last available value
 - Improved Top Charging aggregation
 - Charging provider and location corrections are reflected in statistics
 - Manual charging cost changes can update Top Charging without reloading the integration
