@@ -3,8 +3,8 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 08)
+Version: 2.0.2
+Phase: 4 - Top Statistics / Top Day (Fix 09)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -38,6 +38,8 @@ Changes:
 - Fix 04: remove redundant FordPass last-charge energy entity. The raw
   FordPass value remains stored internally and in last-charge attributes.
 - Fix 05: make Journey History and Route History entity names translatable.
+- Fix 09: aggregate Journey History across all Journeys on the selected
+  calendar date, including timeline, duration, energy, SOC and costs.
 """
 
 from __future__ import annotations
@@ -1201,6 +1203,8 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         self.async_write_ha_state()
 
     async def _async_refresh(self) -> None:
+        """Load and aggregate all Journeys for the selected History date."""
+
         if self.storage is None or not self._selected_date:
             self._journey = None
             self._journeys = []
@@ -1210,10 +1214,17 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
 
         all_journeys = await self.storage.get_all_journeys()
         matches = [
-            journey for journey in all_journeys
+            journey
+            for journey in all_journeys
             if str(journey.date or "") == self._selected_date
         ]
-        matches.sort(key=lambda j: (j.start_time or "", j.journey_id))
+        matches.sort(
+            key=lambda journey: (
+                str(journey.start_time or ""),
+                str(journey.journey_id or ""),
+            )
+        )
+
         self._journeys = matches
         self._attr_native_value = self._selected_date
 
@@ -1226,51 +1237,197 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             }
             return
 
-        primary = matches[-1]
-        self._journey = primary
-        timeline, pause_seconds = self._build_timeline(primary)
-        total_duration = int(primary.total_duration_seconds or 0)
+        # Keep the last Journey as the internal reference for compatibility,
+        # but all exposed day-level values below are aggregated from matches.
+        self._journey = matches[-1]
+
+        def _number(value: Any) -> float:
+            try:
+                return float(value or 0)
+            except (TypeError, ValueError):
+                return 0.0
+
+        def _first_non_null(attribute: str):
+            for journey in matches:
+                value = getattr(journey, attribute, None)
+                if value is not None:
+                    return value
+            return None
+
+        def _last_non_null(attribute: str):
+            for journey in reversed(matches):
+                value = getattr(journey, attribute, None)
+                if value is not None:
+                    return value
+            return None
+
+        timeline: list[dict[str, Any]] = []
+        pause_seconds = 0
+
+        for journey in matches:
+            journey_timeline, journey_pause_seconds = self._build_timeline(
+                journey
+            )
+            timeline.extend(journey_timeline)
+            pause_seconds += int(journey_pause_seconds or 0)
+
+        distance_km = sum(_number(journey.distance_km) for journey in matches)
+        total_duration_seconds = sum(
+            int(journey.total_duration_seconds or 0)
+            for journey in matches
+        )
+        driving_duration_seconds = sum(
+            int(journey.driving_duration_seconds or 0)
+            for journey in matches
+        )
+        charging_duration_seconds = sum(
+            int(journey.charging_duration_seconds or 0)
+            for journey in matches
+        )
+
+        energy_used_kwh = sum(
+            _number(journey.energy_used_kwh)
+            for journey in matches
+        )
+        energy_charged_kwh = sum(
+            _number(journey.energy_charged_kwh)
+            for journey in matches
+        )
+        battery_energy_balance_kwh = sum(
+            _number(journey.battery_energy_balance_kwh)
+            for journey in matches
+        )
+        total_energy_flow_kwh = sum(
+            _number(journey.total_energy_flow_kwh)
+            for journey in matches
+        )
+
+        charging_cost_total = sum(
+            _number(journey.charging_cost_total)
+            for journey in matches
+        )
+        charging_energy_cost = sum(
+            _number(journey.charging_energy_cost)
+            for journey in matches
+        )
+        charging_additional_cost = sum(
+            _number(journey.charging_additional_cost)
+            for journey in matches
+        )
+
+        soc_used = sum(
+            _number(journey.soc_used)
+            for journey in matches
+        )
+        soc_charged = sum(
+            _number(journey.soc_charged)
+            for journey in matches
+        )
+        soc_adjustment = sum(
+            _number(journey.soc_adjustment)
+            for journey in matches
+        )
+        soc_adjustment_kwh = sum(
+            _number(journey.soc_adjustment_kwh)
+            for journey in matches
+        )
+
+        start_soc = _first_non_null("start_soc")
+        end_soc = _last_non_null("end_soc")
+
+        if start_soc is not None and end_soc is not None:
+            try:
+                soc_delta = round(float(end_soc) - float(start_soc), 1)
+            except (TypeError, ValueError):
+                soc_delta = round(
+                    sum(_number(journey.soc_delta) for journey in matches),
+                    1,
+                )
+        else:
+            soc_delta = round(
+                sum(_number(journey.soc_delta) for journey in matches),
+                1,
+            )
+
+        battery_energy_delta_kwh = sum(
+            _number(journey.battery_energy_delta_kwh)
+            for journey in matches
+        )
+
+        average_consumption = (
+            round((energy_used_kwh / distance_km) * 100, 1)
+            if distance_km > 0
+            else None
+        )
+        average_charging_price = (
+            round(charging_cost_total / energy_charged_kwh, 4)
+            if energy_charged_kwh > 0
+            else None
+        )
+
+        currencies = {
+            str(journey.currency).strip().upper()
+            for journey in matches
+            if getattr(journey, "currency", None)
+            and str(journey.currency).strip()
+        }
+        currency = (
+            next(iter(currencies))
+            if len(currencies) == 1
+            else None
+        )
+
+        battery_capacity_kwh = _first_non_null("battery_capacity_kwh")
 
         self._attributes = {
             "date": self._selected_date,
             "journey_count": len(matches),
-            "journey_id": primary.journey_id,
-            "distance_km": round(float(primary.distance_km or 0), 1),
-            "total_duration": format_duration(total_duration),
-            "driving_duration": format_duration(primary.driving_duration_seconds),
+            "journey_id": matches[-1].journey_id,
+            "distance_km": round(distance_km, 1),
+            "total_duration": format_duration(total_duration_seconds),
+            "driving_duration": format_duration(driving_duration_seconds),
             "pause_duration": format_duration(pause_seconds),
-            "charging_duration": format_duration(primary.charging_duration_seconds),
-            "energy_used_kwh": primary.energy_used_kwh,
-            "energy_charged_kwh": primary.energy_charged_kwh,
-            "battery_energy_balance_kwh": primary.battery_energy_balance_kwh,
-            "total_energy_flow_kwh": primary.total_energy_flow_kwh,
-            "currency": primary.currency,
-            "charging_cost_total": primary.charging_cost_total,
-            "charging_energy_cost": primary.charging_energy_cost,
-            "charging_additional_cost": primary.charging_additional_cost,
-            "average_charging_price_per_kwh": primary.average_charging_price_per_kwh,
-            "battery_capacity_kwh": primary.battery_capacity_kwh,
-            "start_soc": primary.start_soc,
-            "end_soc": primary.end_soc,
-            "soc_delta": primary.soc_delta,
-            "battery_energy_delta_kwh": primary.battery_energy_delta_kwh,
-            "soc_used": primary.soc_used,
-            "soc_charged": primary.soc_charged,
-            "soc_adjustment": primary.soc_adjustment,
-            "soc_adjustment_kwh": primary.soc_adjustment_kwh,
-            "average_consumption_kwh_100km": primary.average_consumption_kwh_100km,
+            "charging_duration": format_duration(charging_duration_seconds),
+            "energy_used_kwh": round(energy_used_kwh, 2),
+            "energy_charged_kwh": round(energy_charged_kwh, 2),
+            "battery_energy_balance_kwh": round(
+                battery_energy_balance_kwh,
+                2,
+            ),
+            "total_energy_flow_kwh": round(total_energy_flow_kwh, 2),
+            "currency": currency,
+            "charging_cost_total": round(charging_cost_total, 2),
+            "charging_energy_cost": round(charging_energy_cost, 2),
+            "charging_additional_cost": round(
+                charging_additional_cost,
+                2,
+            ),
+            "average_charging_price_per_kwh": average_charging_price,
+            "battery_capacity_kwh": battery_capacity_kwh,
+            "start_soc": start_soc,
+            "end_soc": end_soc,
+            "soc_delta": soc_delta,
+            "battery_energy_delta_kwh": round(
+                battery_energy_delta_kwh,
+                2,
+            ),
+            "soc_used": round(soc_used, 1),
+            "soc_charged": round(soc_charged, 1),
+            "soc_adjustment": round(soc_adjustment, 1),
+            "soc_adjustment_kwh": round(soc_adjustment_kwh, 2),
+            "average_consumption_kwh_100km": average_consumption,
             "timeline": timeline,
             "journeys": [
                 {
-                    "journey_id": j.journey_id,
-                    "date": j.date,
-                    "start_time": j.start_time,
-                    "end_time": j.end_time,
-                    "distance_km": j.distance_km,
-                    "trip_count": j.trip_count,
-                    "charge_count": j.charge_count,
+                    "journey_id": journey.journey_id,
+                    "date": journey.date,
+                    "start_time": journey.start_time,
+                    "end_time": journey.end_time,
+                    "distance_km": journey.distance_km,
+                    "trip_count": journey.trip_count,
+                    "charge_count": journey.charge_count,
                 }
-                for j in matches
+                for journey in matches
             ],
         }
 
