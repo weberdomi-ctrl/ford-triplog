@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 05)
+Phase: 4 - Top Statistics / Top Day (Fix 06)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -85,6 +85,7 @@ from .icons import (
 )
 
 from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
+from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
@@ -2927,6 +2928,13 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         """Register the existing coordinator listener and load Top Charging."""
 
         await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_CHARGE_DATA_UPDATED,
+                self._handle_charge_data_updated,
+            )
+        )
 
     async def async_update(self) -> None:
         """Refresh Top Charging directly from the charging archive."""
