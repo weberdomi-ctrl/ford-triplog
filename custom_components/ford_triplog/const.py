@@ -188,6 +188,7 @@ SIGNAL_LAST_TRIP_UPDATED: Final = "ford_triplog_last_trip_updated"
 SIGNAL_STATISTICS_UPDATED: Final = "ford_triplog_statistics_updated"
 SIGNAL_STATUS_UPDATED: Final = "ford_triplog_status_updated"
 SIGNAL_LAST_JOURNEY_UPDATED: Final = "ford_triplog_last_journey_updated"
+SIGNAL_CHARGE_DATA_UPDATED: Final = "ford_triplog_charge_data_updated"
 
 #Smart Trip Timeout
 SMART_TRIP_TIMEOUT: Final = 300  # 5 minutes
