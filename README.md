@@ -80,7 +80,7 @@ Features include:
 
 ## 🕓 Daily History
 
-Ford Triplog 2.0.1 adds a shared date-based History view for stored driving and charging data.
+Ford Triplog provides a shared date-based History view for stored driving and charging data.
 
 Features include:
 
@@ -234,6 +234,12 @@ Ford Triplog continuously maintains:
 - Average charging price
 - Battery energy delta
 - Total battery energy flow
+- Top Trip
+- Top Journey
+- Top Day
+- Top Charging providers and locations
+- Largest charging session
+- Automatic Top Charging refresh after stored charging data or costs are changed
 
 ------------------------------------------------------------------------
 
