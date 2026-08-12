@@ -1,3 +1,115 @@
+# Ford Triplog 2.0.2
+
+Ford Triplog 2.0.2 expands statistics, improves Route Tracker reliability and road matching, and completes a number of dashboard and translation refinements.
+
+## 📊 Top Statistics
+
+New native Top Statistics sensors provide quick access to notable driving and charging records.
+
+New statistics include:
+
+- **Top Trip** with distance, duration, energy use and consumption
+- **Top Journey** with Journey-level driving and energy information
+- **Top Day** aggregating all Journeys and trips of the same local calendar day
+- **Top Charging** with leading charging providers and locations
+- Largest charging session
+- Session count and remaining unknown-provider statistics
+- Charging costs and average price per kWh
+
+Top Charging now refreshes automatically after stored charging data or charging costs are changed. A Home Assistant or integration reload is no longer required for updated cost statistics.
+
+## 🛰️ Route Tracker Improvements
+
+Route tracking introduced in Ford Triplog 2.0 has been refined for more reliable everyday recording.
+
+Improvements include:
+
+- Improved Route Tracker persistence and recovery
+- Better handling of trip start and end route points
+- Improved ABRP-based route recording
+- More reliable route completion and Trip ID association
+- Raw GPS route data remains preserved independently from matched route data
+
+## 🗺️ OSRM Route Matching
+
+Optional local OSRM map matching is now supported for recorded routes.
+
+Features include:
+
+- Configurable local OSRM server
+- Configurable matching radius
+- Automatic road matching after trip completion
+- Raw and matched route data stored separately
+- Matching diagnostics
+- Manual rebuild of the latest route
+- DACH example configuration for Germany, Austria and Switzerland
+
+OSRM remains completely optional. Without OSRM, Ford Triplog continues to record and display the raw GPS route.
+
+## 📅 Top Day
+
+The new **Top Day** sensor aggregates driving activity by the Home Assistant local calendar date.
+
+It includes:
+
+- Total daily distance
+- Total and driving duration
+- Journey and trip counts
+- Charging information
+- Energy used and charged
+- Average consumption
+- Charging costs
+- Start and end locations
+- Associated Journey, Trip, Charge and Route IDs
+
+This makes it possible to identify the longest recorded driving day even when it consists of multiple Journeys.
+
+## ⚡ Charging Statistics Improvements
+
+Charging statistics now make better use of resolved charging locations and providers.
+
+Improvements include:
+
+- Home charging grouped as Home
+- Provider and location aggregation
+- User-defined charging locations included in statistics
+- Improved matching of charging locations
+- Unknown-provider sessions exposed separately
+- Immediate Top Charging recalculation after manual cost or stored charge changes
+
+## 🌍 Translations and Entity Names
+
+Entity naming and translations have been cleaned up and synchronized.
+
+Improvements include:
+
+- German, English and Polish translation updates
+- Translatable **Charging History**
+- Translatable **Journey History**
+- Translatable **Route History**
+- Translatable shared **History Date** selector
+- Translatable **Trip Active**
+- Translation support for the new Top Statistics sensors
+- Removal of the redundant unavailable FordPass last-charge energy sensor
+
+## ⚙️ Improvements and Fixes
+
+- Improved Top Charging aggregation
+- Charging provider and location corrections are reflected in statistics
+- Manual charging cost changes can update Top Charging without reloading the integration
+- Reduced redundant sensor exposure
+- Existing Trip, Journey, Charge and Route storage remains compatible
+
+## ⬆️ Upgrade Notes
+
+Ford Triplog 2.0.2 is compatible with existing Ford Triplog 2.0.x stored data.
+
+No external database or storage migration is required.
+
+OSRM is optional and only needs to be configured when local road matching is desired.
+
+---
+
 # Ford Triplog 2.0.1
 
 Ford Triplog 2.0.1 extends the Route Tracker introduced in 2.0.0 with a complete date-based History view for routes, Journeys, charging sessions and charging receipts.

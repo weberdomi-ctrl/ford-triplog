@@ -799,6 +799,37 @@
       },
       "last_route": {
         "name": "Letzte Route"
+      },
+      "top_trip": {
+        "name": "Top Fahrt"
+      },
+      "top_journey": {
+        "name": "Top Tour"
+      },
+      "top_charging": {
+        "name": "Top Laden"
+      },
+      "top_day": {
+        "name": "Top Tag"
+      },
+      "charging_history": {
+        "name": "Ladehistorie"
+      },
+      "journey_history": {
+        "name": "Tour-Historie"
+      },
+      "route_history": {
+        "name": "Routen-Historie"
+      }
+    },
+    "binary_sensor": {
+      "trip_active": {
+        "name": "Fahrt aktiv"
+      }
+    },
+    "select": {
+      "route_history_date": {
+        "name": "Datum der Historie"
       }
     }
   },

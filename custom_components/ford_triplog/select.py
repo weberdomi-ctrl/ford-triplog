@@ -3,8 +3,8 @@ Ford Triplog
 
 Home Assistant select platform.
 
-Version: 2.0.1-dev
-Phase: 5 - Unified Route/Journey/Charging History date selection
+Version: 2.0.2
+Phase: 5 - Unified Route/Journey/Charging History date selection / Translation Fix
 
 Changes:
 - Adds a Route History Date select entity.
@@ -54,7 +54,7 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
     """Select one local calendar date from stored routes."""
 
     _attr_has_entity_name = True
-    _attr_name = "Route History Date"
+    _attr_translation_key = "route_history_date"
     _attr_unique_id = "ford_triplog_route_history_date"
     _attr_icon = "mdi:calendar-search"
     _attr_should_poll = False
