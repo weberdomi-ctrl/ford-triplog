@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.0.2-dev
-Phase: 4 - Top Statistics / Top Day (Fix 06)
+Phase: 4 - Top Statistics / Top Day (Fix 07)
 Changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
@@ -2935,6 +2935,11 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 self._handle_charge_data_updated,
             )
         )
+
+    def _handle_charge_data_updated(self) -> None:
+        """Refresh Top Charging after persisted charge data changed."""
+
+        self.async_schedule_update_ha_state(True)
 
     async def async_update(self) -> None:
         """Refresh Top Charging directly from the charging archive."""
