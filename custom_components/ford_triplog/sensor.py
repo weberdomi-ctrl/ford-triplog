@@ -21,6 +21,8 @@ Changes:
 - Top Routes 02: expose trip count, average distance and average consumption where available.
 - Top Routes Fix 01: exclude routes where start and destination resolve to the same location.
 - Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
+- Zone fix 01: resolve all Home Assistant zones before GPS/address clustering for Top Locations and Top Routes.
+- Zone fix 02: keep zone.home as stable raw value Home; use user-defined names for all other zones.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -2659,38 +2661,73 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             math.sqrt(1 - value),
         )
 
-    def _is_home(
+    def _resolve_zone(
         self,
         latitude: Any,
         longitude: Any,
-    ) -> bool:
-        """Return whether coordinates are inside the stable zone.home."""
-
-        home_zone = self.hass.states.get("zone.home")
-        if home_zone is None:
-            return False
+    ) -> tuple[str, str] | None:
+        """Return stable zone key and display label for matching HA zone."""
 
         try:
             point_latitude = float(latitude)
             point_longitude = float(longitude)
-            zone_latitude = float(home_zone.attributes.get("latitude"))
-            zone_longitude = float(home_zone.attributes.get("longitude"))
-            zone_radius = max(
-                0.0,
-                float(home_zone.attributes.get("radius", 100)),
-            )
         except (TypeError, ValueError):
-            return False
+            return None
 
-        return (
-            self._distance_m(
+        matching_zone = None
+        matching_distance = None
+
+        for state in self.hass.states.async_all("zone"):
+            try:
+                zone_latitude = float(state.attributes.get("latitude"))
+                zone_longitude = float(state.attributes.get("longitude"))
+                zone_radius = max(
+                    0.0,
+                    float(state.attributes.get("radius", 100)),
+                )
+            except (TypeError, ValueError):
+                continue
+
+            distance_m = self._distance_m(
                 point_latitude,
                 point_longitude,
                 zone_latitude,
                 zone_longitude,
             )
-            <= zone_radius
-        )
+
+            if distance_m > zone_radius:
+                continue
+
+            if matching_distance is None or distance_m < matching_distance:
+                matching_zone = state
+                matching_distance = distance_m
+
+        if matching_zone is None:
+            return None
+
+        if matching_zone.entity_id == "zone.home":
+            return "zone:home", "Home"
+
+        zone_name = str(
+            matching_zone.attributes.get("friendly_name")
+            or matching_zone.name
+            or matching_zone.entity_id.split(".", 1)[-1]
+        ).strip()
+
+        if not zone_name:
+            return None
+
+        return f"zone:{matching_zone.entity_id}", zone_name
+
+    def _is_home(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> bool:
+        """Return whether coordinates resolve to zone.home."""
+
+        zone = self._resolve_zone(latitude, longitude)
+        return zone is not None and zone[0] == "zone:home"
 
     @staticmethod
     def _compact_location(value: Any) -> str | None:
@@ -2792,11 +2829,18 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     ) -> bool:
         """Add one location, clustering primarily by GPS proximity."""
 
-        if self._is_home(latitude, longitude):
+        zone = self._resolve_zone(latitude, longitude)
+        if zone is not None:
+            zone_key, zone_label = zone
+            internal_label = (
+                self._HOME_CODE
+                if zone_key == "zone:home"
+                else zone_label
+            )
             row = rows.setdefault(
-                self._HOME_CODE,
+                zone_key,
                 {
-                    "label": self._HOME_CODE,
+                    "label": internal_label,
                     "trips": 0,
                     "distance_km": 0.0,
                     "latitude": None,
@@ -2824,7 +2868,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             matching_distance = None
 
             for key, row in rows.items():
-                if key == self._HOME_CODE:
+                if key in (self._HOME_CODE, "zone:home"):
+
                     continue
 
                 row_latitude = row.get("latitude")
@@ -3054,8 +3099,12 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     ) -> tuple[str, str] | None:
         """Resolve one route endpoint using the Top Locations clustering rules."""
 
-        if self._is_home(latitude, longitude):
-            return self._HOME_CODE, "Home"
+        zone = self._resolve_zone(latitude, longitude)
+        if zone is not None:
+            zone_key, zone_label = zone
+            if zone_key == "zone:home":
+                return zone_key, "Home"
+            return zone_key, zone_label
 
         label = self._compact_location(address)
 
@@ -3073,7 +3122,8 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             matching_distance = None
 
             for key, row in clusters.items():
-                if key == self._HOME_CODE:
+                if key in (self._HOME_CODE, "zone:home"):
+
                     continue
 
                 row_latitude = row.get("latitude")
@@ -3237,12 +3287,12 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             # Endpoint labels can improve as richer addresses are encountered.
             row["start"] = (
                 "Home"
-                if start_key == self._HOME_CODE
+                if start_key == "zone:home"
                 else str(endpoint_clusters.get(start_key, {}).get("label") or start_label)
             )
             row["destination"] = (
                 "Home"
-                if end_key == self._HOME_CODE
+                if end_key == "zone:home"
                 else str(endpoint_clusters.get(end_key, {}).get("label") or end_label)
             )
 
