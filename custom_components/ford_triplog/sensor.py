@@ -17,6 +17,8 @@ Changes:
 - Top Locations 04: keep the most complete address label found inside each GPS cluster.
 - Top Locations Fix 01: add missing re import for address quality scoring.
 - Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
+- Top Routes 01: add Top 5 directed routes using the same 50 m GPS clustering as Top Locations.
+- Top Routes 02: expose trip count, average distance and average consumption where available.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -230,6 +232,11 @@ async def async_setup_entry(
                 common_translations,
             ),
             FordTriplogTopLocationsSensor(
+                coordinator,
+                history,
+                common_translations,
+            ),
+            FordTriplogTopRoutesSensor(
                 coordinator,
                 history,
                 common_translations,
@@ -3018,6 +3025,283 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         last_charge,
     ):
         """Top Locations is refreshed directly from the trip archive."""
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
+class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
+    """Expose the most frequently driven directed routes."""
+
+    _attr_translation_key = "top_routes"
+    _attr_unique_id = "ford_triplog_top_routes"
+    _attr_icon = "mdi:routes"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    def _cluster_endpoint(
+        self,
+        clusters: dict[str, dict[str, Any]],
+        *,
+        latitude: Any,
+        longitude: Any,
+        address: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve one route endpoint using the Top Locations clustering rules."""
+
+        if self._is_home(latitude, longitude):
+            return self._HOME_CODE, "Home"
+
+        label = self._compact_location(address)
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+            has_coordinates = True
+        except (TypeError, ValueError):
+            point_latitude = None
+            point_longitude = None
+            has_coordinates = False
+
+        if has_coordinates:
+            matching_key = None
+            matching_distance = None
+
+            for key, row in clusters.items():
+                if key == self._HOME_CODE:
+                    continue
+
+                row_latitude = row.get("latitude")
+                row_longitude = row.get("longitude")
+                if row_latitude is None or row_longitude is None:
+                    continue
+
+                distance_m = self._distance_m(
+                    point_latitude,
+                    point_longitude,
+                    float(row_latitude),
+                    float(row_longitude),
+                )
+
+                if (
+                    distance_m <= self._CLUSTER_RADIUS_M
+                    and (
+                        matching_distance is None
+                        or distance_m < matching_distance
+                    )
+                ):
+                    matching_key = key
+                    matching_distance = distance_m
+
+            if matching_key is None:
+                matching_key = (
+                    f"gps:{point_latitude:.6f},{point_longitude:.6f}"
+                )
+                clusters[matching_key] = {
+                    "label": label,
+                    "latitude": point_latitude,
+                    "longitude": point_longitude,
+                    "coordinate_count": 1,
+                }
+            else:
+                row = clusters[matching_key]
+                coordinate_count = int(row.get("coordinate_count") or 1)
+                new_count = coordinate_count + 1
+                row["latitude"] = (
+                    float(row["latitude"]) * coordinate_count
+                    + point_latitude
+                ) / new_count
+                row["longitude"] = (
+                    float(row["longitude"]) * coordinate_count
+                    + point_longitude
+                ) / new_count
+                row["coordinate_count"] = new_count
+
+                if label:
+                    current_label = row.get("label")
+                    if (
+                        not current_label
+                        or self._label_score(label)
+                        > self._label_score(str(current_label))
+                    ):
+                        row["label"] = label
+
+            row = clusters[matching_key]
+            if label:
+                current_label = row.get("label")
+                if (
+                    not current_label
+                    or self._label_score(label)
+                    > self._label_score(str(current_label))
+                ):
+                    row["label"] = label
+
+            display_label = row.get("label")
+            if not display_label:
+                return None
+
+            return matching_key, str(display_label)
+
+        if not label:
+            return None
+
+        key = f"address:{label.casefold()}"
+        clusters.setdefault(
+            key,
+            {
+                "label": label,
+                "latitude": None,
+                "longitude": None,
+            },
+        )
+        return key, label
+
+    async def async_update(self) -> None:
+        """Aggregate the Top 5 directed routes from archived trips."""
+
+        trips = await self.history.get_all_trips()
+
+        valid_trips = [
+            trip
+            for trip in trips
+            if isinstance(trip, dict)
+            and trip.get("include_in_statistics", True)
+        ]
+
+        if not valid_trips:
+            self._value = None
+            self._attributes = {}
+            return
+
+        endpoint_clusters: dict[str, dict[str, Any]] = {}
+        routes: dict[tuple[str, str], dict[str, Any]] = {}
+        evaluated_routes = 0
+
+        for trip in valid_trips:
+            start = self._cluster_endpoint(
+                endpoint_clusters,
+                latitude=trip.get("start_latitude"),
+                longitude=trip.get("start_longitude"),
+                address=trip.get("start_address"),
+            )
+            end = self._cluster_endpoint(
+                endpoint_clusters,
+                latitude=trip.get("end_latitude"),
+                longitude=trip.get("end_longitude"),
+                address=trip.get("end_address"),
+            )
+
+            if start is None or end is None:
+                continue
+
+            start_key, start_label = start
+            end_key, end_label = end
+
+            try:
+                distance_km = float(trip.get("distance_km"))
+            except (TypeError, ValueError):
+                distance_km = None
+
+            consumption = trip.get("consumption_kwh_100km")
+            try:
+                consumption = float(consumption)
+                if consumption <= 0:
+                    consumption = None
+            except (TypeError, ValueError):
+                consumption = None
+
+            route_key = (start_key, end_key)
+            row = routes.setdefault(
+                route_key,
+                {
+                    "start": start_label,
+                    "destination": end_label,
+                    "trips": 0,
+                    "distance_sum_km": 0.0,
+                    "distance_count": 0,
+                    "consumption_sum": 0.0,
+                    "consumption_count": 0,
+                },
+            )
+
+            # Endpoint labels can improve as richer addresses are encountered.
+            row["start"] = (
+                "Home"
+                if start_key == self._HOME_CODE
+                else str(endpoint_clusters.get(start_key, {}).get("label") or start_label)
+            )
+            row["destination"] = (
+                "Home"
+                if end_key == self._HOME_CODE
+                else str(endpoint_clusters.get(end_key, {}).get("label") or end_label)
+            )
+
+            row["trips"] += 1
+
+            if distance_km is not None and distance_km >= 0:
+                row["distance_sum_km"] += distance_km
+                row["distance_count"] += 1
+
+            if consumption is not None:
+                row["consumption_sum"] += consumption
+                row["consumption_count"] += 1
+
+            evaluated_routes += 1
+
+        ranked = sorted(
+            routes.values(),
+            key=lambda row: (
+                int(row.get("trips") or 0),
+                int(row.get("distance_count") or 0),
+                float(row.get("distance_sum_km") or 0),
+            ),
+            reverse=True,
+        )[:5]
+
+        top_routes = []
+        for row in ranked:
+            distance_count = int(row["distance_count"])
+            consumption_count = int(row["consumption_count"])
+
+            average_distance = (
+                round(float(row["distance_sum_km"]) / distance_count, 1)
+                if distance_count
+                else None
+            )
+            average_consumption = (
+                round(float(row["consumption_sum"]) / consumption_count, 1)
+                if consumption_count
+                else None
+            )
+
+            top_routes.append(
+                {
+                    "start": row["start"],
+                    "destination": row["destination"],
+                    "trips": int(row["trips"]),
+                    "average_distance_km": average_distance,
+                    "average_consumption_kwh_100km": average_consumption,
+                    "consumption_trip_count": consumption_count,
+                }
+            )
+
+        self._value = len(valid_trips)
+        self._attributes = {
+            "top_routes": top_routes,
+            "trip_count": len(valid_trips),
+            "evaluated_routes": evaluated_routes,
+        }
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        """Top Routes is refreshed directly from the trip archive."""
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
