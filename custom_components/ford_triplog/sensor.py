@@ -10,6 +10,7 @@ Changes:
 - Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
 - Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
 - Preserve all existing 2.0.2 Top Statistics behavior.
+- Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -1738,6 +1739,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "last_route"
     _attr_unique_id = "ford_triplog_last_route"
     _attr_icon = "mdi:map-marker-path"
@@ -1949,6 +1951,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
     """Expose all stored routes for the selected historical date."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "route_history"
     _attr_unique_id = "ford_triplog_route_history"
     _attr_icon = "mdi:map-clock-outline"
