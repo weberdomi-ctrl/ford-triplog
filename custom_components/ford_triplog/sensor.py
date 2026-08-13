@@ -13,6 +13,8 @@ Changes:
 - Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
 - Top Locations 01: add Top 5 departures and Top 5 destinations from archived trips.
 - Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
+- Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
+- Top Locations 04: keep the most complete address label found inside each GPS cluster.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -2607,6 +2609,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     """Expose the most frequent trip departures and destinations."""
 
     _HOME_CODE = "__home__"
+    _CLUSTER_RADIUS_M = 50.0
 
     _attr_translation_key = "top_locations"
     _attr_unique_id = "ford_triplog_top_locations"
@@ -2759,24 +2762,145 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
 
         return ", ".join(parts[:2])
 
-    def _location_key_and_label(
+    @staticmethod
+    def _label_score(label: str) -> tuple[int, int]:
+        """Prefer richer labels, especially addresses containing a house number."""
+
+        has_house_number = bool(re.search(r"\\b\\d+[A-Za-z]?\\b", label))
+        return (1 if has_house_number else 0, len(label))
+
+    def _add_location(
         self,
+        rows: dict[str, dict[str, Any]],
         *,
         latitude: Any,
         longitude: Any,
         address: Any,
-    ) -> tuple[str, str] | None:
-        """Return a language-neutral aggregation key and display label."""
+        distance_km: float,
+    ) -> bool:
+        """Add one location, clustering primarily by GPS proximity."""
 
         if self._is_home(latitude, longitude):
-            return self._HOME_CODE, self._HOME_CODE
+            row = rows.setdefault(
+                self._HOME_CODE,
+                {
+                    "label": self._HOME_CODE,
+                    "trips": 0,
+                    "distance_km": 0.0,
+                    "latitude": None,
+                    "longitude": None,
+                },
+            )
+            row["trips"] += 1
+            row["distance_km"] += distance_km
+            return True
 
         label = self._compact_location(address)
-        if not label:
-            return None
 
-        # Casefold only the grouping key so original spelling stays visible.
-        return f"location:{label.casefold()}", label
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+            has_coordinates = True
+        except (TypeError, ValueError):
+            point_latitude = None
+            point_longitude = None
+            has_coordinates = False
+
+        if has_coordinates:
+            # Match the nearest existing GPS cluster within the configured radius.
+            matching_key = None
+            matching_distance = None
+
+            for key, row in rows.items():
+                if key == self._HOME_CODE:
+                    continue
+
+                row_latitude = row.get("latitude")
+                row_longitude = row.get("longitude")
+                if row_latitude is None or row_longitude is None:
+                    continue
+
+                distance_m = self._distance_m(
+                    point_latitude,
+                    point_longitude,
+                    float(row_latitude),
+                    float(row_longitude),
+                )
+                if (
+                    distance_m <= self._CLUSTER_RADIUS_M
+                    and (
+                        matching_distance is None
+                        or distance_m < matching_distance
+                    )
+                ):
+                    matching_key = key
+                    matching_distance = distance_m
+
+            if matching_key is None:
+                matching_key = (
+                    f"gps:{point_latitude:.6f},{point_longitude:.6f}"
+                )
+                rows[matching_key] = {
+                    "label": label,
+                    "trips": 0,
+                    "distance_km": 0.0,
+                    "latitude": point_latitude,
+                    "longitude": point_longitude,
+                    "coordinate_count": 0,
+                }
+
+            row = rows[matching_key]
+
+            # Keep a running centroid so repeated GPS samples define the cluster
+            # better than whichever point happened to be seen first.
+            coordinate_count = int(row.get("coordinate_count") or 0)
+            if coordinate_count <= 0:
+                row["latitude"] = point_latitude
+                row["longitude"] = point_longitude
+                row["coordinate_count"] = 1
+            else:
+                new_count = coordinate_count + 1
+                row["latitude"] = (
+                    float(row["latitude"]) * coordinate_count
+                    + point_latitude
+                ) / new_count
+                row["longitude"] = (
+                    float(row["longitude"]) * coordinate_count
+                    + point_longitude
+                ) / new_count
+                row["coordinate_count"] = new_count
+
+            if label:
+                current_label = row.get("label")
+                if (
+                    not current_label
+                    or self._label_score(label)
+                    > self._label_score(str(current_label))
+                ):
+                    row["label"] = label
+
+            row["trips"] += 1
+            row["distance_km"] += distance_km
+            return True
+
+        # GPS unavailable: fall back to the normalized address string.
+        if not label:
+            return False
+
+        key = f"address:{label.casefold()}"
+        row = rows.setdefault(
+            key,
+            {
+                "label": label,
+                "trips": 0,
+                "distance_km": 0.0,
+                "latitude": None,
+                "longitude": None,
+            },
+        )
+        row["trips"] += 1
+        row["distance_km"] += distance_km
+        return True
 
     def _display_label(self, value: str) -> str:
         """Translate special internal labels only at output time."""
@@ -2791,7 +2915,11 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     ) -> list[dict[str, Any]]:
         """Return Top 5 rows ordered by trip count and then distance."""
 
-        ranked = list(rows.values())
+        ranked = [
+            row
+            for row in rows.values()
+            if row.get("label")
+        ]
         ranked.sort(
             key=lambda row: (
                 int(row.get("trips") or 0),
@@ -2833,42 +2961,22 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             except (TypeError, ValueError):
                 distance_km = 0.0
 
-            departure = self._location_key_and_label(
+            if self._add_location(
+                departures,
                 latitude=trip.get("start_latitude"),
                 longitude=trip.get("start_longitude"),
                 address=trip.get("start_address"),
-            )
-            if departure is not None:
-                key, label = departure
-                row = departures.setdefault(
-                    key,
-                    {
-                        "label": label,
-                        "trips": 0,
-                        "distance_km": 0.0,
-                    },
-                )
-                row["trips"] += 1
-                row["distance_km"] += distance_km
+                distance_km=distance_km,
+            ):
                 evaluated_departures += 1
 
-            destination = self._location_key_and_label(
+            if self._add_location(
+                destinations,
                 latitude=trip.get("end_latitude"),
                 longitude=trip.get("end_longitude"),
                 address=trip.get("end_address"),
-            )
-            if destination is not None:
-                key, label = destination
-                row = destinations.setdefault(
-                    key,
-                    {
-                        "label": label,
-                        "trips": 0,
-                        "distance_km": 0.0,
-                    },
-                )
-                row["trips"] += 1
-                row["distance_km"] += distance_km
+                distance_km=distance_km,
+            ):
                 evaluated_destinations += 1
 
         top_departures = self._rank_rows(departures)
