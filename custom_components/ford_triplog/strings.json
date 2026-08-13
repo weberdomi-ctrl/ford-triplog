@@ -782,6 +782,9 @@
       "top_locations": {
         "name": "Top Departures & Destinations"
       },
+      "top_routes": {
+        "name": "Top Routes"
+      },
       "charging_history": {
         "name": "Charging History"
       },
