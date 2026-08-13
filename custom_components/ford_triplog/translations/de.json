@@ -815,6 +815,9 @@
       "top_locations": {
         "name": "Top-Startorte & Ziele"
       },
+      "top_routes": {
+        "name": "Top-Strecken"
+      },
       "charging_history": {
         "name": "Ladehistorie"
       },
