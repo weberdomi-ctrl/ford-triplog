@@ -16,6 +16,7 @@ Changes:
 - Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
 - Top Locations 04: keep the most complete address label found inside each GPS cluster.
 - Top Locations Fix 01: add missing re import for address quality scoring.
+- Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -2905,10 +2906,10 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         return True
 
     def _display_label(self, value: str) -> str:
-        """Translate special internal labels only at output time."""
+        """Return stable language-neutral labels for sensor attributes."""
 
         if value == self._HOME_CODE:
-            return self.translations.get("charging_site_home", "Home")
+            return "Home"
         return value
 
     @staticmethod
