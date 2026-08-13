@@ -779,6 +779,9 @@
       "top_day": {
         "name": "Top Day"
       },
+      "top_locations": {
+        "name": "Top Departures & Destinations"
+      },
       "charging_history": {
         "name": "Charging History"
       },
