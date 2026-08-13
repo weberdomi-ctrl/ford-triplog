@@ -809,6 +809,9 @@
       "top_day": {
         "name": "Najlepszy dzień"
       },
+      "top_locations": {
+        "name": "Najczęstsze miejsca wyjazdu i cele podróży"
+      },
       "charging_history": {
         "name": "Historia ładowania"
       },

@@ -812,6 +812,9 @@
       "top_day": {
         "name": "Top-Tag"
       },
+      "top_locations": {
+        "name": "Top-Startorte & Ziele"
+      },
       "charging_history": {
         "name": "Ladehistorie"
       },
