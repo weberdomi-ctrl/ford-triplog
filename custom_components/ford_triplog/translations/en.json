@@ -27,13 +27,13 @@
         "menu_options": {
           "settings": "Settings",
           "journey_management": "Manage journeys",
-          "pause_management": "Manage Pauses",
-          "charge_management": "Charging sessions",
+          "pause_management": "Manage pauses",
+          "charge_management": "Manage charging sessions",
           "user_charging_sites": "Custom charging locations",
-          "charging_site_database": "OpenStreetMap Charging Locations"
+          "charging_site_database": "OpenStreetMap charging locations"
         },
         "menu_option_descriptions": {
-          "settings": "Configure trip, charging, vehicle and OCR settings.",
+          "settings": "Configure trip, charging, vehicle and tariff settings.",
           "journey_management": "Update, rebuild or delete saved journeys.",
           "pause_management": "Manage detected pauses, including titles, categories, locations, notes and costs.",
           "charge_management": "View and manage charging sessions, costs and related receipts.",
@@ -45,23 +45,23 @@
         "title": "Settings",
         "description": "Select the section you want to configure.",
         "menu_options": {
-          "general_settings": "General Settings",
+          "general_settings": "General settings",
           "route_tracker_settings": "Route Tracker",
-          "ocr_settings": "OCR Connection",
-          "init": "Back to Main Menu",
-          "osrm_settings": "OSRM Route Smoothing"
+          "ocr_settings": "OCR connection",
+          "init": "Back to main menu",
+          "osrm_settings": "OSRM route smoothing"
         },
         "menu_option_descriptions": {
           "general_settings": "Configure trip, charging, vehicle and tariff settings.",
           "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
-          "init": "Return to the Ford Triplog main menu.",
+          "init": "Return to the Ford Triplog overview.",
           "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection."
         }
       },
       "import_charging_sites": {
-        "title": "Import charging-location database",
-        "description": "Select a Ford Triplog charging-site database in JSON format. The existing database will be backed up automatically and replaced after successful validation.\n\nThe latest charging-site databases for all supported countries are available in the [GitHub \"charging_sites\" folder](${github_url}).",
+        "title": "Import charging location database",
+        "description": "Select a Ford Triplog charging location database in JSON format. The existing database will be backed up automatically and replaced after successful validation.\n\nThe latest charging location databases for all supported countries are available in the [GitHub “charging_sites” folder]({github_url}).",
         "data": {
           "charging_site_file": "JSON file"
         },
@@ -71,10 +71,10 @@
       },
       "import_charging_sites_success": {
         "title": "Import successful",
-        "description": "The charging-location database was imported and activated immediately.\n\nDetected charging locations: {searchable_sites}\nGeohash cells: {index_cells}"
+        "description": "The charging location database was imported and activated immediately.\n\nDetected charging locations: {searchable_sites}\nGeohash cells: {index_cells}"
       },
       "download_charging_sites": {
-        "title": "Download charging-location database",
+        "title": "Download charging location database",
         "description": "Select the country whose charging locations should be downloaded directly from OpenStreetMap. The existing database is backed up automatically before activation.\n\n**Note:** After downloading, the charging locations are processed and optimized locally. Depending on the database size and hardware, this may take several minutes. The progress bar may temporarily remain unchanged.",
         "data": {
           "charging_site_country": "Country"
@@ -84,16 +84,16 @@
         }
       },
       "download_charging_sites_success": {
-        "title": "Charging-location database activated successfully",
-        "description": "The charging-location database for **{country} ({country_code})** was downloaded from OpenStreetMap, processed and activated successfully.\n\n**Download and processing**\n- OSM elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Detected charging locations: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging-location detection."
+        "title": "Charging location database activated",
+        "description": "The charging location database for **{country} ({country_code})** was downloaded from OpenStreetMap, processed and activated successfully.\n\n**Download and processing**\n- OSM elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Detected charging locations: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging location detection."
       },
       "download_charging_sites_progress": {
-        "title": "Charging-location database is being created",
+        "title": "Creating charging location database",
         "description": "Country: {country_code}\n\nStage: {stage}\n{message}\n\nProgress: {progress}%\nStep {step} of {total_steps}\nElapsed time: {elapsed} s\n\n{progress_log}"
       },
       "download_charging_sites_result": {
-        "title": "Charging-location database completed",
-        "description": "The charging-location database was created and activated successfully."
+        "title": "Charging location database created",
+        "description": "The charging location database was created and activated successfully."
       },
       "user_charging_sites": {
         "title": "Custom charging locations",
@@ -115,7 +115,7 @@
       },
       "user_charging_site_edit": {
         "title": "Create or edit charging location",
-        "description": "The fields match the OSM charging-station database model. Multiple connectors can be selected and custom brand values are supported. Available data is prefilled for a detected charging location.",
+        "description": "The fields match the OSM charging location database model. Multiple connectors can be selected and custom brand values are supported. Available data is prefilled for a detected charging location.",
         "data": {
           "name": "Name",
           "street": "Street",
@@ -149,7 +149,7 @@
         }
       },
       "pending_charging_sites": {
-        "title": "Create unknown charging locations",
+        "title": "Add unknown charging locations",
         "description": "Select one of the {pending_count} detected charging locations. Coordinates and available station data are prefilled.",
         "data": {
           "user_charging_site_selection": "Detected charging location"
@@ -159,16 +159,16 @@
         "title": "Manage journeys",
         "description": "Select the action you want to perform on saved journeys.",
         "menu_options": {
-          "journey_update": "Update Journeys",
-          "journey_rebuild": "Rebuild Journeys",
-          "journey_delete": "Delete Journeys",
-          "init": "Back to Main Menu"
+          "journey_update": "Update journeys",
+          "journey_rebuild": "Rebuild journeys",
+          "journey_delete": "Delete journeys",
+          "init": "Back to main menu"
         },
         "menu_option_descriptions": {
           "journey_update": "Update existing journeys with the latest data.",
           "journey_rebuild": "Recalculate and save all journeys from scratch.",
           "journey_delete": "Permanently delete saved journeys.",
-          "init": "Return to the Ford Triplog main menu."
+          "init": "Return to the Ford Triplog overview."
         }
       },
       "journey_update": {
@@ -202,7 +202,7 @@
         "description": "Mode: {mode}\n\nTrips: {source_trips} · Charging sessions: {source_charges} · Processed: {processed_records}\n\nJourneys created: {journeys_created} · Journeys deleted: {journeys_deleted}\n\nSkipped source files: {source_files_skipped}\n\nDate range: {start_date} to {end_date}\n\nAffected dates: {affected_dates}"
       },
       "charge_management": {
-        "title": "Charging Sessions",
+        "title": "Charging sessions",
         "description": "Select what you want to do with the stored charging sessions.",
         "menu_options": {
           "charge_selection": "Select charging session",
@@ -214,15 +214,15 @@
         }
       },
       "charge_cost_edit": {
-        "title": "Edit Charging Costs",
-        "description": "**Charging Session:** {charge_id}\n\n**Date:** {date}\n**Charging Location:** {location}\n**Energy Delivered to Vehicle:** {energy_kwh} kWh\n**State of Charge:** {start_soc} % → {end_soc} %\n\n**Billed Energy:** {current_energy_billed_kwh} kWh\n**Charging Loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current Cost:** {current_cost} {current_currency}\n**Energy Price per kWh:** {current_energy_price_per_kwh}\n**Effective Price per kWh:** {current_price_per_kwh}",
+        "title": "Edit charging costs",
+        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Charging location:** {location}\n**Energy delivered to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Total cost",
           "currency": "Currency",
           "action": "Action",
           "energy_billed_kwh": "Billed energy",
           "energy_cost": "Energy cost",
-          "session_fee": "Session Fee",
+          "session_fee": "Session fee",
           "time_fee": "Time fee",
           "blocking_fee": "Blocking fee",
           "parking_fee": "Parking fee",
@@ -300,15 +300,15 @@
         }
       },
       "pause_management": {
-        "title": "Manage Pauses",
+        "title": "Manage pauses",
         "description": "Select an action for the detected pauses.",
         "menu_options": {
-          "pause_selection": "Select and Edit a Pause",
-          "init": "Back to Main Menu"
+          "pause_selection": "Select and edit a pause",
+          "init": "Back to main menu"
         },
         "menu_option_descriptions": {
           "pause_selection": "Select an automatically detected pause and add or edit its title, category, location, notes and costs.",
-          "init": "Return to the Ford Triplog main menu."
+          "init": "Return to the Ford Triplog overview."
         }
       },
       "pause_edit": {
@@ -406,13 +406,13 @@
         }
       },
       "charge_detail": {
-        "title": "Charging Session",
-        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed Energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR Completed: {completed_count} · Values Applied: {applied_count}",
+        "title": "Charging session",
+        "description": "{date} · {location}\n\nCost: {cost_total} {currency} · Billed energy: {energy} kWh\n\nReceipts: {receipt_count} · OCR completed: {completed_count} · Values applied: {applied_count}",
         "menu_options": {
-          "charge_technical": "Technical Data",
+          "charge_technical": "Technical data",
           "charge_cost_edit": "Costs",
           "charge_receipts": "Receipts",
-          "charge_selection": "Back to Charging Sessions"
+          "charge_selection": "Back to charging sessions"
         },
         "menu_option_descriptions": {
           "charge_technical": "View the technical details of this charging session.",
@@ -435,7 +435,7 @@
         },
         "menu_option_descriptions": {
           "charge_receipt_upload": "Add a PDF or image. When OCR is enabled, the receipt is analysed automatically.",
-          "charge_detail": "Return to the charging-session overview.",
+          "charge_detail": "Return to the charging session overview.",
           "charge_receipt_list": "View and manage receipts for this charging session."
         }
       },
@@ -496,13 +496,13 @@
         }
       },
       "charge_selection": {
-        "title": "Select Charging Session",
+        "title": "Select charging session",
         "description": "Select a stored charging session.",
         "data": {
           "charge_selection": "Charging session"
         },
         "data_description": {
-          "charge_selection": "The list shows date, location, charged energy and stored costs. Select “← Back” to return to the charging-session menu."
+          "charge_selection": "The list shows date, location, charged energy and stored costs. Select “← Back” to return to the charging session menu."
         }
       },
       "pause_selection": {
@@ -527,8 +527,8 @@
         "description": "Create a new custom charging location."
       },
       "charging_site_database": {
-        "title": "OpenStreetMap Charging Locations",
-        "description": "Select the desired action for the charging-location database.",
+        "title": "OpenStreetMap charging locations",
+        "description": "Select the desired action for the charging location database.",
         "menu_options": {
           "download_charging_sites": "Download charging locations",
           "import_charging_sites": "Import database",
@@ -536,7 +536,7 @@
         },
         "menu_option_descriptions": {
           "download_charging_sites": "Download, process and activate charging locations for a country directly from OpenStreetMap.",
-          "import_charging_sites": "Import an existing Ford Triplog charging-location database as a JSON file.",
+          "import_charging_sites": "Import an existing Ford Triplog charging location database as a JSON file.",
           "init": "Return to the Ford Triplog overview."
         }
       },
@@ -558,7 +558,7 @@
         "data": {
           "route_latitude_entity": "Latitude sensor",
           "route_longitude_entity": "Longitude sensor",
-          "route_geocoded_entity": "Geocoded Location sensor"
+          "route_geocoded_entity": "Geocoded location sensor"
         },
         "data_description": {
           "route_latitude_entity": "Sensor that provides the current latitude.",
@@ -588,7 +588,7 @@
           "smart_trip": "Short intermediate stops are automatically merged into one trip.",
           "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
           "charging": "Charging status sensor (available only for FordPass electric vehicles).",
-          "charging_site_country": "Country of the currently used OpenStreetMap charging-location database.",
+          "charging_site_country": "Country of the currently used OpenStreetMap charging location database.",
           "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
           "journey_home_zone": "Zone whose arrival can end a journey.",
           "journey_home_timeout_minutes": "The journey ends only after the vehicle has remained in the journey base for at least this amount of time. 0 minutes ends the journey immediately.",
@@ -600,7 +600,7 @@
         }
       },
       "osrm_settings": {
-        "title": "OSRM Route Smoothing",
+        "title": "OSRM route smoothing",
         "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 metres is used by default.",
         "data": {
           "osrm_enabled": "Enable OSRM",
@@ -619,10 +619,10 @@
       }
     },
     "error": {
-      "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging-location database.",
-      "charging_site_download_failed": "The charging-location database could not be downloaded from OpenStreetMap or processed. Check the Home Assistant log for details.",
-      "charging_site_download_in_progress": "A charging-location database download is already in progress.",
-      "user_charging_sites_load_failed": "The custom charging-location database could not be loaded.",
+      "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging location database.",
+      "charging_site_download_failed": "The charging location database could not be downloaded from OpenStreetMap or processed. Check the Home Assistant log for details.",
+      "charging_site_download_in_progress": "A charging location database download is already in progress.",
+      "user_charging_sites_load_failed": "The custom charging location database could not be loaded.",
       "user_charging_site_not_found": "The selected charging location was not found.",
       "user_charging_site_save_failed": "The charging location could not be saved.",
       "journey_operation_failed": "The journey action could not be completed.",
@@ -666,133 +666,133 @@
   "entity": {
     "sensor": {
       "trip_count": {
-        "name": "Trip Count"
+        "name": "Trip count"
       },
       "total_distance": {
-        "name": "Total Distance"
+        "name": "Total distance"
       },
       "total_energy_used": {
-        "name": "Total Energy Used"
+        "name": "Total energy used"
       },
       "average_consumption": {
-        "name": "Average Energy Consumption"
+        "name": "Average consumption"
       },
       "total_duration": {
-        "name": "Total Duration"
+        "name": "Total duration"
       },
       "total_driving_time": {
-        "name": "Total Driving Time"
+        "name": "Total driving time"
       },
       "last_distance": {
-        "name": "Last Trip Distance"
+        "name": "Last trip distance"
       },
       "last_energy_used": {
-        "name": "Energy Used on Last Trip"
+        "name": "Last trip energy used"
       },
       "last_consumption": {
-        "name": "Last Trip Consumption"
+        "name": "Last trip consumption"
       },
       "last_average_speed": {
-        "name": "Average Speed of Last Trip"
+        "name": "Last trip average speed"
       },
       "last_duration": {
-        "name": "Last Trip Duration"
+        "name": "Last trip duration"
       },
       "last_driving_time": {
-        "name": "Last Trip Driving Time"
+        "name": "Last trip driving time"
       },
       "last_start_address": {
-        "name": "Last Trip Start Address"
+        "name": "Last trip start address"
       },
       "last_destination": {
-        "name": "Last Trip Destination"
+        "name": "Last destination"
       },
       "last_start_time": {
-        "name": "Last Trip Start Time"
+        "name": "Last trip start time"
       },
       "last_end_time": {
-        "name": "Last Trip End Time"
+        "name": "Last trip end time"
       },
       "last_charge_start_time": {
-        "name": "Last Charge Start Time"
+        "name": "Last charging session start time"
       },
       "last_charge_end_time": {
-        "name": "Last Charge End Time"
+        "name": "Last charging session end time"
       },
       "last_charge_start_soc": {
-        "name": "Last Charge Start State of Charge"
+        "name": "Last charging session start state of charge"
       },
       "last_charge_end_soc": {
-        "name": "Last Charge End State of Charge"
+        "name": "Last charging session end state of charge"
       },
       "last_charge_soc_added": {
-        "name": "State of Charge Added During Last Charge"
+        "name": "State of charge added in last charging session"
       },
       "last_charge_duration": {
-        "name": "Last Charging Duration"
+        "name": "Last charging session duration"
       },
       "last_charging_location": {
-        "name": "Last Charging Location"
+        "name": "Last charging location"
       },
       "last_charging_site": {
-        "name": "Last Charging Site"
+        "name": "Last charging station"
       },
       "last_trip_start_soc": {
-        "name": "Last Trip Start State of Charge"
+        "name": "Last trip start state of charge"
       },
       "last_trip_end_soc": {
-        "name": "Last Trip End State of Charge"
+        "name": "Last trip end state of charge"
       },
       "last_trip_soc_used": {
-        "name": "State of Charge Used on Last Trip"
+        "name": "State of charge used in last trip"
       },
       "charge_count": {
-        "name": "Charging Session Count"
+        "name": "Charging session count"
       },
       "average_charge_soc_added": {
-        "name": "Average State of Charge Added"
+        "name": "Average state of charge added"
       },
       "average_charge_duration": {
-        "name": "Average Charging Duration"
+        "name": "Average charging duration"
       },
       "average_charge_start_soc": {
-        "name": "Average Start State of Charge"
+        "name": "Average state of charge at charging start"
       },
       "average_charge_end_soc": {
-        "name": "Average End State of Charge"
+        "name": "Average state of charge at charging end"
       },
       "average_trip_distance": {
-        "name": "Average Trip Distance"
+        "name": "Average trip distance"
       },
       "average_trip_duration": {
-        "name": "Average Trip Duration"
+        "name": "Average trip duration"
       },
       "average_trip_energy": {
-        "name": "Average Energy Used"
+        "name": "Average energy used per trip"
       },
       "average_trip_soc_used": {
-        "name": "Average State of Charge Used"
+        "name": "Average state of charge used per trip"
       },
       "average_trip_consumption": {
-        "name": "Average Energy Consumption per Trip"
+        "name": "Average trip consumption"
       },
       "last_charge_energy": {
-        "name": "Last Charge Energy"
+        "name": "Last charging session energy"
       },
       "last_charge_energy_calculated": {
-        "name": "Calculated Energy of Last Charge"
+        "name": "Calculated energy of last charging session"
       },
       "last_charge_energy_source": {
-        "name": "Last Charge Energy Source"
+        "name": "Last charging session energy source"
       },
       "last_journey": {
-        "name": "Last Journey"
+        "name": "Last journey"
       },
       "last_charge": {
-        "name": "Last Charge"
+        "name": "Last charging session"
       },
       "last_journey_overview": {
-        "name": "Last Journey Overview"
+        "name": "Last journey overview"
       },
       "last_route": {
         "name": "Last route"
@@ -913,8 +913,8 @@
   },
   "services": {
     "import_charging_sites": {
-      "name": "Import charging stations",
-      "description": "Imports a charging-station database from a JSON file in the Home Assistant configuration directory.",
+      "name": "Import charging location database",
+      "description": "Imports a charging location database from a JSON file in the Home Assistant configuration directory.",
       "fields": {
         "file": {
           "name": "File",
@@ -923,8 +923,8 @@
       }
     },
     "download_charging_database": {
-      "name": "Download charging-station database",
-      "description": "Downloads, creates, imports and activates the charging-station database for a country.",
+      "name": "Download charging location database",
+      "description": "Downloads, creates, imports and activates the charging location database for a country.",
       "fields": {
         "country": {
           "name": "Country",
@@ -950,16 +950,16 @@
       "message": "The import file must be located below the Home Assistant configuration directory."
     },
     "import_file_not_json": {
-      "message": "The charging-station database import file must be a JSON file."
+      "message": "The charging location database import file must be a JSON file."
     },
     "import_file_not_found": {
-      "message": "The charging-station database import file was not found: {path}"
+      "message": "The charging location database import file was not found: {path}"
     },
     "database_invalid": {
-      "message": "The charging-station database is invalid: {error}"
+      "message": "The charging location database is invalid: {error}"
     },
     "database_validation_failed": {
-      "message": "The charging-station database could not be validated: {error}"
+      "message": "The charging location database could not be validated: {error}"
     },
     "integration_not_loaded": {
       "message": "Ford Triplog is currently not loaded."
@@ -968,16 +968,16 @@
       "message": "The country code “{country_code}” is not supported. Supported countries: {supported}."
     },
     "imported_database_load_failed": {
-      "message": "The imported charging-station database could not be loaded: {error}"
+      "message": "The imported charging location database could not be loaded: {error}"
     },
     "database_import_failed": {
-      "message": "The charging-station database could not be imported: {error}"
+      "message": "The charging location database could not be imported: {error}"
     },
     "database_download_failed": {
-      "message": "Downloading the charging-station database failed: {error}"
+      "message": "Downloading the charging location database failed: {error}"
     },
     "database_generation_failed": {
-      "message": "The charging-station database could not be created: {error}"
+      "message": "The charging location database could not be created: {error}"
     }
   },
   "selector": {
