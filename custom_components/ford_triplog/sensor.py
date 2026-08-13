@@ -3,9 +3,15 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0.2
-Phase: 4 - Top Statistics / Top Day (Fix 09)
+Version: 2.0.3-dev
+Phase: Language cleanup - Top Charging
 Changes:
+- Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
+- Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
+- Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
+- Preserve all existing 2.0.2 Top Statistics behavior.
+
+Previous changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
 - State is the most-used charging provider.
@@ -134,6 +140,10 @@ async def async_setup_entry(
         "no_gps_data": translations.get(
             f"component.{DOMAIN}.common.no_gps_data",
             "No GPS data available",
+        ),
+        "charging_site_home": translations.get(
+            f"component.{DOMAIN}.common.charging_site_home",
+            "Home",
         ),
     }
 
@@ -2586,6 +2596,9 @@ class FordTriplogTopDaySensor(SensorEntity):
 class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     """Expose compact Top Charging statistics."""
 
+    _HOME_CODE = "__home__"
+    _UNKNOWN_CODE = "__unknown__"
+
     _attr_translation_key = "top_charging"
     _attr_unique_id = "ford_triplog_top_charging"
     _attr_icon = "mdi:ev-station"
@@ -2687,6 +2700,45 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 matching_zone = (distance, zone_name)
 
         return matching_zone[1] if matching_zone else None
+
+    def _is_home_zone(
+        self,
+        charge: dict[str, Any],
+    ) -> bool:
+        """Return whether the charge coordinates are inside zone.home."""
+
+        home_zone = self.hass.states.get("zone.home")
+        if home_zone is None:
+            return False
+
+        coordinates = self._charge_coordinates(charge)
+        if coordinates is None:
+            return False
+
+        try:
+            distance = self._distance_m(
+                coordinates[0],
+                coordinates[1],
+                float(home_zone.attributes.get("latitude")),
+                float(home_zone.attributes.get("longitude")),
+            )
+            radius = max(
+                0.0,
+                float(home_zone.attributes.get("radius", 100)),
+            )
+        except (TypeError, ValueError):
+            return False
+
+        return distance <= radius
+
+    def _display_special_label(self, value: str) -> str:
+        """Translate language-neutral special Top Charging labels."""
+
+        if value == self._HOME_CODE:
+            return self.translations.get("charging_site_home", "Home")
+        if value == self._UNKNOWN_CODE:
+            return self.translations.get("unknown", "Unknown")
+        return value
 
     @staticmethod
     def _compact_address(value: Any) -> str | None:
@@ -2957,13 +3009,10 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         zone_name = self._resolve_zone_name(charge)
         cost_source = str(charge.get("cost_source") or "").strip().lower()
 
-        # Home tariff is definitive. A charge inside the HA Home zone is also
-        # treated as Home so older historic sessions are grouped correctly.
-        if cost_source == "home_tariff":
-            return "Home"
-
-        if zone_name and zone_name.lower() == "home":
-            return "Home"
+        # Classification stays language-neutral. Home tariff is definitive;
+        # otherwise use the stable Home Assistant entity_id zone.home.
+        if cost_source == "home_tariff" or self._is_home_zone(charge):
+            return self._HOME_CODE
 
         for key in (
             "charging_site_brand",
@@ -2986,7 +3035,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         if zone_name:
             return zone_name
 
-        return "Unknown"
+        return self._UNKNOWN_CODE
 
     def _charge_location(self, charge: dict[str, Any]) -> str:
         """Return the best available compact charging location."""
@@ -3029,7 +3078,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             ):
                 return str(value).strip()
 
-        return "Unknown"
+        return self._UNKNOWN_CODE
 
     @classmethod
     def _energy_kwh(cls, charge: dict[str, Any]) -> float:
@@ -3143,18 +3192,16 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
             current_site = None
 
-            # Home remains the highest-priority classification.
+            # Home remains the highest-priority classification, but the
+            # classification is independent of the configured UI language.
             is_home = (
                 cost_source == "home_tariff"
-                or (
-                    zone_name is not None
-                    and zone_name.lower() == "home"
-                )
+                or self._is_home_zone(charge)
             )
 
             if is_home:
-                provider = "Home"
-                location = "Home"
+                provider = self._HOME_CODE
+                location = self._HOME_CODE
             else:
                 # Current user-defined sites have priority over current OSM,
                 # matching ChargingLocationResolver semantics.
@@ -3179,7 +3226,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             energy = self._energy_kwh(charge)
             cost = self._total_cost(charge)
 
-            if provider == "Unknown":
+            if provider == self._UNKNOWN_CODE:
                 unknown_provider_sessions += 1
                 unknown_provider_energy += energy
                 unknown_provider_cost += cost
@@ -3208,8 +3255,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 },
             )
             if (
-                location_row.get("provider") == "Unknown"
-                and provider != "Unknown"
+                location_row.get("provider") == self._UNKNOWN_CODE
+                and provider != self._UNKNOWN_CODE
             ):
                 location_row["provider"] = provider
 
@@ -3257,7 +3304,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         provider_rows = [
             row
             for row in provider_rows
-            if row["provider"] != "Unknown"
+            if row["provider"] != self._UNKNOWN_CODE
         ]
 
         provider_rows.sort(
@@ -3293,15 +3340,50 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         top_providers = provider_rows[:5]
         top_locations = location_rows[:5]
 
+        display_top_providers = [
+            {
+                **row,
+                "provider": self._display_special_label(
+                    str(row.get("provider") or "")
+                ),
+            }
+            for row in top_providers
+        ]
+        display_top_locations = [
+            {
+                **row,
+                "location": self._display_special_label(
+                    str(row.get("location") or "")
+                ),
+                "provider": self._display_special_label(
+                    str(row.get("provider") or "")
+                ),
+            }
+            for row in top_locations
+        ]
+        display_largest = (
+            {
+                **largest,
+                "provider": self._display_special_label(
+                    str(largest.get("provider") or "")
+                ),
+                "location": self._display_special_label(
+                    str(largest.get("location") or "")
+                ),
+            }
+            if largest is not None
+            else None
+        )
+
         self._value = (
-            top_providers[0]["provider"]
-            if top_providers
+            display_top_providers[0]["provider"]
+            if display_top_providers
             else None
         )
         self._attributes = {
-            "top_providers": top_providers,
-            "top_locations": top_locations,
-            "largest_session": largest,
+            "top_providers": display_top_providers,
+            "top_locations": display_top_locations,
+            "largest_session": display_largest,
             "session_count": len(valid_charges),
             "unknown_provider_sessions": unknown_provider_sessions,
             "unknown_provider_energy_kwh": round(
