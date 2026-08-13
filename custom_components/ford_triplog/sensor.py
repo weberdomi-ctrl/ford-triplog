@@ -19,6 +19,8 @@ Changes:
 - Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
 - Top Routes 01: add Top 5 directed routes using the same 50 m GPS clustering as Top Locations.
 - Top Routes 02: expose trip count, average distance and average consumption where available.
+- Top Routes Fix 01: exclude routes where start and destination resolve to the same location.
+- Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -3200,6 +3202,11 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             start_key, start_label = start
             end_key, end_label = end
 
+            # Same-location round trips/local loops do not add useful
+            # information to the directed Top Routes ranking.
+            if start_key == end_key:
+                continue
+
             try:
                 distance_km = float(trip.get("distance_km"))
             except (TypeError, ValueError):
@@ -3245,7 +3252,11 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
                 row["distance_sum_km"] += distance_km
                 row["distance_count"] += 1
 
-            if consumption is not None:
+            if (
+                consumption is not None
+                and distance_km is not None
+                and distance_km >= 10.0
+            ):
                 row["consumption_sum"] += consumption
                 row["consumption_count"] += 1
 
