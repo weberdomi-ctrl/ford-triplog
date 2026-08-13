@@ -812,6 +812,9 @@
       "top_locations": {
         "name": "Najczęstsze miejsca wyjazdu i cele podróży"
       },
+      "top_routes": {
+        "name": "Najczęstsze trasy"
+      },
       "charging_history": {
         "name": "Historia ładowania"
       },
