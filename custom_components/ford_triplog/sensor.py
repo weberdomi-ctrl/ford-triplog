@@ -11,6 +11,8 @@ Changes:
 - Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
 - Preserve all existing 2.0.2 Top Statistics behavior.
 - Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
+- Top Locations 01: add Top 5 departures and Top 5 destinations from archived trips.
+- Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -220,6 +222,11 @@ async def async_setup_entry(
             FordTriplogTopDaySensor(
                 journey_storage,
                 route_storage,
+                common_translations,
+            ),
+            FordTriplogTopLocationsSensor(
+                coordinator,
+                history,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -2594,6 +2601,316 @@ class FordTriplogTopDaySensor(SensorEntity):
             "model": "Triplog",
             "sw_version": VERSION,
         }
+
+
+class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
+    """Expose the most frequent trip departures and destinations."""
+
+    _HOME_CODE = "__home__"
+
+    _attr_translation_key = "top_locations"
+    _attr_unique_id = "ford_triplog_top_locations"
+    _attr_icon = "mdi:map-marker-multiple-outline"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _distance_m(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Calculate distance between two coordinates in metres."""
+
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value),
+            math.sqrt(1 - value),
+        )
+
+    def _is_home(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> bool:
+        """Return whether coordinates are inside the stable zone.home."""
+
+        home_zone = self.hass.states.get("zone.home")
+        if home_zone is None:
+            return False
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+            zone_latitude = float(home_zone.attributes.get("latitude"))
+            zone_longitude = float(home_zone.attributes.get("longitude"))
+            zone_radius = max(
+                0.0,
+                float(home_zone.attributes.get("radius", 100)),
+            )
+        except (TypeError, ValueError):
+            return False
+
+        return (
+            self._distance_m(
+                point_latitude,
+                point_longitude,
+                zone_latitude,
+                zone_longitude,
+            )
+            <= zone_radius
+        )
+
+    @staticmethod
+    def _compact_location(value: Any) -> str | None:
+        """Return a stable compact location label from stored address data."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            road = (
+                value.get("road")
+                or value.get("pedestrian")
+                or value.get("path")
+                or value.get("amenity")
+                or value.get("name")
+            )
+            house = value.get("house_number")
+            postcode = value.get("postcode")
+            city = (
+                value.get("city")
+                or value.get("town")
+                or value.get("village")
+                or value.get("municipality")
+            )
+
+            street = " ".join(
+                str(part).strip()
+                for part in (road, house)
+                if part
+            ).strip()
+            postal_city = " ".join(
+                str(part).strip()
+                for part in (postcode, city)
+                if part
+            ).strip()
+
+            parts = [
+                part
+                for part in (street or None, postal_city or None)
+                if part
+            ]
+            if parts:
+                return ", ".join(parts)
+
+            value = value.get("display_name") or value.get("display")
+
+        text = str(value or "").strip()
+        if not text or text.upper() == "UNKNOWN":
+            return None
+
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) <= 2:
+            return text
+
+        # Prefer street/POI plus postal code and city when possible.
+        postcode_index = next(
+            (
+                index
+                for index, part in enumerate(parts)
+                if part.isdigit() and 4 <= len(part) <= 5
+            ),
+            None,
+        )
+
+        if postcode_index is not None:
+            postcode = parts[postcode_index]
+
+            if len(parts) >= 3 and parts[0].isdigit():
+                street = f"{parts[1]} {parts[0]}".strip()
+                city = parts[2]
+            else:
+                street = parts[0]
+                city = parts[1] if len(parts) > 1 else None
+
+            postal_city = " ".join(
+                part for part in (postcode, city) if part
+            )
+            return ", ".join(
+                part for part in (street, postal_city) if part
+            )
+
+        return ", ".join(parts[:2])
+
+    def _location_key_and_label(
+        self,
+        *,
+        latitude: Any,
+        longitude: Any,
+        address: Any,
+    ) -> tuple[str, str] | None:
+        """Return a language-neutral aggregation key and display label."""
+
+        if self._is_home(latitude, longitude):
+            return self._HOME_CODE, self._HOME_CODE
+
+        label = self._compact_location(address)
+        if not label:
+            return None
+
+        # Casefold only the grouping key so original spelling stays visible.
+        return f"location:{label.casefold()}", label
+
+    def _display_label(self, value: str) -> str:
+        """Translate special internal labels only at output time."""
+
+        if value == self._HOME_CODE:
+            return self.translations.get("charging_site_home", "Home")
+        return value
+
+    @staticmethod
+    def _rank_rows(
+        rows: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return Top 5 rows ordered by trip count and then distance."""
+
+        ranked = list(rows.values())
+        ranked.sort(
+            key=lambda row: (
+                int(row.get("trips") or 0),
+                float(row.get("distance_km") or 0),
+                str(row.get("label") or ""),
+            ),
+            reverse=True,
+        )
+        return ranked[:5]
+
+    async def async_update(self) -> None:
+        """Aggregate departures and destinations from archived trips."""
+
+        trips = await self.history.get_all_trips()
+
+        valid_trips = [
+            trip
+            for trip in trips
+            if isinstance(trip, dict)
+            and trip.get("include_in_statistics", True)
+        ]
+
+        if not valid_trips:
+            self._value = None
+            self._attributes = {}
+            return
+
+        departures: dict[str, dict[str, Any]] = {}
+        destinations: dict[str, dict[str, Any]] = {}
+        evaluated_departures = 0
+        evaluated_destinations = 0
+
+        for trip in valid_trips:
+            try:
+                distance_km = max(
+                    0.0,
+                    float(trip.get("distance_km") or 0),
+                )
+            except (TypeError, ValueError):
+                distance_km = 0.0
+
+            departure = self._location_key_and_label(
+                latitude=trip.get("start_latitude"),
+                longitude=trip.get("start_longitude"),
+                address=trip.get("start_address"),
+            )
+            if departure is not None:
+                key, label = departure
+                row = departures.setdefault(
+                    key,
+                    {
+                        "label": label,
+                        "trips": 0,
+                        "distance_km": 0.0,
+                    },
+                )
+                row["trips"] += 1
+                row["distance_km"] += distance_km
+                evaluated_departures += 1
+
+            destination = self._location_key_and_label(
+                latitude=trip.get("end_latitude"),
+                longitude=trip.get("end_longitude"),
+                address=trip.get("end_address"),
+            )
+            if destination is not None:
+                key, label = destination
+                row = destinations.setdefault(
+                    key,
+                    {
+                        "label": label,
+                        "trips": 0,
+                        "distance_km": 0.0,
+                    },
+                )
+                row["trips"] += 1
+                row["distance_km"] += distance_km
+                evaluated_destinations += 1
+
+        top_departures = self._rank_rows(departures)
+        top_destinations = self._rank_rows(destinations)
+
+        display_departures = [
+            {
+                "location": self._display_label(str(row["label"])),
+                "trips": int(row["trips"]),
+                "distance_km": round(float(row["distance_km"]), 1),
+            }
+            for row in top_departures
+        ]
+        display_destinations = [
+            {
+                "location": self._display_label(str(row["label"])),
+                "trips": int(row["trips"]),
+                "distance_km": round(float(row["distance_km"]), 1),
+            }
+            for row in top_destinations
+        ]
+
+        self._value = len(valid_trips)
+        self._attributes = {
+            "top_departures": display_departures,
+            "top_destinations": display_destinations,
+            "trip_count": len(valid_trips),
+            "evaluated_departures": evaluated_departures,
+            "evaluated_destinations": evaluated_destinations,
+        }
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        """Top Locations is refreshed directly from the trip archive."""
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
 
 
 class FordTriplogTopChargingSensor(FordTriplogSensorBase):
