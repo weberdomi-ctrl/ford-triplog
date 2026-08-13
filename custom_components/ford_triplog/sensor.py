@@ -15,6 +15,7 @@ Changes:
 - Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
 - Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
 - Top Locations 04: keep the most complete address label found inside each GPS cluster.
+- Top Locations Fix 01: add missing re import for address quality scoring.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -59,6 +60,7 @@ from typing import Any
 
 from datetime import datetime, timedelta
 import math
+import re
 import logging
 
 from homeassistant.components.sensor import (
