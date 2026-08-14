@@ -5,7 +5,7 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 1.8.1
+Version: 2.1.0
 """
 
 from __future__ import annotations
@@ -350,7 +350,16 @@ class FordTriplogStorage:
             )
             counter += 1
 
-        return await self._save_json(path, data)
+        json_saved = await self._save_json(path, data)
+
+        if not json_saved:
+            return False
+
+        await self.database.save_charge(
+            self._add_metadata(data)
+        )
+
+        return True
 
 
     async def list_trips(self) -> list[Path]:
