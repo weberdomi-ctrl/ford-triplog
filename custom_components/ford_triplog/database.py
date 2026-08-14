@@ -124,6 +124,33 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS journeys (
+                        journey_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS current_journey (
+                        journey_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS last_journey (
+                        journey_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -656,4 +683,146 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to mirror user charging sites to SQLite"
             )
+            return False
+
+    async def save_journey(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror one archived journey into SQLite."""
+
+        journey_id = data.get("journey_id")
+        if not journey_id:
+            _LOGGER.error("Unable to mirror journey without journey_id")
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(data, ensure_ascii=False)
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO journeys (journey_id, data)
+                    VALUES (?, ?)
+                    """,
+                    (str(journey_id), payload),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("Journey mirrored to SQLite: %s", journey_id)
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
+            return False
+
+    async def delete_journey(self, journey_id: str) -> bool:
+        """Delete one archived journey from SQLite."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    "DELETE FROM journeys WHERE journey_id = ?",
+                    (str(journey_id),),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_delete))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to delete journey from SQLite: %s", journey_id)
+            return False
+
+    async def delete_all_journeys(self) -> bool:
+        """Delete all archived journey mirrors."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM journeys")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_delete))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to delete all journeys from SQLite")
+            return False
+
+    async def save_current_journey(self, data: dict[str, Any]) -> bool:
+        """Mirror current journey into SQLite."""
+
+        journey_id = data.get("journey_id")
+        if not journey_id:
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(data, ensure_ascii=False)
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM current_journey")
+                db.execute(
+                    "INSERT INTO current_journey (journey_id, data) VALUES (?, ?)",
+                    (str(journey_id), payload),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to mirror current journey to SQLite")
+            return False
+
+    async def delete_current_journey(self) -> bool:
+        """Clear current journey mirror."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM current_journey")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_delete))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to clear current journey from SQLite")
+            return False
+
+    async def save_last_journey(self, data: dict[str, Any]) -> bool:
+        """Mirror last completed journey into SQLite."""
+
+        journey_id = data.get("journey_id")
+        if not journey_id:
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(data, ensure_ascii=False)
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM last_journey")
+                db.execute(
+                    "INSERT INTO last_journey (journey_id, data) VALUES (?, ?)",
+                    (str(journey_id), payload),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to mirror last journey to SQLite")
+            return False
+
+    async def delete_last_journey(self) -> bool:
+        """Clear last journey mirror."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM last_journey")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_delete))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to clear last journey from SQLite")
             return False
