@@ -62,7 +62,95 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
+        # Phase 1: mirror all existing JSON-backed storage into SQLite
+        # after creating the database. JSON remains the production source.
+        await self._mirror_existing_storage()
+
         _LOGGER.debug("Ford Triplog storage initialized")
+
+    async def _mirror_existing_storage(self) -> None:
+        """Mirror existing JSON storage into SQLite on initial setup."""
+
+        mirrored = {
+            "trips": 0,
+            "charges": 0,
+            "current_trip": 0,
+            "current_charge": 0,
+            "last_trip": 0,
+            "last_charge": 0,
+            "statistics": 0,
+            "diagnostics": 0,
+        }
+
+        for path in await self.list_trips():
+            data = await self.load_trip_file(path)
+            if isinstance(data, dict):
+                if await self.database.save_trip(data):
+                    mirrored["trips"] += 1
+
+        for path in await self.list_charges():
+            data = await self.load_charge_file(path)
+            if isinstance(data, dict):
+                if await self.database.save_charge(data):
+                    mirrored["charges"] += 1
+
+        cache_files = (
+            (
+                self._current_trip_file(),
+                self.load_current_trip,
+                self.database.save_current_trip,
+                "current_trip",
+            ),
+            (
+                self._current_charge_file(),
+                self.load_current_charge,
+                self.database.save_current_charge,
+                "current_charge",
+            ),
+            (
+                self._last_trip_file(),
+                self.load_last_trip,
+                self.database.save_last_trip,
+                "last_trip",
+            ),
+            (
+                self._last_charge_file(),
+                self.load_last_charge,
+                self.database.save_last_charge,
+                "last_charge",
+            ),
+        )
+
+        for path, loader, saver, key in cache_files:
+            if not path.exists():
+                continue
+
+            data = await loader()
+            if isinstance(data, dict):
+                if await saver(self._add_metadata(data)):
+                    mirrored[key] += 1
+
+        statistics = await self.load_statistics()
+        if isinstance(statistics, dict):
+            if await self.database.save_statistics(
+                self._add_metadata(statistics)
+            ):
+                mirrored["statistics"] += 1
+
+        diagnostics = await self.load_diagnostics()
+        if isinstance(diagnostics, dict):
+            if await self.database.save_diagnostics(
+                self._add_metadata(diagnostics)
+            ):
+                mirrored["diagnostics"] += 1
+
+        _LOGGER.info(
+            "Initial SQLite mirror completed: %s",
+            ", ".join(
+                f"{key}={value}"
+                for key, value in mirrored.items()
+            ),
+        )
 
     def _add_metadata(
         self,
@@ -638,10 +726,19 @@ class FordTriplogStorage:
 
 
     async def save_statistics(self, data: dict[str, Any]) -> bool:
-        return await self._save_json(
+        json_saved = await self._save_json(
             self._statistics_file(),
             data,
         )
+
+        if not json_saved:
+            return False
+
+        await self.database.save_statistics(
+            self._add_metadata(data)
+        )
+
+        return True
 
     async def load_statistics(self) -> dict[str, Any] | None:
         return await self._load_json(
