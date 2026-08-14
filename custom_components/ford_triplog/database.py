@@ -88,6 +88,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS last_charge (
+                        charge_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -421,6 +430,62 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to mirror charge to SQLite: %s",
+                charge_id,
+            )
+            return False
+
+    async def save_last_charge(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror last charging session into SQLite."""
+
+        charge_id = data.get("charge_id")
+
+        if not charge_id:
+            _LOGGER.error(
+                "Unable to mirror last charge without charge_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                # last_charge is a single-record cache.
+                db.execute("DELETE FROM last_charge")
+                db.execute(
+                    """
+                    INSERT INTO last_charge (
+                        charge_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(charge_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Last charge mirrored to SQLite: %s",
+                charge_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror last charge to SQLite: %s",
                 charge_id,
             )
             return False

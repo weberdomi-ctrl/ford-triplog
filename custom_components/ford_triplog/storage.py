@@ -603,10 +603,19 @@ class FordTriplogStorage:
             ),
         )
 
-        return await self._save_json(
+        json_saved = await self._save_json(
             self._last_charge_file(),
             last_charge,
         )
+
+        if not json_saved:
+            return False
+
+        await self.database.save_last_charge(
+            self._add_metadata(last_charge)
+        )
+
+        return True
 
     async def load_last_charge(
         self,
