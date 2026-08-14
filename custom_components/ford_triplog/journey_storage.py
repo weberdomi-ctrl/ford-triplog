@@ -82,10 +82,48 @@ class FordTriplogJourneyStorage:
 
         await self.database.delete_all_journeys()
 
+        mirrored = 0
+        skipped = 0
+        failed = 0
+
         for path in await self.list_journey_files():
             data = await self._async_load_json(path)
-            if isinstance(data, dict):
-                await self.database.save_journey(data)
+
+            if not isinstance(data, dict):
+                skipped += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped journey: invalid JSON: %s",
+                    path,
+                )
+                continue
+
+            journey_id = str(data.get("journey_id", "")).strip()
+            if not journey_id:
+                skipped += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped journey: missing journey_id: %s",
+                    path,
+                )
+                continue
+
+            if await self.database.save_journey(data):
+                mirrored += 1
+            else:
+                failed += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror failed for journey %s: %s",
+                    journey_id,
+                    path,
+                )
+
+        _LOGGER.info(
+            "Initial SQLite journey mirror completed: "
+            "files=%d mirrored=%d skipped=%d failed=%d",
+            mirrored + skipped + failed,
+            mirrored,
+            skipped,
+            failed,
+        )
 
         current = await self._async_load_json(self._current_journey_path)
         if isinstance(current, dict):
