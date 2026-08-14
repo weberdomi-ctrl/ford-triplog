@@ -6,7 +6,7 @@ Track your Ford.
 Separate storage for daily journeys.
 
 Version: 2.1.0
-Build: 13
+Build: 14
 """
 
 from __future__ import annotations
@@ -75,7 +75,18 @@ class FordTriplogJourneyStorage:
         await self._metadata_storage.async_setup()
         await self.database.async_setup()
         await self._migrate_pause_overrides_to_metadata()
-        await self._mirror_existing_journeys()
+
+        # Mirror existing JSON journeys only once per Home Assistant runtime.
+        # Multiple components may create their own JourneyStorage instance.
+        mirror_key = "ford_triplog_initial_journey_mirror_done"
+
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_journeys()
+        else:
+            _LOGGER.debug(
+                "Initial SQLite journey mirror already completed in this HA runtime"
+            )
 
     async def _mirror_existing_journeys(self) -> None:
         """Synchronize existing JSON journey data into SQLite."""
