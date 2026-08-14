@@ -25,6 +25,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .database import FordTriplogDatabase
 from .const import (
     DEFAULT_USER_CHARGING_SITE_RADIUS,
     STORAGE_DIR,
@@ -44,15 +45,27 @@ class UserChargingSiteStorage:
             hass.config.path(".storage", STORAGE_DIR)
         )
         self.storage_path = self.storage_directory / USER_CHARGING_SITES_FILE
+        self.database = FordTriplogDatabase(
+            hass,
+            self.storage_directory,
+        )
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(self._setup)
+        await self.database.async_setup()
+        sites = await self.async_load()
+        await self.database.save_user_charging_sites(sites)
 
     async def async_load(self) -> list[dict[str, Any]]:
         return await self.hass.async_add_executor_job(self._load)
 
     async def async_save(self, sites: list[dict[str, Any]]) -> None:
         await self.hass.async_add_executor_job(self._save, sites)
+
+        # Reload the normalized JSON representation so SQLite receives
+        # exactly the same site records as the productive JSON storage.
+        normalized_sites = await self.async_load()
+        await self.database.save_user_charging_sites(normalized_sites)
 
     async def async_add(self, site: dict[str, Any]) -> dict[str, Any]:
         sites = await self.async_load()
