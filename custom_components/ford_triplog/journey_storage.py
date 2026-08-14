@@ -5,8 +5,8 @@ Track your Ford.
 
 Separate storage for daily journeys.
 
-Version: 1.6.0
-Release: 1.6b
+Version: 2.1.0
+Build: 13
 """
 
 from __future__ import annotations
