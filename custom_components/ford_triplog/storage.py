@@ -237,10 +237,19 @@ class FordTriplogStorage:
         self,
         data: dict[str, Any],
     ) -> bool:
-        return await self._save_json(
+        json_saved = await self._save_json(
             self._current_charge_file(),
             data,
         )
+
+        if not json_saved:
+            return False
+
+        await self.database.save_current_charge(
+            self._add_metadata(data)
+        )
+
+        return True
 
     async def load_current_charge(
         self,
@@ -255,6 +264,8 @@ class FordTriplogStorage:
         await self._delete_file(
             self._current_charge_file()
         )
+
+        await self.database.delete_current_charge()
 
 
 

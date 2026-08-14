@@ -70,6 +70,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS current_charge (
+                        charge_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -272,5 +281,83 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to mirror last trip to SQLite: %s",
                 trip_id,
+            )
+            return False
+
+    async def save_current_charge(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror current charging session into SQLite."""
+
+        charge_id = data.get("charge_id")
+
+        if not charge_id:
+            _LOGGER.error(
+                "Unable to mirror current charge without charge_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO current_charge (
+                        charge_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(charge_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Current charge mirrored to SQLite: %s",
+                charge_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror current charge to SQLite: %s",
+                charge_id,
+            )
+            return False
+
+    async def delete_current_charge(self) -> bool:
+        """Delete current charging-session mirror from SQLite."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM current_charge")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_delete)
+            )
+
+            _LOGGER.debug(
+                "Current charge removed from SQLite"
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to remove current charge from SQLite"
             )
             return False
