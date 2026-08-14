@@ -51,6 +51,16 @@ class FordTriplogDatabase:
                     )
                     """
                 )
+
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS current_trip (
+                        trip_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -119,5 +129,83 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to mirror trip to SQLite: %s",
                 trip_id,
+            )
+            return False
+
+    async def save_current_trip(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror current trip into SQLite."""
+
+        trip_id = data.get("trip_id")
+
+        if not trip_id:
+            _LOGGER.error(
+                "Unable to mirror current trip without trip_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO current_trip (
+                        trip_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(trip_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Current trip mirrored to SQLite: %s",
+                trip_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror current trip to SQLite: %s",
+                trip_id,
+            )
+            return False
+
+    async def delete_current_trip(self) -> bool:
+        """Delete current trip mirror from SQLite."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM current_trip")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_delete)
+            )
+
+            _LOGGER.debug(
+                "Current trip removed from SQLite"
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to remove current trip from SQLite"
             )
             return False
