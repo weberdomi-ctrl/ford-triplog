@@ -115,6 +115,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS user_charging_sites (
+                        site_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -587,5 +596,64 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to mirror diagnostics to SQLite"
+            )
+            return False
+
+    async def save_user_charging_sites(
+        self,
+        sites: list[dict[str, Any]],
+    ) -> bool:
+        """Mirror the complete user charging-site database into SQLite."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str]] = []
+
+            for site in sites:
+                site_id = site.get("site_id")
+                if not site_id:
+                    raise ValueError(
+                        "Unable to mirror user charging site without site_id"
+                    )
+
+                rows.append(
+                    (
+                        str(site_id),
+                        json.dumps(site, ensure_ascii=False),
+                    )
+                )
+
+            with sqlite3.connect(self.db_path) as db:
+                # async_save() represents the complete JSON site list,
+                # therefore replace the complete SQLite mirror as well.
+                db.execute("DELETE FROM user_charging_sites")
+
+                if rows:
+                    db.executemany(
+                        """
+                        INSERT INTO user_charging_sites (
+                            site_id,
+                            data
+                        )
+                        VALUES (?, ?)
+                        """,
+                        rows,
+                    )
+
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "User charging sites mirrored to SQLite: %s",
+                len(sites),
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror user charging sites to SQLite"
             )
             return False
