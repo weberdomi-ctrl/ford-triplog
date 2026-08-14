@@ -491,6 +491,11 @@ class FordTriplogStorage:
         if not saved:
             return False
 
+        # Keep the SQLite archive in sync when an existing charge is edited.
+        await self.database.save_charge(
+            self._add_metadata(updated)
+        )
+
         last_charge = await self.load_last_charge()
         if (
             isinstance(last_charge, dict)
