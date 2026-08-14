@@ -239,6 +239,9 @@ Ford Triplog continuously maintains:
 - Top Day
 - Top Charging providers and locations
 - Largest charging session
+- Top Departures & Destinations
+- Top Routes with trip count, average distance and average consumption
+- Zone-aware and charging-site-aware location statistics
 - Automatic Top Charging refresh after stored charging data or costs are changed
 
 ------------------------------------------------------------------------
@@ -283,6 +286,8 @@ Examples include:
 - Charging receipt History
 - Charging cost overview
 - Journey energy balance
+- Top Departures & Destinations
+- Top Routes
 
 The **Route History map** example requires these HACS custom cards:
 
@@ -297,14 +302,20 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 # Roadmap
 
-## Version 2.x
+## Version 2.0.x
 
-- Top statistics and additional statistical sensors
-- Advanced journey editing
-- Additional dashboard examples and statistics
-- Multi-vehicle enhancements
-- Optional SQLite acceleration layer
-- Long-term history improvements
+- Top statistics and dashboard refinements
+- Location and charging-site recognition improvements
+- Maintenance and stability fixes
+
+## Version 2.1
+
+- Planned SQLite storage backend
+- 1:1 mapping of existing JSON storage into corresponding database tables
+- Parallel JSON and SQLite writes during migration and validation
+- Selectable JSON or database read path during transition
+- SQL queries and database views for efficient statistics
+- JSON retained initially for compatibility, fallback and export
 
 Complete roadmap:
 

@@ -1,3 +1,110 @@
+# Ford Triplog 2.0.3
+
+Ford Triplog 2.0.3 extends the Top Statistics introduced in 2.0.2, improves location resolution and completes further translation and storage-related cleanup.
+
+## 📍 Top Departures & Destinations
+
+A new **Top Departures & Destinations** sensor summarizes the most frequently used trip start and destination locations.
+
+Features include:
+
+- Top 5 departure locations
+- Top 5 destination locations
+- Trip count per location
+- Total distance associated with each location
+- GPS-based grouping to avoid duplicate entries caused by slightly different coordinates or address labels
+- Home Assistant zones are used as meaningful location names when available
+
+## 🛣️ Top Routes
+
+A new **Top Routes** sensor identifies the most frequently driven directed routes.
+
+Features include:
+
+- Top 5 routes by trip count
+- Direction-aware grouping, so A → B and B → A remain separate routes
+- Average distance per route
+- Average consumption where suitable trip data is available
+- Same-location routes are excluded from the ranking
+- Consumption averages only include individual trips of at least 10 km to avoid misleading short-trip values
+
+## 🗺️ Improved Location Resolution
+
+Top location statistics now use a common location resolution chain to provide more meaningful and stable names.
+
+Locations are resolved in the following order:
+
+1. Home Assistant zone
+2. User-defined Ford Triplog charging location
+3. Known OSM charging location
+4. 50 m GPS cluster
+5. Stored address fallback
+
+This allows locations such as Work, garages, shops and charging sites to be grouped by their meaningful configured names instead of varying street addresses.
+
+The Home zone is stored as the stable language-neutral value `Home`. Other Home Assistant zones use their user-defined zone names.
+
+## ⚡ Charging Location Lookup
+
+Known charging locations are now also available to Top Departures & Destinations and Top Routes.
+
+- User-defined charging locations take priority over OSM charging locations
+- Custom charging-site radii are respected
+- Existing OSM charging-site lookup and configured lookup radius are reused
+- Charging-site location names can therefore be used even when no Home Assistant zone exists at that location
+
+## 🌍 Translation and Naming Cleanup
+
+Translation handling has been further standardized.
+
+Improvements include:
+
+- English is used as the fallback language for untranslated entity names
+- German, English and Polish entity translations synchronized
+- New Top Departures & Destinations and Top Routes entity names translated
+- Language-specific labels removed from raw sensor attributes where possible
+- `Home` remains stable in raw attributes and can be localized by the dashboard
+- Entity names and stored/raw data are kept separate so changing the Home Assistant language does not alter underlying statistics data
+
+## 🗃️ Recorder and Route History Cleanup
+
+Large route attributes have been reduced to avoid Home Assistant Recorder warnings caused by attributes exceeding the 16,384-byte storage limit.
+
+- Route History no longer produces oversized Recorder attribute warnings
+- Route data remains available through Ford Triplog's persistent route storage
+- Existing stored Trip, Journey, Charge and Route data remains compatible
+
+## 📊 Dashboard Examples
+
+New Markdown dashboard examples are available for:
+
+- Top Departures & Destinations
+- Top Routes
+
+The examples use the new sensor attributes directly and can localize the stable `Home` value for display.
+
+## ⚙️ Improvements and Fixes
+
+- Improved grouping of frequently visited locations
+- Added Home Assistant zone-aware location resolution
+- Added user-defined and OSM charging-site location resolution to trip statistics
+- Improved handling of varying geocoded addresses for the same physical location
+- Fixed missing regular-expression import used by location label scoring
+- Reduced misleading consumption statistics for very short routes
+- Removed same-location routes from Top Routes
+- Further standardized sensor names, translation keys and English fallbacks
+- Reduced Recorder warnings from large Route History attributes
+
+## ⬆️ Upgrade Notes
+
+Ford Triplog 2.0.3 is compatible with existing Ford Triplog 2.0.x stored data.
+
+No database or storage migration is required.
+
+Existing Home Assistant zones and user-defined Ford Triplog charging locations are used automatically by the new location statistics. Users can adjust Home Assistant zone sizes where larger sites should be treated as one location.
+
+---
+
 # Ford Triplog 2.0.2
 
 Ford Triplog 2.0.2 expands statistics, improves Route Tracker reliability and road matching, and completes a number of dashboard and translation refinements.
