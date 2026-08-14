@@ -22,6 +22,7 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import VERSION
+from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -42,6 +43,11 @@ class FordTriplogStorage:
         self.charges_path = self.base_path / "charges"
         self.cache_path = self.base_path / "cache"
 
+        self.database = FordTriplogDatabase(
+            hass,
+            self.base_path,
+        )
+
 
     async def async_setup(self) -> None:
         """Initialize storage directories."""
@@ -53,6 +59,8 @@ class FordTriplogStorage:
             self.cache_path,
         ):
             path.mkdir(parents=True, exist_ok=True)
+
+        await self.database.async_setup()
 
         _LOGGER.debug("Ford Triplog storage initialized")
 
