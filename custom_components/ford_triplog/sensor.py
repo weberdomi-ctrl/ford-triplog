@@ -26,6 +26,7 @@ Changes:
 - Charging location fix 01: resolve custom charging locations after HA zones and before GPS clustering.
 - Charging location fix 02: resolve current OSM charging locations after custom sites using the coordinator lookup.
 - Charging location fix 03: reuse custom-site radius and configured OSM lookup radius.
+- Debug 01: temporarily expose charging-location lookup counters and matched site labels for validation.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -2635,6 +2636,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     def __init__(self, coordinator, history, translations) -> None:
         super().__init__(coordinator, history, translations)
         self._attributes: dict[str, Any] = {}
+        self._lookup_debug_counts: dict[str, int] = {}
+        self._lookup_debug_sites: set[str] = set()
 
     @staticmethod
     def _distance_m(
@@ -2887,6 +2890,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         zone = self._resolve_zone(latitude, longitude)
         if zone is not None:
             zone_key, zone_label = zone
+            self._lookup_debug_counts["zone"] = (
+                self._lookup_debug_counts.get("zone", 0) + 1
+            )
             return (
                 zone_key,
                 self._HOME_CODE
@@ -2899,12 +2905,27 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             longitude,
         )
         if user_site is not None:
+            self._lookup_debug_counts["user_charging_site"] = (
+                self._lookup_debug_counts.get("user_charging_site", 0) + 1
+            )
+            self._lookup_debug_sites.add(user_site[1])
             return user_site
 
-        return await self._async_resolve_osm_charging_site(
+        osm_site = await self._async_resolve_osm_charging_site(
             latitude,
             longitude,
         )
+        if osm_site is not None:
+            self._lookup_debug_counts["osm_charging_site"] = (
+                self._lookup_debug_counts.get("osm_charging_site", 0) + 1
+            )
+            self._lookup_debug_sites.add(osm_site[1])
+            return osm_site
+
+        self._lookup_debug_counts["fallback"] = (
+            self._lookup_debug_counts.get("fallback", 0) + 1
+        )
+        return None
 
     @staticmethod
     def _compact_location(value: Any) -> str | None:
@@ -3165,6 +3186,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Aggregate departures and destinations from archived trips."""
 
+        self._lookup_debug_counts = {}
+        self._lookup_debug_sites = set()
+
         trips = await self.history.get_all_trips()
 
         valid_trips = [
@@ -3238,6 +3262,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             "trip_count": len(valid_trips),
             "evaluated_departures": evaluated_departures,
             "evaluated_destinations": evaluated_destinations,
+            "location_lookup_debug": dict(self._lookup_debug_counts),
+            "charging_locations_found": sorted(self._lookup_debug_sites),
         }
 
     def update_values(
@@ -3395,6 +3421,9 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     async def async_update(self) -> None:
         """Aggregate the Top 5 directed routes from archived trips."""
 
+        self._lookup_debug_counts = {}
+        self._lookup_debug_sites = set()
+
         trips = await self.history.get_all_trips()
 
         valid_trips = [
@@ -3535,6 +3564,8 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             "top_routes": top_routes,
             "trip_count": len(valid_trips),
             "evaluated_routes": evaluated_routes,
+            "location_lookup_debug": dict(self._lookup_debug_counts),
+            "charging_locations_found": sorted(self._lookup_debug_sites),
         }
 
     def update_values(
