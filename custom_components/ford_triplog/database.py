@@ -61,6 +61,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS last_trip (
+                        trip_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -207,5 +216,61 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to remove current trip from SQLite"
+            )
+            return False
+
+    async def save_last_trip(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror last trip into SQLite."""
+
+        trip_id = data.get("trip_id")
+
+        if not trip_id:
+            _LOGGER.error(
+                "Unable to mirror last trip without trip_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                # last_trip is a single-record cache.
+                db.execute("DELETE FROM last_trip")
+                db.execute(
+                    """
+                    INSERT INTO last_trip (
+                        trip_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(trip_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Last trip mirrored to SQLite: %s",
+                trip_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror last trip to SQLite: %s",
+                trip_id,
             )
             return False
