@@ -23,6 +23,9 @@ Changes:
 - Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
 - Zone fix 01: resolve all Home Assistant zones before GPS/address clustering for Top Locations and Top Routes.
 - Zone fix 02: keep zone.home as stable raw value Home; use user-defined names for all other zones.
+- Charging location fix 01: resolve custom charging locations after HA zones and before GPS clustering.
+- Charging location fix 02: resolve current OSM charging locations after custom sites using the coordinator lookup.
+- Charging location fix 03: reuse custom-site radius and configured OSM lookup radius.
 
 Previous changes:
 - Keep Top Trip and Top Journey.
@@ -2730,6 +2733,180 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         return zone is not None and zone[0] == "zone:home"
 
     @staticmethod
+    def _charging_site_label(site: dict[str, Any]) -> str | None:
+        """Return the best human-readable charging-site label."""
+
+        for key in ("name", "brand", "operator", "network"):
+            value = site.get(key)
+            if value is None:
+                continue
+
+            label = str(value).strip()
+            if (
+                label
+                and label.casefold()
+                not in {
+                    "unknown",
+                    "unsaved",
+                    "none",
+                    "null",
+                    "n/a",
+                    "not available",
+                }
+            ):
+                return label
+
+        return None
+
+    async def _async_resolve_user_charging_site(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve the nearest matching custom charging location."""
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        storage = getattr(
+            self.coordinator,
+            "user_charging_site_storage",
+            None,
+        )
+        if storage is None:
+            return None
+
+        try:
+            sites = await storage.async_load()
+        except (OSError, ValueError):
+            return None
+
+        best_site: dict[str, Any] | None = None
+        best_distance: float | None = None
+
+        for site in sites:
+            try:
+                site_latitude = float(site["latitude"])
+                site_longitude = float(site["longitude"])
+                radius = float(site["radius"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            distance_m = self._distance_m(
+                point_latitude,
+                point_longitude,
+                site_latitude,
+                site_longitude,
+            )
+
+            if distance_m > radius:
+                continue
+
+            if best_distance is None or distance_m < best_distance:
+                best_site = site
+                best_distance = distance_m
+
+        if best_site is None:
+            return None
+
+        label = self._charging_site_label(best_site)
+        if not label:
+            return None
+
+        site_id = str(
+            best_site.get("site_id")
+            or f"{point_latitude:.6f},{point_longitude:.6f}"
+        )
+        return f"charging:user:{site_id}", label
+
+    async def _async_resolve_osm_charging_site(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve the current OSM charging location using coordinator lookup."""
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        lookup = getattr(
+            self.coordinator,
+            "charging_site_lookup",
+            None,
+        )
+        if lookup is None:
+            return None
+
+        try:
+            radius = float(
+                getattr(
+                    self.coordinator,
+                    "charging_site_radius",
+                    10,
+                )
+            )
+        except (TypeError, ValueError):
+            radius = 10.0
+
+        try:
+            site = await self.hass.async_add_executor_job(
+                lookup.find,
+                point_latitude,
+                point_longitude,
+                radius,
+            )
+        except (TypeError, ValueError):
+            return None
+
+        if not site:
+            return None
+
+        label = self._charging_site_label(site)
+        if not label:
+            return None
+
+        site_id = str(
+            site.get("site_id")
+            or f"{point_latitude:.6f},{point_longitude:.6f}"
+        )
+        return f"charging:osm:{site_id}", label
+
+    async def _async_resolve_known_location(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve zone or charging-site location by configured priority."""
+
+        zone = self._resolve_zone(latitude, longitude)
+        if zone is not None:
+            zone_key, zone_label = zone
+            return (
+                zone_key,
+                self._HOME_CODE
+                if zone_key == "zone:home"
+                else zone_label,
+            )
+
+        user_site = await self._async_resolve_user_charging_site(
+            latitude,
+            longitude,
+        )
+        if user_site is not None:
+            return user_site
+
+        return await self._async_resolve_osm_charging_site(
+            latitude,
+            longitude,
+        )
+
+    @staticmethod
     def _compact_location(value: Any) -> str | None:
         """Return a stable compact location label from stored address data."""
 
@@ -2818,7 +2995,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         has_house_number = bool(re.search(r"\\b\\d+[A-Za-z]?\\b", label))
         return (1 if has_house_number else 0, len(label))
 
-    def _add_location(
+    async def _add_location(
         self,
         rows: dict[str, dict[str, Any]],
         *,
@@ -2829,18 +3006,16 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     ) -> bool:
         """Add one location, clustering primarily by GPS proximity."""
 
-        zone = self._resolve_zone(latitude, longitude)
-        if zone is not None:
-            zone_key, zone_label = zone
-            internal_label = (
-                self._HOME_CODE
-                if zone_key == "zone:home"
-                else zone_label
-            )
+        known_location = await self._async_resolve_known_location(
+            latitude,
+            longitude,
+        )
+        if known_location is not None:
+            location_key, location_label = known_location
             row = rows.setdefault(
-                zone_key,
+                location_key,
                 {
-                    "label": internal_label,
+                    "label": location_label,
                     "trips": 0,
                     "distance_km": 0.0,
                     "latitude": None,
@@ -3018,7 +3193,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             except (TypeError, ValueError):
                 distance_km = 0.0
 
-            if self._add_location(
+            if await self._add_location(
                 departures,
                 latitude=trip.get("start_latitude"),
                 longitude=trip.get("start_longitude"),
@@ -3027,7 +3202,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             ):
                 evaluated_departures += 1
 
-            if self._add_location(
+            if await self._add_location(
                 destinations,
                 latitude=trip.get("end_latitude"),
                 longitude=trip.get("end_longitude"),
@@ -3089,7 +3264,7 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         super().__init__(coordinator, history, translations)
         self._attributes: dict[str, Any] = {}
 
-    def _cluster_endpoint(
+    async def _cluster_endpoint(
         self,
         clusters: dict[str, dict[str, Any]],
         *,
@@ -3099,12 +3274,18 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     ) -> tuple[str, str] | None:
         """Resolve one route endpoint using the Top Locations clustering rules."""
 
-        zone = self._resolve_zone(latitude, longitude)
-        if zone is not None:
-            zone_key, zone_label = zone
-            if zone_key == "zone:home":
-                return zone_key, "Home"
-            return zone_key, zone_label
+        known_location = await self._async_resolve_known_location(
+            latitude,
+            longitude,
+        )
+        if known_location is not None:
+            location_key, location_label = known_location
+            return (
+                location_key,
+                "Home"
+                if location_key == "zone:home"
+                else location_label,
+            )
 
         label = self._compact_location(address)
 
@@ -3233,13 +3414,13 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         evaluated_routes = 0
 
         for trip in valid_trips:
-            start = self._cluster_endpoint(
+            start = await self._cluster_endpoint(
                 endpoint_clusters,
                 latitude=trip.get("start_latitude"),
                 longitude=trip.get("start_longitude"),
                 address=trip.get("start_address"),
             )
-            end = self._cluster_endpoint(
+            end = await self._cluster_endpoint(
                 endpoint_clusters,
                 latitude=trip.get("end_latitude"),
                 longitude=trip.get("end_longitude"),
