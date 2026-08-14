@@ -282,7 +282,16 @@ class FordTriplogStorage:
             )
             counter += 1
 
-        return await self._save_json(path, data)
+        json_saved = await self._save_json(path, data)
+
+        if not json_saved:
+            return False
+
+        await self.database.save_trip(
+            self._add_metadata(data)
+        )
+
+        return True
 
     async def save_charge(self, data: dict[str, Any]) -> bool:
         """Archive completed charging session."""
