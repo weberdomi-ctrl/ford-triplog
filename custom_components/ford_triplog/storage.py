@@ -492,9 +492,16 @@ class FordTriplogStorage:
             return False
 
         # Keep the SQLite archive in sync when an existing charge is edited.
-        await self.database.save_charge(
+        db_saved = await self.database.save_charge(
             self._add_metadata(updated)
         )
+
+        if not db_saved:
+            _LOGGER.error(
+                "SQLite update failed for charge %s",
+                normalized_id,
+            )
+            return False
 
         last_charge = await self.load_last_charge()
         if (
