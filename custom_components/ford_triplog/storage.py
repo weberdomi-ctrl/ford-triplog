@@ -483,10 +483,19 @@ class FordTriplogStorage:
 
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:
-        return await self._save_json(
+        json_saved = await self._save_json(
             self._last_trip_file(),
             data,
         )
+
+        if not json_saved:
+            return False
+
+        await self.database.save_last_trip(
+            self._add_metadata(data)
+        )
+
+        return True
 
     async def load_last_trip(self) -> dict[str, Any] | None:
         return await self._load_json(
