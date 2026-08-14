@@ -62,9 +62,18 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        # Phase 1: mirror all existing JSON-backed storage into SQLite
-        # after creating the database. JSON remains the production source.
-        await self._mirror_existing_storage()
+        # Phase 1: mirror the existing JSON-backed storage only once per
+        # Home Assistant runtime. Multiple storage components share the same
+        # database but may each create their own storage instance.
+        mirror_key = "ford_triplog_initial_sqlite_mirror_done"
+
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_storage()
+        else:
+            _LOGGER.debug(
+                "Initial SQLite mirror already completed in this HA runtime"
+            )
 
         _LOGGER.debug("Ford Triplog storage initialized")
 
@@ -808,9 +817,7 @@ class FordTriplogStorage:
         )
 
     async def validate_storage(self) -> bool:
-        """Validate storage structure."""
-
-        await self.async_setup()
+        """Validate storage structure without triggering initialization."""
 
         return all(
             path.exists()
