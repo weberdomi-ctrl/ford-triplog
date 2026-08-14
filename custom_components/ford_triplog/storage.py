@@ -84,15 +84,57 @@ class FordTriplogStorage:
 
         for path in await self.list_trips():
             data = await self.load_trip_file(path)
-            if isinstance(data, dict):
-                if await self.database.save_trip(data):
-                    mirrored["trips"] += 1
+
+            if not isinstance(data, dict):
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped trip: invalid JSON: %s",
+                    path,
+                )
+                continue
+
+            trip_id = data.get("trip_id")
+            if not trip_id:
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped trip: missing trip_id: %s",
+                    path,
+                )
+                continue
+
+            if await self.database.save_trip(data):
+                mirrored["trips"] += 1
+            else:
+                _LOGGER.error(
+                    "Initial SQLite mirror failed for trip %s: %s",
+                    trip_id,
+                    path,
+                )
 
         for path in await self.list_charges():
             data = await self.load_charge_file(path)
-            if isinstance(data, dict):
-                if await self.database.save_charge(data):
-                    mirrored["charges"] += 1
+
+            if not isinstance(data, dict):
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped charge: invalid JSON: %s",
+                    path,
+                )
+                continue
+
+            charge_id = data.get("charge_id")
+            if not charge_id:
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped charge: missing charge_id: %s",
+                    path,
+                )
+                continue
+
+            if await self.database.save_charge(data):
+                mirrored["charges"] += 1
+            else:
+                _LOGGER.error(
+                    "Initial SQLite mirror failed for charge %s: %s",
+                    charge_id,
+                    path,
+                )
 
         cache_files = (
             (
