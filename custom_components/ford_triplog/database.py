@@ -79,6 +79,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS charges (
+                        charge_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -359,5 +368,59 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to remove current charge from SQLite"
+            )
+            return False
+
+    async def save_charge(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror one completed charging session into SQLite."""
+
+        charge_id = data.get("charge_id")
+
+        if not charge_id:
+            _LOGGER.error(
+                "Unable to mirror charge without charge_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO charges (
+                        charge_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(charge_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Charge mirrored to SQLite: %s",
+                charge_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror charge to SQLite: %s",
+                charge_id,
             )
             return False
