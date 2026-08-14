@@ -97,6 +97,15 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS statistics (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
                 db.commit()
 
         try:
@@ -487,5 +496,46 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to mirror last charge to SQLite: %s",
                 charge_id,
+            )
+            return False
+
+    async def save_statistics(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror statistics cache into SQLite."""
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO statistics (
+                        id,
+                        data
+                    )
+                    VALUES (1, ?)
+                    """,
+                    (payload,),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Statistics mirrored to SQLite"
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror statistics to SQLite"
             )
             return False
