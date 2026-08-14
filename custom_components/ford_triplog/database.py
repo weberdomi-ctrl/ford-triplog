@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 01
-Changes: Initial SQLite database with trip mirror support
+Build: 10
+Changes: Add 1:1 metadata.json mirror support
 """
 
 from __future__ import annotations
@@ -146,6 +146,15 @@ class FordTriplogDatabase:
                     """
                     CREATE TABLE IF NOT EXISTS last_journey (
                         journey_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS metadata (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
                         data TEXT NOT NULL
                     )
                     """
@@ -825,4 +834,22 @@ class FordTriplogDatabase:
             return True
         except Exception:
             _LOGGER.exception("Unable to clear last journey from SQLite")
+            return False
+
+    async def save_metadata(self, data: dict[str, Any]) -> bool:
+        """Mirror complete metadata.json into SQLite."""
+        def _write() -> None:
+            payload = json.dumps(data, ensure_ascii=False)
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO metadata (id, data) VALUES (1, ?)",
+                    (payload,),
+                )
+                db.commit()
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("Metadata mirrored to SQLite")
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to mirror metadata to SQLite")
             return False
