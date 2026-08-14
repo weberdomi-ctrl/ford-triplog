@@ -3,9 +3,31 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0.2
-Phase: 4 - Top Statistics / Top Day (Fix 09)
+Version: 2.0.3-dev
+Phase: Language cleanup - Top Charging
 Changes:
+- Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
+- Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
+- Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
+- Preserve all existing 2.0.2 Top Statistics behavior.
+- Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
+- Top Locations 01: add Top 5 departures and Top 5 destinations from archived trips.
+- Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
+- Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
+- Top Locations 04: keep the most complete address label found inside each GPS cluster.
+- Top Locations Fix 01: add missing re import for address quality scoring.
+- Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
+- Top Routes 01: add Top 5 directed routes using the same 50 m GPS clustering as Top Locations.
+- Top Routes 02: expose trip count, average distance and average consumption where available.
+- Top Routes Fix 01: exclude routes where start and destination resolve to the same location.
+- Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
+- Zone fix 01: resolve all Home Assistant zones before GPS/address clustering for Top Locations and Top Routes.
+- Zone fix 02: keep zone.home as stable raw value Home; use user-defined names for all other zones.
+- Charging location fix 01: resolve custom charging locations after HA zones and before GPS clustering.
+- Charging location fix 02: resolve current OSM charging locations after custom sites using the coordinator lookup.
+- Charging location fix 03: reuse custom-site radius and configured OSM lookup radius.
+
+Previous changes:
 - Keep Top Trip and Top Journey.
 - Add one compact Top Charging sensor based on archived charging sessions.
 - State is the most-used charging provider.
@@ -48,6 +70,7 @@ from typing import Any
 
 from datetime import datetime, timedelta
 import math
+import re
 import logging
 
 from homeassistant.components.sensor import (
@@ -135,6 +158,10 @@ async def async_setup_entry(
             f"component.{DOMAIN}.common.no_gps_data",
             "No GPS data available",
         ),
+        "charging_site_home": translations.get(
+            f"component.{DOMAIN}.common.charging_site_home",
+            "Home",
+        ),
     }
 
     async_add_entities(
@@ -209,6 +236,16 @@ async def async_setup_entry(
             FordTriplogTopDaySensor(
                 journey_storage,
                 route_storage,
+                common_translations,
+            ),
+            FordTriplogTopLocationsSensor(
+                coordinator,
+                history,
+                common_translations,
+            ),
+            FordTriplogTopRoutesSensor(
+                coordinator,
+                history,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -1728,6 +1765,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "last_route"
     _attr_unique_id = "ford_triplog_last_route"
     _attr_icon = "mdi:map-marker-path"
@@ -1939,6 +1977,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
     """Expose all stored routes for the selected historical date."""
 
     _attr_has_entity_name = True
+    _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "route_history"
     _attr_unique_id = "ford_triplog_route_history"
     _attr_icon = "mdi:map-clock-outline"
@@ -2583,8 +2622,939 @@ class FordTriplogTopDaySensor(SensorEntity):
         }
 
 
+class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
+    """Expose the most frequent trip departures and destinations."""
+
+    _HOME_CODE = "__home__"
+    _CLUSTER_RADIUS_M = 50.0
+
+    _attr_translation_key = "top_locations"
+    _attr_unique_id = "ford_triplog_top_locations"
+    _attr_icon = "mdi:map-marker-multiple-outline"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _distance_m(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        """Calculate distance between two coordinates in metres."""
+
+        earth_radius_m = 6_371_000
+
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value),
+            math.sqrt(1 - value),
+        )
+
+    def _resolve_zone(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Return stable zone key and display label for matching HA zone."""
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        matching_zone = None
+        matching_distance = None
+
+        for state in self.hass.states.async_all("zone"):
+            try:
+                zone_latitude = float(state.attributes.get("latitude"))
+                zone_longitude = float(state.attributes.get("longitude"))
+                zone_radius = max(
+                    0.0,
+                    float(state.attributes.get("radius", 100)),
+                )
+            except (TypeError, ValueError):
+                continue
+
+            distance_m = self._distance_m(
+                point_latitude,
+                point_longitude,
+                zone_latitude,
+                zone_longitude,
+            )
+
+            if distance_m > zone_radius:
+                continue
+
+            if matching_distance is None or distance_m < matching_distance:
+                matching_zone = state
+                matching_distance = distance_m
+
+        if matching_zone is None:
+            return None
+
+        if matching_zone.entity_id == "zone.home":
+            return "zone:home", "Home"
+
+        zone_name = str(
+            matching_zone.attributes.get("friendly_name")
+            or matching_zone.name
+            or matching_zone.entity_id.split(".", 1)[-1]
+        ).strip()
+
+        if not zone_name:
+            return None
+
+        return f"zone:{matching_zone.entity_id}", zone_name
+
+    def _is_home(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> bool:
+        """Return whether coordinates resolve to zone.home."""
+
+        zone = self._resolve_zone(latitude, longitude)
+        return zone is not None and zone[0] == "zone:home"
+
+    @staticmethod
+    def _charging_site_label(site: dict[str, Any]) -> str | None:
+        """Return the best human-readable charging-site label."""
+
+        for key in ("name", "brand", "operator", "network"):
+            value = site.get(key)
+            if value is None:
+                continue
+
+            label = str(value).strip()
+            if (
+                label
+                and label.casefold()
+                not in {
+                    "unknown",
+                    "unsaved",
+                    "none",
+                    "null",
+                    "n/a",
+                    "not available",
+                }
+            ):
+                return label
+
+        return None
+
+    async def _async_resolve_user_charging_site(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve the nearest matching custom charging location."""
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        storage = getattr(
+            self.coordinator,
+            "user_charging_site_storage",
+            None,
+        )
+        if storage is None:
+            return None
+
+        try:
+            sites = await storage.async_load()
+        except (OSError, ValueError):
+            return None
+
+        best_site: dict[str, Any] | None = None
+        best_distance: float | None = None
+
+        for site in sites:
+            try:
+                site_latitude = float(site["latitude"])
+                site_longitude = float(site["longitude"])
+                radius = float(site["radius"])
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            distance_m = self._distance_m(
+                point_latitude,
+                point_longitude,
+                site_latitude,
+                site_longitude,
+            )
+
+            if distance_m > radius:
+                continue
+
+            if best_distance is None or distance_m < best_distance:
+                best_site = site
+                best_distance = distance_m
+
+        if best_site is None:
+            return None
+
+        label = self._charging_site_label(best_site)
+        if not label:
+            return None
+
+        site_id = str(
+            best_site.get("site_id")
+            or f"{point_latitude:.6f},{point_longitude:.6f}"
+        )
+        return f"charging:user:{site_id}", label
+
+    async def _async_resolve_osm_charging_site(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve the current OSM charging location using coordinator lookup."""
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        lookup = getattr(
+            self.coordinator,
+            "charging_site_lookup",
+            None,
+        )
+        if lookup is None:
+            return None
+
+        try:
+            radius = float(
+                getattr(
+                    self.coordinator,
+                    "charging_site_radius",
+                    10,
+                )
+            )
+        except (TypeError, ValueError):
+            radius = 10.0
+
+        try:
+            site = await self.hass.async_add_executor_job(
+                lookup.find,
+                point_latitude,
+                point_longitude,
+                radius,
+            )
+        except (TypeError, ValueError):
+            return None
+
+        if not site:
+            return None
+
+        label = self._charging_site_label(site)
+        if not label:
+            return None
+
+        site_id = str(
+            site.get("site_id")
+            or f"{point_latitude:.6f},{point_longitude:.6f}"
+        )
+        return f"charging:osm:{site_id}", label
+
+    async def _async_resolve_known_location(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve zone or charging-site location by configured priority."""
+
+        zone = self._resolve_zone(latitude, longitude)
+        if zone is not None:
+            zone_key, zone_label = zone
+            return (
+                zone_key,
+                self._HOME_CODE
+                if zone_key == "zone:home"
+                else zone_label,
+            )
+
+        user_site = await self._async_resolve_user_charging_site(
+            latitude,
+            longitude,
+        )
+        if user_site is not None:
+            return user_site
+
+        return await self._async_resolve_osm_charging_site(
+            latitude,
+            longitude,
+        )
+
+    @staticmethod
+    def _compact_location(value: Any) -> str | None:
+        """Return a stable compact location label from stored address data."""
+
+        if value is None:
+            return None
+
+        if isinstance(value, dict):
+            road = (
+                value.get("road")
+                or value.get("pedestrian")
+                or value.get("path")
+                or value.get("amenity")
+                or value.get("name")
+            )
+            house = value.get("house_number")
+            postcode = value.get("postcode")
+            city = (
+                value.get("city")
+                or value.get("town")
+                or value.get("village")
+                or value.get("municipality")
+            )
+
+            street = " ".join(
+                str(part).strip()
+                for part in (road, house)
+                if part
+            ).strip()
+            postal_city = " ".join(
+                str(part).strip()
+                for part in (postcode, city)
+                if part
+            ).strip()
+
+            parts = [
+                part
+                for part in (street or None, postal_city or None)
+                if part
+            ]
+            if parts:
+                return ", ".join(parts)
+
+            value = value.get("display_name") or value.get("display")
+
+        text = str(value or "").strip()
+        if not text or text.upper() == "UNKNOWN":
+            return None
+
+        parts = [part.strip() for part in text.split(",") if part.strip()]
+        if len(parts) <= 2:
+            return text
+
+        # Prefer street/POI plus postal code and city when possible.
+        postcode_index = next(
+            (
+                index
+                for index, part in enumerate(parts)
+                if part.isdigit() and 4 <= len(part) <= 5
+            ),
+            None,
+        )
+
+        if postcode_index is not None:
+            postcode = parts[postcode_index]
+
+            if len(parts) >= 3 and parts[0].isdigit():
+                street = f"{parts[1]} {parts[0]}".strip()
+                city = parts[2]
+            else:
+                street = parts[0]
+                city = parts[1] if len(parts) > 1 else None
+
+            postal_city = " ".join(
+                part for part in (postcode, city) if part
+            )
+            return ", ".join(
+                part for part in (street, postal_city) if part
+            )
+
+        return ", ".join(parts[:2])
+
+    @staticmethod
+    def _label_score(label: str) -> tuple[int, int]:
+        """Prefer richer labels, especially addresses containing a house number."""
+
+        has_house_number = bool(re.search(r"\\b\\d+[A-Za-z]?\\b", label))
+        return (1 if has_house_number else 0, len(label))
+
+    async def _add_location(
+        self,
+        rows: dict[str, dict[str, Any]],
+        *,
+        latitude: Any,
+        longitude: Any,
+        address: Any,
+        distance_km: float,
+    ) -> bool:
+        """Add one location, clustering primarily by GPS proximity."""
+
+        known_location = await self._async_resolve_known_location(
+            latitude,
+            longitude,
+        )
+        if known_location is not None:
+            location_key, location_label = known_location
+            row = rows.setdefault(
+                location_key,
+                {
+                    "label": location_label,
+                    "trips": 0,
+                    "distance_km": 0.0,
+                    "latitude": None,
+                    "longitude": None,
+                },
+            )
+            row["trips"] += 1
+            row["distance_km"] += distance_km
+            return True
+
+        label = self._compact_location(address)
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+            has_coordinates = True
+        except (TypeError, ValueError):
+            point_latitude = None
+            point_longitude = None
+            has_coordinates = False
+
+        if has_coordinates:
+            # Match the nearest existing GPS cluster within the configured radius.
+            matching_key = None
+            matching_distance = None
+
+            for key, row in rows.items():
+                if key in (self._HOME_CODE, "zone:home"):
+
+                    continue
+
+                row_latitude = row.get("latitude")
+                row_longitude = row.get("longitude")
+                if row_latitude is None or row_longitude is None:
+                    continue
+
+                distance_m = self._distance_m(
+                    point_latitude,
+                    point_longitude,
+                    float(row_latitude),
+                    float(row_longitude),
+                )
+                if (
+                    distance_m <= self._CLUSTER_RADIUS_M
+                    and (
+                        matching_distance is None
+                        or distance_m < matching_distance
+                    )
+                ):
+                    matching_key = key
+                    matching_distance = distance_m
+
+            if matching_key is None:
+                matching_key = (
+                    f"gps:{point_latitude:.6f},{point_longitude:.6f}"
+                )
+                rows[matching_key] = {
+                    "label": label,
+                    "trips": 0,
+                    "distance_km": 0.0,
+                    "latitude": point_latitude,
+                    "longitude": point_longitude,
+                    "coordinate_count": 0,
+                }
+
+            row = rows[matching_key]
+
+            # Keep a running centroid so repeated GPS samples define the cluster
+            # better than whichever point happened to be seen first.
+            coordinate_count = int(row.get("coordinate_count") or 0)
+            if coordinate_count <= 0:
+                row["latitude"] = point_latitude
+                row["longitude"] = point_longitude
+                row["coordinate_count"] = 1
+            else:
+                new_count = coordinate_count + 1
+                row["latitude"] = (
+                    float(row["latitude"]) * coordinate_count
+                    + point_latitude
+                ) / new_count
+                row["longitude"] = (
+                    float(row["longitude"]) * coordinate_count
+                    + point_longitude
+                ) / new_count
+                row["coordinate_count"] = new_count
+
+            if label:
+                current_label = row.get("label")
+                if (
+                    not current_label
+                    or self._label_score(label)
+                    > self._label_score(str(current_label))
+                ):
+                    row["label"] = label
+
+            row["trips"] += 1
+            row["distance_km"] += distance_km
+            return True
+
+        # GPS unavailable: fall back to the normalized address string.
+        if not label:
+            return False
+
+        key = f"address:{label.casefold()}"
+        row = rows.setdefault(
+            key,
+            {
+                "label": label,
+                "trips": 0,
+                "distance_km": 0.0,
+                "latitude": None,
+                "longitude": None,
+            },
+        )
+        row["trips"] += 1
+        row["distance_km"] += distance_km
+        return True
+
+    def _display_label(self, value: str) -> str:
+        """Return stable language-neutral labels for sensor attributes."""
+
+        if value == self._HOME_CODE:
+            return "Home"
+        return value
+
+    @staticmethod
+    def _rank_rows(
+        rows: dict[str, dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Return Top 5 rows ordered by trip count and then distance."""
+
+        ranked = [
+            row
+            for row in rows.values()
+            if row.get("label")
+        ]
+        ranked.sort(
+            key=lambda row: (
+                int(row.get("trips") or 0),
+                float(row.get("distance_km") or 0),
+                str(row.get("label") or ""),
+            ),
+            reverse=True,
+        )
+        return ranked[:5]
+
+    async def async_update(self) -> None:
+        """Aggregate departures and destinations from archived trips."""
+
+        trips = await self.history.get_all_trips()
+
+        valid_trips = [
+            trip
+            for trip in trips
+            if isinstance(trip, dict)
+            and trip.get("include_in_statistics", True)
+        ]
+
+        if not valid_trips:
+            self._value = None
+            self._attributes = {}
+            return
+
+        departures: dict[str, dict[str, Any]] = {}
+        destinations: dict[str, dict[str, Any]] = {}
+        evaluated_departures = 0
+        evaluated_destinations = 0
+
+        for trip in valid_trips:
+            try:
+                distance_km = max(
+                    0.0,
+                    float(trip.get("distance_km") or 0),
+                )
+            except (TypeError, ValueError):
+                distance_km = 0.0
+
+            if await self._add_location(
+                departures,
+                latitude=trip.get("start_latitude"),
+                longitude=trip.get("start_longitude"),
+                address=trip.get("start_address"),
+                distance_km=distance_km,
+            ):
+                evaluated_departures += 1
+
+            if await self._add_location(
+                destinations,
+                latitude=trip.get("end_latitude"),
+                longitude=trip.get("end_longitude"),
+                address=trip.get("end_address"),
+                distance_km=distance_km,
+            ):
+                evaluated_destinations += 1
+
+        top_departures = self._rank_rows(departures)
+        top_destinations = self._rank_rows(destinations)
+
+        display_departures = [
+            {
+                "location": self._display_label(str(row["label"])),
+                "trips": int(row["trips"]),
+                "distance_km": round(float(row["distance_km"]), 1),
+            }
+            for row in top_departures
+        ]
+        display_destinations = [
+            {
+                "location": self._display_label(str(row["label"])),
+                "trips": int(row["trips"]),
+                "distance_km": round(float(row["distance_km"]), 1),
+            }
+            for row in top_destinations
+        ]
+
+        self._value = len(valid_trips)
+        self._attributes = {
+            "top_departures": display_departures,
+            "top_destinations": display_destinations,
+            "trip_count": len(valid_trips),
+            "evaluated_departures": evaluated_departures,
+            "evaluated_destinations": evaluated_destinations,
+        }
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        """Top Locations is refreshed directly from the trip archive."""
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
+class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
+    """Expose the most frequently driven directed routes."""
+
+    _attr_translation_key = "top_routes"
+    _attr_unique_id = "ford_triplog_top_routes"
+    _attr_icon = "mdi:routes"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    async def _cluster_endpoint(
+        self,
+        clusters: dict[str, dict[str, Any]],
+        *,
+        latitude: Any,
+        longitude: Any,
+        address: Any,
+    ) -> tuple[str, str] | None:
+        """Resolve one route endpoint using the Top Locations clustering rules."""
+
+        known_location = await self._async_resolve_known_location(
+            latitude,
+            longitude,
+        )
+        if known_location is not None:
+            location_key, location_label = known_location
+            return (
+                location_key,
+                "Home"
+                if location_key == "zone:home"
+                else location_label,
+            )
+
+        label = self._compact_location(address)
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+            has_coordinates = True
+        except (TypeError, ValueError):
+            point_latitude = None
+            point_longitude = None
+            has_coordinates = False
+
+        if has_coordinates:
+            matching_key = None
+            matching_distance = None
+
+            for key, row in clusters.items():
+                if key in (self._HOME_CODE, "zone:home"):
+
+                    continue
+
+                row_latitude = row.get("latitude")
+                row_longitude = row.get("longitude")
+                if row_latitude is None or row_longitude is None:
+                    continue
+
+                distance_m = self._distance_m(
+                    point_latitude,
+                    point_longitude,
+                    float(row_latitude),
+                    float(row_longitude),
+                )
+
+                if (
+                    distance_m <= self._CLUSTER_RADIUS_M
+                    and (
+                        matching_distance is None
+                        or distance_m < matching_distance
+                    )
+                ):
+                    matching_key = key
+                    matching_distance = distance_m
+
+            if matching_key is None:
+                matching_key = (
+                    f"gps:{point_latitude:.6f},{point_longitude:.6f}"
+                )
+                clusters[matching_key] = {
+                    "label": label,
+                    "latitude": point_latitude,
+                    "longitude": point_longitude,
+                    "coordinate_count": 1,
+                }
+            else:
+                row = clusters[matching_key]
+                coordinate_count = int(row.get("coordinate_count") or 1)
+                new_count = coordinate_count + 1
+                row["latitude"] = (
+                    float(row["latitude"]) * coordinate_count
+                    + point_latitude
+                ) / new_count
+                row["longitude"] = (
+                    float(row["longitude"]) * coordinate_count
+                    + point_longitude
+                ) / new_count
+                row["coordinate_count"] = new_count
+
+                if label:
+                    current_label = row.get("label")
+                    if (
+                        not current_label
+                        or self._label_score(label)
+                        > self._label_score(str(current_label))
+                    ):
+                        row["label"] = label
+
+            row = clusters[matching_key]
+            if label:
+                current_label = row.get("label")
+                if (
+                    not current_label
+                    or self._label_score(label)
+                    > self._label_score(str(current_label))
+                ):
+                    row["label"] = label
+
+            display_label = row.get("label")
+            if not display_label:
+                return None
+
+            return matching_key, str(display_label)
+
+        if not label:
+            return None
+
+        key = f"address:{label.casefold()}"
+        clusters.setdefault(
+            key,
+            {
+                "label": label,
+                "latitude": None,
+                "longitude": None,
+            },
+        )
+        return key, label
+
+    async def async_update(self) -> None:
+        """Aggregate the Top 5 directed routes from archived trips."""
+
+        trips = await self.history.get_all_trips()
+
+        valid_trips = [
+            trip
+            for trip in trips
+            if isinstance(trip, dict)
+            and trip.get("include_in_statistics", True)
+        ]
+
+        if not valid_trips:
+            self._value = None
+            self._attributes = {}
+            return
+
+        endpoint_clusters: dict[str, dict[str, Any]] = {}
+        routes: dict[tuple[str, str], dict[str, Any]] = {}
+        evaluated_routes = 0
+
+        for trip in valid_trips:
+            start = await self._cluster_endpoint(
+                endpoint_clusters,
+                latitude=trip.get("start_latitude"),
+                longitude=trip.get("start_longitude"),
+                address=trip.get("start_address"),
+            )
+            end = await self._cluster_endpoint(
+                endpoint_clusters,
+                latitude=trip.get("end_latitude"),
+                longitude=trip.get("end_longitude"),
+                address=trip.get("end_address"),
+            )
+
+            if start is None or end is None:
+                continue
+
+            start_key, start_label = start
+            end_key, end_label = end
+
+            # Same-location round trips/local loops do not add useful
+            # information to the directed Top Routes ranking.
+            if start_key == end_key:
+                continue
+
+            try:
+                distance_km = float(trip.get("distance_km"))
+            except (TypeError, ValueError):
+                distance_km = None
+
+            consumption = trip.get("consumption_kwh_100km")
+            try:
+                consumption = float(consumption)
+                if consumption <= 0:
+                    consumption = None
+            except (TypeError, ValueError):
+                consumption = None
+
+            route_key = (start_key, end_key)
+            row = routes.setdefault(
+                route_key,
+                {
+                    "start": start_label,
+                    "destination": end_label,
+                    "trips": 0,
+                    "distance_sum_km": 0.0,
+                    "distance_count": 0,
+                    "consumption_sum": 0.0,
+                    "consumption_count": 0,
+                },
+            )
+
+            # Endpoint labels can improve as richer addresses are encountered.
+            row["start"] = (
+                "Home"
+                if start_key == "zone:home"
+                else str(endpoint_clusters.get(start_key, {}).get("label") or start_label)
+            )
+            row["destination"] = (
+                "Home"
+                if end_key == "zone:home"
+                else str(endpoint_clusters.get(end_key, {}).get("label") or end_label)
+            )
+
+            row["trips"] += 1
+
+            if distance_km is not None and distance_km >= 0:
+                row["distance_sum_km"] += distance_km
+                row["distance_count"] += 1
+
+            if (
+                consumption is not None
+                and distance_km is not None
+                and distance_km >= 10.0
+            ):
+                row["consumption_sum"] += consumption
+                row["consumption_count"] += 1
+
+            evaluated_routes += 1
+
+        ranked = sorted(
+            routes.values(),
+            key=lambda row: (
+                int(row.get("trips") or 0),
+                int(row.get("distance_count") or 0),
+                float(row.get("distance_sum_km") or 0),
+            ),
+            reverse=True,
+        )[:5]
+
+        top_routes = []
+        for row in ranked:
+            distance_count = int(row["distance_count"])
+            consumption_count = int(row["consumption_count"])
+
+            average_distance = (
+                round(float(row["distance_sum_km"]) / distance_count, 1)
+                if distance_count
+                else None
+            )
+            average_consumption = (
+                round(float(row["consumption_sum"]) / consumption_count, 1)
+                if consumption_count
+                else None
+            )
+
+            top_routes.append(
+                {
+                    "start": row["start"],
+                    "destination": row["destination"],
+                    "trips": int(row["trips"]),
+                    "average_distance_km": average_distance,
+                    "average_consumption_kwh_100km": average_consumption,
+                    "consumption_trip_count": consumption_count,
+                }
+            )
+
+        self._value = len(valid_trips)
+        self._attributes = {
+            "top_routes": top_routes,
+            "trip_count": len(valid_trips),
+            "evaluated_routes": evaluated_routes,
+        }
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        """Top Routes is refreshed directly from the trip archive."""
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
 class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     """Expose compact Top Charging statistics."""
+
+    _HOME_CODE = "__home__"
+    _UNKNOWN_CODE = "__unknown__"
 
     _attr_translation_key = "top_charging"
     _attr_unique_id = "ford_triplog_top_charging"
@@ -2687,6 +3657,45 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 matching_zone = (distance, zone_name)
 
         return matching_zone[1] if matching_zone else None
+
+    def _is_home_zone(
+        self,
+        charge: dict[str, Any],
+    ) -> bool:
+        """Return whether the charge coordinates are inside zone.home."""
+
+        home_zone = self.hass.states.get("zone.home")
+        if home_zone is None:
+            return False
+
+        coordinates = self._charge_coordinates(charge)
+        if coordinates is None:
+            return False
+
+        try:
+            distance = self._distance_m(
+                coordinates[0],
+                coordinates[1],
+                float(home_zone.attributes.get("latitude")),
+                float(home_zone.attributes.get("longitude")),
+            )
+            radius = max(
+                0.0,
+                float(home_zone.attributes.get("radius", 100)),
+            )
+        except (TypeError, ValueError):
+            return False
+
+        return distance <= radius
+
+    def _display_special_label(self, value: str) -> str:
+        """Translate language-neutral special Top Charging labels."""
+
+        if value == self._HOME_CODE:
+            return self.translations.get("charging_site_home", "Home")
+        if value == self._UNKNOWN_CODE:
+            return self.translations.get("unknown", "Unknown")
+        return value
 
     @staticmethod
     def _compact_address(value: Any) -> str | None:
@@ -2957,13 +3966,10 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         zone_name = self._resolve_zone_name(charge)
         cost_source = str(charge.get("cost_source") or "").strip().lower()
 
-        # Home tariff is definitive. A charge inside the HA Home zone is also
-        # treated as Home so older historic sessions are grouped correctly.
-        if cost_source == "home_tariff":
-            return "Home"
-
-        if zone_name and zone_name.lower() == "home":
-            return "Home"
+        # Classification stays language-neutral. Home tariff is definitive;
+        # otherwise use the stable Home Assistant entity_id zone.home.
+        if cost_source == "home_tariff" or self._is_home_zone(charge):
+            return self._HOME_CODE
 
         for key in (
             "charging_site_brand",
@@ -2986,7 +3992,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         if zone_name:
             return zone_name
 
-        return "Unknown"
+        return self._UNKNOWN_CODE
 
     def _charge_location(self, charge: dict[str, Any]) -> str:
         """Return the best available compact charging location."""
@@ -3029,7 +4035,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             ):
                 return str(value).strip()
 
-        return "Unknown"
+        return self._UNKNOWN_CODE
 
     @classmethod
     def _energy_kwh(cls, charge: dict[str, Any]) -> float:
@@ -3143,18 +4149,16 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
             current_site = None
 
-            # Home remains the highest-priority classification.
+            # Home remains the highest-priority classification, but the
+            # classification is independent of the configured UI language.
             is_home = (
                 cost_source == "home_tariff"
-                or (
-                    zone_name is not None
-                    and zone_name.lower() == "home"
-                )
+                or self._is_home_zone(charge)
             )
 
             if is_home:
-                provider = "Home"
-                location = "Home"
+                provider = self._HOME_CODE
+                location = self._HOME_CODE
             else:
                 # Current user-defined sites have priority over current OSM,
                 # matching ChargingLocationResolver semantics.
@@ -3179,7 +4183,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             energy = self._energy_kwh(charge)
             cost = self._total_cost(charge)
 
-            if provider == "Unknown":
+            if provider == self._UNKNOWN_CODE:
                 unknown_provider_sessions += 1
                 unknown_provider_energy += energy
                 unknown_provider_cost += cost
@@ -3208,8 +4212,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 },
             )
             if (
-                location_row.get("provider") == "Unknown"
-                and provider != "Unknown"
+                location_row.get("provider") == self._UNKNOWN_CODE
+                and provider != self._UNKNOWN_CODE
             ):
                 location_row["provider"] = provider
 
@@ -3257,7 +4261,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         provider_rows = [
             row
             for row in provider_rows
-            if row["provider"] != "Unknown"
+            if row["provider"] != self._UNKNOWN_CODE
         ]
 
         provider_rows.sort(
@@ -3293,15 +4297,50 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         top_providers = provider_rows[:5]
         top_locations = location_rows[:5]
 
+        display_top_providers = [
+            {
+                **row,
+                "provider": self._display_special_label(
+                    str(row.get("provider") or "")
+                ),
+            }
+            for row in top_providers
+        ]
+        display_top_locations = [
+            {
+                **row,
+                "location": self._display_special_label(
+                    str(row.get("location") or "")
+                ),
+                "provider": self._display_special_label(
+                    str(row.get("provider") or "")
+                ),
+            }
+            for row in top_locations
+        ]
+        display_largest = (
+            {
+                **largest,
+                "provider": self._display_special_label(
+                    str(largest.get("provider") or "")
+                ),
+                "location": self._display_special_label(
+                    str(largest.get("location") or "")
+                ),
+            }
+            if largest is not None
+            else None
+        )
+
         self._value = (
-            top_providers[0]["provider"]
-            if top_providers
+            display_top_providers[0]["provider"]
+            if display_top_providers
             else None
         )
         self._attributes = {
-            "top_providers": top_providers,
-            "top_locations": top_locations,
-            "largest_session": largest,
+            "top_providers": display_top_providers,
+            "top_locations": display_top_locations,
+            "largest_session": display_largest,
             "session_count": len(valid_charges),
             "unknown_provider_sessions": unknown_provider_sessions,
             "unknown_provider_energy_kwh": round(
