@@ -380,6 +380,12 @@ class FordTriplogRouteStorage:
         else:
             return []
 
+        _LOGGER.debug(
+            "Routes for date read backend: %s date=%s",
+            self.read_backend,
+            selected_date.isoformat(),
+        )
+
         routes = await self.async_list_routes()
 
         return [
@@ -393,6 +399,12 @@ class FordTriplogRouteStorage:
         trip_ids: list[str],
     ) -> list[dict[str, Any]]:
         """Load completed routes for Trip IDs, preserving requested order."""
+
+        _LOGGER.debug(
+            "Routes for trip IDs read backend: %s count=%d",
+            self.read_backend,
+            len(trip_ids),
+        )
 
         routes: list[dict[str, Any]] = []
 
