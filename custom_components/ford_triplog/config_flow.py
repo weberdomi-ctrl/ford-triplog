@@ -92,6 +92,10 @@ from .const import (
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
+    CONF_STORAGE_READ_BACKEND,
+    STORAGE_READ_BACKEND_JSON,
+    STORAGE_READ_BACKEND_SQLITE,
+    DEFAULT_STORAGE_READ_BACKEND,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -5727,6 +5731,28 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             "USD",
                         ],
                         custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+
+                vol.Optional(
+                    CONF_STORAGE_READ_BACKEND,
+                    default=self._options.get(
+                        CONF_STORAGE_READ_BACKEND,
+                        DEFAULT_STORAGE_READ_BACKEND,
+                    ),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value=STORAGE_READ_BACKEND_JSON,
+                                label="JSON",
+                            ),
+                            selector.SelectOptionDict(
+                                value=STORAGE_READ_BACKEND_SQLITE,
+                                label="SQLite",
+                            ),
+                        ],
                         mode=selector.SelectSelectorMode.DROPDOWN,
                     )
                 ),
