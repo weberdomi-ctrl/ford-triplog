@@ -240,6 +240,8 @@ async def async_setup_entry(
             ),
             FordTriplogTopJourneySensor(
                 journey_storage,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopChargingSensor(
@@ -4439,9 +4441,13 @@ class FordTriplogTopJourneySensor(SensorEntity):
     def __init__(
         self,
         storage: FordTriplogJourneyStorage | None,
+        database,
+        read_backend,
         translations: dict[str, str],
     ) -> None:
         self.storage = storage
+        self.database = database
+        self.read_backend = read_backend
         self.translations = translations
         self._journey = None
         self._attr_native_value = None
@@ -4531,28 +4537,103 @@ class FordTriplogTopJourneySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Find and expose the longest archived Journey."""
 
-        if self.storage is None:
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Journey SQLite read requested but database is unavailable"
+                )
+                journey = None
+            else:
+                journey = await self.database.load_top_journey()
+        else:
+            if self.storage is None:
+                journey = None
+            else:
+                journeys = await self.storage.get_all_journeys()
+
+                def journey_distance(item) -> float:
+                    try:
+                        return float(item.distance_km or 0)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                journey = (
+                    max(journeys, key=journey_distance)
+                    if journeys
+                    else None
+                )
+
+        if journey is None:
             self._journey = None
             self._attr_native_value = None
             self._attributes = {}
             return
 
-        journeys = await self.storage.get_all_journeys()
+        if isinstance(journey, dict):
+            def get_value(key: str, default: Any = None) -> Any:
+                return journey.get(key, default)
 
-        if not journeys:
-            self._journey = None
-            self._attr_native_value = None
-            self._attributes = {}
-            return
-
-        def journey_distance(journey) -> float:
-            try:
-                return float(journey.distance_km or 0)
-            except (TypeError, ValueError):
-                return 0.0
-
-        journey = max(journeys, key=journey_distance)
-        distance_km = round(journey_distance(journey), 1)
+            items = journey.get("items") or []
+            distance_km = self._optional_number(
+                get_value("distance_km"),
+                1,
+            ) or 0.0
+            journey_id = get_value("journey_id")
+            date = get_value("date")
+            start_time = get_value("start_time")
+            end_time = get_value("end_time")
+            start_address = get_value("start_address")
+            end_address = get_value("end_address")
+            trip_count = get_value("trip_count")
+            charge_count = get_value("charge_count")
+            total_duration_seconds = int(
+                get_value("total_duration_seconds", 0) or 0
+            )
+            driving_duration_seconds = int(
+                get_value("driving_duration_seconds", 0) or 0
+            )
+            charging_duration_seconds = int(
+                get_value("charging_duration_seconds", 0) or 0
+            )
+            energy_used_kwh = get_value("energy_used_kwh")
+            energy_charged_kwh = get_value("energy_charged_kwh")
+            average_consumption = get_value(
+                "average_consumption_kwh_100km"
+            )
+            charging_cost_total = get_value("charging_cost_total")
+            average_charging_price = get_value(
+                "average_charging_price_per_kwh"
+            )
+            currency = get_value("currency")
+        else:
+            items = list(journey.items)
+            distance_km = round(
+                float(journey.distance_km or 0),
+                1,
+            )
+            journey_id = journey.journey_id
+            date = journey.date
+            start_time = journey.start_time
+            end_time = journey.end_time
+            start_address = journey.start_address
+            end_address = journey.end_address
+            trip_count = journey.trip_count
+            charge_count = journey.charge_count
+            total_duration_seconds = int(
+                journey.total_duration_seconds or 0
+            )
+            driving_duration_seconds = int(
+                journey.driving_duration_seconds or 0
+            )
+            charging_duration_seconds = int(
+                journey.charging_duration_seconds or 0
+            )
+            energy_used_kwh = journey.energy_used_kwh
+            energy_charged_kwh = journey.energy_charged_kwh
+            average_consumption = journey.average_consumption_kwh_100km
+            charging_cost_total = journey.charging_cost_total
+            average_charging_price = journey.average_charging_price_per_kwh
+            currency = journey.currency
 
         if distance_km <= 0:
             self._journey = None
@@ -4560,58 +4641,55 @@ class FordTriplogTopJourneySensor(SensorEntity):
             self._attributes = {}
             return
 
-        items = list(journey.items)
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
+        def item_value(item: Any, key: str) -> Any:
+            if isinstance(item, dict):
+                return item.get(key)
+            return getattr(item, key, None)
+
         start_location = (
-            getattr(first_item, "start_location", None)
-            if first_item is not None
-            and getattr(first_item, "item_type", None) == "trip"
+            item_value(first_item, "start_location")
+            if item_value(first_item, "type") == "trip"
+            or item_value(first_item, "item_type") == "trip"
             else None
-        ) or self._short_address(journey.start_address)
+        ) or self._short_address(start_address)
 
         if (
             last_item is not None
-            and getattr(last_item, "item_type", None) == "trip"
+            and (
+                item_value(last_item, "type") == "trip"
+                or item_value(last_item, "item_type") == "trip"
+            )
         ):
             end_location = (
-                getattr(last_item, "end_location", None)
+                item_value(last_item, "end_location")
                 or self._short_address(
-                    getattr(last_item, "end_address", None)
+                    item_value(last_item, "end_address")
                 )
-                or self._short_address(journey.end_address)
+                or self._short_address(end_address)
             )
         elif last_item is not None:
             end_location = (
-                getattr(last_item, "location", None)
+                item_value(last_item, "location")
                 or self._short_address(
-                    getattr(last_item, "address", None)
+                    item_value(last_item, "address")
                 )
-                or self._short_address(journey.end_address)
+                or self._short_address(end_address)
             )
         else:
-            end_location = self._short_address(journey.end_address)
-
-        total_duration_seconds = int(
-            journey.total_duration_seconds or 0
-        )
-        driving_duration_seconds = int(
-            journey.driving_duration_seconds or 0
-        )
-        charging_duration_seconds = int(
-            journey.charging_duration_seconds or 0
-        )
+            end_location = self._short_address(end_address)
 
         self._journey = journey
         self._attr_native_value = distance_km
 
         attributes = {
-            "journey_id": journey.journey_id,
-            "date": journey.date,
+            "journey_id": journey_id,
+            "date": date,
             "distance_km": distance_km,
-            "start_time": journey.start_time,
-            "end_time": journey.end_time,
+            "start_time": start_time,
+            "end_time": end_time,
             "start_location": start_location,
             "end_location": end_location,
             "total_duration_seconds": total_duration_seconds,
@@ -4626,29 +4704,29 @@ class FordTriplogTopJourneySensor(SensorEntity):
             "charging_duration": format_duration(
                 charging_duration_seconds
             ),
-            "trip_count": journey.trip_count,
-            "charge_count": journey.charge_count,
+            "trip_count": trip_count,
+            "charge_count": charge_count,
             "energy_used_kwh": self._optional_number(
-                journey.energy_used_kwh,
+                energy_used_kwh,
                 2,
             ),
             "energy_charged_kwh": self._optional_number(
-                journey.energy_charged_kwh,
+                energy_charged_kwh,
                 2,
             ),
             "average_consumption_kwh_100km": self._optional_number(
-                journey.average_consumption_kwh_100km,
+                average_consumption,
                 1,
             ),
             "charging_cost_total": self._optional_number(
-                journey.charging_cost_total,
+                charging_cost_total,
                 2,
             ),
             "average_charging_price_per_kwh": self._optional_number(
-                journey.average_charging_price_per_kwh,
+                average_charging_price,
                 4,
             ),
-            "currency": journey.currency,
+            "currency": currency,
         }
 
         self._attributes = {
