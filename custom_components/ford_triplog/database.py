@@ -356,6 +356,18 @@ class FordTriplogDatabase:
                 )
 
 
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
+                    SELECT
+                        charge_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics
+                    FROM charges
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -470,6 +482,38 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to read Top Locations trips from SQLite view"
+            )
+            return []
+
+    async def load_top_charging_charges(self) -> list[dict[str, Any]]:
+        """Load statistics-eligible charging sessions from the SQLite view."""
+
+        self._log_read("view=v_top_charging_charges")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM v_top_charging_charges
+                    WHERE COALESCE(include_in_statistics, 1) = 1
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Charging data from SQLite view"
             )
             return []
 
