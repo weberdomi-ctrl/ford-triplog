@@ -4102,8 +4102,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     def _handle_charge_data_updated(self) -> None:
         """Schedule an immediate Top Charging archive refresh."""
 
-        self.hass.async_create_task(
-            self._async_handle_charge_data_updated()
+        self.hass.add_job(
+            self._async_handle_charge_data_updated
         )
 
     async def _async_handle_charge_data_updated(self) -> None:

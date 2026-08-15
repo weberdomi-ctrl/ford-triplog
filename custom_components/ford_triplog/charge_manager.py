@@ -231,7 +231,7 @@ class FordTriplogChargeManager:
         charge.currency = normalized_currency
         charge.cost_source = "manual"
         charge.cost_verified = True
-        charge.receipt_filename = None
+        # Keep an existing receipt filename when manually updating costs.
         charge.recalculate_costs()
 
         saved = await self.storage.update_charge(

@@ -1,51 +1,63 @@
-# Ford Triplog - OSRM DACH Update
-# Version: 1.3
+$ScriptVersion = "1.2.0"
+# Ford Triplog - OSRM DACH+EU Update
+# Version: 1.4
 #
-# Builds Germany + Austria + Switzerland OSRM data on Windows,
+# Builds DE + AT + CH + FR + IT + NL + BE + DK + LU OSRM data on Windows,
 # tests it locally, uploads it to Synology, restarts OSRM and tests again.
 #
 # Requirements:
 # - Docker Desktop (Linux containers)
 # - PuTTY / pscp.exe / plink.exe
 # - SSH key authentication to Synology
-# - Recommended for DACH preprocessing: 32 GB RAM + SSD/NVMe
+# - Recommended: 32 GB RAM + SSD/NVMe
 
 $ErrorActionPreference = "Stop"
 
-$WorkDir = "C:\osrm"
-$Image = "osrm/osrm-backend:latest"
-$OsmiumImage = "iboates/osmium:latest"
+$WorkDir      = "C:\osrm"
+$Image        = "osrm/osrm-backend:latest"
+$OsmiumImage  = "iboates/osmium:latest"
 
-$GermanyUrl = "https://download.geofabrik.de/europe/germany-latest.osm.pbf"
-$AustriaUrl = "https://download.geofabrik.de/europe/austria-latest.osm.pbf"
-$SwitzerlandUrl = "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
+$AustriaUrl      = "https://download.geofabrik.de/europe/austria-latest.osm.pbf"
+$SwitzerlandUrl  = "https://download.geofabrik.de/europe/switzerland-latest.osm.pbf"
+$FranceUrl       = "https://download.geofabrik.de/europe/france-latest.osm.pbf"
+$ItalyUrl        = "https://download.geofabrik.de/europe/italy-latest.osm.pbf"
+$NetherlandsUrl  = "https://download.geofabrik.de/europe/netherlands-latest.osm.pbf"
+$BelgiumUrl      = "https://download.geofabrik.de/europe/belgium-latest.osm.pbf"
+$DenmarkUrl      = "https://download.geofabrik.de/europe/denmark-latest.osm.pbf"
+$LuxUrl          = "https://download.geofabrik.de/europe/luxembourg-latest.osm.pbf"
+$GermanyUrl      = "https://download.geofabrik.de/europe/germany-latest.osm.pbf"
 
-$Pscp = "C:\Program Files\PuTTY\pscp.exe"
-$Plink = "C:\Program Files\PuTTY\plink.exe"
-$SshKey = "C:\Users\x\.ssh\xxx.ppk"
+$Pscp       = "C:\Program Files\PuTTY\pscp.exe"
+$Plink      = "C:\Program Files\PuTTY\plink.exe"
+$SshKey     = "C:\Users\user\.ssh\synology.ppk"
 
-$NasUser = "admin"
-$NasHost = "192.168..1.1"
+$NasUser = "user"
+$NasHost = "192.168.1.1"
 $NasTarget = "/volume1/docker/osrm"
 $NasContainer = "OSRM-Triplog"
 $NasPort = 5005
 
 $RemoteDocker = "sudo /usr/local/bin/docker"
 
-$LocalTestPort = 5006
+$LocalTestPort     = 5006
 $LocalTestContainer = "OSRM-DACH-Test"
 
-# Reuse local source/build files when they are recent enough.
 $MaxFileAgeDays = 2
 
 $TestCH = "8.9514,47.1757"
 $TestDE = "9.6849,47.5460"
 $TestAT = "9.7471,47.5031"
+$TestFR = "2.3522,48.8566"   # Paris
+$TestIT = "12.4964,41.9028"  # Rom
+$TestNL = "4.9041,52.3676"   # Amsterdam
+$TestBE = "4.3517,50.8503"   # Brüssel
+$TestDK = "12.5683,55.6761"  # Kopenhagen
+$TestLU = "6.1319,49.6117"   # Luxemburg
 
 $StartTime = Get-Date
 
 New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
-$LogFile = Join-Path $WorkDir ("osrm-dach-update-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
+$LogFile = Join-Path $WorkDir ("osrm-dach-eu-update-" + (Get-Date -Format "yyyyMMdd-HHmmss") + ".log")
 
 function Step([string]$Text) {
     $line = "[$(Get-Date -Format 'yyyy-MM-dd HH:mm:ss')] $Text"
@@ -76,16 +88,173 @@ function TestOsrm([string]$BaseUrl, [string]$Coordinate, [string]$Label) {
     Write-Host "$Label test: OK"
 }
 
-
 function IsRecentFile([string]$Path, [int]$MaxAgeDays) {
     if (-not (Test-Path $Path -PathType Leaf)) {
         return $false
     }
-
     $Age = (Get-Date) - (Get-Item $Path).LastWriteTime
     return ($Age.TotalDays -le $MaxAgeDays)
 }
 
+function Download-WithProgress(
+    [string]$Url,
+    [string]$Target,
+    [string]$Label
+) {
+    Add-Type -AssemblyName System.Net.Http -ErrorAction Stop
+
+    $HttpClient = New-Object System.Net.Http.HttpClient
+    $HttpClient.Timeout = [TimeSpan]::FromHours(6)
+
+    $TemporaryTarget = "$Target.download"
+    $ExistingBytes = 0L
+
+    if (Test-Path -LiteralPath $TemporaryTarget) {
+        $ExistingBytes = (Get-Item -LiteralPath $TemporaryTarget).Length
+    }
+
+    try {
+        $Request = New-Object System.Net.Http.HttpRequestMessage(
+            [System.Net.Http.HttpMethod]::Get,
+            $Url
+        )
+
+        if ($ExistingBytes -gt 0) {
+            $Request.Headers.Range = New-Object System.Net.Http.Headers.RangeHeaderValue(
+                $ExistingBytes,
+                $null
+            )
+        }
+
+        $Response = $HttpClient.SendAsync(
+            $Request,
+            [System.Net.Http.HttpCompletionOption]::ResponseHeadersRead
+        ).GetAwaiter().GetResult()
+
+        # Resume only when the server confirms the Range request.
+        if ($ExistingBytes -gt 0 -and
+            $Response.StatusCode -eq [System.Net.HttpStatusCode]::PartialContent) {
+
+            $Append = $true
+            $DownloadedBytes = $ExistingBytes
+            $TotalBytes = $ExistingBytes + [int64]$Response.Content.Headers.ContentLength
+        }
+        else {
+            # Server does not support resume (or the existing partial file is
+            # invalid). Start the temporary download from scratch.
+            if ($ExistingBytes -gt 0) {
+                Write-Host "$Label`: Server does not support resume - restarting download."
+            }
+
+            $Append = $false
+            $DownloadedBytes = 0L
+            $TotalBytes = 0L
+
+            if ($Response.Content.Headers.ContentLength) {
+                $TotalBytes = [int64]$Response.Content.Headers.ContentLength
+            }
+
+            if (Test-Path -LiteralPath $TemporaryTarget) {
+                Remove-Item -LiteralPath $TemporaryTarget -Force
+            }
+        }
+
+        [void]$Response.EnsureSuccessStatusCode()
+
+        $Stream = $Response.Content.ReadAsStreamAsync().GetAwaiter().GetResult()
+
+        $FileMode = if ($Append) {
+            [System.IO.FileMode]::Append
+        } else {
+            [System.IO.FileMode]::Create
+        }
+
+        $FileStream = New-Object System.IO.FileStream(
+            $TemporaryTarget,
+            $FileMode,
+            [System.IO.FileAccess]::Write,
+            [System.IO.FileShare]::None,
+            1048576,
+            [System.IO.FileOptions]::SequentialScan
+        )
+
+        try {
+            $Buffer = New-Object byte[] (1048576)
+            $LastUpdate = [DateTime]::UtcNow
+
+            while (($Read = $Stream.Read($Buffer, 0, $Buffer.Length)) -gt 0) {
+                $FileStream.Write($Buffer, 0, $Read)
+                $DownloadedBytes += $Read
+
+                if ($TotalBytes -gt 0) {
+                    $Percent = [Math]::Min(
+                        100,
+                        [Math]::Floor(($DownloadedBytes * 100.0) / $TotalBytes)
+                    )
+
+                    $Now = [DateTime]::UtcNow
+
+                    if (($Now - $LastUpdate).TotalMilliseconds -ge 250) {
+                        $DownloadedGiB = $DownloadedBytes / 1GB
+                        $TotalGiB = $TotalBytes / 1GB
+
+                        Write-Progress `
+                            -Activity "Download OSM data" `
+                            -Status "${Label}: $Percent% ($([Math]::Round($DownloadedGiB, 2)) / $([Math]::Round($TotalGiB, 2)) GiB)" `
+                            -PercentComplete $Percent
+
+                        $LastUpdate = $Now
+                    }
+                }
+                else {
+                    $Now = [DateTime]::UtcNow
+
+                    if (($Now - $LastUpdate).TotalMilliseconds -ge 500) {
+                        $DownloadedGiB = $DownloadedBytes / 1GB
+
+                        Write-Progress `
+                            -Activity "Download OSM data" `
+                            -Status "${Label}: $([Math]::Round($DownloadedGiB, 2)) GiB downloaded" `
+                            -PercentComplete 0
+
+                        $LastUpdate = $Now
+                    }
+                }
+            }
+        }
+        finally {
+            [void]$FileStream.Dispose()
+            [void]$Stream.Dispose()
+        }
+
+        Write-Progress -Activity "Download OSM data" -Completed
+
+        if ($TotalBytes -gt 0 -and $DownloadedBytes -lt $TotalBytes) {
+            throw "Download incomplete for $Label`: $DownloadedBytes of $TotalBytes bytes received."
+        }
+
+        if (Test-Path -LiteralPath $Target) {
+            Remove-Item -LiteralPath $Target -Force
+        }
+
+        Move-Item -LiteralPath $TemporaryTarget -Destination $Target -Force
+
+        Write-Host "$Label download complete."
+    }
+    catch {
+        Write-Progress -Activity "Download OSM data" -Completed
+        throw
+    }
+    finally {
+        if ($null -ne $Response) {
+            [void]$Response.Dispose()
+        }
+        if ($null -ne $Request) {
+            [void]$Request.Dispose()
+        }
+        [void]$HttpClient.Dispose()
+    }
+}
 function EnsureRecentDownload(
     [string]$Url,
     [string]$Target,
@@ -106,7 +275,7 @@ function EnsureRecentDownload(
         Remove-Item -Force $Temp
     }
 
-    Invoke-WebRequest $Url -OutFile $Temp
+    Download-WithProgress $Url $Temp $Label
     Move-Item -Force $Temp $Target
 }
 
@@ -152,19 +321,39 @@ if ($LASTEXITCODE -ne 0) {
     Fail "Synology Docker access failed. Check SSH key and passwordless sudo for /usr/local/bin/docker."
 }
 
-$GermanyFile = Join-Path $WorkDir "germany-latest.osm.pbf"
-$AustriaFile = Join-Path $WorkDir "austria-latest.osm.pbf"
-$SwitzerlandFile = Join-Path $WorkDir "switzerland-latest.osm.pbf"
+$AustriaFile      = Join-Path $WorkDir "austria-latest.osm.pbf"
+$SwitzerlandFile  = Join-Path $WorkDir "switzerland-latest.osm.pbf"
+$FranceFile       = Join-Path $WorkDir "france-latest.osm.pbf"
+$ItalyFile        = Join-Path $WorkDir "italy-latest.osm.pbf"
+$NetherlandsFile  = Join-Path $WorkDir "netherlands-latest.osm.pbf"
+$BelgiumFile      = Join-Path $WorkDir "belgium-latest.osm.pbf"
+$DenmarkFile      = Join-Path $WorkDir "denmark-latest.osm.pbf"
+$LuxFile          = Join-Path $WorkDir "luxembourg-latest.osm.pbf"
+$GermanyFile      = Join-Path $WorkDir "germany-latest.osm.pbf"
+
 $DachPbf = Join-Path $WorkDir "dach-latest.osm.pbf"
 
-EnsureRecentDownload $GermanyUrl $GermanyFile "Germany" $MaxFileAgeDays
-EnsureRecentDownload $AustriaUrl $AustriaFile "Austria" $MaxFileAgeDays
-EnsureRecentDownload $SwitzerlandUrl $SwitzerlandFile "Switzerland" $MaxFileAgeDays
+EnsureRecentDownload $AustriaUrl      $AustriaFile      "Austria"      $MaxFileAgeDays
+EnsureRecentDownload $SwitzerlandUrl  $SwitzerlandFile  "Switzerland"  $MaxFileAgeDays
+EnsureRecentDownload $FranceUrl       $FranceFile       "France"       $MaxFileAgeDays
+EnsureRecentDownload $ItalyUrl        $ItalyFile        "Italy"        $MaxFileAgeDays
+EnsureRecentDownload $NetherlandsUrl  $NetherlandsFile  "Netherlands"  $MaxFileAgeDays
+EnsureRecentDownload $BelgiumUrl      $BelgiumFile      "Belgium"      $MaxFileAgeDays
+EnsureRecentDownload $DenmarkUrl      $DenmarkFile      "Denmark"      $MaxFileAgeDays
+EnsureRecentDownload $LuxUrl          $LuxFile          "Luxembourg"   $MaxFileAgeDays
+EnsureRecentDownload $GermanyUrl      $GermanyFile      "Germany"      $MaxFileAgeDays
 
 $SourceFiles = @(
-    $GermanyFile,
+    
     $AustriaFile,
-    $SwitzerlandFile
+    $SwitzerlandFile,
+    $FranceFile,
+    $ItalyFile,
+    $NetherlandsFile,
+    $BelgiumFile,
+    $DenmarkFile,
+    $LuxFile,
+    $GermanyFile
 )
 
 $ReuseBuild = CanReuseExistingBuild $WorkDir $SourceFiles $MaxFileAgeDays
@@ -178,15 +367,21 @@ else {
     Get-ChildItem $WorkDir -Filter "dach-latest.osrm*" -ErrorAction SilentlyContinue | Remove-Item -Force
     if (Test-Path $DachPbf) { Remove-Item -Force $DachPbf }
 
-    Step "Merge DE + AT + CH"
+    Step "Merge DE + AT + CH + FR + IT + NL + BE + DK + LU"
     Run "docker" @(
         "run","--rm",
         "-v","${WorkDir}:/data",
         $OsmiumImage,
         "merge",
-        "/data/germany-latest.osm.pbf",
         "/data/austria-latest.osm.pbf",
         "/data/switzerland-latest.osm.pbf",
+        "/data/france-latest.osm.pbf",
+        "/data/italy-latest.osm.pbf",
+        "/data/netherlands-latest.osm.pbf",
+        "/data/belgium-latest.osm.pbf",
+        "/data/denmark-latest.osm.pbf",
+        "/data/luxembourg-latest.osm.pbf",
+        "/data/germany-latest.osm.pbf",
         "-o","/data/dach-latest.osm.pbf",
         "--overwrite"
     )
@@ -222,7 +417,7 @@ $OsrmFiles = @(Get-ChildItem $WorkDir -Filter "dach-latest.osrm*" -File)
 if ($OsrmFiles.Count -lt 20) { Fail "Unexpected OSRM file count: $($OsrmFiles.Count)" }
 
 $TotalBytes = ($OsrmFiles | Measure-Object Length -Sum).Sum
-$TotalGiB = [Math]::Round($TotalBytes / 1GB, 2)
+$TotalGiB   = [Math]::Round($TotalBytes / 1GB, 2)
 
 Step "Local OSRM test"
 
@@ -264,14 +459,26 @@ try {
     TestOsrm "http://127.0.0.1:$LocalTestPort" $TestCH "CH"
     TestOsrm "http://127.0.0.1:$LocalTestPort" $TestDE "DE"
     TestOsrm "http://127.0.0.1:$LocalTestPort" $TestAT "AT"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestFR "FR"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestIT "IT"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestNL "NL"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestBE "BE"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestDK "DK"
+    TestOsrm "http://127.0.0.1:$LocalTestPort" $TestLU "LU"
 
-    $cross = Invoke-RestMethod "http://127.0.0.1:${LocalTestPort}/route/v1/driving/${TestCH};${TestAT}?overview=false" -TimeoutSec 30
-    
-    if ($cross.code -ne "Ok") {
-        Fail "Cross-border CH -> AT test failed"
-    }
+    $crossCHAT = Invoke-RestMethod "http://127.0.0.1:${LocalTestPort}/route/v1/driving/${TestCH};${TestAT}?overview=false" -TimeoutSec 30
+    if ($crossCHAT.code -ne "Ok") { Fail "Cross-border CH -> AT test failed" }
 
-    Write-Host "Cross-border CH -> AT: OK"
+    $crossFRIT = Invoke-RestMethod "http://127.0.0.1:${LocalTestPort}/route/v1/driving/${TestFR};${TestIT}?overview=false" -TimeoutSec 30
+    if ($crossFRIT.code -ne "Ok") { Fail "Cross-border FR -> IT test failed" }
+
+    $crossNLBE = Invoke-RestMethod "http://127.0.0.1:${LocalTestPort}/route/v1/driving/${TestNL};${TestBE}?overview=false" -TimeoutSec 30
+    if ($crossNLBE.code -ne "Ok") { Fail "Cross-border NL -> BE test failed" }
+
+    $crossDKDE = Invoke-RestMethod "http://127.0.0.1:${LocalTestPort}/route/v1/driving/${TestDK};${TestDE}?overview=false" -TimeoutSec 30
+    if ($crossDKDE.code -ne "Ok") { Fail "Cross-border DK -> DE test failed" }
+
+    Write-Host "Cross-border tests: OK"
 }
 finally {
     $ExistingTestContainer = docker ps -aq -f "name=^/${LocalTestContainer}$"
@@ -301,7 +508,10 @@ if ($RemoteCount -ne $OsrmFiles.Count) {
 
 Step "Restart production OSRM container"
 
-$RemoteRestart = "$RemoteDocker stop $NasContainer >/dev/null 2>&1 || true; $RemoteDocker rm $NasContainer >/dev/null 2>&1 || true; $RemoteDocker run -d --name $NasContainer --restart unless-stopped --memory=6g -p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
+$RemoteRestart = "$RemoteDocker stop $NasContainer >/dev/null 2>&1 || true; " +
+                 "$RemoteDocker rm $NasContainer >/dev/null 2>&1 || true; " +
+                 "$RemoteDocker run -d --name $NasContainer --restart unless-stopped --memory=6g " +
+                 "-p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
 
 & $Plink -batch -i $SshKey "${NasUser}@${NasHost}" $RemoteRestart
 if ($LASTEXITCODE -ne 0) {
@@ -331,15 +541,22 @@ if (-not $NasReady) {
 TestOsrm "http://${NasHost}:${NasPort}" $TestCH "Synology CH"
 TestOsrm "http://${NasHost}:${NasPort}" $TestDE "Synology DE"
 TestOsrm "http://${NasHost}:${NasPort}" $TestAT "Synology AT"
+TestOsrm "http://${NasHost}:${NasPort}" $TestFR "Synology FR"
+TestOsrm "http://${NasHost}:${NasPort}" $TestIT "Synology IT"
+TestOsrm "http://${NasHost}:${NasPort}" $TestNL "Synology NL"
+TestOsrm "http://${NasHost}:${NasPort}" $TestBE "Synology BE"
+TestOsrm "http://${NasHost}:${NasPort}" $TestDK "Synology DK"
+TestOsrm "http://${NasHost}:${NasPort}" $TestLU "Synology LU"
 
 $Elapsed = (Get-Date) - $StartTime
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host " OSRM DACH UPDATE COMPLETED" -ForegroundColor Green
+Write-Host " OSRM DACH+EU UPDATE COMPLETED" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host "Files:    $($OsrmFiles.Count)"
 Write-Host "Size:     $TotalGiB GiB"
 Write-Host "Duration: $Elapsed"
 Write-Host "NAS:      http://${NasHost}:${NasPort}"
 Write-Host "Log:      $LogFile"
+

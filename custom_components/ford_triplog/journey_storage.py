@@ -5,8 +5,8 @@ Track your Ford.
 
 Separate storage for daily journeys.
 
-Version: 1.6.0
-Release: 1.6b
+Version: 2.1.0
+Build: 14
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .database import FordTriplogDatabase
 from .const import (
     CURRENT_JOURNEY_FILE,
     JOURNEYS_DIR,
@@ -56,6 +57,10 @@ class FordTriplogJourneyStorage:
             self._base_directory / LAST_JOURNEY_FILE
         )
         self._metadata_storage = FordTriplogMetadataStorage(hass)
+        self.database = FordTriplogDatabase(
+            hass,
+            self._base_directory,
+        )
         self._archive_lock = asyncio.Lock()
 
     async def async_setup(self) -> None:
@@ -68,7 +73,80 @@ class FordTriplogJourneyStorage:
             True,
         )
         await self._metadata_storage.async_setup()
+        await self.database.async_setup()
         await self._migrate_pause_overrides_to_metadata()
+
+        # Mirror existing JSON journeys only once per Home Assistant runtime.
+        # Multiple components may create their own JourneyStorage instance.
+        mirror_key = "ford_triplog_initial_journey_mirror_done"
+
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_journeys()
+        else:
+            _LOGGER.debug(
+                "Initial SQLite journey mirror already completed in this HA runtime"
+            )
+
+    async def _mirror_existing_journeys(self) -> None:
+        """Synchronize existing JSON journey data into SQLite."""
+
+        await self.database.delete_all_journeys()
+
+        mirrored = 0
+        skipped = 0
+        failed = 0
+
+        for path in await self.list_journey_files():
+            data = await self._async_load_json(path)
+
+            if not isinstance(data, dict):
+                skipped += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped journey: invalid JSON: %s",
+                    path,
+                )
+                continue
+
+            journey_id = str(data.get("journey_id", "")).strip()
+            if not journey_id:
+                skipped += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped journey: missing journey_id: %s",
+                    path,
+                )
+                continue
+
+            if await self.database.save_journey(data):
+                mirrored += 1
+            else:
+                failed += 1
+                _LOGGER.error(
+                    "Initial SQLite mirror failed for journey %s: %s",
+                    journey_id,
+                    path,
+                )
+
+        _LOGGER.info(
+            "Initial SQLite journey mirror completed: "
+            "files=%d mirrored=%d skipped=%d failed=%d",
+            mirrored + skipped + failed,
+            mirrored,
+            skipped,
+            failed,
+        )
+
+        current = await self._async_load_json(self._current_journey_path)
+        if isinstance(current, dict):
+            await self.database.save_current_journey(current)
+        else:
+            await self.database.delete_current_journey()
+
+        last = await self._async_load_json(self._last_journey_path)
+        if isinstance(last, dict):
+            await self.database.save_last_journey(last)
+        else:
+            await self.database.delete_last_journey()
 
     async def save_current_journey(
         self,
@@ -82,6 +160,7 @@ class FordTriplogJourneyStorage:
             self._current_journey_path,
             data,
         )
+        await self.database.save_current_journey(data)
 
     async def load_current_journey(
         self,
@@ -111,6 +190,7 @@ class FordTriplogJourneyStorage:
             self._unlink_file,
             self._current_journey_path,
         )
+        await self.database.delete_current_journey()
 
     async def save_completed_journey(
         self,
@@ -150,12 +230,21 @@ class FordTriplogJourneyStorage:
 
             await self._async_write_json(archive_path, data)
             await self._async_write_json(self._last_journey_path, data)
+            await self.database.save_journey(data)
+            await self.database.save_last_journey(data)
 
             for duplicate_path in matching_paths[1:]:
+                duplicate_data = await self._async_load_json(duplicate_path)
                 await self.hass.async_add_executor_job(
                     self._unlink_file,
                     duplicate_path,
                 )
+                if isinstance(duplicate_data, dict):
+                    duplicate_id = str(
+                        duplicate_data.get("journey_id", "")
+                    ).strip()
+                    if duplicate_id:
+                        await self.database.delete_journey(duplicate_id)
                 _LOGGER.warning(
                     "Removed duplicate journey archive %s; canonical=%s",
                     duplicate_path.name,
@@ -249,6 +338,7 @@ class FordTriplogJourneyStorage:
             self._last_journey_path,
             data,
         )
+        await self.database.save_last_journey(data)
 
     async def clear_last_journey(self) -> None:
         """Remove the last completed journey cache."""
@@ -257,6 +347,7 @@ class FordTriplogJourneyStorage:
             self._unlink_file,
             self._last_journey_path,
         )
+        await self.database.delete_last_journey()
 
     async def list_journey_files(self) -> list[Path]:
         """Return all archived journey files."""
@@ -478,7 +569,9 @@ class FordTriplogJourneyStorage:
                     changed = True
 
             if changed:
-                await self._async_write_json(path, existing.to_dict())
+                synchronized_data = existing.to_dict()
+                await self._async_write_json(path, synchronized_data)
+                await self.database.save_journey(synchronized_data)
 
     @staticmethod
     def _pause_ids_from_data(data: dict[str, Any]) -> set[str]:
@@ -513,10 +606,15 @@ class FordTriplogJourneyStorage:
             / f"{self._safe_filename(normalized_id)}.json"
         )
 
-        return await self.hass.async_add_executor_job(
+        deleted = await self.hass.async_add_executor_job(
             self._unlink_file,
             path,
         )
+
+        if deleted:
+            await self.database.delete_journey(normalized_id)
+
+        return deleted
 
     async def delete_all_journeys(
         self,
@@ -532,6 +630,7 @@ class FordTriplogJourneyStorage:
         deleted = await self.hass.async_add_executor_job(
             self._delete_all_journey_files
         )
+        await self.database.delete_all_journeys()
 
         if clear_current:
             await self.clear_current_journey()

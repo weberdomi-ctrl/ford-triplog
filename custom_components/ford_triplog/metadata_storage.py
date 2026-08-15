@@ -17,6 +17,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .database import FordTriplogDatabase
 from .const import METADATA_FILE, METADATA_SCHEMA_VERSION, STORAGE_DIR
 
 _LOGGER = logging.getLogger(__name__)
@@ -27,14 +28,19 @@ class FordTriplogMetadataStorage:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._path = Path(hass.config.path(".storage", STORAGE_DIR, METADATA_FILE))
+        self._base_directory = Path(hass.config.path(".storage", STORAGE_DIR))
+        self._path = self._base_directory / METADATA_FILE
+        self.database = FordTriplogDatabase(hass, self._base_directory)
 
     async def async_setup(self) -> None:
         """Create the metadata file when it does not yet exist."""
 
+        await self.database.async_setup()
         data = await self.async_load()
         if data is None:
             await self.async_save(self._empty_data())
+            return
+        await self.database.save_metadata(data)
 
     async def async_load(self) -> dict[str, Any] | None:
         return await self.hass.async_add_executor_job(self._load_json)
@@ -42,6 +48,7 @@ class FordTriplogMetadataStorage:
     async def async_save(self, data: dict[str, Any]) -> None:
         normalized = self._normalize(data)
         await self.hass.async_add_executor_job(self._write_json, normalized)
+        await self.database.save_metadata(normalized)
 
     async def get_pause_overrides(self) -> dict[str, dict[str, Any]]:
         """Return all persistent pause overrides."""
