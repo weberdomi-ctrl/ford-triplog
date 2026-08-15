@@ -58,91 +58,9 @@ class FordTriplogMetadataStorage:
 
         await self.database.async_setup()
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            await self._merge_json_metadata_into_sqlite()
-
         data = await self.async_load()
         if data is None and self.read_backend != STORAGE_READ_BACKEND_SQLITE:
             await self.async_save(self._empty_data())
-
-    async def _merge_json_metadata_into_sqlite(self) -> None:
-        """One-time recovery/merge of legacy JSON metadata into SQLite.
-
-        SQLite remains authoritative. Existing SQLite values are preserved.
-        Missing metadata and receipt records are imported from metadata.json.
-        """
-
-        if not self._path.exists():
-            return
-
-        data = await self.database.load_metadata()
-        if not isinstance(data, dict):
-            data = self._empty_data()
-
-        migrations = data.setdefault("migrations", {})
-        if not isinstance(migrations, dict):
-            migrations = {}
-            data["migrations"] = migrations
-
-        if migrations.get("sqlite_metadata_merge_v1") is True:
-            return
-
-        legacy = await self.hass.async_add_executor_job(self._load_json)
-        if not isinstance(legacy, dict):
-            return
-
-        changed = False
-
-        for section in ("pauses", "charges", "journeys"):
-            current_items = data.setdefault(section, {})
-            legacy_items = legacy.get(section, {})
-            if not isinstance(current_items, dict) or not isinstance(legacy_items, dict):
-                continue
-
-            for item_id, legacy_value in legacy_items.items():
-                normalized_id = str(item_id).strip()
-                if not normalized_id or not isinstance(legacy_value, dict):
-                    continue
-
-                current_value = current_items.get(normalized_id)
-                if not isinstance(current_value, dict):
-                    current_items[normalized_id] = dict(legacy_value)
-                    changed = True
-                    continue
-
-                # Preserve SQLite/current metadata, but recover receipt records
-                # that were not mirrored previously.
-                legacy_receipts = legacy_value.get("receipts")
-                if isinstance(legacy_receipts, list):
-                    current_receipts = current_value.get("receipts")
-                    if not isinstance(current_receipts, list):
-                        current_receipts = []
-                        current_value["receipts"] = current_receipts
-
-                    existing_ids = {
-                        str(item.get("receipt_id") or "")
-                        for item in current_receipts
-                        if isinstance(item, dict)
-                    }
-
-                    for receipt in legacy_receipts:
-                        if not isinstance(receipt, dict):
-                            continue
-                        receipt_id = str(receipt.get("receipt_id") or "")
-                        if receipt_id and receipt_id not in existing_ids:
-                            current_receipts.append(dict(receipt))
-                            existing_ids.add(receipt_id)
-                            changed = True
-
-        migrations["sqlite_metadata_merge_v1"] = True
-        changed = True
-
-        if changed:
-            await self.async_save(data)
-            _LOGGER.info(
-                "Merged legacy metadata.json into SQLite metadata "
-                "(existing SQLite values preserved)"
-            )
 
     async def async_load(self) -> dict[str, Any] | None:
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
