@@ -917,6 +917,18 @@ class FordTriplogStorage:
         return True
 
     async def load_statistics(self) -> dict[str, Any] | None:
+        """Load statistics from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Statistics read backend: sqlite")
+            data = await self.database.load_statistics()
+            if data is None:
+                _LOGGER.debug("SQLite statistics read returned no data")
+            else:
+                _LOGGER.debug("SQLite statistics loaded")
+            return data
+
+        _LOGGER.debug("Statistics read backend: json")
         return await self._load_json(
             self._statistics_file()
         )
@@ -937,6 +949,18 @@ class FordTriplogStorage:
         return True
 
     async def load_diagnostics(self) -> dict[str, Any] | None:
+        """Load diagnostics from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Diagnostics read backend: sqlite")
+            data = await self.database.load_diagnostics()
+            if data is None:
+                _LOGGER.debug("SQLite diagnostics read returned no data")
+            else:
+                _LOGGER.debug("SQLite diagnostics loaded")
+            return data
+
+        _LOGGER.debug("Diagnostics read backend: json")
         return await self._load_json(
             self._diagnostics_file()
         )

@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.1.0-dev
-Build: 14
+Build: 19
 Phase: 3 - Top Locations SQL view integrated
 Changes:
 - Top Locations supports JSON and SQLite read backends.
@@ -2455,6 +2455,7 @@ class FordTriplogTopDaySensor(SensorEntity):
         """Aggregate Journeys by day and expose the record day."""
 
         if self.read_backend == "sqlite":
+            _LOGGER.debug("Top Day sensor read backend: sqlite")
             if self.database is None:
                 _LOGGER.error(
                     "Top Day SQLite read requested but database is unavailable"
@@ -2462,11 +2463,20 @@ class FordTriplogTopDaySensor(SensorEntity):
                 journeys = []
             else:
                 journeys = await self.database.load_top_day_journeys()
+                _LOGGER.debug(
+                    "Top Day sensor SQLite journeys loaded: %d",
+                    len(journeys),
+                )
         else:
+            _LOGGER.debug("Top Day sensor read backend: json")
             journeys = (
                 await self.journey_storage.get_all_journeys()
                 if self.journey_storage is not None
                 else []
+            )
+            _LOGGER.debug(
+                "Top Day sensor JSON journeys loaded: %d",
+                len(journeys),
             )
 
         if not journeys:
