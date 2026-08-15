@@ -134,6 +134,7 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
+    database = data.get("database")
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
@@ -246,11 +247,13 @@ async def async_setup_entry(
             FordTriplogTopLocationsSensor(
                 coordinator,
                 history,
+                database,
                 common_translations,
             ),
             FordTriplogTopRoutesSensor(
                 coordinator,
                 history,
+                database,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -2637,8 +2640,15 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_top_locations"
     _attr_icon = "mdi:map-marker-multiple-outline"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -3171,7 +3181,13 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         """Aggregate departures and destinations from the selected backend."""
 
         if getattr(self.history, "read_backend", "json") == "sqlite":
-            trips = await self.history.database.load_top_location_trips()
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Locations SQLite read requested but database is unavailable"
+                )
+                trips = []
+            else:
+                trips = await self.database.load_top_location_trips()
         else:
             trips = await self.history.get_all_trips()
 
@@ -3268,8 +3284,19 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     _attr_unique_id = "ford_triplog_top_routes"
     _attr_icon = "mdi:routes"
 
-    def __init__(self, coordinator, history, translations) -> None:
-        super().__init__(coordinator, history, translations)
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        translations,
+    ) -> None:
+        super().__init__(
+            coordinator,
+            history,
+            database,
+            translations,
+        )
         self._attributes: dict[str, Any] = {}
 
     async def _cluster_endpoint(
