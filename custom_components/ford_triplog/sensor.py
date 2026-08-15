@@ -4,12 +4,13 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.1.0-dev
-Build: 19
+Build: 20
 Phase: 3 - Top Locations SQL view integrated
 Changes:
 - Top Locations supports JSON and SQLite read backends.
 - SQLite uses a dedicated SQL view and a single database read.
 - Existing location resolution and ranking logic is unchanged.
+- Diagnostic 01: expose the active read backend on the trip count sensor.
 Changes:
 - Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
 - Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
@@ -277,7 +278,12 @@ async def async_setup_entry(
             FordTriplogAverageConsumptionSensor(coordinator, history, common_translations),
             FordTriplogDurationFormattedSensor(coordinator, history, common_translations),
             FordTriplogDurationSensor(coordinator, history, common_translations),
-            FordTriplogTripCountSensor(coordinator, history, common_translations),         
+            FordTriplogTripCountSensor(
+                coordinator,
+                history,
+                common_translations,
+                read_backend,
+            ),
             FordTriplogChargeCountSensor(coordinator, history, common_translations),
             FordTriplogAverageChargeSocAddedSensor(coordinator, history, common_translations),
             FordTriplogAverageChargeDurationSensor(coordinator, history, common_translations),
@@ -4904,8 +4910,26 @@ class FordTriplogTripCountSensor(FordTriplogSensorBase):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = ICON_TRIP_COUNT
 
-    def update_values(self, statistics, last_trip,last_charge):
+    def __init__(
+        self,
+        coordinator,
+        history,
+        translations,
+        read_backend,
+    ) -> None:
+        super().__init__(coordinator, history, translations)
+        self.read_backend = read_backend
+
+    def update_values(self, statistics, last_trip, last_charge):
         self._value = statistics.get("trip_count", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Expose the active read backend for diagnostics."""
+
+        return {
+            "read_backend": self.read_backend,
+        }
 
 
 class FordTriplogDistanceSensor(FordTriplogSensorBase):
