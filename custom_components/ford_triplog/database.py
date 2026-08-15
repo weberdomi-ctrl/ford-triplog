@@ -295,6 +295,15 @@ class FordTriplogDatabase:
 
                 db.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS routes (
+                        trip_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
                     CREATE VIEW IF NOT EXISTS v_top_location_trips AS
                     SELECT
                         trip_id,
