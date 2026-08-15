@@ -3,8 +3,12 @@ Ford Triplog
 
 Home Assistant sensor platform.
 
-Version: 2.0.3-dev
-Phase: Language cleanup - Top Charging
+Version: 2.1.0-dev
+Phase: 3 - Top Locations SQL view
+Changes:
+- Top Locations supports JSON and SQLite read backends.
+- SQLite uses a dedicated SQL view and a single database read.
+- Existing location resolution and ranking logic is unchanged.
 Changes:
 - Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
 - Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
@@ -3163,9 +3167,12 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         return ranked[:5]
 
     async def async_update(self) -> None:
-        """Aggregate departures and destinations from archived trips."""
+        """Aggregate departures and destinations from the selected backend."""
 
-        trips = await self.history.get_all_trips()
+        if getattr(self.history, "read_backend", "json") == "sqlite":
+            trips = await self.history.database.load_top_location_trips()
+        else:
+            trips = await self.history.get_all_trips()
 
         valid_trips = [
             trip
@@ -4102,8 +4109,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     def _handle_charge_data_updated(self) -> None:
         """Schedule an immediate Top Charging archive refresh."""
 
-        self.hass.add_job(
-            self._async_handle_charge_data_updated
+        self.hass.async_create_task(
+            self._async_handle_charge_data_updated()
         )
 
     async def _async_handle_charge_data_updated(self) -> None:
