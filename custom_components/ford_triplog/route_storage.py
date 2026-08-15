@@ -27,7 +27,15 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import ROUTE_SCHEMA_VERSION, ROUTES_DIR, STORAGE_DIR
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    DOMAIN,
+    ROUTE_SCHEMA_VERSION,
+    ROUTES_DIR,
+    STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
+)
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,6 +57,18 @@ class FordTriplogRouteStorage:
             hass,
             Path(hass.config.path(".storage", STORAGE_DIR)),
         )
+
+        # Phase 2: selectable read backend.
+        # JSON remains the safe default.
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
         """Ensure the route storage directory exists."""
@@ -230,7 +250,19 @@ class FordTriplogRouteStorage:
         self,
         trip_id: str,
     ) -> dict[str, Any] | None:
-        """Load one stored route by Trip ID."""
+        """Load one route by Trip ID."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug(
+                "Route read backend: sqlite trip_id=%s",
+                trip_id,
+            )
+            return await self.database.load_route(str(trip_id))
+
+        _LOGGER.debug(
+            "Route read backend: json trip_id=%s",
+            trip_id,
+        )
 
         path = self._path_for_trip(trip_id)
 
@@ -242,12 +274,19 @@ class FordTriplogRouteStorage:
         return await self.hass.async_add_executor_job(_read)
 
     async def async_load_latest_route(self) -> dict[str, Any] | None:
-        """Load the most recently written completed route.
+        """Load the most recently written completed route."""
 
-        Legacy route files without a status field are treated as completed.
-        Active/paused recovery files are intentionally ignored so the
-        Last Route sensor keeps representing the last finished route.
-        """
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Latest Route read backend: sqlite")
+            data = await self.database.load_last_route()
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite last route loaded: trip_id=%s",
+                    data.get("trip_id", "unknown"),
+                )
+            return data
+
+        _LOGGER.debug("Latest Route read backend: json")
 
         def _read_latest() -> dict[str, Any] | None:
             if not self.base_path.is_dir():
@@ -279,6 +318,25 @@ class FordTriplogRouteStorage:
 
     async def async_list_routes(self) -> list[dict[str, Any]]:
         """Load all completed historical routes in chronological order."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Route archive read backend: sqlite")
+            routes = await self.database.load_all_routes()
+            routes = [
+                route
+                for route in routes
+                if self._is_completed_route(route)
+            ]
+            routes.sort(
+                key=lambda route: (
+                    self._route_timestamp(route)
+                    or datetime.min.replace(tzinfo=dt_util.UTC)
+                )
+            )
+            _LOGGER.debug("SQLite routes loaded: %d", len(routes))
+            return routes
+
+        _LOGGER.debug("Route archive read backend: json")
 
         def _read_all() -> list[dict[str, Any]]:
             if not self.base_path.is_dir():
