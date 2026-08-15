@@ -1594,7 +1594,12 @@ class FordTriplogDatabase:
             return None
 
     async def load_last_journey(self) -> dict[str, Any] | None:
-        """Load the last completed journey from SQLite."""
+        """Load the last completed journey from SQLite.
+
+        The dedicated last_journey cache is preferred. If it is missing,
+        fall back to the newest archived journey. This keeps SQLite-only
+        operation working even when the JSON cache file is absent.
+        """
 
         self._log_read("last_journey")
 
@@ -1604,15 +1609,48 @@ class FordTriplogDatabase:
                     "SELECT data FROM last_journey LIMIT 1"
                 ).fetchone()
 
+                if row is not None:
+                    data = json.loads(row[0])
+                    if isinstance(data, dict):
+                        return data
+
+                # SQLite-only fallback: derive the last completed journey
+                # from the archived journey table instead of requiring the
+                # optional last_journey cache.
+                row = db.execute(
+                    """
+                    SELECT data
+                    FROM journeys
+                    WHERE json_extract(data, '$.end_time') IS NOT NULL
+                    ORDER BY json_extract(data, '$.end_time') DESC,
+                             journey_id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
             if row is None:
                 return None
 
-            return json.loads(row[0])
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
 
         try:
-            return await self.hass.async_add_executor_job(
+            data = await self.hass.async_add_executor_job(
                 functools.partial(_read)
             )
+
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite last journey loaded: %s",
+                    data.get("journey_id", "unknown"),
+                )
+            else:
+                _LOGGER.debug(
+                    "SQLite last journey: no cache and no archived journey found"
+                )
+
+            return data
+
         except Exception:
             _LOGGER.exception(
                 "Unable to read last journey from SQLite"
