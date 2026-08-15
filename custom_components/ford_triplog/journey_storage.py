@@ -6,7 +6,7 @@ Track your Ford.
 Separate storage for daily journeys.
 
 Version: 2.1.0
-Build: 14
+Build: 15
 """
 
 from __future__ import annotations
@@ -22,10 +22,13 @@ from homeassistant.core import HomeAssistant
 
 from .database import FordTriplogDatabase
 from .const import (
+    CONF_STORAGE_READ_BACKEND,
     CURRENT_JOURNEY_FILE,
+    DEFAULT_STORAGE_READ_BACKEND,
     JOURNEYS_DIR,
     LAST_JOURNEY_FILE,
     STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
 )
 from .journey import FordTriplogJourney, build_pause_id
 from .metadata_storage import FordTriplogMetadataStorage
@@ -62,6 +65,18 @@ class FordTriplogJourneyStorage:
             self._base_directory,
         )
         self._archive_lock = asyncio.Lock()
+
+        # Phase 2: use the persistent read-backend option.
+        # JSON remains the safe default.
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries("ford_triplog")
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
@@ -167,9 +182,12 @@ class FordTriplogJourneyStorage:
     ) -> FordTriplogJourney | None:
         """Load the currently active journey."""
 
-        data = await self._async_load_json(
-            self._current_journey_path
-        )
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_current_journey()
+        else:
+            data = await self._async_load_json(
+                self._current_journey_path
+            )
 
         if data is None:
             return None
@@ -310,9 +328,12 @@ class FordTriplogJourneyStorage:
     ) -> FordTriplogJourney | None:
         """Load the last completed journey."""
 
-        data = await self._async_load_json(
-            self._last_journey_path
-        )
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_last_journey()
+        else:
+            data = await self._async_load_json(
+                self._last_journey_path
+            )
 
         if data is None:
             return None
@@ -375,9 +396,20 @@ class FordTriplogJourneyStorage:
             )
             return None
 
-        data = await self._async_load_json(
-            resolved_path
-        )
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            journey_id = resolved_path.stem
+            data = await self.database.load_journey(journey_id)
+            if data is None:
+                _LOGGER.error(
+                    "SQLite journey read failed: journey_id=%s path=%s",
+                    journey_id,
+                    resolved_path,
+                )
+                return None
+        else:
+            data = await self._async_load_json(
+                resolved_path
+            )
 
         if data is None:
             return None
@@ -478,7 +510,14 @@ class FordTriplogJourneyStorage:
         collected: dict[str, dict[str, Any]] = {}
 
         for path in await self.list_journey_files():
-            journey = await self.load_journey_file(path)
+            data = await self._async_load_json(path)
+            if isinstance(data, dict):
+                try:
+                    journey = FordTriplogJourney.from_dict(data)
+                except (TypeError, ValueError):
+                    journey = None
+            else:
+                journey = None
             if journey is not None:
                 collected.update(
                     {
@@ -539,7 +578,13 @@ class FordTriplogJourneyStorage:
             return
 
         for path in await self.list_journey_files():
-            existing = await self.load_journey_file(path)
+            existing_data = await self._async_load_json(path)
+            if not isinstance(existing_data, dict):
+                continue
+            try:
+                existing = FordTriplogJourney.from_dict(existing_data)
+            except (TypeError, ValueError):
+                continue
             if existing is None or existing.journey_id == journey_id:
                 continue
             if str(existing.date or "").strip() != journey_date:
