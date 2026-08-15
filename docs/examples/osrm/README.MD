@@ -74,6 +74,12 @@ For the combined Germany + Austria + Switzerland (**DACH**) dataset:
 -   **32 GB RAM recommended**
 -   Multi-core CPU recommended
 
+For larger multi-country datasets (for example Germany + France + Italy
++ Austria + Switzerland + Benelux + Denmark), **32 GB physical RAM should
+be considered a minimum for the build machine**, and WSL2/Docker resource
+limits may need to be configured explicitly. 24 GB WSL2 memory plus 8 GB
+swap is a reasonable starting point on a 32 GB Windows PC.
+
 During testing, preprocessing of the DACH dataset exceeded the available
 memory of a Docker host with 10 GB RAM.
 
@@ -107,6 +113,56 @@ The provided PowerShell example requires:
 For DACH, at least **30--40 GB of temporary free disk space** is
 recommended.
 
+### Windows / Docker Desktop with WSL2
+
+When building larger combined regions with Docker Desktop on Windows, the
+default WSL2 resource configuration may be insufficient for `osrm-extract`.
+
+Docker Desktop with the WSL2 backend does not provide a separate memory
+slider. Resource limits are managed by Windows through:
+
+``` text
+C:\Users\YOUR_USER\.wslconfig
+```
+
+For a Windows PC with **32 GB physical RAM**, a suitable starting
+configuration for larger multi-country builds is:
+
+``` ini
+[wsl2]
+memory=24GB
+processors=8
+swap=8GB
+```
+
+After changing `.wslconfig`, restart WSL2 and Docker Desktop:
+
+``` powershell
+wsl --shutdown
+```
+
+Then start Docker Desktop again.
+
+The exact memory requirement depends on the selected countries and the
+OSRM profile. A combined dataset containing Germany, France, Italy and
+additional neighbouring countries can require substantially more memory
+during `osrm-extract` than the source `.osm.pbf` files themselves suggest.
+
+If Docker terminates `osrm-extract` with:
+
+``` text
+docker failed with exit code 137
+```
+
+this commonly indicates that the container was killed because of memory
+pressure. Check the available WSL2 memory before reducing the dataset or
+changing the OSRM configuration.
+
+The WSL2 memory setting applies to the complete WSL2 environment, not only
+to the OSRM container. Leave sufficient physical RAM available for Windows
+and other applications.
+
+
 ### Destination server
 
 The destination system requires:
@@ -124,13 +180,26 @@ A Synology NAS, Linux server or similar Docker host can be used.
 
 ------------------------------------------------------------------------
 
-# DACH Example
+# Combined Region Example
 
-The included PowerShell script builds a combined routing dataset for:
+The original example builds a combined routing dataset for:
 
 -   Germany
 -   Austria
 -   Switzerland
+
+The update script can also be configured for larger multi-country
+regions. The current extended test setup uses:
+
+-   Germany
+-   Austria
+-   Switzerland
+-   France
+-   Italy
+-   Netherlands
+-   Belgium
+-   Denmark
+-   Luxembourg
 
 OpenStreetMap data is downloaded from Geofabrik.
 
