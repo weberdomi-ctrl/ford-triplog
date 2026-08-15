@@ -6,6 +6,8 @@ Track your Ford.
 Storage layer for trips, charging, recovery data and cache.
 
 Version: 2.1.0
+Build: 16
+Changes: Add SQLite statistics read backend
 """
 
 from __future__ import annotations
@@ -199,14 +201,16 @@ class FordTriplogStorage:
                 if await saver(self._add_metadata(data)):
                     mirrored[key] += 1
 
-        statistics = await self.load_statistics()
+        # Phase 1 mirror source is always JSON, regardless of the
+        # selected Phase 2 read backend. Do not read the SQLite copy here.
+        statistics = await self._load_json(self._statistics_file())
         if isinstance(statistics, dict):
             if await self.database.save_statistics(
                 self._add_metadata(statistics)
             ):
                 mirrored["statistics"] += 1
 
-        diagnostics = await self.load_diagnostics()
+        diagnostics = await self._load_json(self._diagnostics_file())
         if isinstance(diagnostics, dict):
             if await self.database.save_diagnostics(
                 self._add_metadata(diagnostics)
