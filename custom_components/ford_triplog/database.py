@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 10
+Build: 11
 Changes: Add 1:1 metadata.json mirror support
 """
 
@@ -790,6 +790,87 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
             return False
+
+    async def load_journey(
+        self,
+        journey_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived journey from SQLite."""
+
+        normalized_id = str(journey_id).strip()
+        if not normalized_id:
+            return None
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM journeys WHERE journey_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read journey from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
+    async def load_current_journey(self) -> dict[str, Any] | None:
+        """Load the current journey from SQLite."""
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_journey LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current journey from SQLite"
+            )
+            return None
+
+    async def load_last_journey(self) -> dict[str, Any] | None:
+        """Load the last completed journey from SQLite."""
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_journey LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last journey from SQLite"
+            )
+            return None
 
     async def delete_journey(self, journey_id: str) -> bool:
         """Delete one archived journey from SQLite."""
