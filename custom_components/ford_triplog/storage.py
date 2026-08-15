@@ -714,7 +714,51 @@ class FordTriplogStorage:
         charge_id: str,
         data: dict[str, Any],
     ) -> bool:
-        """Update one existing archived charging session by charge ID."""
+        """Update one existing archived charging session."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return False
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            # SQLite-only mode: do not require an archived JSON file.
+            existing = await self.database.load_charge(normalized_id)
+            if existing is None:
+                _LOGGER.warning(
+                    "Unable to update missing SQLite charging session: %s",
+                    normalized_id,
+                )
+                return False
+
+            updated = dict(existing)
+            updated.update(data)
+            updated["charge_id"] = normalized_id
+
+            db_saved = await self.database.save_charge(
+                self._add_metadata(updated)
+            )
+            if not db_saved:
+                _LOGGER.error(
+                    "SQLite update failed for charge %s",
+                    normalized_id,
+                )
+                return False
+
+            last_charge = await self.database.load_last_charge()
+            if (
+                isinstance(last_charge, dict)
+                and str(last_charge.get("charge_id", "")).strip()
+                == normalized_id
+            ):
+                await self.database.save_last_charge(
+                    self._add_metadata(updated)
+                )
+
+            _LOGGER.debug(
+                "SQLite charge updated: %s",
+                normalized_id,
+            )
+            return True
 
         loaded = await self.load_charge_by_id(charge_id)
         if loaded is None:
@@ -727,8 +771,6 @@ class FordTriplogStorage:
         path, existing = loaded
         updated = dict(existing)
         updated.update(data)
-
-        normalized_id = str(charge_id).strip()
         updated["charge_id"] = normalized_id
 
         saved = await self.save_charge_file(
@@ -738,26 +780,6 @@ class FordTriplogStorage:
 
         if not saved:
             return False
-
-        # Keep the SQLite archive in sync when an existing charge is edited.
-        db_saved = await self.database.save_charge(
-            self._add_metadata(updated)
-        )
-
-        if not db_saved:
-            _LOGGER.error(
-                "SQLite update failed for charge %s",
-                normalized_id,
-            )
-            return False
-
-        last_charge = await self.load_last_charge()
-        if (
-            isinstance(last_charge, dict)
-            and str(last_charge.get("charge_id", "")).strip()
-            == normalized_id
-        ):
-            await self.save_last_charge(updated)
 
         return True
 
