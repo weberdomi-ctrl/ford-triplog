@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 13
-Changes: Add 1:1 metadata.json mirror support
+Build: 14
+Changes: Add JSON/SQLite identity validation support
 """
 
 from __future__ import annotations
@@ -36,6 +36,135 @@ class FordTriplogDatabase:
     def _log_read(self, resource: str) -> None:
         """Log a SQLite read at DEBUG level for development diagnostics."""
         _LOGGER.debug("SQLite READ: %s", resource)
+
+    async def validate_json_identity(
+        self,
+        json_records: dict[str, dict[str, Any] | None],
+        json_collections: dict[str, dict[str, dict[str, Any]]],
+    ) -> dict[str, Any]:
+        """Compare JSON storage records with their SQLite mirror.
+
+        This is a development-only validation helper. It never changes
+        either backend and returns a structured comparison report.
+        """
+
+        def _normalize(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    str(key): _normalize(item)
+                    for key, item in value.items()
+                }
+            if isinstance(value, list):
+                return [_normalize(item) for item in value]
+            return value
+
+        def _read() -> dict[str, Any]:
+            report: dict[str, Any] = {
+                "single": {},
+                "collections": {},
+                "pass": True,
+            }
+
+            with sqlite3.connect(self.db_path) as db:
+                for name, expected in json_records.items():
+                    row = None
+                    if name == "current_trip":
+                        row = db.execute(
+                            "SELECT data FROM current_trip LIMIT 1"
+                        ).fetchone()
+                    elif name == "current_charge":
+                        row = db.execute(
+                            "SELECT data FROM current_charge LIMIT 1"
+                        ).fetchone()
+                    elif name == "last_trip":
+                        row = db.execute(
+                            "SELECT data FROM last_trip LIMIT 1"
+                        ).fetchone()
+                    elif name == "last_charge":
+                        row = db.execute(
+                            "SELECT data FROM last_charge LIMIT 1"
+                        ).fetchone()
+                    elif name == "statistics":
+                        row = db.execute(
+                            "SELECT data FROM statistics WHERE id = 1"
+                        ).fetchone()
+                    elif name == "diagnostics":
+                        row = db.execute(
+                            "SELECT data FROM diagnostics WHERE id = 1"
+                        ).fetchone()
+
+                    actual = json.loads(row[0]) if row else None
+                    identical = _normalize(expected) == _normalize(actual)
+
+                    report["single"][name] = {
+                        "identical": identical,
+                        "json_present": expected is not None,
+                        "sqlite_present": actual is not None,
+                    }
+
+                    if not identical:
+                        report["pass"] = False
+
+                table_map = {
+                    "trips": "trips",
+                    "charges": "charges",
+                }
+
+                for name, expected_records in json_collections.items():
+                    table = table_map[name]
+                    rows = db.execute(
+                        f"SELECT {('trip_id' if name == 'trips' else 'charge_id')}, data "
+                        f"FROM {table}"
+                    ).fetchall()
+
+                    actual_records = {
+                        str(row[0]): json.loads(row[1])
+                        for row in rows
+                    }
+
+                    expected_ids = set(expected_records)
+                    actual_ids = set(actual_records)
+                    missing = sorted(expected_ids - actual_ids)
+                    extra = sorted(actual_ids - expected_ids)
+                    different = sorted(
+                        record_id
+                        for record_id in expected_ids & actual_ids
+                        if _normalize(expected_records[record_id])
+                        != _normalize(actual_records[record_id])
+                    )
+
+                    identical = not missing and not extra and not different
+
+                    report["collections"][name] = {
+                        "json_count": len(expected_records),
+                        "sqlite_count": len(actual_records),
+                        "missing_in_sqlite": missing,
+                        "extra_in_sqlite": extra,
+                        "different": different,
+                        "identical": identical,
+                    }
+
+                    if not identical:
+                        report["pass"] = False
+
+            return report
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(
+                    _read
+                )
+            )
+        except Exception:
+            _LOGGER.exception(
+                "SQLite identity validation failed"
+            )
+            return {
+                "single": {},
+                "collections": {},
+                "pass": False,
+                "error": True,
+            }
 
     async def async_setup(self) -> None:
         """Initialize SQLite database."""
