@@ -1611,6 +1611,50 @@ class FordTriplogDatabase:
             )
             return []
 
+    async def load_all_charges(self) -> list[dict[str, Any]]:
+        """Load all archived charging sessions from SQLite."""
+
+        self._log_read("charges")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM charges
+                    ORDER BY
+                        json_extract(data, '$.start_time') ASC,
+                        charge_id ASC
+                    """
+                ).fetchall()
+
+            charges: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    charges.append(data)
+
+            return charges
+
+        try:
+            charges = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite charges loaded: %d",
+                len(charges),
+            )
+            return charges
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read charges from SQLite"
+            )
+            return []
+
     async def load_current_journey(self) -> dict[str, Any] | None:
         """Load the current journey from SQLite."""
 
