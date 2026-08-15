@@ -21,12 +21,16 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .const import ROUTE_SCHEMA_VERSION, ROUTES_DIR, STORAGE_DIR
+from .database import FordTriplogDatabase
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FordTriplogRouteStorage:
@@ -40,6 +44,10 @@ class FordTriplogRouteStorage:
                 STORAGE_DIR,
                 ROUTES_DIR,
             )
+        )
+        self.database = FordTriplogDatabase(
+            hass,
+            Path(hass.config.path(".storage", STORAGE_DIR)),
         )
 
     async def async_setup(self) -> None:
@@ -166,6 +174,14 @@ class FordTriplogRouteStorage:
             temp_path.replace(path)
 
         await self.hass.async_add_executor_job(_write)
+
+        # Phase 1: keep JSON as production storage and mirror the
+        # identical route payload into SQLite.
+        if not await self.database.save_route(payload):
+            _LOGGER.error(
+                "SQLite route mirror failed for trip_id=%s",
+                trip_id,
+            )
 
     async def async_load_route(
         self,
