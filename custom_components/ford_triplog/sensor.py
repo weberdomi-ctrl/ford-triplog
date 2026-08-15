@@ -247,6 +247,8 @@ async def async_setup_entry(
             FordTriplogTopChargingSensor(
                 coordinator,
                 history,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopDaySensor(
@@ -3620,8 +3622,17 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_top_charging"
     _attr_icon = "mdi:ev-station"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
+        self.read_backend = read_backend
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -4180,7 +4191,16 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     async def _async_refresh_top_charging(self) -> None:
         """Aggregate archived charging sessions."""
 
-        charges = await self.history.get_all_charges()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Charging SQLite read requested but database is unavailable"
+                )
+                charges = []
+            else:
+                charges = await self.database.load_top_charging_charges()
+        else:
+            charges = await self.history.get_all_charges()
 
         valid_charges = [
             charge
