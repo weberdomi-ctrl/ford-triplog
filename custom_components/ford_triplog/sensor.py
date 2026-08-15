@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.1.0-dev
-Build: 10
+Build: 13
 Phase: 3 - Top Locations SQL view integrated
 Changes:
 - Top Locations supports JSON and SQLite read backends.
@@ -134,9 +134,9 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
-    database = data.get("database")
-    storage = data.get("storage")
-    read_backend = getattr(storage, "read_backend", "json")
+    storage = data["storage"]
+    database = storage.database
+    read_backend = storage.read_backend
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
