@@ -381,11 +381,22 @@ class FordTriplogLastJourneySensor(SensorEntity):
         """Return details of the last completed Journey."""
 
         if self._journey is None:
-            return {}
+            return {
+                "read_backend": (
+                    self.storage.read_backend
+                    if self.storage is not None
+                    else "unknown"
+                ),
+            }
 
         journey = self._journey
 
         return {
+            "read_backend": (
+                self.storage.read_backend
+                if self.storage is not None
+                else "unknown"
+            ),
             "journey_id": journey.journey_id,
             "date": journey.date,
             "start_time": journey.start_time,
