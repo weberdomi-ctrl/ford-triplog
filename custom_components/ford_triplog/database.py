@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 11
+Build: 12
 Changes: Add 1:1 metadata.json mirror support
 """
 
@@ -32,6 +32,10 @@ class FordTriplogDatabase:
     ) -> None:
         self.hass = hass
         self.db_path = base_path / "ford_triplog.db"
+
+    def _log_read(self, resource: str) -> None:
+        """Log a SQLite read at DEBUG level for development diagnostics."""
+        _LOGGER.debug("SQLite READ: %s", resource)
 
     async def async_setup(self) -> None:
         """Initialize SQLite database."""
@@ -241,6 +245,8 @@ class FordTriplogDatabase:
         if not normalized_id:
             return None
 
+        self._log_read(f"trip_id={normalized_id}")
+
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
@@ -273,6 +279,8 @@ class FordTriplogDatabase:
         normalized_id = str(charge_id).strip()
         if not normalized_id:
             return None
+
+        self._log_read(f"charge_id={normalized_id}")
 
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
@@ -660,6 +668,32 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_statistics(self) -> dict[str, Any] | None:
+        """Load statistics cache from SQLite."""
+
+        self._log_read("statistics")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM statistics WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read statistics from SQLite"
+            )
+            return None
+
     async def save_diagnostics(
         self,
         data: dict[str, Any],
@@ -801,6 +835,8 @@ class FordTriplogDatabase:
         if not normalized_id:
             return None
 
+        self._log_read(f"journey_id={normalized_id}")
+
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
@@ -827,6 +863,8 @@ class FordTriplogDatabase:
     async def load_current_journey(self) -> dict[str, Any] | None:
         """Load the current journey from SQLite."""
 
+        self._log_read("current_journey")
+
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
@@ -850,6 +888,8 @@ class FordTriplogDatabase:
 
     async def load_last_journey(self) -> dict[str, Any] | None:
         """Load the last completed journey from SQLite."""
+
+        self._log_read("last_journey")
 
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
