@@ -1567,6 +1567,50 @@ class FordTriplogDatabase:
             )
             return None
 
+    async def load_all_journeys(self) -> list[dict[str, Any]]:
+        """Load all archived journeys from SQLite."""
+
+        self._log_read("journeys")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM journeys
+                    ORDER BY
+                        json_extract(data, '$.start_time') ASC,
+                        journey_id ASC
+                    """
+                ).fetchall()
+
+            journeys: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    journeys.append(data)
+
+            return journeys
+
+        try:
+            journeys = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite journeys loaded: %d",
+                len(journeys),
+            )
+            return journeys
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read journeys from SQLite"
+            )
+            return []
+
     async def load_current_journey(self) -> dict[str, Any] | None:
         """Load the current journey from SQLite."""
 
