@@ -21,7 +21,13 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import VERSION
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    DOMAIN,
+    STORAGE_READ_BACKEND_SQLITE,
+    VERSION,
+)
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +54,19 @@ class FordTriplogStorage:
             self.base_path,
         )
 
+        # Phase 2: selectable read backend.
+        # JSON remains the safe default. The active config entry is read
+        # here so existing callers do not need to change their constructor.
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
+
 
     async def async_setup(self) -> None:
         """Initialize storage directories."""
@@ -62,19 +81,14 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        # Phase 1: mirror the existing JSON-backed storage only once per
-        # Home Assistant runtime. Multiple storage components share the same
-        # database but may each create their own storage instance.
-        mirror_key = "ford_triplog_initial_sqlite_mirror_done"
+        # Phase 1: mirror all existing JSON-backed storage into SQLite
+        # after creating the database. JSON remains the production source.
+        await self._mirror_existing_storage()
 
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
-            await self._mirror_existing_storage()
-        else:
-            _LOGGER.debug(
-                "Initial SQLite mirror already completed in this HA runtime"
-            )
-
+        _LOGGER.info(
+            "Ford Triplog read backend: %s",
+            self.read_backend,
+        )
         _LOGGER.debug("Ford Triplog storage initialized")
 
     async def _mirror_existing_storage(self) -> None:
@@ -92,7 +106,9 @@ class FordTriplogStorage:
         }
 
         for path in await self.list_trips():
-            data = await self.load_trip_file(path)
+            # Phase 1 mirror source is always JSON, regardless of the
+            # selected Phase 2 read backend.
+            data = await self._load_json(path)
 
             if not isinstance(data, dict):
                 _LOGGER.error(
@@ -119,7 +135,9 @@ class FordTriplogStorage:
                 )
 
         for path in await self.list_charges():
-            data = await self.load_charge_file(path)
+            # Phase 1 mirror source is always JSON, regardless of the
+            # selected Phase 2 read backend.
+            data = await self._load_json(path)
 
             if not isinstance(data, dict):
                 _LOGGER.error(
@@ -295,21 +313,89 @@ class FordTriplogStorage:
             )
             return None
 
+    @staticmethod
+    def _archive_id_from_path(path: Path) -> str | None:
+        """Derive the timestamp-based archive ID from a JSON filename."""
+
+        stem = path.stem
+        if len(stem) < 19:
+            return None
+
+        timestamp = stem[:19]
+        if (
+            timestamp[4] != "-"
+            or timestamp[7] != "-"
+            or timestamp[10] != "_"
+            or timestamp[13] != "-"
+            or timestamp[16] != "-"
+        ):
+            return None
+
+        return (
+            timestamp[0:4]
+            + timestamp[5:7]
+            + timestamp[8:10]
+            + "T"
+            + timestamp[11:13]
+            + timestamp[14:16]
+            + timestamp[17:19]
+        )
+
     async def load_trip_file(
         self,
         path: Path,
     ) -> dict[str, Any] | None:
-        """Load archived trip file."""
+        """Load archived trip from the selected read backend."""
 
-        return await self._load_json(path)
+        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
+            return await self._load_json(path)
+
+        trip_id = self._archive_id_from_path(path)
+        if not trip_id:
+            _LOGGER.error(
+                "SQLite trip read skipped: unable to derive trip_id from %s",
+                path,
+            )
+            return None
+
+        data = await self.database.load_trip(trip_id)
+        if data is None:
+            _LOGGER.error(
+                "SQLite trip read failed: trip_id=%s path=%s",
+                trip_id,
+                path,
+            )
+            return None
+
+        return data
     
     async def load_charge_file(
         self,
         path: Path,
     ) -> dict[str, Any] | None:
-        """Load archived charge file."""
+        """Load archived charge from the selected read backend."""
 
-        return await self._load_json(path)
+        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
+            return await self._load_json(path)
+
+        charge_id = self._archive_id_from_path(path)
+        if not charge_id:
+            _LOGGER.error(
+                "SQLite charge read skipped: unable to derive charge_id from %s",
+                path,
+            )
+            return None
+
+        data = await self.database.load_charge(charge_id)
+        if data is None:
+            _LOGGER.error(
+                "SQLite charge read failed: charge_id=%s path=%s",
+                charge_id,
+                path,
+            )
+            return None
+
+        return data
 
 
     async def _delete_file(
@@ -817,7 +903,9 @@ class FordTriplogStorage:
         )
 
     async def validate_storage(self) -> bool:
-        """Validate storage structure without triggering initialization."""
+        """Validate storage structure."""
+
+        await self.async_setup()
 
         return all(
             path.exists()

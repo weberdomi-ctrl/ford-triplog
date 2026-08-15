@@ -231,6 +231,72 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_trip(
+        self,
+        trip_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived trip from SQLite."""
+
+        normalized_id = str(trip_id).strip()
+        if not normalized_id:
+            return None
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM trips WHERE trip_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read trip from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
+    async def load_charge(
+        self,
+        charge_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived charging session from SQLite."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return None
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM charges WHERE charge_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read charge from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
     async def save_current_trip(
         self,
         data: dict[str, Any],
