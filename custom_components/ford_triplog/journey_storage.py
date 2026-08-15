@@ -183,8 +183,15 @@ class FordTriplogJourneyStorage:
         """Load the currently active journey."""
 
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Journey read backend: sqlite")
             data = await self.database.load_current_journey()
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite current journey loaded: %s",
+                    data.get("journey_id", "unknown"),
+                )
         else:
+            _LOGGER.debug("Journey read backend: json")
             data = await self._async_load_json(
                 self._current_journey_path
             )
@@ -329,8 +336,15 @@ class FordTriplogJourneyStorage:
         """Load the last completed journey."""
 
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Last Journey read backend: sqlite")
             data = await self.database.load_last_journey()
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite last journey loaded: %s",
+                    data.get("journey_id", "unknown"),
+                )
         else:
+            _LOGGER.debug("Last Journey read backend: json")
             data = await self._async_load_json(
                 self._last_journey_path
             )
@@ -397,6 +411,7 @@ class FordTriplogJourneyStorage:
             return None
 
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Journey archive read backend: sqlite")
             journey_id = resolved_path.stem
             data = await self.database.load_journey(journey_id)
             if data is None:
