@@ -57,6 +57,49 @@ class FordTriplogRouteStorage:
             lambda: self.base_path.mkdir(parents=True, exist_ok=True)
         )
 
+        mirror_key = "ford_triplog_route_initial_sqlite_mirror_done"
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_routes()
+
+    async def _mirror_existing_routes(self) -> None:
+        """Mirror all existing completed JSON routes into SQLite once."""
+
+        def _list_and_read() -> list[dict[str, Any]]:
+            if not self.base_path.is_dir():
+                return []
+
+            routes: list[dict[str, Any]] = []
+            for path in self.base_path.glob("*.json"):
+                if not path.is_file():
+                    continue
+
+                data = self._read_route_file(path)
+                if data is None or not self._is_completed_route(data):
+                    continue
+
+                routes.append(data)
+
+            return routes
+
+        routes = await self.hass.async_add_executor_job(_list_and_read)
+
+        mirrored = 0
+        failed = 0
+
+        for route in routes:
+            if await self.database.save_route(route):
+                mirrored += 1
+            else:
+                failed += 1
+
+        _LOGGER.info(
+            "Initial SQLite route mirror completed: routes=%d mirrored=%d failed=%d",
+            len(routes),
+            mirrored,
+            failed,
+        )
+
     def _path_for_trip(self, trip_id: str) -> Path:
         """Return a safe route file path for one Trip ID."""
 

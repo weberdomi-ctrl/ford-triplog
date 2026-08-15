@@ -496,6 +496,70 @@ class FordTriplogDatabase:
             )
             return None
 
+    async def load_last_route(self) -> dict[str, Any] | None:
+        """Load the most recently created route from SQLite."""
+
+        self._log_read("last_route")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT data
+                    FROM routes
+                    ORDER BY rowid DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read last route from SQLite")
+            return None
+
+    async def load_all_routes(self) -> list[dict[str, Any]]:
+        """Load all routes from SQLite."""
+
+        self._log_read("routes")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM routes
+                    ORDER BY rowid ASC
+                    """
+                ).fetchall()
+
+            routes: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    data = json.loads(row[0])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    routes.append(data)
+
+            return routes
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read routes from SQLite")
+            return []
+
     async def save_trip(
         self,
         data: dict[str, Any],
