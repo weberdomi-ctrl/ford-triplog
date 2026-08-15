@@ -156,7 +156,7 @@ OSRM is completely optional. Without OSRM, Ford Triplog continues to store and d
 
 A DACH example for Germany, Austria and Switzerland is available in:
 
-`examples/osrm/`
+`docs/examples/osrm/`
 
 ------------------------------------------------------------------------
 
