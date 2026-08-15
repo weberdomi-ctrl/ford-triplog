@@ -4,7 +4,7 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.1.0-dev
-Build: 13
+Build: 14
 Phase: 3 - Top Locations SQL view integrated
 Changes:
 - Top Locations supports JSON and SQLite read backends.
@@ -3438,7 +3438,16 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     async def async_update(self) -> None:
         """Aggregate the Top 5 directed routes from archived trips."""
 
-        trips = await self.history.get_all_trips()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Routes SQLite read requested but database is unavailable"
+                )
+                trips = []
+            else:
+                trips = await self.database.load_top_route_trips()
+        else:
+            trips = await self.history.get_all_trips()
 
         valid_trips = [
             trip
