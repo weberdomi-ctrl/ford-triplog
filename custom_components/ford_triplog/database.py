@@ -407,6 +407,95 @@ class FordTriplogDatabase:
                 "Unable to initialize Ford Triplog SQLite database"
             )
 
+    async def save_route(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror one route into SQLite."""
+
+        trip_id = data.get("trip_id")
+        if not trip_id:
+            _LOGGER.error(
+                "Unable to mirror route without trip_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO routes (
+                        trip_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(trip_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Route mirrored to SQLite: %s",
+                trip_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror route to SQLite: %s",
+                trip_id,
+            )
+            return False
+
+    async def load_route(
+        self,
+        trip_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one route from SQLite."""
+
+        normalized_id = str(trip_id).strip()
+        if not normalized_id:
+            return None
+
+        self._log_read(f"route_trip_id={normalized_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM routes WHERE trip_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read route from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
     async def save_trip(
         self,
         data: dict[str, Any],
