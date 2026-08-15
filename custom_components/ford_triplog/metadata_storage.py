@@ -53,6 +53,12 @@ class FordTriplogMetadataStorage:
                 )
             )
 
+        _LOGGER.debug(
+            "Metadata storage initialized: backend=%s config_entries=%d",
+            self.read_backend,
+            len(entries),
+        )
+
     async def async_setup(self) -> None:
         """Initialize metadata storage."""
 
@@ -230,6 +236,18 @@ class FordTriplogMetadataStorage:
 
         data = await self.async_load() or self._empty_data()
         result: list[dict[str, Any]] = []
+
+        _LOGGER.debug(
+            "Metadata receipt scan: backend=%s sections=%s charges=%d pauses=%d",
+            self.read_backend,
+            list(data.keys()),
+            len(data.get("charges", {}))
+            if isinstance(data.get("charges"), dict)
+            else -1,
+            len(data.get("pauses", {}))
+            if isinstance(data.get("pauses"), dict)
+            else -1,
+        )
         for section, target_type in (("pauses", "pause"), ("charges", "charge")):
             items = data.get(section, {})
             if not isinstance(items, dict):
@@ -247,6 +265,10 @@ class FordTriplogMetadataStorage:
                         value["target_id"] = str(target_id)
                         result.append(value)
         result.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        _LOGGER.debug(
+            "Metadata receipts loaded: %d",
+            len(result),
+        )
         return result
 
     async def remove_receipt(self, receipt_id: str) -> dict[str, Any] | None:
