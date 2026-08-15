@@ -4,7 +4,8 @@ Ford Triplog
 Home Assistant sensor platform.
 
 Version: 2.1.0-dev
-Phase: 3 - Top Locations SQL view
+Build: 10
+Phase: 3 - Top Locations SQL view integrated
 Changes:
 - Top Locations supports JSON and SQLite read backends.
 - SQLite uses a dedicated SQL view and a single database read.
