@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 12
+Build: 13
 Changes: Add 1:1 metadata.json mirror support
 """
 
@@ -359,6 +359,32 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_current_trip(self) -> dict[str, Any] | None:
+        """Load current trip from SQLite."""
+
+        self._log_read("current_trip")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_trip LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current trip from SQLite"
+            )
+            return None
+
     async def delete_current_trip(self) -> bool:
         """Delete current trip mirror from SQLite."""
 
@@ -382,6 +408,32 @@ class FordTriplogDatabase:
                 "Unable to remove current trip from SQLite"
             )
             return False
+
+    async def load_last_trip(self) -> dict[str, Any] | None:
+        """Load last trip from SQLite."""
+
+        self._log_read("last_trip")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_trip LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last trip from SQLite"
+            )
+            return None
 
     async def save_last_trip(
         self,
@@ -493,6 +545,34 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_current_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        """Load current charging session from SQLite."""
+
+        self._log_read("current_charge")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_charge LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current charge from SQLite"
+            )
+            return None
+
     async def delete_current_charge(self) -> bool:
         """Delete current charging-session mirror from SQLite."""
 
@@ -516,6 +596,34 @@ class FordTriplogDatabase:
                 "Unable to remove current charge from SQLite"
             )
             return False
+
+    async def load_last_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        """Load last charging session from SQLite."""
+
+        self._log_read("last_charge")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_charge LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last charge from SQLite"
+            )
+            return None
 
     async def save_charge(
         self,
