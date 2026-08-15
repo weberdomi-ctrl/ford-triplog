@@ -231,7 +231,13 @@ async def async_setup_entry(
             FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
 
             # Statistics
-            FordTriplogTopTripSensor(coordinator, history, common_translations),
+            FordTriplogTopTripSensor(
+                coordinator,
+                history,
+                database,
+                read_backend,
+                common_translations,
+            ),
             FordTriplogTopJourneySensor(
                 journey_storage,
                 common_translations,
@@ -4687,39 +4693,44 @@ class FordTriplogTopTripSensor(FordTriplogSensorBase):
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:trophy-outline"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
+        self.read_backend = read_backend
         self._top_trip: dict[str, Any] | None = None
         self._statistics_initialized = False
 
-    async def async_added_to_hass(self) -> None:
-        """Ensure 2.0.1 statistics contain the new Top Trip record."""
+    async def async_update(self) -> None:
+        """Load Top Trip from the selected backend."""
 
-        statistics, _, _ = await self.history.get_sensor_data()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Trip SQLite read requested but database is unavailable"
+                )
+                self._top_trip = None
+            else:
+                self._top_trip = await self.database.load_top_trip()
+        else:
+            statistics, _, _ = await self.history.get_sensor_data()
+            top_trip = statistics.get("top_trip") if statistics else None
+            self._top_trip = (
+                top_trip if isinstance(top_trip, dict) else None
+            )
 
-        if "top_trip" not in statistics:
-            await self.history.refresh_statistics()
-
-        self._statistics_initialized = True
-        await super().async_added_to_hass()
-
-    def update_values(
-        self,
-        statistics,
-        last_trip,
-        last_charge,
-    ):
-        top_trip = statistics.get("top_trip") if statistics else None
-
-        if not isinstance(top_trip, dict):
-            self._top_trip = None
+        if not self._top_trip:
             self._value = None
             return
 
-        self._top_trip = top_trip
-
         try:
-            self._value = round(float(top_trip.get("distance_km")), 1)
+            self._value = round(float(self._top_trip.get("distance_km")), 1)
         except (TypeError, ValueError):
             self._value = None
 
