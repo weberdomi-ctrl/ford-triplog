@@ -263,6 +263,21 @@ See the complete installation guide:
 
 ➡ **[Installation Guide](docs/installation.md)**
 
+## First Setup Notes
+
+After installation, it is possible that vehicle or trip data is not
+available immediately. Some sensors may temporarily show `0` or
+`unavailable`.
+
+FordPass does not necessarily provide current vehicle data immediately
+after the integration is configured. Drive the vehicle once after setup
+and wait briefly for the next update.
+
+Once FordPass provides new vehicle data, Ford Triplog can import the
+initial driving data and start recording trips.
+
+A second user in the FordPass app is not required for this.
+
 ------------------------------------------------------------------------
 
 ## Dashboard Examples
