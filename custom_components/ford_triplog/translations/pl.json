@@ -582,7 +582,8 @@
           "home_tariff_enabled": "Automatyczne koszty ładowania w domu",
           "home_tariff_summer_price": "Taryfa letnia (1 kwietnia–30 września)",
           "home_tariff_winter_price": "Taryfa zimowa (1 października–31 marca)",
-          "home_tariff_currency": "Waluta taryf domowych"
+          "home_tariff_currency": "Waluta taryf domowych",
+          "storage_read_backend": "Backend odczytu danych"
         },
         "data_description": {
           "smart_trip": "Krótkie postoje są automatycznie łączone w jeden przejazd.",
@@ -596,7 +597,8 @@
           "home_tariff_enabled": "Automatycznie oblicza koszty sesji ładowania w bazie podróży.",
           "home_tariff_summer_price": "Cena za kWh dla sesji ładowania od 1 kwietnia do 30 września.",
           "home_tariff_winter_price": "Cena za kWh dla sesji ładowania od 1 października do 31 marca.",
-          "home_tariff_currency": "Waluta używana do automatycznie obliczanych kosztów ładowania w domu."
+          "home_tariff_currency": "Waluta używana do automatycznie obliczanych kosztów ładowania w domu.",
+          "storage_read_backend": "Wybierz backend używany do odczytu zapisanych danych Ford Triplog. JSON jest ustawieniem domyślnym. SQLite jest obecnie przygotowany do walidacji w fazie 2."
         }
       },
       "osrm_settings": {

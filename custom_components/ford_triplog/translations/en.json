@@ -582,7 +582,8 @@
           "home_tariff_enabled": "Automatic home charging costs",
           "home_tariff_summer_price": "Summer tariff (1 April to 30 September)",
           "home_tariff_winter_price": "Winter tariff (1 October to 31 March)",
-          "home_tariff_currency": "Home tariff currency"
+          "home_tariff_currency": "Home tariff currency",
+          "storage_read_backend": "Storage read backend"
         },
         "data_description": {
           "smart_trip": "Short intermediate stops are automatically merged into one trip.",
@@ -596,7 +597,8 @@
           "home_tariff_enabled": "Automatically calculates costs for charging sessions at the journey base.",
           "home_tariff_summer_price": "Price per kWh for charging sessions from 1 April to 30 September.",
           "home_tariff_winter_price": "Price per kWh for charging sessions from 1 October to 31 March.",
-          "home_tariff_currency": "Currency used for automatically calculated home charging costs."
+          "home_tariff_currency": "Currency used for automatically calculated home charging costs.",
+          "storage_read_backend": "Select the backend used to read stored Ford Triplog data. JSON is the default. SQLite is currently prepared for Phase 2 validation."
         }
       },
       "osrm_settings": {
