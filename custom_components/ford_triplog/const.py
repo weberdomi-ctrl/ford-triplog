@@ -73,6 +73,14 @@ CONF_CHARGING: Final = "charging"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
 
+# Storage read backend (Phase 2)
+CONF_STORAGE_READ_BACKEND: Final = "storage_read_backend"
+
+STORAGE_READ_BACKEND_JSON: Final = "json"
+STORAGE_READ_BACKEND_SQLITE: Final = "sqlite"
+
+DEFAULT_STORAGE_READ_BACKEND: Final = STORAGE_READ_BACKEND_JSON
+
 
 #
 # Route Tracker
