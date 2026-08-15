@@ -493,7 +493,39 @@ class FordTriplogJourneyStorage:
     ) -> list[FordTriplogJourney]:
         """Load all archived journeys in chronological order."""
 
-        journeys: list[FordTriplogJourney] = []
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Journey archive list read backend: sqlite")
+            data_list = await self.database.load_all_journeys()
+
+            journeys: list[FordTriplogJourney] = []
+            for data in data_list:
+                try:
+                    journey = FordTriplogJourney.from_dict(data)
+                except (TypeError, ValueError):
+                    _LOGGER.exception(
+                        "Unable to parse SQLite journey: %s",
+                        data.get("journey_id", "unknown")
+                        if isinstance(data, dict)
+                        else "unknown",
+                    )
+                    continue
+
+                journeys.append(journey)
+
+            journeys.sort(
+                key=lambda journey: (
+                    journey.start_time or "",
+                    journey.journey_id,
+                )
+            )
+
+            _LOGGER.debug(
+                "SQLite journey archive loaded: %d",
+                len(journeys),
+            )
+            return journeys
+
+        journeys = []
 
         for path in await self.list_journey_files():
             journey = await self.load_journey_file(path)
