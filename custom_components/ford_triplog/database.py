@@ -1873,3 +1873,34 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception("Unable to mirror metadata to SQLite")
             return False
+
+
+    async def load_metadata(self) -> dict[str, Any] | None:
+        """Load complete metadata from SQLite."""
+
+        self._log_read("metadata")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM metadata WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            data = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite metadata loaded: %s",
+                "present" if data is not None else "empty",
+            )
+            return data
+        except Exception:
+            _LOGGER.exception("Unable to read metadata from SQLite")
+            return None
