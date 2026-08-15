@@ -6,8 +6,8 @@ Track your Ford.
 Storage layer for trips, charging, recovery data and cache.
 
 Version: 2.1.0
-Build: 17
-Changes: Add SQLite recovery/cache read backend
+Build: 18
+Changes: SQLite recovery/cache read backend (database methods fixed)
 """
 
 from __future__ import annotations
