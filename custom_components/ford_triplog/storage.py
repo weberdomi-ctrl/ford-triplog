@@ -6,8 +6,8 @@ Track your Ford.
 Storage layer for trips, charging, recovery data and cache.
 
 Version: 2.1.0
-Build: 16
-Changes: Add SQLite statistics read backend
+Build: 17
+Changes: Add SQLite recovery/cache read backend
 """
 
 from __future__ import annotations
@@ -168,35 +168,33 @@ class FordTriplogStorage:
         cache_files = (
             (
                 self._current_trip_file(),
-                self.load_current_trip,
                 self.database.save_current_trip,
                 "current_trip",
             ),
             (
                 self._current_charge_file(),
-                self.load_current_charge,
                 self.database.save_current_charge,
                 "current_charge",
             ),
             (
                 self._last_trip_file(),
-                self.load_last_trip,
                 self.database.save_last_trip,
                 "last_trip",
             ),
             (
                 self._last_charge_file(),
-                self.load_last_charge,
                 self.database.save_last_charge,
                 "last_charge",
             ),
         )
 
-        for path, loader, saver, key in cache_files:
+        for path, saver, key in cache_files:
             if not path.exists():
                 continue
 
-            data = await loader()
+            # Initial mirror source is always JSON. Never read the
+            # SQLite copy while populating the SQLite mirror.
+            data = await self._load_json(path)
             if isinstance(data, dict):
                 if await saver(self._add_metadata(data)):
                     mirrored[key] += 1
@@ -451,6 +449,14 @@ class FordTriplogStorage:
         return True
 
     async def load_current_trip(self) -> dict[str, Any] | None:
+        """Load current trip from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_current_trip()
+            if data is None:
+                _LOGGER.debug("SQLite current_trip read returned no data")
+            return data
+
         return await self._load_json(
             self._current_trip_file()
         )
@@ -483,6 +489,14 @@ class FordTriplogStorage:
     async def load_current_charge(
         self,
     ) -> dict[str, Any] | None:
+        """Load current charge from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_current_charge()
+            if data is None:
+                _LOGGER.debug("SQLite current_charge read returned no data")
+            return data
+
         return await self._load_json(
             self._current_charge_file()
         )
@@ -759,6 +773,14 @@ class FordTriplogStorage:
         return True
 
     async def load_last_trip(self) -> dict[str, Any] | None:
+        """Load last trip from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_last_trip()
+            if data is None:
+                _LOGGER.debug("SQLite last_trip read returned no data")
+            return data
+
         return await self._load_json(
             self._last_trip_file()
         )
@@ -861,6 +883,14 @@ class FordTriplogStorage:
     async def load_last_charge(
         self,
     ) -> dict[str, Any] | None:
+        """Load last charge from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_last_charge()
+            if data is None:
+                _LOGGER.debug("SQLite last_charge read returned no data")
+            return data
+
         return await self._load_json(
             self._last_charge_file()
         )
