@@ -363,13 +363,32 @@ class FordTriplogJourneyStorage:
             return None
 
         try:
-            return FordTriplogJourney.from_dict(data)
+            journey = FordTriplogJourney.from_dict(data)
         except (TypeError, ValueError):
             _LOGGER.exception(
                 "Unable to load last journey from %s",
                 self._last_journey_path,
             )
             return None
+
+        _LOGGER.debug(
+            "SQLite last journey parsed: "
+            "journey_id=%s date=%s start=%s end=%s "
+            "items=%d trips=%s charges=%s distance_km=%s "
+            "trip_count=%s charge_count=%s",
+            journey.journey_id,
+            journey.date,
+            journey.start_time,
+            journey.end_time,
+            len(journey.items),
+            len(journey.trip_ids),
+            len(journey.charge_ids),
+            journey.distance_km,
+            journey.trip_count,
+            journey.charge_count,
+        )
+
+        return journey
 
     async def save_last_journey(
         self,
