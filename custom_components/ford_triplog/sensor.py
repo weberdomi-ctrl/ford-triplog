@@ -135,6 +135,8 @@ async def async_setup_entry(
     coordinator = data["coordinator"]
     history = data["history"]
     database = data.get("database")
+    storage = data.get("storage")
+    read_backend = getattr(storage, "read_backend", "json")
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
@@ -248,12 +250,14 @@ async def async_setup_entry(
                 coordinator,
                 history,
                 database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopRoutesSensor(
                 coordinator,
                 history,
                 database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -2645,10 +2649,12 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         coordinator,
         history,
         database,
+        read_backend,
         translations,
     ) -> None:
         super().__init__(coordinator, history, translations)
         self.database = database
+        self.read_backend = read_backend
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -3180,7 +3186,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Aggregate departures and destinations from the selected backend."""
 
-        if getattr(self.history, "read_backend", "json") == "sqlite":
+        if self.read_backend == "sqlite":
             if self.database is None:
                 _LOGGER.error(
                     "Top Locations SQLite read requested but database is unavailable"
@@ -3289,12 +3295,14 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         coordinator,
         history,
         database,
+        read_backend,
         translations,
     ) -> None:
         super().__init__(
             coordinator,
             history,
             database,
+            read_backend,
             translations,
         )
         self._attributes: dict[str, Any] = {}
