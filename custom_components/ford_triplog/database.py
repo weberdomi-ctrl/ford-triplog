@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 15
+Build: 16
 Changes: Add Top Locations SQL view read support
 """
 
@@ -311,6 +311,26 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_route_trips AS
+                    SELECT
+                        trip_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                        json_extract(data, '$.distance_km') AS distance_km,
+                        json_extract(data, '$.start_latitude') AS start_latitude,
+                        json_extract(data, '$.start_longitude') AS start_longitude,
+                        json_extract(data, '$.end_latitude') AS end_latitude,
+                        json_extract(data, '$.end_longitude') AS end_longitude,
+                        json_extract(data, '$.consumption_kwh_100km') AS consumption_kwh_100km,
+                        json_extract(data, '$.start_address') AS start_address,
+                        json_extract(data, '$.end_address') AS end_address
+                    FROM trips
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -425,6 +445,49 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to read Top Locations trips from SQLite view"
+            )
+            return []
+
+    async def load_top_route_trips(self) -> list[dict[str, Any]]:
+        """Load the trip fields required by the Top Routes sensor in one query."""
+
+        self._log_read("view=v_top_route_trips")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT
+                        trip_id,
+                        data,
+                        include_in_statistics,
+                        distance_km,
+                        consumption_kwh_100km,
+                        start_latitude,
+                        start_longitude,
+                        end_latitude,
+                        end_longitude,
+                        start_address,
+                        end_address
+                    FROM v_top_route_trips
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                data = json.loads(row[1])
+                if not isinstance(data, dict):
+                    continue
+                result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Routes trips from SQLite view"
             )
             return []
 
