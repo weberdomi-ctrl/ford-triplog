@@ -104,15 +104,26 @@ class FordTriplogJourneyStorage:
             )
 
     async def _mirror_existing_journeys(self) -> None:
-        """Synchronize existing JSON journey data into SQLite."""
+        """Mirror JSON journeys into SQLite without destructive cleanup.
 
-        await self.database.delete_all_journeys()
+        JSON and SQLite remain selectable read backends. The mirror is
+        deliberately additive/update-only: missing JSON files never delete
+        existing SQLite rows.
+        """
 
         mirrored = 0
         skipped = 0
         failed = 0
 
-        for path in await self.list_journey_files():
+        json_paths = await self.list_journey_files()
+
+        if not json_paths:
+            _LOGGER.info(
+                "Initial SQLite journey mirror: no JSON files found; "
+                "existing SQLite journeys preserved"
+            )
+
+        for path in json_paths:
             data = await self._async_load_json(path)
 
             if not isinstance(data, dict):
@@ -144,24 +155,23 @@ class FordTriplogJourneyStorage:
 
         _LOGGER.info(
             "Initial SQLite journey mirror completed: "
-            "files=%d mirrored=%d skipped=%d failed=%d",
-            mirrored + skipped + failed,
+            "json_files=%d mirrored=%d skipped=%d failed=%d "
+            "existing_sqlite_rows_preserved=true",
+            len(json_paths),
             mirrored,
             skipped,
             failed,
         )
 
+        # Cache files are mirrored only when a JSON source exists.
+        # Missing JSON must never delete the corresponding SQLite cache.
         current = await self._async_load_json(self._current_journey_path)
         if isinstance(current, dict):
             await self.database.save_current_journey(current)
-        else:
-            await self.database.delete_current_journey()
 
         last = await self._async_load_json(self._last_journey_path)
         if isinstance(last, dict):
             await self.database.save_last_journey(last)
-        else:
-            await self.database.delete_last_journey()
 
     async def save_current_journey(
         self,
