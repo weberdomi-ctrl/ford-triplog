@@ -344,6 +344,18 @@ class FordTriplogDatabase:
                 )
 
 
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
+                    SELECT
+                        journey_id,
+                        data,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM journeys
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -460,6 +472,39 @@ class FordTriplogDatabase:
                 "Unable to read Top Locations trips from SQLite view"
             )
             return []
+
+    async def load_top_journey(self) -> dict[str, Any] | None:
+        """Load the longest archived Journey from the SQLite view."""
+
+        self._log_read("view=v_top_journey_journeys")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT journey_id, data
+                    FROM v_top_journey_journeys
+                    WHERE distance_km IS NOT NULL
+                    ORDER BY distance_km DESC, journey_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if not row:
+                return None
+
+            data = json.loads(row[1])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Journey from SQLite view"
+            )
+            return None
 
     async def load_top_trip(self) -> dict[str, Any] | None:
         """Load the longest statistics-eligible trip from the SQLite view."""
