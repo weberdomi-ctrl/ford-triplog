@@ -254,6 +254,8 @@ async def async_setup_entry(
             FordTriplogTopDaySensor(
                 journey_storage,
                 route_storage,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopLocationsSensor(
@@ -2231,10 +2233,14 @@ class FordTriplogTopDaySensor(SensorEntity):
         self,
         journey_storage: FordTriplogJourneyStorage | None,
         route_storage: FordTriplogRouteStorage | None,
-        translations: dict[str, str],
+        database,
+        read_backend,
+        translations: dict[str, Any],
     ) -> None:
         self.journey_storage = journey_storage
         self.route_storage = route_storage
+        self.database = database
+        self.read_backend = read_backend
         self.translations = translations
         self._attr_native_value = None
         self._attributes: dict[str, Any] = {}
@@ -2264,21 +2270,25 @@ class FordTriplogTopDaySensor(SensorEntity):
         self.async_write_ha_state()
 
     @staticmethod
-    def _optional_number(
-        value: Any,
-        digits: int = 2,
-    ) -> float:
-        """Return a numeric value, defaulting to zero."""
-
+    def _optional_number(value: Any, digits: int = 2) -> float:
         try:
             return round(float(value or 0), digits)
         except (TypeError, ValueError):
             return 0.0
 
     @staticmethod
-    def _compact_location(value: Any) -> str | None:
-        """Return a compact street/POI, postal code and city."""
+    def _get(item: Any, key: str, default: Any = None) -> Any:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
 
+    @staticmethod
+    def _items(journey: Any) -> list[Any]:
+        value = FordTriplogTopDaySensor._get(journey, "items", [])
+        return list(value or [])
+
+    @staticmethod
+    def _compact_location(value: Any) -> str | None:
         if value is None:
             return None
 
@@ -2318,10 +2328,7 @@ class FordTriplogTopDaySensor(SensorEntity):
             if parts:
                 return ", ".join(parts)
 
-            value = (
-                value.get("display_name")
-                or value.get("display")
-            )
+            value = value.get("display_name") or value.get("display")
 
         text = str(value or "").strip()
         if not text:
@@ -2342,7 +2349,6 @@ class FordTriplogTopDaySensor(SensorEntity):
 
         if postcode_index is not None:
             postcode = parts[postcode_index]
-
             if len(parts) >= 3 and parts[0].isdigit():
                 street = f"{parts[1]} {parts[0]}".strip()
                 city = parts[2]
@@ -2360,66 +2366,65 @@ class FordTriplogTopDaySensor(SensorEntity):
         return ", ".join(parts[:3])
 
     def _journey_start_location(self, journey) -> str | None:
-        """Return the best start location for one Journey."""
-
-        items = list(journey.items)
+        items = self._items(journey)
         first_item = items[0] if items else None
 
         if (
             first_item is not None
-            and getattr(first_item, "item_type", None) == "trip"
+            and self._get(first_item, "item_type") == "trip"
         ):
-            location = getattr(first_item, "start_location", None)
-            if location:
-                compact = self._compact_location(location)
-                if compact:
-                    return compact
-
-            address = getattr(first_item, "start_address", None)
-            compact = self._compact_location(address)
+            location = self._get(first_item, "start_location")
+            compact = self._compact_location(location)
             if compact:
                 return compact
 
-        return self._compact_location(journey.start_address)
+            compact = self._compact_location(
+                self._get(first_item, "start_address")
+            )
+            if compact:
+                return compact
+
+        return self._compact_location(
+            self._get(journey, "start_address")
+        )
 
     def _journey_end_location(self, journey) -> str | None:
-        """Return the best end location for one Journey."""
-
-        items = list(journey.items)
+        items = self._items(journey)
         last_item = items[-1] if items else None
 
         if last_item is not None:
-            if getattr(last_item, "item_type", None) == "trip":
-                location = getattr(last_item, "end_location", None)
-                if location:
-                    compact = self._compact_location(location)
-                    if compact:
-                        return compact
+            if self._get(last_item, "item_type") == "trip":
+                compact = self._compact_location(
+                    self._get(last_item, "end_location")
+                )
+                if compact:
+                    return compact
 
-                address = getattr(last_item, "end_address", None)
-                compact = self._compact_location(address)
+                compact = self._compact_location(
+                    self._get(last_item, "end_address")
+                )
                 if compact:
                     return compact
             else:
-                location = getattr(last_item, "location", None)
-                if location:
-                    compact = self._compact_location(location)
-                    if compact:
-                        return compact
-
-                address = getattr(last_item, "address", None)
-                compact = self._compact_location(address)
+                compact = self._compact_location(
+                    self._get(last_item, "location")
+                )
                 if compact:
                     return compact
 
-        return self._compact_location(journey.end_address)
+                compact = self._compact_location(
+                    self._get(last_item, "address")
+                )
+                if compact:
+                    return compact
 
-    async def _route_summary(
-        self,
-        date_value: str,
-    ) -> dict[str, Any]:
-        """Return compact route references for the selected day."""
+        return self._compact_location(
+            self._get(journey, "end_address")
+        )
 
+    async def _route_summary(self, date_value: str) -> dict[str, Any]:
+        # Routes are not part of the current SQLite mirror yet, so retain
+        # the existing route-storage path for this auxiliary dashboard data.
         if self.route_storage is None:
             return {
                 "route_available": False,
@@ -2449,13 +2454,20 @@ class FordTriplogTopDaySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Aggregate Journeys by day and expose the record day."""
 
-        if self.journey_storage is None:
-            self._attr_native_value = None
-            self._attributes = {}
-            self._top_date = None
-            return
-
-        journeys = await self.journey_storage.get_all_journeys()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Day SQLite read requested but database is unavailable"
+                )
+                journeys = []
+            else:
+                journeys = await self.database.load_top_day_journeys()
+        else:
+            journeys = (
+                await self.journey_storage.get_all_journeys()
+                if self.journey_storage is not None
+                else []
+            )
 
         if not journeys:
             self._attr_native_value = None
@@ -2466,7 +2478,9 @@ class FordTriplogTopDaySensor(SensorEntity):
         days: dict[str, dict[str, Any]] = {}
 
         for journey in journeys:
-            date_value = str(journey.date or "").strip()
+            date_value = str(
+                self._get(journey, "date", "")
+            ).strip()
             if not date_value:
                 continue
 
@@ -2495,38 +2509,51 @@ class FordTriplogTopDaySensor(SensorEntity):
             row["journeys"].append(journey)
             row["journey_count"] += 1
             row["distance_km"] += self._optional_number(
-                journey.distance_km,
+                self._get(journey, "distance_km"),
                 3,
             )
             row["total_duration_seconds"] += int(
-                journey.total_duration_seconds or 0
+                self._get(journey, "total_duration_seconds", 0) or 0
             )
             row["driving_duration_seconds"] += int(
-                journey.driving_duration_seconds or 0
+                self._get(journey, "driving_duration_seconds", 0) or 0
             )
             row["charging_duration_seconds"] += int(
-                journey.charging_duration_seconds or 0
+                self._get(journey, "charging_duration_seconds", 0) or 0
             )
-            row["trip_count"] += int(journey.trip_count or 0)
-            row["charge_count"] += int(journey.charge_count or 0)
+            row["trip_count"] += int(
+                self._get(journey, "trip_count", 0) or 0
+            )
+            row["charge_count"] += int(
+                self._get(journey, "charge_count", 0) or 0
+            )
             row["energy_used_kwh"] += self._optional_number(
-                journey.energy_used_kwh,
+                self._get(journey, "energy_used_kwh"),
                 3,
             )
             row["energy_charged_kwh"] += self._optional_number(
-                journey.energy_charged_kwh,
+                self._get(journey, "energy_charged_kwh"),
                 3,
             )
             row["charging_cost_total"] += self._optional_number(
-                journey.charging_cost_total,
+                self._get(journey, "charging_cost_total"),
                 3,
             )
 
-            row["journey_ids"].append(journey.journey_id)
-            row["trip_ids"].extend(list(journey.trip_ids))
-            row["charge_ids"].extend(list(journey.charge_ids))
+            journey_id = self._get(journey, "journey_id")
+            if journey_id:
+                row["journey_ids"].append(journey_id)
 
-            currency = str(journey.currency or "").strip().upper()
+            row["trip_ids"].extend(
+                list(self._get(journey, "trip_ids", []) or [])
+            )
+            row["charge_ids"].extend(
+                list(self._get(journey, "charge_ids", []) or [])
+            )
+
+            currency = str(
+                self._get(journey, "currency", "")
+            ).strip().upper()
             if currency:
                 row["currencies"].add(currency)
 
@@ -2547,8 +2574,8 @@ class FordTriplogTopDaySensor(SensorEntity):
         top_journeys = sorted(
             top["journeys"],
             key=lambda journey: (
-                str(journey.start_time or ""),
-                str(journey.journey_id or ""),
+                str(self._get(journey, "start_time", "") or ""),
+                str(self._get(journey, "journey_id", "") or ""),
             ),
         )
 
@@ -2577,8 +2604,8 @@ class FordTriplogTopDaySensor(SensorEntity):
         self._attributes = {
             "date": top["date"],
             "distance_km": distance_km,
-            "start_time": first_journey.start_time,
-            "end_time": last_journey.end_time,
+            "start_time": self._get(first_journey, "start_time"),
+            "end_time": self._get(last_journey, "end_time"),
             "start_location": self._journey_start_location(
                 first_journey
             ),
@@ -2617,14 +2644,10 @@ class FordTriplogTopDaySensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Return whether Top Day data is available."""
-
         return self._top_date is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return dashboard-ready Top Day details."""
-
         return {
             key: value
             for key, value in self._attributes.items()
@@ -2633,8 +2656,6 @@ class FordTriplogTopDaySensor(SensorEntity):
 
     @property
     def device_info(self):
-        """Return device information."""
-
         return {
             "identifiers": {(DOMAIN, "ford_triplog")},
             "name": "Ford Triplog",

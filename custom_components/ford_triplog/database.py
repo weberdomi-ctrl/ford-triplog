@@ -368,6 +368,19 @@ class FordTriplogDatabase:
                 )
 
 
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
+                    SELECT
+                        journey_id,
+                        data,
+                        json_extract(data, '$.date') AS date,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM journeys
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -514,6 +527,38 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception(
                 "Unable to read Top Charging data from SQLite view"
+            )
+            return []
+
+    async def load_top_day_journeys(self) -> list[dict[str, Any]]:
+        """Load archived Journeys used by the Top Day aggregation."""
+
+        self._log_read("view=v_top_day_journeys")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM v_top_day_journeys
+                    WHERE distance_km IS NOT NULL
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Day Journeys from SQLite view"
             )
             return []
 
