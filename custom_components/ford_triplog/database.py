@@ -331,6 +331,19 @@ class FordTriplogDatabase:
                 )
 
 
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
+                    SELECT
+                        trip_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM trips
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -447,6 +460,40 @@ class FordTriplogDatabase:
                 "Unable to read Top Locations trips from SQLite view"
             )
             return []
+
+    async def load_top_trip(self) -> dict[str, Any] | None:
+        """Load the longest statistics-eligible trip from the SQLite view."""
+
+        self._log_read("view=v_top_trip_trips")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT trip_id, data
+                    FROM v_top_trip_trips
+                    WHERE COALESCE(include_in_statistics, 1) = 1
+                      AND distance_km IS NOT NULL
+                    ORDER BY distance_km DESC, trip_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if not row:
+                return None
+
+            data = json.loads(row[1])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Trip from SQLite view"
+            )
+            return None
 
     async def load_top_route_trips(self) -> list[dict[str, Any]]:
         """Load the trip fields required by the Top Routes sensor in one query."""
