@@ -246,6 +246,27 @@ Ford Triplog continuously maintains:
 
 ------------------------------------------------------------------------
 
+
+## 🗃️ Local SQLite Storage
+
+Ford Triplog 2.1 introduces an optional local SQLite read backend while retaining the existing JSON storage for compatibility.
+
+During the 2.1 transition:
+
+- New and changed data continues to be written to JSON and SQLite
+- Existing JSON data is migrated or mirrored into SQLite
+- JSON remains the default read backend after an upgrade
+- Users who want to use SQLite must enable it explicitly in Ford Triplog settings
+- Switching the read backend reloads the integration
+- Derived statistics are recalculated from the selected backend after setup/reload
+- Journey rebuild uses the selected backend directly
+- SQLite-backed historical reads avoid dependency on archived JSON files
+- JSON remains available as a fallback during the migration period
+
+The SQLite database is stored locally inside the Ford Triplog Home Assistant storage directory. No external database service is required.
+
+------------------------------------------------------------------------
+
 # Requirements
 
 - Home Assistant 2026.6 or newer
@@ -325,12 +346,16 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 ## Version 2.1
 
-- Planned SQLite storage backend
-- 1:1 mapping of existing JSON storage into corresponding database tables
-- Parallel JSON and SQLite writes during migration and validation
-- Selectable JSON or database read path during transition
-- SQL queries and database views for efficient statistics
-- JSON retained initially for compatibility, fallback and export
+- Local SQLite storage backend
+- Existing JSON storage mirrored into corresponding SQLite tables
+- Parallel JSON and SQLite writes for compatibility and validation
+- Selectable JSON or SQLite read backend
+- JSON remains the default read backend after upgrade
+- SQLite can be enabled explicitly in Ford Triplog settings
+- Database-backed Trips, Charges, Journeys, Routes, receipts and metadata
+- SQL-backed Top Statistics and historical archive reads
+- Journey rebuild and statistics recalculation work with the selected backend
+- JSON retained for compatibility, fallback and migration safety
 
 Complete roadmap:
 
