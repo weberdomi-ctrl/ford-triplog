@@ -1,6 +1,6 @@
-$ScriptVersion = "1.2.0"
+﻿$ScriptVersion = "1.5.2"
 # Ford Triplog - OSRM DACH+EU Update
-# Version: 1.4
+# Version: 1.5.2
 #
 # Builds DE + AT + CH + FR + IT + NL + BE + DK + LU OSRM data on Windows,
 # tests it locally, uploads it to Synology, restarts OSRM and tests again.
@@ -29,10 +29,10 @@ $GermanyUrl      = "https://download.geofabrik.de/europe/germany-latest.osm.pbf"
 
 $Pscp       = "C:\Program Files\PuTTY\pscp.exe"
 $Plink      = "C:\Program Files\PuTTY\plink.exe"
-$SshKey     = "C:\Users\user\.ssh\synology.ppk"
+$SshKey     = "C:\Users\xxx\.ssh\synology.ppk"
 
 $NasUser = "user"
-$NasHost = "192.168.1.1"
+$NasHost = "192.1.1.1"
 $NasTarget = "/volume1/docker/osrm"
 $NasContainer = "OSRM-Triplog"
 $NasPort = 5005
@@ -358,35 +358,71 @@ $SourceFiles = @(
 
 $ReuseBuild = CanReuseExistingBuild $WorkDir $SourceFiles $MaxFileAgeDays
 
+# The merged PBF is much more expensive to create than the individual
+# country downloads. Keep it after a failed extract/partition/customize
+# and reuse it as long as it is newer than every source PBF.
+$NeedMerge = -not (Test-Path -LiteralPath $DachPbf)
+
+if (-not $NeedMerge) {
+    $DachPbfTime = (Get-Item -LiteralPath $DachPbf).LastWriteTimeUtc
+
+    foreach ($SourceFile in $SourceFiles) {
+        if (-not (Test-Path -LiteralPath $SourceFile)) {
+            $NeedMerge = $true
+            break
+        }
+
+        if ((Get-Item -LiteralPath $SourceFile).LastWriteTimeUtc -gt $DachPbfTime) {
+            $NeedMerge = $true
+            break
+        }
+    }
+}
+
 if ($ReuseBuild) {
     Step "Reuse existing recent DACH build"
     Write-Host "Existing dach-latest.osrm* files are recent and newer than the source PBF files."
 }
 else {
+    # Always remove old generated OSRM output when rebuilding the processing
+    # stages. The large merged PBF is removed only when a new merge is needed.
     Step "Remove old local DACH build"
     Get-ChildItem $WorkDir -Filter "dach-latest.osrm*" -ErrorAction SilentlyContinue | Remove-Item -Force
-    if (Test-Path $DachPbf) { Remove-Item -Force $DachPbf }
 
-    Step "Merge DE + AT + CH + FR + IT + NL + BE + DK + LU"
-    Run "docker" @(
-        "run","--rm",
-        "-v","${WorkDir}:/data",
-        $OsmiumImage,
-        "merge",
-        "/data/austria-latest.osm.pbf",
-        "/data/switzerland-latest.osm.pbf",
-        "/data/france-latest.osm.pbf",
-        "/data/italy-latest.osm.pbf",
-        "/data/netherlands-latest.osm.pbf",
-        "/data/belgium-latest.osm.pbf",
-        "/data/denmark-latest.osm.pbf",
-        "/data/luxembourg-latest.osm.pbf",
-        "/data/germany-latest.osm.pbf",
-        "-o","/data/dach-latest.osm.pbf",
-        "--overwrite"
-    )
+    if ($NeedMerge) {
+        if (Test-Path -LiteralPath $DachPbf) {
+            Step "Source data changed - rebuild merged DACH dataset"
+            Remove-Item -LiteralPath $DachPbf -Force
+        }
+        else {
+            Step "Merged DACH dataset not found"
+        }
 
-    if (-not (Test-Path $DachPbf)) { Fail "DACH PBF was not created" }
+        Step "Merge DE + AT + CH + FR + IT + NL + BE + DK + LU"
+        Run "docker" @(
+            "run","--rm",
+            "-v","${WorkDir}:/data",
+            $OsmiumImage,
+            "merge",
+            "/data/austria-latest.osm.pbf",
+            "/data/switzerland-latest.osm.pbf",
+            "/data/france-latest.osm.pbf",
+            "/data/italy-latest.osm.pbf",
+            "/data/netherlands-latest.osm.pbf",
+            "/data/belgium-latest.osm.pbf",
+            "/data/denmark-latest.osm.pbf",
+            "/data/luxembourg-latest.osm.pbf",
+            "/data/germany-latest.osm.pbf",
+            "-o","/data/dach-latest.osm.pbf",
+            "--overwrite"
+        )
+
+        if (-not (Test-Path $DachPbf)) { Fail "DACH PBF was not created" }
+    }
+    else {
+        Step "Reuse existing merged DACH dataset"
+        Write-Host "dach-latest.osm.pbf is newer than all source PBF files. Skipping merge."
+    }
 
     Step "osrm-extract"
     Run "docker" @(
@@ -438,7 +474,7 @@ Run "docker" @(
 try {
     $Ready = $false
 
-    for ($i=0; $i -lt 30; $i++) {
+    for ($i=0; $i -lt 150; $i++) {
         Start-Sleep -Seconds 2
         try {
             $r = Invoke-RestMethod "http://127.0.0.1:$LocalTestPort/nearest/v1/driving/$TestCH" -TimeoutSec 5
@@ -487,12 +523,49 @@ finally {
     }
 }
 
-Step "Upload OSRM files to Synology"
+Step "Check OSRM files on Synology"
 
-$PscpArgs = @("-batch","-i",$SshKey)
-$PscpArgs += $OsrmFiles.FullName
-$PscpArgs += "${NasUser}@${NasHost}:${NasTarget}/"
-Run $Pscp $PscpArgs
+$FilesToUpload = @()
+
+foreach ($File in $OsrmFiles) {
+    $RemoteFile = "$NasTarget/$($File.Name)"
+
+    $RemoteSizeOutput = & $Plink -batch -i $SshKey `
+        "${NasUser}@${NasHost}" `
+        "if [ -f '$RemoteFile' ]; then stat -c %s '$RemoteFile'; else echo MISSING; fi"
+
+    if ($LASTEXITCODE -ne 0) {
+        Fail "Remote file check failed: $($File.Name)"
+    }
+
+    $RemoteSize = ($RemoteSizeOutput | Select-Object -Last 1).Trim()
+
+    if ($RemoteSize -eq "MISSING") {
+        Write-Host "$($File.Name): missing -> upload"
+        $FilesToUpload += $File
+        continue
+    }
+
+    if ([int64]$RemoteSize -ne $File.Length) {
+        Write-Host "$($File.Name): size differs -> upload"
+        $FilesToUpload += $File
+        continue
+    }
+
+    Write-Host "$($File.Name): already current"
+}
+
+if ($FilesToUpload.Count -gt 0) {
+    Step "Upload $($FilesToUpload.Count) changed OSRM files to Synology"
+
+    $PscpArgs = @("-batch","-i",$SshKey)
+    $PscpArgs += $FilesToUpload.FullName
+    $PscpArgs += "${NasUser}@${NasHost}:${NasTarget}/"
+    Run $Pscp $PscpArgs
+}
+else {
+    Step "OSRM files already current on Synology - skip upload"
+}
 
 Step "Verify uploaded file count"
 
@@ -510,8 +583,8 @@ Step "Restart production OSRM container"
 
 $RemoteRestart = "$RemoteDocker stop $NasContainer >/dev/null 2>&1 || true; " +
                  "$RemoteDocker rm $NasContainer >/dev/null 2>&1 || true; " +
-                 "$RemoteDocker run -d --name $NasContainer --restart unless-stopped --memory=6g " +
-                 "-p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld /data/dach-latest.osrm"
+                 "$RemoteDocker run -d --name $NasContainer --restart unless-stopped " +
+                 "-p ${NasPort}:5000 -v ${NasTarget}:/data $Image osrm-routed --algorithm mld --mmap /data/dach-latest.osrm"
 
 & $Plink -batch -i $SshKey "${NasUser}@${NasHost}" $RemoteRestart
 if ($LASTEXITCODE -ne 0) {
@@ -521,7 +594,7 @@ if ($LASTEXITCODE -ne 0) {
 Step "Final NAS test"
 
 $NasReady = $false
-for ($i=0; $i -lt 60; $i++) {
+for ($i=0; $i -lt 150; $i++) {
     Start-Sleep -Seconds 2
     try {
         $r = Invoke-RestMethod "http://${NasHost}:${NasPort}/nearest/v1/driving/$TestCH" -TimeoutSec 5
