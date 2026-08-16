@@ -18,7 +18,12 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.core import HomeAssistant
 
-from .const import RECEIPTS_DIR, RECEIPT_MAX_SIZE_BYTES, STORAGE_DIR
+from .const import (
+    RECEIPTS_DIR,
+    RECEIPT_MAX_SIZE_BYTES,
+    STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
+)
 from .metadata_storage import FordTriplogMetadataStorage
 from .receipt_parser import ReceiptParserEngine
 
@@ -50,20 +55,56 @@ class FordTriplogReceiptStorage:
         self._metadata = FordTriplogMetadataStorage(hass)
         self._parser = ReceiptParserEngine(
             Path(__file__).parent / "receipt_parser_profiles",
-            self._user_profile_directory,
+            (
+                None
+                if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE
+                else self._user_profile_directory
+            ),
         )
 
     async def async_setup(self) -> None:
         await self.hass.async_add_executor_job(
             self._directory.mkdir, 0o755, True, True
         )
+        await self._metadata.async_setup()
+
+        if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            profiles = (
+                await self._metadata.database.load_user_receipt_parser_profiles()
+            )
+
+            # One-time recovery from legacy user JSON profiles when SQLite
+            # is still empty. Bundled profiles are never imported.
+            if not profiles and await self.hass.async_add_executor_job(
+                self._user_profile_directory.is_dir
+            ):
+                legacy_profiles = await self.hass.async_add_executor_job(
+                    self._load_user_profiles_from_json
+                )
+                if legacy_profiles:
+                    saved = await self._metadata.database.save_all_user_receipt_parser_profiles(
+                        legacy_profiles
+                    )
+                    if not saved:
+                        raise OSError(
+                            "Unable to migrate user receipt parser profiles to SQLite"
+                        )
+                    profiles = legacy_profiles
+                    _LOGGER.info(
+                        "Imported %d user receipt parser profiles from JSON into SQLite",
+                        len(profiles),
+                    )
+
+            self._parser.set_user_profiles(profiles)
+            await self.hass.async_add_executor_job(self._parser.load)
+            return
+
         await self.hass.async_add_executor_job(
             self._user_profile_directory.mkdir,
             0o755,
             True,
             True,
         )
-        await self._metadata.async_setup()
         await self.hass.async_add_executor_job(self._parser.load)
 
     async def async_import(
@@ -229,9 +270,31 @@ class FordTriplogReceiptStorage:
         if not profile_id:
             raise ValueError("Parser profile ID is required")
 
+        normalized_profile = dict(profile)
+        normalized_profile["profile_id"] = profile_id
         destination = self._user_profile_directory / f"{profile_id}.json"
+
+        if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            saved = await self._metadata.database.save_user_receipt_parser_profile(
+                normalized_profile
+            )
+            if not saved:
+                raise OSError(
+                    "Unable to save user receipt parser profile to SQLite"
+                )
+
+            profiles = (
+                await self._metadata.database.load_user_receipt_parser_profiles()
+            )
+            self._parser.set_user_profiles(profiles)
+            await self.hass.async_add_executor_job(self._parser.load)
+
+            # Preserve the existing method contract. In SQLite mode this path
+            # is only a logical legacy location; no JSON file is written.
+            return destination
+
         payload = json.dumps(
-            profile,
+            normalized_profile,
             ensure_ascii=False,
             indent=2,
         ) + "\n"
