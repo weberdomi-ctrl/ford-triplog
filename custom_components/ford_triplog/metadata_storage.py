@@ -60,6 +60,7 @@ class FordTriplogMetadataStorage:
 
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
             await self._migrate_charge_metadata_to_table()
+            await self._migrate_receipts_to_table()
             return
 
         data = await self.async_load()
@@ -144,8 +145,16 @@ class FordTriplogMetadataStorage:
             if not isinstance(charge_metadata, dict):
                 charge_metadata = {}
 
+            clean_charge_metadata: dict[str, dict[str, Any]] = {}
+            for charge_id, value in charge_metadata.items():
+                if not isinstance(value, dict):
+                    continue
+                item = dict(value)
+                item.pop("receipts", None)
+                clean_charge_metadata[str(charge_id)] = item
+
             saved = await self.database.save_all_charge_metadata(
-                charge_metadata
+                clean_charge_metadata
             )
             if not saved:
                 raise OSError(
@@ -154,6 +163,17 @@ class FordTriplogMetadataStorage:
 
             base_metadata = dict(normalized)
             base_metadata["charges"] = {}
+
+            pauses = base_metadata.get("pauses", {})
+            if isinstance(pauses, dict):
+                cleaned_pauses: dict[str, dict[str, Any]] = {}
+                for pause_id, value in pauses.items():
+                    if not isinstance(value, dict):
+                        continue
+                    item = dict(value)
+                    item.pop("receipts", None)
+                    cleaned_pauses[str(pause_id)] = item
+                base_metadata["pauses"] = cleaned_pauses
 
             saved = await self.database.save_metadata(base_metadata)
             if not saved:
@@ -279,12 +299,27 @@ class FordTriplogMetadataStorage:
     ) -> None:
         """Attach one receipt to a pause or charging session."""
 
-        section = self._receipt_section(target_type)
+        self._receipt_section(target_type)
         normalized_target_id = str(target_id).strip()
         if not normalized_target_id:
             raise ValueError("Receipt target ID is required")
 
+        receipt_id = str(receipt.get("receipt_id") or "").strip()
+        if not receipt_id:
+            raise ValueError("Receipt ID is required")
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            saved = await self.database.save_receipt(
+                target_type,
+                normalized_target_id,
+                dict(receipt),
+            )
+            if not saved:
+                raise OSError("Unable to save receipt to SQLite")
+            return
+
         data = await self.async_load() or self._empty_data()
+        section = self._receipt_section(target_type)
         items = data.setdefault(section, {})
         if not isinstance(items, dict):
             items = {}
@@ -298,9 +333,6 @@ class FordTriplogMetadataStorage:
             receipts = []
             metadata["receipts"] = receipts
 
-        receipt_id = str(receipt.get("receipt_id") or "").strip()
-        if not receipt_id:
-            raise ValueError("Receipt ID is required")
         receipts[:] = [
             item for item in receipts
             if not isinstance(item, dict)
@@ -312,9 +344,20 @@ class FordTriplogMetadataStorage:
     async def get_all_receipts(self) -> list[dict[str, Any]]:
         """Return receipts from all supported metadata sections."""
 
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            result = await self.database.load_all_receipts()
+            result.sort(
+                key=lambda item: str(item.get("created_at") or ""),
+                reverse=True,
+            )
+            return result
+
         data = await self.async_load() or self._empty_data()
         result: list[dict[str, Any]] = []
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -330,15 +373,29 @@ class FordTriplogMetadataStorage:
                         value["target_type"] = target_type
                         value["target_id"] = str(target_id)
                         result.append(value)
-        result.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        result.sort(
+            key=lambda item: str(item.get("created_at") or ""),
+            reverse=True,
+        )
         return result
 
-    async def remove_receipt(self, receipt_id: str) -> dict[str, Any] | None:
-        """Remove one receipt from metadata and return its record."""
+    async def remove_receipt(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
+        """Remove one receipt and return its record."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            receipt = await self.database.load_receipt(normalized_id)
+            if receipt is None:
+                return None
+            deleted = await self.database.delete_receipt(normalized_id)
+            return receipt if deleted else None
+
         data = await self.async_load() or self._empty_data()
         for section in ("pauses", "charges"):
             items = data.get(section, {})
@@ -353,7 +410,8 @@ class FordTriplogMetadataStorage:
                 for index, receipt in enumerate(receipts):
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         removed = dict(receipt)
                         receipts.pop(index)
@@ -363,14 +421,24 @@ class FordTriplogMetadataStorage:
                         return removed
         return None
 
-    async def get_receipt(self, receipt_id: str) -> dict[str, Any] | None:
+    async def get_receipt(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
         """Return one receipt including its target metadata."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            return await self.database.load_receipt(normalized_id)
+
         data = await self.async_load() or self._empty_data()
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -383,7 +451,8 @@ class FordTriplogMetadataStorage:
                 for receipt in receipts:
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         value = dict(receipt)
                         value["target_type"] = target_type
@@ -396,13 +465,53 @@ class FordTriplogMetadataStorage:
         receipt_id: str,
         updates: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Update one receipt in-place and return the resulting record."""
+        """Update one receipt and return the resulting record."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            current = await self.database.load_receipt(normalized_id)
+            if current is None:
+                return None
+
+            target_type = str(current.get("target_type") or "")
+            target_id = str(current.get("target_id") or "")
+
+            updated = {
+                key: value
+                for key, value in current.items()
+                if key not in ("target_type", "target_id")
+            }
+
+            for key, value in updates.items():
+                normalized_key = str(key)
+                if value is None:
+                    updated.pop(normalized_key, None)
+                else:
+                    updated[normalized_key] = value
+
+            updated["receipt_id"] = normalized_id
+
+            saved = await self.database.save_receipt(
+                target_type,
+                target_id,
+                updated,
+            )
+            if not saved:
+                return None
+
+            result = dict(updated)
+            result["target_type"] = target_type
+            result["target_id"] = target_id
+            return result
+
         data = await self.async_load() or self._empty_data()
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -415,7 +524,8 @@ class FordTriplogMetadataStorage:
                 for receipt in receipts:
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         for key, value in updates.items():
                             if value is None:
