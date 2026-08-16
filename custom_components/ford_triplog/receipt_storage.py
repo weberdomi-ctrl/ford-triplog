@@ -404,6 +404,42 @@ class FordTriplogReceiptStorage:
                 _LOGGER.exception("Unable to delete receipt file %s", path)
         return receipt
 
+    def _load_user_profiles_from_json(self) -> list[dict[str, Any]]:
+        """Load legacy user profiles only from the persistent data folder."""
+
+        if not self._user_profile_directory.is_dir():
+            return []
+
+        profiles: list[dict[str, Any]] = []
+        used_ids: set[str] = set()
+
+        for path in sorted(self._user_profile_directory.glob("*.json")):
+            try:
+                with path.open("r", encoding="utf-8") as handle:
+                    profile = json.load(handle)
+            except (OSError, json.JSONDecodeError):
+                _LOGGER.exception(
+                    "Unable to read legacy user receipt parser profile: %s",
+                    path,
+                )
+                continue
+
+            if not isinstance(profile, dict):
+                continue
+
+            profile_id = str(profile.get("profile_id") or "").strip()
+            if (
+                not profile_id
+                or profile_id in used_ids
+                or not isinstance(profile.get("match"), dict)
+            ):
+                continue
+
+            used_ids.add(profile_id)
+            profiles.append(profile)
+
+        return profiles
+
     def _validate_source(self, source: Path) -> int:
         if not source.is_file():
             raise ValueError("Uploaded receipt does not exist")
