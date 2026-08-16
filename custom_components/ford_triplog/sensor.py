@@ -1,74 +1,4 @@
-"""
-Ford Triplog
-
-Home Assistant sensor platform.
-
-Version: 2.1.0-dev
-Build: 20
-Phase: 3 - Top Locations SQL view integrated
-Changes:
-- Top Locations supports JSON and SQLite read backends.
-- SQLite uses a dedicated SQL view and a single database read.
-- Existing location resolution and ranking logic is unchanged.
-- Diagnostic 01: expose the active read backend on the trip count sensor.
-Changes:
-- Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
-- Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
-- Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
-- Preserve all existing 2.0.2 Top Statistics behavior.
-- Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
-- Top Locations 01: add Top 5 departures and Top 5 destinations from archived trips.
-- Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
-- Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
-- Top Locations 04: keep the most complete address label found inside each GPS cluster.
-- Top Locations Fix 01: add missing re import for address quality scoring.
-- Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
-- Top Routes 01: add Top 5 directed routes using the same 50 m GPS clustering as Top Locations.
-- Top Routes 02: expose trip count, average distance and average consumption where available.
-- Top Routes Fix 01: exclude routes where start and destination resolve to the same location.
-- Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
-- Zone fix 01: resolve all Home Assistant zones before GPS/address clustering for Top Locations and Top Routes.
-- Zone fix 02: keep zone.home as stable raw value Home; use user-defined names for all other zones.
-- Charging location fix 01: resolve custom charging locations after HA zones and before GPS clustering.
-- Charging location fix 02: resolve current OSM charging locations after custom sites using the coordinator lookup.
-- Charging location fix 03: reuse custom-site radius and configured OSM lookup radius.
-
-Previous changes:
-- Keep Top Trip and Top Journey.
-- Add one compact Top Charging sensor based on archived charging sessions.
-- State is the most-used charging provider.
-- Attributes expose Top 5 providers, Top 5 charging locations and the
-  largest charging session with sessions, energy and cost aggregates.
-- Fix 01: remove undefined SIGNAL_CHARGE_UPDATED dependency.
-- Fix 02: use the real archived charging-site and address field names.
-- Fix 03: resolve Home Assistant zones for historic charges, group home
-  charging as Home, compact long OSM addresses and aggregate locations
-  independently from provider.
-- Fix 04: exclude Unknown from the Top Provider ranking while retaining
-  unknown-provider session totals; format postal code and city together.
-- Fix 05: re-match historic charging sessions against today's user-defined
-  charging sites and current OSM charging-site database without modifying
-  archived charge files. Matching uses end coordinates first, then start,
-  the configured user-site radius, and the coordinator OSM radius.
-- Phase 4: add one compact Top Day sensor.
-- Top Day aggregates all completed Journeys per local calendar day and selects
-  the day with the highest total Journey distance.
-- Attributes include Journey/trip/charge counts, duration, energy, charging
-  costs, start/end locations and compact route references.
-- Route GeoJSON is intentionally not duplicated into Top Day to avoid large
-  recorder attributes.
-- Fix 01: compact Top Day start/end location strings to street/POI and
-  postal code + city, matching the other Top Statistics sensors.
-- Fix 02: use Home Assistant translation keys for Top Trip, Top Journey,
-  Top Charging and Top Day instead of fixed English entity names.
-- Fix 03: make Charging History translatable via charging_history key;
-  Trip Active is handled by binary_sensor.py via trip_active key.
-- Fix 04: remove redundant FordPass last-charge energy entity. The raw
-  FordPass value remains stored internally and in last-charge attributes.
-- Fix 05: make Journey History and Route History entity names translatable.
-- Fix 09: aggregate Journey History across all Journeys on the selected
-  calendar date, including timeline, duration, energy, SOC and costs.
-"""
+"""Ford Triplog Home Assistant sensor platform."""
 
 from __future__ import annotations
 
@@ -175,7 +105,6 @@ async def async_setup_entry(
 
     async_add_entities(
         [
-            # Last journey
             FordTriplogLastJourneySensor(
                 journey_storage,
                 common_translations,
@@ -204,7 +133,6 @@ async def async_setup_entry(
                 entry.entry_id,
             ),
 
-            # Last trip
             FordTriplogLastStartAddressSensor(coordinator, history, common_translations),
             FordTriplogLastEndAddressSensor(coordinator, history, common_translations),
             FordTriplogLastStartTimeSensor(coordinator, history, common_translations),
@@ -231,7 +159,6 @@ async def async_setup_entry(
             FordTriplogLastTripEndSocSensor(coordinator, history, common_translations),
             FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
 
-            # Statistics
             FordTriplogTopTripSensor(
                 coordinator,
                 history,
@@ -298,7 +225,6 @@ async def async_setup_entry(
 
 
     )
-
 
 
 class FordTriplogLastJourneySensor(SensorEntity):
@@ -717,10 +643,6 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         total_pause_seconds = 0
         items = list(journey.items)
 
-        # Short gaps directly before or after a charging session are
-        # operational buffers (parking, plugging in, unplugging, departure),
-        # not separate Journey pauses. Keep the real charging duration
-        # unchanged and expose the buffers on the charge timeline entry.
         charge_buffers: dict[int, dict[str, int]] = {}
         charging_buffer_limit_seconds = 180
 
@@ -957,8 +879,6 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if pause_seconds <= 0:
                 continue
 
-            # Gaps up to three minutes adjacent to a charge were already
-            # assigned to that charging entry as arrival/departure buffers.
             if (
                 pause_seconds <= charging_buffer_limit_seconds
                 and (
@@ -1315,8 +1235,6 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             }
             return
 
-        # Keep the last Journey as the internal reference for compatibility,
-        # but all exposed day-level values below are aggregated from matches.
         self._journey = matches[-1]
 
         def _number(value: Any) -> float:
@@ -1883,8 +1801,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
         start_time = valid_points[0].get("timestamp")
         end_time = valid_points[-1].get("timestamp")
 
-        # Prefer the optional OSRM geometry when a completed route contains
-        # a valid match. Raw GPS coordinates always remain the fallback.
         display_coordinates = coordinates
         geometry_source = "raw"
         osrm_distance_km = None
@@ -1958,7 +1874,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._route = route
         self._attr_native_value = trip_id or len(display_coordinates)
 
-        # Geographic center of the geometry currently exposed to the map.
         center_latitude = (
             sum(coord[1] for coord in display_coordinates)
             / len(display_coordinates)
@@ -2440,8 +2355,6 @@ class FordTriplogTopDaySensor(SensorEntity):
         )
 
     async def _route_summary(self, date_value: str) -> dict[str, Any]:
-        # Routes are not part of the current SQLite mirror yet, so retain
-        # the existing route-storage path for this auxiliary dashboard data.
         if self.route_storage is None:
             return {
                 "route_available": False,
@@ -3038,7 +2951,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         if len(parts) <= 2:
             return text
 
-        # Prefer street/POI plus postal code and city when possible.
         postcode_index = next(
             (
                 index
@@ -3117,7 +3029,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             has_coordinates = False
 
         if has_coordinates:
-            # Match the nearest existing GPS cluster within the configured radius.
             matching_key = None
             matching_distance = None
 
@@ -3162,8 +3073,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
 
             row = rows[matching_key]
 
-            # Keep a running centroid so repeated GPS samples define the cluster
-            # better than whichever point happened to be seen first.
             coordinate_count = int(row.get("coordinate_count") or 0)
             if coordinate_count <= 0:
                 row["latitude"] = point_latitude
@@ -3194,7 +3103,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             row["distance_km"] += distance_km
             return True
 
-        # GPS unavailable: fall back to the normalized address string.
         if not label:
             return False
 
@@ -3334,7 +3242,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         last_trip,
         last_charge,
     ):
-        """Top Locations is refreshed directly from the trip archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -3543,8 +3451,6 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             start_key, start_label = start
             end_key, end_label = end
 
-            # Same-location round trips/local loops do not add useful
-            # information to the directed Top Routes ranking.
             if start_key == end_key:
                 continue
 
@@ -3575,7 +3481,6 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
                 },
             )
 
-            # Endpoint labels can improve as richer addresses are encountered.
             row["start"] = (
                 "Home"
                 if start_key == "zone:home"
@@ -3653,7 +3558,7 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         last_trip,
         last_charge,
     ):
-        """Top Routes is refreshed directly from the trip archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -3888,7 +3793,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         if postcode_index is not None:
             postcode = parts[postcode_index]
 
-            # OSM often returns "house number, street, city, ... postcode".
             if len(parts) >= 3 and parts[0].isdigit():
                 street = f"{parts[1]} {parts[0]}".strip()
                 city = parts[2]
@@ -4085,8 +3989,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         zone_name = self._resolve_zone_name(charge)
         cost_source = str(charge.get("cost_source") or "").strip().lower()
 
-        # Classification stays language-neutral. Home tariff is definitive;
-        # otherwise use the stable Home Assistant entity_id zone.home.
         if cost_source == "home_tariff" or self._is_home_zone(charge):
             return self._HOME_CODE
 
@@ -4277,8 +4179,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
             current_site = None
 
-            # Home remains the highest-priority classification, but the
-            # classification is independent of the configured UI language.
             is_home = (
                 cost_source == "home_tariff"
                 or self._is_home_zone(charge)
@@ -4288,8 +4188,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 provider = self._HOME_CODE
                 location = self._HOME_CODE
             else:
-                # Current user-defined sites have priority over current OSM,
-                # matching ChargingLocationResolver semantics.
                 current_site = await self._async_match_current_user_site(
                     charge
                 )
@@ -4487,7 +4385,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         last_trip,
         last_charge,
     ):
-        """Top Charging is refreshed from the charging archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -4936,8 +4834,6 @@ class FordTriplogTripCountSensor(FordTriplogSensorBase):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Expose the active read backend for diagnostics."""
-
         return {
             "read_backend": self.read_backend,
         }
@@ -5777,7 +5673,6 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
                 zone_state.name,
             )
 
-            # Prefer the closest matching zone when zones overlap.
             if (
                 matching_zone is None
                 or distance < matching_zone[0]
