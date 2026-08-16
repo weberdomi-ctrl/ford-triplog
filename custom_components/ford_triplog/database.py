@@ -256,6 +256,14 @@ class FordTriplogDatabase:
                     )
                     """
                 )
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS pending_charging_sites (
+                        pending_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
 
                 db.execute(
                     """
@@ -1449,16 +1457,6 @@ class FordTriplogDatabase:
 
         def _read() -> list[dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
-                count_row = db.execute(
-                    "SELECT COUNT(*) FROM user_charging_sites"
-                ).fetchone()
-                row_count = int(count_row[0]) if count_row else 0
-                _LOGGER.debug(
-                    "SQLite user charging sites DB check: path=%s rows=%d",
-                    self.db_path,
-                    row_count,
-                )
-
                 rows = db.execute(
                     """
                     SELECT data
@@ -1493,6 +1491,58 @@ class FordTriplogDatabase:
                 "Unable to read user charging sites from SQLite"
             )
             return []
+
+    async def load_pending_charging_sites(self) -> list[dict[str, Any]]:
+        """Load pending charging sites from SQLite."""
+        self._log_read("pending_charging_sites")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT data FROM pending_charging_sites ORDER BY rowid ASC"
+                ).fetchall()
+            result = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(functools.partial(_read))
+            _LOGGER.debug("SQLite pending charging sites loaded: %d", len(result))
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read pending charging sites from SQLite")
+            return []
+
+    async def save_pending_charging_sites(self, sites: list[dict[str, Any]]) -> bool:
+        """Replace the pending charging-site collection in SQLite."""
+        def _write() -> None:
+            rows = []
+            for site in sites:
+                pending_id = site.get("id")
+                if not pending_id:
+                    raise ValueError("Pending charging site has no id")
+                rows.append((str(pending_id), json.dumps(site, ensure_ascii=False)))
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM pending_charging_sites")
+                if rows:
+                    db.executemany(
+                        "INSERT INTO pending_charging_sites (pending_id, data) VALUES (?, ?)",
+                        rows,
+                    )
+                db.commit()
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("Pending charging sites saved to SQLite: %d", len(sites))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save pending charging sites to SQLite")
+            return False
 
     async def save_user_charging_sites(
         self,
