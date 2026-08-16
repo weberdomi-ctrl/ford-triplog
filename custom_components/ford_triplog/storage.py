@@ -92,10 +92,6 @@ class FordTriplogStorage:
             self.read_backend,
         )
 
-        # Phase 2 / Build 19: compare JSON and SQLite after the mirror.
-        # This is DEBUG-only and never changes either backend.
-        await self.validate_sqlite_identity()
-
         _LOGGER.debug("Ford Triplog storage initialized")
 
     async def _mirror_existing_storage(self) -> None:
@@ -986,96 +982,6 @@ class FordTriplogStorage:
         return await self._load_json(
             self._diagnostics_file()
         )
-
-    async def validate_sqlite_identity(self) -> bool:
-        """Validate JSON and SQLite identity for core storage."""
-
-        if not await self._is_sqlite_validation_enabled():
-            return True
-
-        trips: dict[str, dict[str, Any]] = {}
-        for path in await self.list_trips():
-            data = await self._load_json(path)
-            if isinstance(data, dict) and data.get("trip_id"):
-                trips[str(data["trip_id"])] = data
-
-        charges: dict[str, dict[str, Any]] = {}
-        for path in await self.list_charges():
-            data = await self._load_json(path)
-            if isinstance(data, dict) and data.get("charge_id"):
-                charges[str(data["charge_id"])] = data
-
-        records = {
-            "current_trip": await self._load_json(self._current_trip_file()),
-            "current_charge": await self._load_json(self._current_charge_file()),
-            "last_trip": await self._load_json(self._last_trip_file()),
-            "last_charge": await self._load_json(self._last_charge_file()),
-            "statistics": await self._load_json(self._statistics_file()),
-            "diagnostics": await self._load_json(self._diagnostics_file()),
-        }
-
-        report = await self.database.validate_json_identity(
-            records,
-            {
-                "trips": trips,
-                "charges": charges,
-            },
-        )
-
-        for name, result in report.get("single", {}).items():
-            _LOGGER.debug(
-                "SQLite validation %s: identical=%s",
-                name,
-                result.get("identical"),
-            )
-
-        for name, result in report.get("collections", {}).items():
-            _LOGGER.debug(
-                "SQLite validation %s: JSON=%s SQLite=%s identical=%s",
-                name,
-                result.get("json_count"),
-                result.get("sqlite_count"),
-                result.get("identical"),
-            )
-
-            if result.get("missing_in_sqlite"):
-                _LOGGER.warning(
-                    "SQLite validation %s missing in SQLite: %s",
-                    name,
-                    ", ".join(result["missing_in_sqlite"]),
-                )
-            if result.get("extra_in_sqlite"):
-                _LOGGER.warning(
-                    "SQLite validation %s extra in SQLite: %s",
-                    name,
-                    ", ".join(result["extra_in_sqlite"]),
-                )
-            if result.get("different"):
-                _LOGGER.warning(
-                    "SQLite validation %s different records: %s",
-                    name,
-                    ", ".join(result["different"]),
-                )
-
-        if report.get("pass"):
-            _LOGGER.info(
-                "SQLite identity validation: PASS"
-            )
-            return True
-
-        _LOGGER.error(
-            "SQLite identity validation: FAIL"
-        )
-        return False
-
-    async def _is_sqlite_validation_enabled(self) -> bool:
-        """Return whether development SQLite validation should run."""
-
-        return (
-            self.read_backend == STORAGE_READ_BACKEND_SQLITE
-            and _LOGGER.isEnabledFor(logging.DEBUG)
-        )
-
 
     async def validate_storage(self) -> bool:
         """Validate storage structure."""

@@ -362,12 +362,6 @@ class FordTriplogJourneyStorage:
         if data is None:
             return None
 
-        _LOGGER.error(
-            "DEBUG LAST JOURNEY BEFORE FROM_DICT: type=%s keys=%s",
-            type(data).__name__,
-            list(data.keys()) if isinstance(data, dict) else None,
-        )
-
         try:
             journey = FordTriplogJourney.from_dict(data)
         except (TypeError, ValueError):
@@ -392,21 +386,6 @@ class FordTriplogJourneyStorage:
             journey.distance_km,
             journey.trip_count,
             journey.charge_count,
-        )
-
-        _LOGGER.error(
-            "DEBUG LAST JOURNEY AFTER FROM_DICT: "
-            "type=%s journey_id=%s date=%s start=%s end=%s "
-            "items=%d trips=%d charges=%d distance_km=%s",
-            type(journey).__name__,
-            journey.journey_id,
-            journey.date,
-            journey.start_time,
-            journey.end_time,
-            len(journey.items),
-            len(journey.trip_ids),
-            len(journey.charge_ids),
-            journey.distance_km,
         )
 
         return journey
