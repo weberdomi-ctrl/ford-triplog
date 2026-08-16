@@ -89,24 +89,12 @@ class FordTriplogHistory:
         self._sensor_data_cache_time = 0.0
 
     async def get_all_trips(self):
-        trips = []
-
-        for path in await self.storage.list_trips():
-            trip = await self.storage.load_trip_file(path)
-            if trip:
-                trips.append(trip)
-
-        return trips
+        """Load all archived trips from the selected storage backend."""
+        return await self.storage.load_archived_trips()
 
     async def get_all_charges(self):
-        charges = []
-
-        for path in await self.storage.list_charges():
-            charge = await self.storage.load_charge_file(path)
-            if charge:
-                charges.append(charge)
-
-        return charges
+        """Load all archived charges from the selected storage backend."""
+        return await self.storage.load_archived_charges()
 
     async def get_statistics(self):
         """Recalculate statistics from all archived records."""
