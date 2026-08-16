@@ -629,6 +629,44 @@ class FordTriplogStorage:
         return await self.hass.async_add_executor_job(_list)
 
 
+    async def load_archived_trips(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Load all archived trips from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Trip archive collection read backend: sqlite")
+            return await self.database.load_all_trips()
+
+        _LOGGER.debug("Trip archive collection read backend: json")
+        trips: list[dict[str, Any]] = []
+
+        for path in await self.list_trips():
+            data = await self._load_json(path)
+            if isinstance(data, dict):
+                trips.append(data)
+
+        return trips
+
+    async def load_archived_charges(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Load all archived charging sessions from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Charge archive collection read backend: sqlite")
+            return await self.database.load_all_charges()
+
+        _LOGGER.debug("Charge archive collection read backend: json")
+        charges: list[dict[str, Any]] = []
+
+        for path in await self.list_charges():
+            data = await self._load_json(path)
+            if isinstance(data, dict):
+                charges.append(data)
+
+        return charges
+
     async def find_charge_path(
         self,
         charge_id: str,
