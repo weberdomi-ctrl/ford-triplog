@@ -312,6 +312,23 @@ class FordTriplogDatabase:
 
                 db.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS receipts (
+                        receipt_id TEXT PRIMARY KEY,
+                        target_type TEXT NOT NULL,
+                        target_id TEXT NOT NULL,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    """
+                    CREATE INDEX IF NOT EXISTS idx_receipts_target
+                    ON receipts (target_type, target_id)
+                    """
+                )
+
+                db.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS routes (
                         trip_id TEXT PRIMARY KEY,
                         data TEXT NOT NULL
@@ -1965,6 +1982,254 @@ class FordTriplogDatabase:
             return True
         except Exception:
             _LOGGER.exception("Unable to clear last journey from SQLite")
+            return False
+
+    async def load_all_receipts(self) -> list[dict[str, Any]]:
+        """Load all receipts from SQLite."""
+
+        self._log_read("receipts")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT receipt_id, target_type, target_id, data
+                    FROM receipts
+                    ORDER BY receipt_id ASC
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for receipt_id, target_type, target_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if not isinstance(data, dict):
+                    continue
+
+                value = dict(data)
+                value["receipt_id"] = str(receipt_id)
+                value["target_type"] = str(target_type)
+                value["target_id"] = str(target_id)
+                result.append(value)
+
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite receipts loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read receipts from SQLite")
+            return []
+
+    async def load_receipt(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one receipt from SQLite."""
+
+        self._log_read(f"receipt={receipt_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT target_type, target_id, data
+                    FROM receipts
+                    WHERE receipt_id = ?
+                    """,
+                    (str(receipt_id),),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            target_type, target_id, payload = row
+            try:
+                data = json.loads(payload)
+            except (TypeError, json.JSONDecodeError):
+                return None
+
+            if not isinstance(data, dict):
+                return None
+
+            value = dict(data)
+            value["receipt_id"] = str(receipt_id)
+            value["target_type"] = str(target_type)
+            value["target_id"] = str(target_id)
+            return value
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read receipt from SQLite: %s",
+                receipt_id,
+            )
+            return None
+
+    async def save_receipt(
+        self,
+        target_type: str,
+        target_id: str,
+        receipt: dict[str, Any],
+    ) -> bool:
+        """Insert or replace one receipt in SQLite."""
+
+        receipt_id = str(receipt.get("receipt_id") or "").strip()
+        if not receipt_id:
+            raise ValueError("Receipt ID is required")
+
+        payload = dict(receipt)
+        payload.pop("target_type", None)
+        payload.pop("target_id", None)
+
+        def _write() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT INTO receipts (
+                        receipt_id,
+                        target_type,
+                        target_id,
+                        data
+                    )
+                    VALUES (?, ?, ?, ?)
+                    ON CONFLICT(receipt_id) DO UPDATE SET
+                        target_type = excluded.target_type,
+                        target_id = excluded.target_id,
+                        data = excluded.data
+                    """,
+                    (
+                        receipt_id,
+                        str(target_type),
+                        str(target_id),
+                        json.dumps(payload, ensure_ascii=False),
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+            _LOGGER.debug(
+                "Receipt saved to SQLite: %s target=%s:%s",
+                receipt_id,
+                target_type,
+                target_id,
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save receipt to SQLite: %s",
+                receipt_id,
+            )
+            return False
+
+    async def delete_receipt(
+        self,
+        receipt_id: str,
+    ) -> bool:
+        """Delete one receipt from SQLite."""
+
+        def _delete() -> bool:
+            with sqlite3.connect(self.db_path) as db:
+                cursor = db.execute(
+                    "DELETE FROM receipts WHERE receipt_id = ?",
+                    (str(receipt_id),),
+                )
+                db.commit()
+                return cursor.rowcount > 0
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_delete)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to delete receipt from SQLite: %s",
+                receipt_id,
+            )
+            return False
+
+    async def save_all_receipts(
+        self,
+        receipts: list[dict[str, Any]],
+    ) -> bool:
+        """Replace the complete receipt collection in SQLite."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str, str, str]] = []
+
+            for receipt in receipts:
+                if not isinstance(receipt, dict):
+                    continue
+
+                receipt_id = str(
+                    receipt.get("receipt_id") or ""
+                ).strip()
+                target_type = str(
+                    receipt.get("target_type") or ""
+                ).strip()
+                target_id = str(
+                    receipt.get("target_id") or ""
+                ).strip()
+
+                if not receipt_id or not target_type or not target_id:
+                    continue
+
+                payload = dict(receipt)
+                payload.pop("target_type", None)
+                payload.pop("target_id", None)
+
+                rows.append(
+                    (
+                        receipt_id,
+                        target_type,
+                        target_id,
+                        json.dumps(payload, ensure_ascii=False),
+                    )
+                )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM receipts")
+                if rows:
+                    db.executemany(
+                        """
+                        INSERT INTO receipts (
+                            receipt_id,
+                            target_type,
+                            target_id,
+                            data
+                        )
+                        VALUES (?, ?, ?, ?)
+                        """,
+                        rows,
+                    )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+            _LOGGER.debug(
+                "Receipts saved to SQLite: %d",
+                len(receipts),
+            )
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save receipts to SQLite")
             return False
 
     async def load_all_charge_metadata(self) -> dict[str, dict[str, Any]]:
