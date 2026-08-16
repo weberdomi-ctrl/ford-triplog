@@ -123,6 +123,80 @@ class FordTriplogMetadataStorage:
             len(merged),
         )
 
+    async def _migrate_receipts_to_table(self) -> None:
+        """Move embedded pause/charge receipts into the receipts table."""
+
+        data = await self.async_load()
+        if not isinstance(data, dict):
+            return
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        if migrations.get("receipts_table_v1") is True:
+            return
+
+        existing_receipts = await self.database.load_all_receipts()
+        merged: dict[str, dict[str, Any]] = {
+            str(item.get("receipt_id")): dict(item)
+            for item in existing_receipts
+            if isinstance(item, dict)
+            and str(item.get("receipt_id") or "").strip()
+        }
+
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+
+            for target_id, metadata in items.items():
+                if not isinstance(metadata, dict):
+                    continue
+
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+
+                for receipt in receipts:
+                    if not isinstance(receipt, dict):
+                        continue
+
+                    receipt_id = str(
+                        receipt.get("receipt_id") or ""
+                    ).strip()
+                    if not receipt_id:
+                        continue
+
+                    value = dict(receipt)
+                    value["target_type"] = target_type
+                    value["target_id"] = str(target_id)
+
+                    # Existing dedicated-table rows are authoritative.
+                    merged.setdefault(receipt_id, value)
+
+                metadata.pop("receipts", None)
+
+        saved = await self.database.save_all_receipts(
+            list(merged.values())
+        )
+        if not saved:
+            raise OSError(
+                "Unable to migrate receipts to SQLite table"
+            )
+
+        migrations["receipts_table_v1"] = True
+        await self.async_save(data)
+
+        _LOGGER.info(
+            "Receipt migration completed: %d records",
+            len(merged),
+        )
+
     async def async_load(self) -> dict[str, Any] | None:
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
             data = await self.database.load_metadata()
