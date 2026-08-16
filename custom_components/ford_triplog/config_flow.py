@@ -5,16 +5,9 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.0.0
-Phase: Detailed charging costs GUI
-Build: OSRM Step 02
-Release: 2.0.0
+Release: 2.1.0
 
 Changes:
-- Uses compact one-line labels because Home Assistant select labels ignore line breaks.
-- Formats home, work and public charging locations consistently with middle dots.
-- Automatically assigns Zuhause or Arbeit when the name is left empty.
-- Falls back to the address when no explicit name is available.
 - Keeps Build 14 translation-placeholder compatibility.
 - Adds configurable Journey base zone, home timeout and maximum gap options.
 """
