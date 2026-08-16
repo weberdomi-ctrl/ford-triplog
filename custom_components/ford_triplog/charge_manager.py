@@ -77,6 +77,27 @@ class FordTriplogChargeManager:
     ) -> list[Charge]:
         """Return all archived charging sessions."""
 
+        if self.storage.read_backend == "sqlite":
+            data_list = await self.storage.database.load_all_charges()
+            if newest_first:
+                data_list = list(reversed(data_list))
+
+            charges: list[Charge] = []
+            for data in data_list:
+                try:
+                    charges.append(Charge.from_dict(data))
+                except Exception:
+                    _LOGGER.exception(
+                        "Unable to parse SQLite charging session %s",
+                        data.get("charge_id", "unknown"),
+                    )
+
+            _LOGGER.debug(
+                "SQLite charging sessions loaded: %d",
+                len(charges),
+            )
+            return charges
+
         paths = await self.storage.list_charges()
 
         if newest_first:
@@ -107,6 +128,21 @@ class FordTriplogChargeManager:
         """Return one archived charging session by ID."""
 
         normalized_id = self._normalize_charge_id(charge_id)
+
+        if self.storage.read_backend == "sqlite":
+            data = await self.storage.database.load_charge(normalized_id)
+            if data is None:
+                return None
+
+            try:
+                return Charge.from_dict(data)
+            except Exception:
+                _LOGGER.exception(
+                    "Unable to parse SQLite charging session %s",
+                    normalized_id,
+                )
+                return None
+
         loaded = await self.storage.load_charge_by_id(normalized_id)
 
         if loaded is None:

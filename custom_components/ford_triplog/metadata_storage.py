@@ -17,8 +17,15 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    METADATA_FILE,
+    METADATA_SCHEMA_VERSION,
+    STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
+)
 from .database import FordTriplogDatabase
-from .const import METADATA_FILE, METADATA_SCHEMA_VERSION, STORAGE_DIR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,27 +35,48 @@ class FordTriplogMetadataStorage:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._base_directory = Path(hass.config.path(".storage", STORAGE_DIR))
-        self._path = self._base_directory / METADATA_FILE
-        self.database = FordTriplogDatabase(hass, self._base_directory)
+        self._path = Path(hass.config.path(".storage", STORAGE_DIR, METADATA_FILE))
+        self._base_directory = Path(
+            hass.config.path(".storage", STORAGE_DIR)
+        )
+        self.database = FordTriplogDatabase(
+            hass,
+            self._base_directory,
+        )
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries("ford_triplog")
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
-        """Create the metadata file when it does not yet exist."""
+        """Initialize metadata storage."""
 
         await self.database.async_setup()
+
         data = await self.async_load()
-        if data is None:
+        if data is None and self.read_backend != STORAGE_READ_BACKEND_SQLITE:
             await self.async_save(self._empty_data())
-            return
-        await self.database.save_metadata(data)
 
     async def async_load(self) -> dict[str, Any] | None:
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            return await self.database.load_metadata()
         return await self.hass.async_add_executor_job(self._load_json)
 
     async def async_save(self, data: dict[str, Any]) -> None:
         normalized = self._normalize(data)
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            saved = await self.database.save_metadata(normalized)
+            if not saved:
+                raise OSError("Unable to save metadata to SQLite")
+            return
+
         await self.hass.async_add_executor_job(self._write_json, normalized)
-        await self.database.save_metadata(normalized)
 
     async def get_pause_overrides(self) -> dict[str, dict[str, Any]]:
         """Return all persistent pause overrides."""

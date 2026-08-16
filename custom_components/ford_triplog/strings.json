@@ -583,6 +583,16 @@
       "osrm_connection_result": {
         "title": "OSRM connection saved",
         "description": "**Status:** {status}\n\n**Address:** {url}\n**Matching radius:** {radius} m\n**Test road:** {road}\n**Distance from test point:** {distance} m"
+      },
+      "general_settings": {
+        "title": "General settings",
+        "description": "Configure Ford Triplog.",
+        "data": {
+          "storage_read_backend": "Storage Read Backend"
+        },
+        "data_description": {
+          "storage_read_backend": "Select which backend is used for reading stored Ford Triplog data. JSON is the default. SQLite is currently intended for Phase 2 validation."
+        }
       }
     },
     "error": {

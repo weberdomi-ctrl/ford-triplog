@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 10
-Changes: Add 1:1 metadata.json mirror support
+Build: 16
+Changes: Add Top Locations SQL view read support
 """
 
 from __future__ import annotations
@@ -32,6 +32,139 @@ class FordTriplogDatabase:
     ) -> None:
         self.hass = hass
         self.db_path = base_path / "ford_triplog.db"
+
+    def _log_read(self, resource: str) -> None:
+        """Log a SQLite read at DEBUG level for development diagnostics."""
+        _LOGGER.debug("SQLite READ: %s", resource)
+
+    async def validate_json_identity(
+        self,
+        json_records: dict[str, dict[str, Any] | None],
+        json_collections: dict[str, dict[str, dict[str, Any]]],
+    ) -> dict[str, Any]:
+        """Compare JSON storage records with their SQLite mirror.
+
+        This is a development-only validation helper. It never changes
+        either backend and returns a structured comparison report.
+        """
+
+        def _normalize(value: Any) -> Any:
+            if isinstance(value, dict):
+                return {
+                    str(key): _normalize(item)
+                    for key, item in value.items()
+                }
+            if isinstance(value, list):
+                return [_normalize(item) for item in value]
+            return value
+
+        def _read() -> dict[str, Any]:
+            report: dict[str, Any] = {
+                "single": {},
+                "collections": {},
+                "pass": True,
+            }
+
+            with sqlite3.connect(self.db_path) as db:
+                for name, expected in json_records.items():
+                    row = None
+                    if name == "current_trip":
+                        row = db.execute(
+                            "SELECT data FROM current_trip LIMIT 1"
+                        ).fetchone()
+                    elif name == "current_charge":
+                        row = db.execute(
+                            "SELECT data FROM current_charge LIMIT 1"
+                        ).fetchone()
+                    elif name == "last_trip":
+                        row = db.execute(
+                            "SELECT data FROM last_trip LIMIT 1"
+                        ).fetchone()
+                    elif name == "last_charge":
+                        row = db.execute(
+                            "SELECT data FROM last_charge LIMIT 1"
+                        ).fetchone()
+                    elif name == "statistics":
+                        row = db.execute(
+                            "SELECT data FROM statistics WHERE id = 1"
+                        ).fetchone()
+                    elif name == "diagnostics":
+                        row = db.execute(
+                            "SELECT data FROM diagnostics WHERE id = 1"
+                        ).fetchone()
+
+                    actual = json.loads(row[0]) if row else None
+                    identical = _normalize(expected) == _normalize(actual)
+
+                    report["single"][name] = {
+                        "identical": identical,
+                        "json_present": expected is not None,
+                        "sqlite_present": actual is not None,
+                    }
+
+                    if not identical:
+                        report["pass"] = False
+
+                table_map = {
+                    "trips": "trips",
+                    "charges": "charges",
+                }
+
+                for name, expected_records in json_collections.items():
+                    table = table_map[name]
+                    rows = db.execute(
+                        f"SELECT {('trip_id' if name == 'trips' else 'charge_id')}, data "
+                        f"FROM {table}"
+                    ).fetchall()
+
+                    actual_records = {
+                        str(row[0]): json.loads(row[1])
+                        for row in rows
+                    }
+
+                    expected_ids = set(expected_records)
+                    actual_ids = set(actual_records)
+                    missing = sorted(expected_ids - actual_ids)
+                    extra = sorted(actual_ids - expected_ids)
+                    different = sorted(
+                        record_id
+                        for record_id in expected_ids & actual_ids
+                        if _normalize(expected_records[record_id])
+                        != _normalize(actual_records[record_id])
+                    )
+
+                    identical = not missing and not extra and not different
+
+                    report["collections"][name] = {
+                        "json_count": len(expected_records),
+                        "sqlite_count": len(actual_records),
+                        "missing_in_sqlite": missing,
+                        "extra_in_sqlite": extra,
+                        "different": different,
+                        "identical": identical,
+                    }
+
+                    if not identical:
+                        report["pass"] = False
+
+            return report
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(
+                    _read
+                )
+            )
+        except Exception:
+            _LOGGER.exception(
+                "SQLite identity validation failed"
+            )
+            return {
+                "single": {},
+                "collections": {},
+                "pass": False,
+                "error": True,
+            }
 
     async def async_setup(self) -> None:
         """Initialize SQLite database."""
@@ -160,6 +293,103 @@ class FordTriplogDatabase:
                     """
                 )
 
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS routes (
+                        trip_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_location_trips AS
+                    SELECT
+                        trip_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                        json_extract(data, '$.distance_km') AS distance_km,
+                        json_extract(data, '$.start_latitude') AS start_latitude,
+                        json_extract(data, '$.start_longitude') AS start_longitude,
+                        json_extract(data, '$.end_latitude') AS end_latitude,
+                        json_extract(data, '$.end_longitude') AS end_longitude,
+                        json_extract(data, '$.start_address') AS start_address,
+                        json_extract(data, '$.end_address') AS end_address
+                    FROM trips
+                    """
+                )
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_route_trips AS
+                    SELECT
+                        trip_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                        json_extract(data, '$.distance_km') AS distance_km,
+                        json_extract(data, '$.start_latitude') AS start_latitude,
+                        json_extract(data, '$.start_longitude') AS start_longitude,
+                        json_extract(data, '$.end_latitude') AS end_latitude,
+                        json_extract(data, '$.end_longitude') AS end_longitude,
+                        json_extract(data, '$.consumption_kwh_100km') AS consumption_kwh_100km,
+                        json_extract(data, '$.start_address') AS start_address,
+                        json_extract(data, '$.end_address') AS end_address
+                    FROM trips
+                    """
+                )
+
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
+                    SELECT
+                        trip_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM trips
+                    """
+                )
+
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
+                    SELECT
+                        journey_id,
+                        data,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM journeys
+                    """
+                )
+
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
+                    SELECT
+                        charge_id,
+                        data,
+                        json_extract(data, '$.include_in_statistics') AS include_in_statistics
+                    FROM charges
+                    """
+                )
+
+
+                db.execute(
+                    """
+                    CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
+                    SELECT
+                        journey_id,
+                        data,
+                        json_extract(data, '$.date') AS date,
+                        json_extract(data, '$.distance_km') AS distance_km
+                    FROM journeys
+                    """
+                )
+
+
                 db.commit()
 
         try:
@@ -176,6 +406,159 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to initialize Ford Triplog SQLite database"
             )
+
+    async def save_route(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Mirror one route into SQLite."""
+
+        trip_id = data.get("trip_id")
+        if not trip_id:
+            _LOGGER.error(
+                "Unable to mirror route without trip_id"
+            )
+            return False
+
+        def _write() -> None:
+            payload = json.dumps(
+                data,
+                ensure_ascii=False,
+            )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT OR REPLACE INTO routes (
+                        trip_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    """,
+                    (
+                        str(trip_id),
+                        payload,
+                    ),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+
+            _LOGGER.debug(
+                "Route mirrored to SQLite: %s",
+                trip_id,
+            )
+            return True
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to mirror route to SQLite: %s",
+                trip_id,
+            )
+            return False
+
+    async def load_route(
+        self,
+        trip_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one route from SQLite."""
+
+        normalized_id = str(trip_id).strip()
+        if not normalized_id:
+            return None
+
+        self._log_read(f"route_trip_id={normalized_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM routes WHERE trip_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read route from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
+    async def load_last_route(self) -> dict[str, Any] | None:
+        """Load the most recently created route from SQLite."""
+
+        self._log_read("last_route")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT data
+                    FROM routes
+                    ORDER BY rowid DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read last route from SQLite")
+            return None
+
+    async def load_all_routes(self) -> list[dict[str, Any]]:
+        """Load all routes from SQLite."""
+
+        self._log_read("routes")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM routes
+                    ORDER BY rowid ASC
+                    """
+                ).fetchall()
+
+            routes: list[dict[str, Any]] = []
+            for row in rows:
+                try:
+                    data = json.loads(row[0])
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    routes.append(data)
+
+            return routes
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read routes from SQLite")
+            return []
 
     async def save_trip(
         self,
@@ -231,6 +614,296 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_top_location_trips(self) -> list[dict[str, Any]]:
+        """Load the trip fields required by the Top Locations sensor in one query."""
+
+        self._log_read("view=v_top_location_trips")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT
+                        trip_id,
+                        data,
+                        include_in_statistics,
+                        distance_km,
+                        start_latitude,
+                        start_longitude,
+                        end_latitude,
+                        end_longitude,
+                        start_address,
+                        end_address
+                    FROM v_top_location_trips
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                data = json.loads(row[1])
+                if not isinstance(data, dict):
+                    continue
+
+                # Keep the original JSON payload as the source of truth for
+                # address objects and any fields not needed by the view.
+                result.append(data)
+
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Locations trips from SQLite view"
+            )
+            return []
+
+    async def load_top_charging_charges(self) -> list[dict[str, Any]]:
+        """Load statistics-eligible charging sessions from the SQLite view."""
+
+        self._log_read("view=v_top_charging_charges")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM v_top_charging_charges
+                    WHERE COALESCE(include_in_statistics, 1) = 1
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Charging data from SQLite view"
+            )
+            return []
+
+    async def load_top_day_journeys(self) -> list[dict[str, Any]]:
+        """Load archived Journeys used by the Top Day aggregation."""
+
+        self._log_read("view=v_top_day_journeys")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM v_top_day_journeys
+                    WHERE distance_km IS NOT NULL
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                data = json.loads(payload)
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Day Journeys from SQLite view"
+            )
+            return []
+
+    async def load_top_journey(self) -> dict[str, Any] | None:
+        """Load the longest archived Journey from the SQLite view."""
+
+        self._log_read("view=v_top_journey_journeys")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT journey_id, data
+                    FROM v_top_journey_journeys
+                    WHERE distance_km IS NOT NULL
+                    ORDER BY distance_km DESC, journey_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if not row:
+                return None
+
+            data = json.loads(row[1])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Journey from SQLite view"
+            )
+            return None
+
+    async def load_top_trip(self) -> dict[str, Any] | None:
+        """Load the longest statistics-eligible trip from the SQLite view."""
+
+        self._log_read("view=v_top_trip_trips")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    """
+                    SELECT trip_id, data
+                    FROM v_top_trip_trips
+                    WHERE COALESCE(include_in_statistics, 1) = 1
+                      AND distance_km IS NOT NULL
+                    ORDER BY distance_km DESC, trip_id ASC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if not row:
+                return None
+
+            data = json.loads(row[1])
+            return data if isinstance(data, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Trip from SQLite view"
+            )
+            return None
+
+    async def load_top_route_trips(self) -> list[dict[str, Any]]:
+        """Load the trip fields required by the Top Routes sensor in one query."""
+
+        self._log_read("view=v_top_route_trips")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT
+                        trip_id,
+                        data,
+                        include_in_statistics,
+                        distance_km,
+                        consumption_kwh_100km,
+                        start_latitude,
+                        start_longitude,
+                        end_latitude,
+                        end_longitude,
+                        start_address,
+                        end_address
+                    FROM v_top_route_trips
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for row in rows:
+                data = json.loads(row[1])
+                if not isinstance(data, dict):
+                    continue
+                result.append(data)
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read Top Routes trips from SQLite view"
+            )
+            return []
+
+    async def load_trip(
+        self,
+        trip_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived trip from SQLite."""
+
+        normalized_id = str(trip_id).strip()
+        if not normalized_id:
+            return None
+
+        self._log_read(f"trip_id={normalized_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM trips WHERE trip_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read trip from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
+    async def load_charge(
+        self,
+        charge_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived charging session from SQLite."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return None
+
+        self._log_read(f"charge_id={normalized_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM charges WHERE charge_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read charge from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
     async def save_current_trip(
         self,
         data: dict[str, Any],
@@ -285,6 +958,32 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_current_trip(self) -> dict[str, Any] | None:
+        """Load current trip from SQLite."""
+
+        self._log_read("current_trip")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_trip LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current trip from SQLite"
+            )
+            return None
+
     async def delete_current_trip(self) -> bool:
         """Delete current trip mirror from SQLite."""
 
@@ -308,6 +1007,32 @@ class FordTriplogDatabase:
                 "Unable to remove current trip from SQLite"
             )
             return False
+
+    async def load_last_trip(self) -> dict[str, Any] | None:
+        """Load last trip from SQLite."""
+
+        self._log_read("last_trip")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_trip LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last trip from SQLite"
+            )
+            return None
 
     async def save_last_trip(
         self,
@@ -419,6 +1144,34 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_current_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        """Load current charging session from SQLite."""
+
+        self._log_read("current_charge")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_charge LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current charge from SQLite"
+            )
+            return None
+
     async def delete_current_charge(self) -> bool:
         """Delete current charging-session mirror from SQLite."""
 
@@ -442,6 +1195,34 @@ class FordTriplogDatabase:
                 "Unable to remove current charge from SQLite"
             )
             return False
+
+    async def load_last_charge(
+        self,
+    ) -> dict[str, Any] | None:
+        """Load last charging session from SQLite."""
+
+        self._log_read("last_charge")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_charge LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last charge from SQLite"
+            )
+            return None
 
     async def save_charge(
         self,
@@ -594,6 +1375,32 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_statistics(self) -> dict[str, Any] | None:
+        """Load statistics cache from SQLite."""
+
+        self._log_read("statistics")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM statistics WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read statistics from SQLite"
+            )
+            return None
+
     async def save_diagnostics(
         self,
         data: dict[str, Any],
@@ -725,6 +1532,219 @@ class FordTriplogDatabase:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
             return False
 
+    async def load_journey(
+        self,
+        journey_id: str,
+    ) -> dict[str, Any] | None:
+        """Load one archived journey from SQLite."""
+
+        normalized_id = str(journey_id).strip()
+        if not normalized_id:
+            return None
+
+        self._log_read(f"journey_id={normalized_id}")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM journeys WHERE journey_id = ?",
+                    (normalized_id,),
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read journey from SQLite: %s",
+                normalized_id,
+            )
+            return None
+
+    async def load_all_journeys(self) -> list[dict[str, Any]]:
+        """Load all archived journeys from SQLite."""
+
+        self._log_read("journeys")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM journeys
+                    ORDER BY
+                        json_extract(data, '$.start_time') ASC,
+                        journey_id ASC
+                    """
+                ).fetchall()
+
+            journeys: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    journeys.append(data)
+
+            return journeys
+
+        try:
+            journeys = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite journeys loaded: %d",
+                len(journeys),
+            )
+            return journeys
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read journeys from SQLite"
+            )
+            return []
+
+    async def load_all_charges(self) -> list[dict[str, Any]]:
+        """Load all archived charging sessions from SQLite."""
+
+        self._log_read("charges")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM charges
+                    ORDER BY
+                        json_extract(data, '$.start_time') ASC,
+                        charge_id ASC
+                    """
+                ).fetchall()
+
+            charges: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    charges.append(data)
+
+            return charges
+
+        try:
+            charges = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite charges loaded: %d",
+                len(charges),
+            )
+            return charges
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read charges from SQLite"
+            )
+            return []
+
+    async def load_current_journey(self) -> dict[str, Any] | None:
+        """Load the current journey from SQLite."""
+
+        self._log_read("current_journey")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM current_journey LIMIT 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read current journey from SQLite"
+            )
+            return None
+
+    async def load_last_journey(self) -> dict[str, Any] | None:
+        """Load the last completed journey from SQLite.
+
+        The dedicated last_journey cache is preferred. If it is missing,
+        fall back to the newest archived journey. This keeps SQLite-only
+        operation working even when the JSON cache file is absent.
+        """
+
+        self._log_read("last_journey")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_journey LIMIT 1"
+                ).fetchone()
+
+                if row is not None:
+                    data = json.loads(row[0])
+                    if isinstance(data, dict):
+                        return data
+
+                # SQLite-only fallback: derive the last completed journey
+                # from the archived journey table instead of requiring the
+                # optional last_journey cache.
+                row = db.execute(
+                    """
+                    SELECT data
+                    FROM journeys
+                    WHERE json_extract(data, '$.end_time') IS NOT NULL
+                    ORDER BY json_extract(data, '$.end_time') DESC,
+                             journey_id DESC
+                    LIMIT 1
+                    """
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            data = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite last journey loaded: %s",
+                    data.get("journey_id", "unknown"),
+                )
+            else:
+                _LOGGER.debug(
+                    "SQLite last journey: no cache and no archived journey found"
+                )
+
+            return data
+
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read last journey from SQLite"
+            )
+            return None
+
     async def delete_journey(self, journey_id: str) -> bool:
         """Delete one archived journey from SQLite."""
 
@@ -853,3 +1873,34 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception("Unable to mirror metadata to SQLite")
             return False
+
+
+    async def load_metadata(self) -> dict[str, Any] | None:
+        """Load complete metadata from SQLite."""
+
+        self._log_read("metadata")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM metadata WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            data = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite metadata loaded: %s",
+                "present" if data is not None else "empty",
+            )
+            return data
+        except Exception:
+            _LOGGER.exception("Unable to read metadata from SQLite")
+            return None

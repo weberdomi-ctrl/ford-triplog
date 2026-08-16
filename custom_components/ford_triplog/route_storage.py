@@ -21,12 +21,24 @@ from __future__ import annotations
 import json
 from datetime import date, datetime
 from pathlib import Path
+import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .const import ROUTE_SCHEMA_VERSION, ROUTES_DIR, STORAGE_DIR
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    DOMAIN,
+    ROUTE_SCHEMA_VERSION,
+    ROUTES_DIR,
+    STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
+)
+from .database import FordTriplogDatabase
+
+_LOGGER = logging.getLogger(__name__)
 
 
 class FordTriplogRouteStorage:
@@ -41,12 +53,71 @@ class FordTriplogRouteStorage:
                 ROUTES_DIR,
             )
         )
+        self.database = FordTriplogDatabase(
+            hass,
+            Path(hass.config.path(".storage", STORAGE_DIR)),
+        )
+
+        # Phase 2: selectable read backend.
+        # JSON remains the safe default.
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
         """Ensure the route storage directory exists."""
 
         await self.hass.async_add_executor_job(
             lambda: self.base_path.mkdir(parents=True, exist_ok=True)
+        )
+
+        mirror_key = "ford_triplog_route_initial_sqlite_mirror_done"
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_routes()
+
+    async def _mirror_existing_routes(self) -> None:
+        """Mirror all existing completed JSON routes into SQLite once."""
+
+        def _list_and_read() -> list[dict[str, Any]]:
+            if not self.base_path.is_dir():
+                return []
+
+            routes: list[dict[str, Any]] = []
+            for path in self.base_path.glob("*.json"):
+                if not path.is_file():
+                    continue
+
+                data = self._read_route_file(path)
+                if data is None or not self._is_completed_route(data):
+                    continue
+
+                routes.append(data)
+
+            return routes
+
+        routes = await self.hass.async_add_executor_job(_list_and_read)
+
+        mirrored = 0
+        failed = 0
+
+        for route in routes:
+            if await self.database.save_route(route):
+                mirrored += 1
+            else:
+                failed += 1
+
+        _LOGGER.info(
+            "Initial SQLite route mirror completed: routes=%d mirrored=%d failed=%d",
+            len(routes),
+            mirrored,
+            failed,
         )
 
     def _path_for_trip(self, trip_id: str) -> Path:
@@ -167,11 +238,31 @@ class FordTriplogRouteStorage:
 
         await self.hass.async_add_executor_job(_write)
 
+        # Phase 1: keep JSON as production storage and mirror the
+        # identical route payload into SQLite.
+        if not await self.database.save_route(payload):
+            _LOGGER.error(
+                "SQLite route mirror failed for trip_id=%s",
+                trip_id,
+            )
+
     async def async_load_route(
         self,
         trip_id: str,
     ) -> dict[str, Any] | None:
-        """Load one stored route by Trip ID."""
+        """Load one route by Trip ID."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug(
+                "Route read backend: sqlite trip_id=%s",
+                trip_id,
+            )
+            return await self.database.load_route(str(trip_id))
+
+        _LOGGER.debug(
+            "Route read backend: json trip_id=%s",
+            trip_id,
+        )
 
         path = self._path_for_trip(trip_id)
 
@@ -183,12 +274,19 @@ class FordTriplogRouteStorage:
         return await self.hass.async_add_executor_job(_read)
 
     async def async_load_latest_route(self) -> dict[str, Any] | None:
-        """Load the most recently written completed route.
+        """Load the most recently written completed route."""
 
-        Legacy route files without a status field are treated as completed.
-        Active/paused recovery files are intentionally ignored so the
-        Last Route sensor keeps representing the last finished route.
-        """
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Latest Route read backend: sqlite")
+            data = await self.database.load_last_route()
+            if data is not None:
+                _LOGGER.debug(
+                    "SQLite last route loaded: trip_id=%s",
+                    data.get("trip_id", "unknown"),
+                )
+            return data
+
+        _LOGGER.debug("Latest Route read backend: json")
 
         def _read_latest() -> dict[str, Any] | None:
             if not self.base_path.is_dir():
@@ -220,6 +318,25 @@ class FordTriplogRouteStorage:
 
     async def async_list_routes(self) -> list[dict[str, Any]]:
         """Load all completed historical routes in chronological order."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Route archive read backend: sqlite")
+            routes = await self.database.load_all_routes()
+            routes = [
+                route
+                for route in routes
+                if self._is_completed_route(route)
+            ]
+            routes.sort(
+                key=lambda route: (
+                    self._route_timestamp(route)
+                    or datetime.min.replace(tzinfo=dt_util.UTC)
+                )
+            )
+            _LOGGER.debug("SQLite routes loaded: %d", len(routes))
+            return routes
+
+        _LOGGER.debug("Route archive read backend: json")
 
         def _read_all() -> list[dict[str, Any]]:
             if not self.base_path.is_dir():
@@ -263,6 +380,12 @@ class FordTriplogRouteStorage:
         else:
             return []
 
+        _LOGGER.debug(
+            "Routes for date read backend: %s date=%s",
+            self.read_backend,
+            selected_date.isoformat(),
+        )
+
         routes = await self.async_list_routes()
 
         return [
@@ -276,6 +399,12 @@ class FordTriplogRouteStorage:
         trip_ids: list[str],
     ) -> list[dict[str, Any]]:
         """Load completed routes for Trip IDs, preserving requested order."""
+
+        _LOGGER.debug(
+            "Routes for trip IDs read backend: %s count=%d",
+            self.read_backend,
+            len(trip_ids),
+        )
 
         routes: list[dict[str, Any]] = []
 
