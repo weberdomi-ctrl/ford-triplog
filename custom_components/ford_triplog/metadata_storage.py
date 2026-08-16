@@ -58,20 +58,104 @@ class FordTriplogMetadataStorage:
 
         await self.database.async_setup()
 
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            await self._migrate_charge_metadata_to_table()
+            return
+
         data = await self.async_load()
-        if data is None and self.read_backend != STORAGE_READ_BACKEND_SQLITE:
+        if data is None:
             await self.async_save(self._empty_data())
+
+    async def _migrate_charge_metadata_to_table(self) -> None:
+        """Move legacy metadata['charges'] into the dedicated SQLite table."""
+
+        data = await self.database.load_metadata()
+        if not isinstance(data, dict):
+            return
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        legacy_charges = data.get("charges", {})
+        if not isinstance(legacy_charges, dict):
+            legacy_charges = {}
+
+        existing = await self.database.load_all_charge_metadata()
+
+        if (
+            migrations.get("charge_metadata_table_v1") is True
+            and not legacy_charges
+        ):
+            return
+
+        merged: dict[str, dict[str, Any]] = {
+            str(charge_id): dict(value)
+            for charge_id, value in legacy_charges.items()
+            if str(charge_id).strip() and isinstance(value, dict)
+        }
+
+        # Existing dedicated-table values are newer/authoritative.
+        merged.update(existing)
+
+        if merged:
+            saved = await self.database.save_all_charge_metadata(merged)
+            if not saved:
+                raise OSError(
+                    "Unable to migrate charge metadata to SQLite table"
+                )
+
+        data["charges"] = {}
+        migrations["charge_metadata_table_v1"] = True
+
+        saved = await self.database.save_metadata(
+            self._normalize(data)
+        )
+        if not saved:
+            raise OSError(
+                "Unable to finalize charge metadata migration"
+            )
+
+        _LOGGER.info(
+            "Charge metadata migration completed: %d records",
+            len(merged),
+        )
 
     async def async_load(self) -> dict[str, Any] | None:
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            return await self.database.load_metadata()
+            data = await self.database.load_metadata()
+            if data is None:
+                return None
+
+            normalized = self._normalize(data)
+            normalized["charges"] = (
+                await self.database.load_all_charge_metadata()
+            )
+            return normalized
+
         return await self.hass.async_add_executor_job(self._load_json)
 
     async def async_save(self, data: dict[str, Any]) -> None:
         normalized = self._normalize(data)
 
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            saved = await self.database.save_metadata(normalized)
+            charge_metadata = normalized.get("charges", {})
+            if not isinstance(charge_metadata, dict):
+                charge_metadata = {}
+
+            saved = await self.database.save_all_charge_metadata(
+                charge_metadata
+            )
+            if not saved:
+                raise OSError(
+                    "Unable to save charge metadata to SQLite"
+                )
+
+            base_metadata = dict(normalized)
+            base_metadata["charges"] = {}
+
+            saved = await self.database.save_metadata(base_metadata)
             if not saved:
                 raise OSError("Unable to save metadata to SQLite")
             return
