@@ -321,6 +321,15 @@ class FordTriplogDatabase:
 
                 db.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS user_receipt_parser_profiles (
+                        profile_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS receipts (
                         receipt_id TEXT PRIMARY KEY,
                         target_type TEXT NOT NULL,
@@ -2239,6 +2248,149 @@ class FordTriplogDatabase:
             return True
         except Exception:
             _LOGGER.exception("Unable to save receipts to SQLite")
+            return False
+
+    async def load_user_receipt_parser_profiles(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Load all user-created receipt parser profiles from SQLite."""
+
+        self._log_read("user_receipt_parser_profiles")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM user_receipt_parser_profiles
+                    ORDER BY profile_id ASC
+                    """
+                ).fetchall()
+
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    value = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if (
+                    isinstance(value, dict)
+                    and str(value.get("profile_id") or "").strip()
+                ):
+                    result.append(value)
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite user receipt parser profiles loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read user receipt parser profiles from SQLite"
+            )
+            return []
+
+    async def save_user_receipt_parser_profile(
+        self,
+        profile: dict[str, Any],
+    ) -> bool:
+        """Insert or replace one user receipt parser profile."""
+
+        profile_id = str(profile.get("profile_id") or "").strip()
+        if not profile_id:
+            raise ValueError("Receipt parser profile ID is required")
+
+        payload = json.dumps(profile, ensure_ascii=False)
+
+        def _write() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    INSERT INTO user_receipt_parser_profiles (
+                        profile_id,
+                        data
+                    )
+                    VALUES (?, ?)
+                    ON CONFLICT(profile_id) DO UPDATE SET
+                        data = excluded.data
+                    """,
+                    (profile_id, payload),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+            _LOGGER.debug(
+                "User receipt parser profile saved to SQLite: %s",
+                profile_id,
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save user receipt parser profile to SQLite: %s",
+                profile_id,
+            )
+            return False
+
+    async def save_all_user_receipt_parser_profiles(
+        self,
+        profiles: list[dict[str, Any]],
+    ) -> bool:
+        """Replace all user receipt parser profiles in SQLite."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str]] = []
+            used_ids: set[str] = set()
+
+            for profile in profiles:
+                if not isinstance(profile, dict):
+                    continue
+                profile_id = str(profile.get("profile_id") or "").strip()
+                if not profile_id or profile_id in used_ids:
+                    continue
+                used_ids.add(profile_id)
+                rows.append(
+                    (
+                        profile_id,
+                        json.dumps(profile, ensure_ascii=False),
+                    )
+                )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM user_receipt_parser_profiles")
+                if rows:
+                    db.executemany(
+                        """
+                        INSERT INTO user_receipt_parser_profiles (
+                            profile_id,
+                            data
+                        )
+                        VALUES (?, ?)
+                        """,
+                        rows,
+                    )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+            _LOGGER.debug(
+                "User receipt parser profiles saved to SQLite: %d",
+                len(profiles),
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save user receipt parser profiles to SQLite"
+            )
             return False
 
     async def load_all_pause_metadata(self) -> dict[str, dict[str, Any]]:
