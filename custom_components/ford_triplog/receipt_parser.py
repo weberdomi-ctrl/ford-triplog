@@ -49,6 +49,7 @@ class ReceiptParserEngine:
     ) -> None:
         self._profile_directory = profile_directory
         self._user_profile_directory = user_profile_directory
+        self._user_profiles: list[dict[str, Any]] = []
         self._profiles: list[dict[str, Any]] = []
 
     @property
@@ -82,11 +83,46 @@ class ReceiptParserEngine:
                 ):
                     profiles.append(profile)
 
+        # SQLite-backed user profiles are injected by receipt_storage.
+        # They are deliberately kept separate from bundled program profiles.
+        for profile in self._user_profiles:
+            if (
+                isinstance(profile, dict)
+                and profile.get("profile_id")
+                and isinstance(profile.get("match"), dict)
+            ):
+                profiles.append(dict(profile))
+
+        # If a user profile has the same ID as a bundled profile, keep the
+        # user version. This also prevents duplicate IDs after migration.
+        by_id: dict[str, dict[str, Any]] = {}
+        for profile in profiles:
+            profile_id = str(profile.get("profile_id") or "").strip()
+            if profile_id:
+                by_id[profile_id] = profile
+
+        profiles = list(by_id.values())
         profiles.sort(
             key=lambda item: int(item.get("priority", 0)),
             reverse=True,
         )
         self._profiles = profiles
+
+    def set_user_profiles(
+        self,
+        profiles: list[dict[str, Any]],
+    ) -> None:
+        """Set user-created profiles loaded from persistent storage."""
+
+        self._user_profiles = [
+            dict(profile)
+            for profile in profiles
+            if (
+                isinstance(profile, dict)
+                and str(profile.get("profile_id") or "").strip()
+                and isinstance(profile.get("match"), dict)
+            )
+        ]
 
     def parse(self, raw_text: str) -> ReceiptParseResult:
         """Apply the best matching parser profile."""

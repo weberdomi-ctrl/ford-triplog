@@ -97,6 +97,12 @@ async def async_setup_entry(
 
     await coordinator.async_setup()
 
+    # Statistics are derived data. Recalculate them from the currently
+    # selected read backend on every integration setup/reload so switching
+    # between JSON and SQLite cannot leave statistics from the previous
+    # backend active.
+    await coordinator.history.refresh_statistics()
+
     route_storage = FordTriplogRouteStorage(hass)
     route_tracker = FordTriplogRouteTracker(
         hass=hass,

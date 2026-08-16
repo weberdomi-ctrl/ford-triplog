@@ -474,8 +474,7 @@ class FordTriplogJourneyRebuilder:
         events: list[_SourceEvent] = []
         skipped = 0
 
-        for path in await self.source_storage.list_trips():
-            data = await self.source_storage.load_trip_file(path)
+        for data in await self.source_storage.load_archived_trips():
             event = self._source_event(
                 _EVENT_TRIP,
                 data,
@@ -504,8 +503,7 @@ class FordTriplogJourneyRebuilder:
         events: list[_SourceEvent] = []
         skipped = 0
 
-        for path in await self.source_storage.list_charges():
-            data = await self.source_storage.load_charge_file(path)
+        for data in await self.source_storage.load_archived_charges():
             event = self._source_event(
                 _EVENT_CHARGE,
                 data,

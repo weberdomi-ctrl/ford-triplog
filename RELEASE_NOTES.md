@@ -1,3 +1,141 @@
+# Ford Triplog 2.1.0
+
+Ford Triplog 2.1 introduces a local SQLite storage backend and completes the first major storage architecture migration of the project.
+
+The existing JSON storage remains available during the transition. Existing installations are not forced to change their read backend after the update.
+
+## 🗃️ SQLite Storage Backend
+
+Ford Triplog now maintains a local SQLite database alongside the existing JSON storage.
+
+The new backend covers the main persistent Ford Triplog data, including:
+
+- Trips
+- Charging sessions
+- Journeys
+- Current and last Trip/Charge/Journey caches
+- GPS routes
+- User-defined charging locations
+- Pending charging locations
+- Charging metadata
+- Pause metadata
+- Charging receipts and OCR/parser state
+- User-created receipt parser profiles
+- Statistics and diagnostics
+
+Existing IDs and stored data structures are preserved as closely as possible so JSON and SQLite records remain comparable during the migration period.
+
+## 🔄 Parallel Storage and Safe Upgrade Path
+
+Ford Triplog continues writing compatible data to JSON and SQLite during the 2.1 transition.
+
+Important upgrade behavior:
+
+- **JSON remains the default read backend after upgrading**
+- Existing users are not switched automatically to SQLite
+- SQLite can be enabled explicitly in Ford Triplog settings
+- Changing the backend reloads the integration
+- JSON remains available as a fallback while SQLite continues to be tested in normal use
+
+This provides a controlled migration path without changing the storage behavior of existing installations unexpectedly.
+
+## ⚡ SQLite Read Mode
+
+When SQLite is selected as the read backend, Ford Triplog reads supported historical and configuration data directly from the local database.
+
+This includes:
+
+- Trip and charging history
+- Journey history
+- Route history
+- Charging and pause metadata
+- Receipts
+- User receipt parser profiles
+- User-defined charging locations
+- Statistics source data
+- Journey rebuild source data
+
+SQLite-only testing no longer depends on archived Trip or Charge JSON files for Journey rebuild or statistics calculation.
+
+## 📊 SQL-backed Statistics
+
+Frequently used Top Statistics can now use SQLite queries and database views.
+
+Database support includes:
+
+- Top Trip
+- Top Journey
+- Top Day
+- Top Charging
+- Top Departures & Destinations
+- Top Routes
+
+Location-specific Home Assistant logic such as zones, charging-site matching and GPS clustering remains in Python where appropriate.
+
+## 🔧 Journey Rebuild
+
+Journey maintenance has been made backend-independent.
+
+Journey rebuild and update operations now load Trips and charging sessions from the currently selected storage backend instead of depending on archived JSON file paths.
+
+This allows complete Journey rebuilding in SQLite read mode even when archived JSON files are unavailable.
+
+## 📈 Statistics Recalculation
+
+Statistics are derived data and are now recalculated during integration setup/reload from the currently selected read backend.
+
+This prevents statistics from the previously selected backend remaining active after switching between JSON and SQLite.
+
+## 🧾 Receipt and Parser Storage
+
+Receipt-related persistent metadata has been moved into dedicated SQLite tables.
+
+This includes:
+
+- Receipt metadata and OCR/parser results
+- Charging metadata
+- Pause metadata
+- User-created receipt parser profiles
+
+Bundled parser profiles remain part of the Ford Triplog program files and are not moved into the user database.
+
+Existing user parser profiles are migrated into SQLite. New user parser profiles are stored there when SQLite mode is active.
+
+## 🛰️ Route Storage
+
+GPS Route Tracker data is available from SQLite while preserving the existing raw and matched route structure.
+
+The route history and last-route reads can therefore operate without requiring the archived JSON route files in SQLite mode.
+
+## ⚙️ Improvements and Fixes
+
+- Added backend-neutral archive reads for Trips and charging sessions
+- Fixed Journey rebuild returning zero source records in SQLite-only mode
+- Fixed statistics depending on the number of remaining JSON archive files
+- Added automatic statistics refresh after setup/reload
+- Added SQLite storage for user receipt parser profiles
+- Added SQLite storage for receipts, charging metadata and pause metadata
+- Added SQLite reads for user-defined charging locations
+- Added SQLite Journey and Route archive support
+- Reduced remaining hidden JSON-only read paths
+- Preserved JSON fallback behavior throughout the migration
+
+## ⬆️ Upgrade Notes
+
+Ford Triplog 2.1 is designed to upgrade existing 2.0.x installations without requiring an immediate storage-backend change.
+
+After upgrading:
+
+1. Ford Triplog continues to use **JSON** as the read backend by default.
+2. Existing data is mirrored/migrated into the local SQLite database.
+3. Users who want to test or use the SQLite read performance can select **SQLite** in Ford Triplog settings.
+4. The integration reloads and recalculates statistics from the selected backend.
+5. JSON remains available as a fallback during the 2.1 transition.
+
+The SQLite database is local to Home Assistant. No external database server is required.
+
+---
+
 # Ford Triplog 2.0.3
 
 Ford Triplog 2.0.3 extends the Top Statistics introduced in 2.0.2, improves location resolution and completes further translation and storage-related cleanup.

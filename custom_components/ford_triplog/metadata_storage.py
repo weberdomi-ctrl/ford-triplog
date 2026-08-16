@@ -17,8 +17,15 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    METADATA_FILE,
+    METADATA_SCHEMA_VERSION,
+    STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
+)
 from .database import FordTriplogDatabase
-from .const import METADATA_FILE, METADATA_SCHEMA_VERSION, STORAGE_DIR
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -28,27 +35,289 @@ class FordTriplogMetadataStorage:
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self._base_directory = Path(hass.config.path(".storage", STORAGE_DIR))
-        self._path = self._base_directory / METADATA_FILE
-        self.database = FordTriplogDatabase(hass, self._base_directory)
+        self._path = Path(hass.config.path(".storage", STORAGE_DIR, METADATA_FILE))
+        self._base_directory = Path(
+            hass.config.path(".storage", STORAGE_DIR)
+        )
+        self.database = FordTriplogDatabase(
+            hass,
+            self._base_directory,
+        )
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries("ford_triplog")
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
-        """Create the metadata file when it does not yet exist."""
+        """Initialize metadata storage."""
 
         await self.database.async_setup()
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            await self._migrate_charge_metadata_to_table()
+            await self._migrate_receipts_to_table()
+            await self._migrate_pause_metadata_to_table()
+            return
+
         data = await self.async_load()
         if data is None:
             await self.async_save(self._empty_data())
+
+    async def _migrate_charge_metadata_to_table(self) -> None:
+        """Move legacy metadata['charges'] into the dedicated SQLite table."""
+
+        data = await self.database.load_metadata()
+        if not isinstance(data, dict):
             return
-        await self.database.save_metadata(data)
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        legacy_charges = data.get("charges", {})
+        if not isinstance(legacy_charges, dict):
+            legacy_charges = {}
+
+        existing = await self.database.load_all_charge_metadata()
+
+        if (
+            migrations.get("charge_metadata_table_v1") is True
+            and not legacy_charges
+        ):
+            return
+
+        merged: dict[str, dict[str, Any]] = {
+            str(charge_id): dict(value)
+            for charge_id, value in legacy_charges.items()
+            if str(charge_id).strip() and isinstance(value, dict)
+        }
+
+        # Existing dedicated-table values are newer/authoritative.
+        merged.update(existing)
+
+        if merged:
+            saved = await self.database.save_all_charge_metadata(merged)
+            if not saved:
+                raise OSError(
+                    "Unable to migrate charge metadata to SQLite table"
+                )
+
+        data["charges"] = {}
+        migrations["charge_metadata_table_v1"] = True
+
+        saved = await self.database.save_metadata(
+            self._normalize(data)
+        )
+        if not saved:
+            raise OSError(
+                "Unable to finalize charge metadata migration"
+            )
+
+        _LOGGER.info(
+            "Charge metadata migration completed: %d records",
+            len(merged),
+        )
+
+    async def _migrate_receipts_to_table(self) -> None:
+        """Move embedded pause/charge receipts into the receipts table."""
+
+        data = await self.async_load()
+        if not isinstance(data, dict):
+            return
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        if migrations.get("receipts_table_v1") is True:
+            return
+
+        existing_receipts = await self.database.load_all_receipts()
+        merged: dict[str, dict[str, Any]] = {
+            str(item.get("receipt_id")): dict(item)
+            for item in existing_receipts
+            if isinstance(item, dict)
+            and str(item.get("receipt_id") or "").strip()
+        }
+
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
+            items = data.get(section, {})
+            if not isinstance(items, dict):
+                continue
+
+            for target_id, metadata in items.items():
+                if not isinstance(metadata, dict):
+                    continue
+
+                receipts = metadata.get("receipts", [])
+                if not isinstance(receipts, list):
+                    continue
+
+                for receipt in receipts:
+                    if not isinstance(receipt, dict):
+                        continue
+
+                    receipt_id = str(
+                        receipt.get("receipt_id") or ""
+                    ).strip()
+                    if not receipt_id:
+                        continue
+
+                    value = dict(receipt)
+                    value["target_type"] = target_type
+                    value["target_id"] = str(target_id)
+
+                    # Existing dedicated-table rows are authoritative.
+                    merged.setdefault(receipt_id, value)
+
+                metadata.pop("receipts", None)
+
+        saved = await self.database.save_all_receipts(
+            list(merged.values())
+        )
+        if not saved:
+            raise OSError(
+                "Unable to migrate receipts to SQLite table"
+            )
+
+        migrations["receipts_table_v1"] = True
+        await self.async_save(data)
+
+        _LOGGER.info(
+            "Receipt migration completed: %d records",
+            len(merged),
+        )
+
+    async def _migrate_pause_metadata_to_table(self) -> None:
+        """Move legacy metadata['pauses'] into the dedicated SQLite table."""
+        data = await self.database.load_metadata()
+        if not isinstance(data, dict):
+            return
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        legacy_pauses = data.get("pauses", {})
+        if not isinstance(legacy_pauses, dict):
+            legacy_pauses = {}
+
+        existing = await self.database.load_all_pause_metadata()
+
+        if (
+            migrations.get("pause_metadata_table_v1") is True
+            and not legacy_pauses
+        ):
+            return
+
+        merged: dict[str, dict[str, Any]] = {}
+        for pause_id, value in legacy_pauses.items():
+            normalized_id = str(pause_id).strip()
+            if not normalized_id or not isinstance(value, dict):
+                continue
+            item = dict(value)
+            item.pop("receipts", None)
+            merged[normalized_id] = item
+
+        # Existing dedicated-table values are authoritative.
+        merged.update(existing)
+
+        if merged:
+            saved = await self.database.save_all_pause_metadata(merged)
+            if not saved:
+                raise OSError("Unable to migrate pause metadata to SQLite table")
+
+        data["pauses"] = {}
+        migrations["pause_metadata_table_v1"] = True
+        saved = await self.database.save_metadata(self._normalize(data))
+        if not saved:
+            raise OSError("Unable to finalize pause metadata migration")
+
+        _LOGGER.info(
+            "Pause metadata migration completed: %d records",
+            len(merged),
+        )
 
     async def async_load(self) -> dict[str, Any] | None:
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_metadata()
+            if data is None:
+                return None
+
+            normalized = self._normalize(data)
+            normalized["charges"] = (
+                await self.database.load_all_charge_metadata()
+            )
+            normalized["pauses"] = (
+                await self.database.load_all_pause_metadata()
+            )
+            return normalized
+
         return await self.hass.async_add_executor_job(self._load_json)
 
     async def async_save(self, data: dict[str, Any]) -> None:
         normalized = self._normalize(data)
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            charge_metadata = normalized.get("charges", {})
+            if not isinstance(charge_metadata, dict):
+                charge_metadata = {}
+
+            clean_charge_metadata: dict[str, dict[str, Any]] = {}
+            for charge_id, value in charge_metadata.items():
+                if not isinstance(value, dict):
+                    continue
+                item = dict(value)
+                item.pop("receipts", None)
+                clean_charge_metadata[str(charge_id)] = item
+
+            saved = await self.database.save_all_charge_metadata(
+                clean_charge_metadata
+            )
+            if not saved:
+                raise OSError(
+                    "Unable to save charge metadata to SQLite"
+                )
+
+            pause_metadata = normalized.get("pauses", {})
+            if not isinstance(pause_metadata, dict):
+                pause_metadata = {}
+
+            clean_pause_metadata: dict[str, dict[str, Any]] = {}
+            for pause_id, value in pause_metadata.items():
+                if not isinstance(value, dict):
+                    continue
+                item = dict(value)
+                item.pop("receipts", None)
+                clean_pause_metadata[str(pause_id)] = item
+
+            saved = await self.database.save_all_pause_metadata(
+                clean_pause_metadata
+            )
+            if not saved:
+                raise OSError("Unable to save pause metadata to SQLite")
+
+            base_metadata = dict(normalized)
+            base_metadata["charges"] = {}
+            base_metadata["pauses"] = {}
+
+            saved = await self.database.save_metadata(base_metadata)
+            if not saved:
+                raise OSError("Unable to save metadata to SQLite")
+            return
+
         await self.hass.async_add_executor_job(self._write_json, normalized)
-        await self.database.save_metadata(normalized)
 
     async def get_pause_overrides(self) -> dict[str, dict[str, Any]]:
         """Return all persistent pause overrides."""
@@ -167,12 +436,27 @@ class FordTriplogMetadataStorage:
     ) -> None:
         """Attach one receipt to a pause or charging session."""
 
-        section = self._receipt_section(target_type)
+        self._receipt_section(target_type)
         normalized_target_id = str(target_id).strip()
         if not normalized_target_id:
             raise ValueError("Receipt target ID is required")
 
+        receipt_id = str(receipt.get("receipt_id") or "").strip()
+        if not receipt_id:
+            raise ValueError("Receipt ID is required")
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            saved = await self.database.save_receipt(
+                target_type,
+                normalized_target_id,
+                dict(receipt),
+            )
+            if not saved:
+                raise OSError("Unable to save receipt to SQLite")
+            return
+
         data = await self.async_load() or self._empty_data()
+        section = self._receipt_section(target_type)
         items = data.setdefault(section, {})
         if not isinstance(items, dict):
             items = {}
@@ -186,9 +470,6 @@ class FordTriplogMetadataStorage:
             receipts = []
             metadata["receipts"] = receipts
 
-        receipt_id = str(receipt.get("receipt_id") or "").strip()
-        if not receipt_id:
-            raise ValueError("Receipt ID is required")
         receipts[:] = [
             item for item in receipts
             if not isinstance(item, dict)
@@ -200,9 +481,20 @@ class FordTriplogMetadataStorage:
     async def get_all_receipts(self) -> list[dict[str, Any]]:
         """Return receipts from all supported metadata sections."""
 
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            result = await self.database.load_all_receipts()
+            result.sort(
+                key=lambda item: str(item.get("created_at") or ""),
+                reverse=True,
+            )
+            return result
+
         data = await self.async_load() or self._empty_data()
         result: list[dict[str, Any]] = []
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -218,15 +510,29 @@ class FordTriplogMetadataStorage:
                         value["target_type"] = target_type
                         value["target_id"] = str(target_id)
                         result.append(value)
-        result.sort(key=lambda item: str(item.get("created_at") or ""), reverse=True)
+        result.sort(
+            key=lambda item: str(item.get("created_at") or ""),
+            reverse=True,
+        )
         return result
 
-    async def remove_receipt(self, receipt_id: str) -> dict[str, Any] | None:
-        """Remove one receipt from metadata and return its record."""
+    async def remove_receipt(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
+        """Remove one receipt and return its record."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            receipt = await self.database.load_receipt(normalized_id)
+            if receipt is None:
+                return None
+            deleted = await self.database.delete_receipt(normalized_id)
+            return receipt if deleted else None
+
         data = await self.async_load() or self._empty_data()
         for section in ("pauses", "charges"):
             items = data.get(section, {})
@@ -241,7 +547,8 @@ class FordTriplogMetadataStorage:
                 for index, receipt in enumerate(receipts):
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         removed = dict(receipt)
                         receipts.pop(index)
@@ -251,14 +558,24 @@ class FordTriplogMetadataStorage:
                         return removed
         return None
 
-    async def get_receipt(self, receipt_id: str) -> dict[str, Any] | None:
+    async def get_receipt(
+        self,
+        receipt_id: str,
+    ) -> dict[str, Any] | None:
         """Return one receipt including its target metadata."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            return await self.database.load_receipt(normalized_id)
+
         data = await self.async_load() or self._empty_data()
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -271,7 +588,8 @@ class FordTriplogMetadataStorage:
                 for receipt in receipts:
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         value = dict(receipt)
                         value["target_type"] = target_type
@@ -284,13 +602,53 @@ class FordTriplogMetadataStorage:
         receipt_id: str,
         updates: dict[str, Any],
     ) -> dict[str, Any] | None:
-        """Update one receipt in-place and return the resulting record."""
+        """Update one receipt and return the resulting record."""
 
         normalized_id = str(receipt_id).strip()
         if not normalized_id:
             return None
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            current = await self.database.load_receipt(normalized_id)
+            if current is None:
+                return None
+
+            target_type = str(current.get("target_type") or "")
+            target_id = str(current.get("target_id") or "")
+
+            updated = {
+                key: value
+                for key, value in current.items()
+                if key not in ("target_type", "target_id")
+            }
+
+            for key, value in updates.items():
+                normalized_key = str(key)
+                if value is None:
+                    updated.pop(normalized_key, None)
+                else:
+                    updated[normalized_key] = value
+
+            updated["receipt_id"] = normalized_id
+
+            saved = await self.database.save_receipt(
+                target_type,
+                target_id,
+                updated,
+            )
+            if not saved:
+                return None
+
+            result = dict(updated)
+            result["target_type"] = target_type
+            result["target_id"] = target_id
+            return result
+
         data = await self.async_load() or self._empty_data()
-        for section, target_type in (("pauses", "pause"), ("charges", "charge")):
+        for section, target_type in (
+            ("pauses", "pause"),
+            ("charges", "charge"),
+        ):
             items = data.get(section, {})
             if not isinstance(items, dict):
                 continue
@@ -303,7 +661,8 @@ class FordTriplogMetadataStorage:
                 for receipt in receipts:
                     if (
                         isinstance(receipt, dict)
-                        and str(receipt.get("receipt_id") or "") == normalized_id
+                        and str(receipt.get("receipt_id") or "")
+                        == normalized_id
                     ):
                         for key, value in updates.items():
                             if value is None:

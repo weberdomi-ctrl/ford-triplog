@@ -6,6 +6,8 @@ Track your Ford.
 Storage layer for trips, charging, recovery data and cache.
 
 Version: 2.1.0
+Build: 19
+Changes: Add JSON/SQLite identity validation
 """
 
 from __future__ import annotations
@@ -21,7 +23,13 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import VERSION
+from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    DOMAIN,
+    STORAGE_READ_BACKEND_SQLITE,
+    VERSION,
+)
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -48,6 +56,19 @@ class FordTriplogStorage:
             self.base_path,
         )
 
+        # Phase 2: selectable read backend.
+        # JSON remains the safe default. The active config entry is read
+        # here so existing callers do not need to change their constructor.
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
+
 
     async def async_setup(self) -> None:
         """Initialize storage directories."""
@@ -62,18 +83,14 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        # Phase 1: mirror the existing JSON-backed storage only once per
-        # Home Assistant runtime. Multiple storage components share the same
-        # database but may each create their own storage instance.
-        mirror_key = "ford_triplog_initial_sqlite_mirror_done"
+        # Phase 1: mirror all existing JSON-backed storage into SQLite
+        # after creating the database. JSON remains the production source.
+        await self._mirror_existing_storage()
 
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
-            await self._mirror_existing_storage()
-        else:
-            _LOGGER.debug(
-                "Initial SQLite mirror already completed in this HA runtime"
-            )
+        _LOGGER.info(
+            "Ford Triplog read backend: %s",
+            self.read_backend,
+        )
 
         _LOGGER.debug("Ford Triplog storage initialized")
 
@@ -92,7 +109,9 @@ class FordTriplogStorage:
         }
 
         for path in await self.list_trips():
-            data = await self.load_trip_file(path)
+            # Phase 1 mirror source is always JSON, regardless of the
+            # selected Phase 2 read backend.
+            data = await self._load_json(path)
 
             if not isinstance(data, dict):
                 _LOGGER.error(
@@ -119,7 +138,9 @@ class FordTriplogStorage:
                 )
 
         for path in await self.list_charges():
-            data = await self.load_charge_file(path)
+            # Phase 1 mirror source is always JSON, regardless of the
+            # selected Phase 2 read backend.
+            data = await self._load_json(path)
 
             if not isinstance(data, dict):
                 _LOGGER.error(
@@ -148,47 +169,47 @@ class FordTriplogStorage:
         cache_files = (
             (
                 self._current_trip_file(),
-                self.load_current_trip,
                 self.database.save_current_trip,
                 "current_trip",
             ),
             (
                 self._current_charge_file(),
-                self.load_current_charge,
                 self.database.save_current_charge,
                 "current_charge",
             ),
             (
                 self._last_trip_file(),
-                self.load_last_trip,
                 self.database.save_last_trip,
                 "last_trip",
             ),
             (
                 self._last_charge_file(),
-                self.load_last_charge,
                 self.database.save_last_charge,
                 "last_charge",
             ),
         )
 
-        for path, loader, saver, key in cache_files:
+        for path, saver, key in cache_files:
             if not path.exists():
                 continue
 
-            data = await loader()
+            # Initial mirror source is always JSON. Never read the
+            # SQLite copy while populating the SQLite mirror.
+            data = await self._load_json(path)
             if isinstance(data, dict):
                 if await saver(self._add_metadata(data)):
                     mirrored[key] += 1
 
-        statistics = await self.load_statistics()
+        # Phase 1 mirror source is always JSON, regardless of the
+        # selected Phase 2 read backend. Do not read the SQLite copy here.
+        statistics = await self._load_json(self._statistics_file())
         if isinstance(statistics, dict):
             if await self.database.save_statistics(
                 self._add_metadata(statistics)
             ):
                 mirrored["statistics"] += 1
 
-        diagnostics = await self.load_diagnostics()
+        diagnostics = await self._load_json(self._diagnostics_file())
         if isinstance(diagnostics, dict):
             if await self.database.save_diagnostics(
                 self._add_metadata(diagnostics)
@@ -295,21 +316,89 @@ class FordTriplogStorage:
             )
             return None
 
+    @staticmethod
+    def _archive_id_from_path(path: Path) -> str | None:
+        """Derive the timestamp-based archive ID from a JSON filename."""
+
+        stem = path.stem
+        if len(stem) < 19:
+            return None
+
+        timestamp = stem[:19]
+        if (
+            timestamp[4] != "-"
+            or timestamp[7] != "-"
+            or timestamp[10] != "_"
+            or timestamp[13] != "-"
+            or timestamp[16] != "-"
+        ):
+            return None
+
+        return (
+            timestamp[0:4]
+            + timestamp[5:7]
+            + timestamp[8:10]
+            + "T"
+            + timestamp[11:13]
+            + timestamp[14:16]
+            + timestamp[17:19]
+        )
+
     async def load_trip_file(
         self,
         path: Path,
     ) -> dict[str, Any] | None:
-        """Load archived trip file."""
+        """Load archived trip from the selected read backend."""
 
-        return await self._load_json(path)
+        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
+            return await self._load_json(path)
+
+        trip_id = self._archive_id_from_path(path)
+        if not trip_id:
+            _LOGGER.error(
+                "SQLite trip read skipped: unable to derive trip_id from %s",
+                path,
+            )
+            return None
+
+        data = await self.database.load_trip(trip_id)
+        if data is None:
+            _LOGGER.error(
+                "SQLite trip read failed: trip_id=%s path=%s",
+                trip_id,
+                path,
+            )
+            return None
+
+        return data
     
     async def load_charge_file(
         self,
         path: Path,
     ) -> dict[str, Any] | None:
-        """Load archived charge file."""
+        """Load archived charge from the selected read backend."""
 
-        return await self._load_json(path)
+        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
+            return await self._load_json(path)
+
+        charge_id = self._archive_id_from_path(path)
+        if not charge_id:
+            _LOGGER.error(
+                "SQLite charge read skipped: unable to derive charge_id from %s",
+                path,
+            )
+            return None
+
+        data = await self.database.load_charge(charge_id)
+        if data is None:
+            _LOGGER.error(
+                "SQLite charge read failed: charge_id=%s path=%s",
+                charge_id,
+                path,
+            )
+            return None
+
+        return data
 
 
     async def _delete_file(
@@ -361,6 +450,14 @@ class FordTriplogStorage:
         return True
 
     async def load_current_trip(self) -> dict[str, Any] | None:
+        """Load current trip from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_current_trip()
+            if data is None:
+                _LOGGER.debug("SQLite current_trip read returned no data")
+            return data
+
         return await self._load_json(
             self._current_trip_file()
         )
@@ -393,6 +490,14 @@ class FordTriplogStorage:
     async def load_current_charge(
         self,
     ) -> dict[str, Any] | None:
+        """Load current charge from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_current_charge()
+            if data is None:
+                _LOGGER.debug("SQLite current_charge read returned no data")
+            return data
+
         return await self._load_json(
             self._current_charge_file()
         )
@@ -524,6 +629,44 @@ class FordTriplogStorage:
         return await self.hass.async_add_executor_job(_list)
 
 
+    async def load_archived_trips(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Load all archived trips from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Trip archive collection read backend: sqlite")
+            return await self.database.load_all_trips()
+
+        _LOGGER.debug("Trip archive collection read backend: json")
+        trips: list[dict[str, Any]] = []
+
+        for path in await self.list_trips():
+            data = await self._load_json(path)
+            if isinstance(data, dict):
+                trips.append(data)
+
+        return trips
+
+    async def load_archived_charges(
+        self,
+    ) -> list[dict[str, Any]]:
+        """Load all archived charging sessions from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Charge archive collection read backend: sqlite")
+            return await self.database.load_all_charges()
+
+        _LOGGER.debug("Charge archive collection read backend: json")
+        charges: list[dict[str, Any]] = []
+
+        for path in await self.list_charges():
+            data = await self._load_json(path)
+            if isinstance(data, dict):
+                charges.append(data)
+
+        return charges
+
     async def find_charge_path(
         self,
         charge_id: str,
@@ -605,7 +748,51 @@ class FordTriplogStorage:
         charge_id: str,
         data: dict[str, Any],
     ) -> bool:
-        """Update one existing archived charging session by charge ID."""
+        """Update one existing archived charging session."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return False
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            # SQLite-only mode: do not require an archived JSON file.
+            existing = await self.database.load_charge(normalized_id)
+            if existing is None:
+                _LOGGER.warning(
+                    "Unable to update missing SQLite charging session: %s",
+                    normalized_id,
+                )
+                return False
+
+            updated = dict(existing)
+            updated.update(data)
+            updated["charge_id"] = normalized_id
+
+            db_saved = await self.database.save_charge(
+                self._add_metadata(updated)
+            )
+            if not db_saved:
+                _LOGGER.error(
+                    "SQLite update failed for charge %s",
+                    normalized_id,
+                )
+                return False
+
+            last_charge = await self.database.load_last_charge()
+            if (
+                isinstance(last_charge, dict)
+                and str(last_charge.get("charge_id", "")).strip()
+                == normalized_id
+            ):
+                await self.database.save_last_charge(
+                    self._add_metadata(updated)
+                )
+
+            _LOGGER.debug(
+                "SQLite charge updated: %s",
+                normalized_id,
+            )
+            return True
 
         loaded = await self.load_charge_by_id(charge_id)
         if loaded is None:
@@ -618,8 +805,6 @@ class FordTriplogStorage:
         path, existing = loaded
         updated = dict(existing)
         updated.update(data)
-
-        normalized_id = str(charge_id).strip()
         updated["charge_id"] = normalized_id
 
         saved = await self.save_charge_file(
@@ -629,26 +814,6 @@ class FordTriplogStorage:
 
         if not saved:
             return False
-
-        # Keep the SQLite archive in sync when an existing charge is edited.
-        db_saved = await self.database.save_charge(
-            self._add_metadata(updated)
-        )
-
-        if not db_saved:
-            _LOGGER.error(
-                "SQLite update failed for charge %s",
-                normalized_id,
-            )
-            return False
-
-        last_charge = await self.load_last_charge()
-        if (
-            isinstance(last_charge, dict)
-            and str(last_charge.get("charge_id", "")).strip()
-            == normalized_id
-        ):
-            await self.save_last_charge(updated)
 
         return True
 
@@ -669,6 +834,14 @@ class FordTriplogStorage:
         return True
 
     async def load_last_trip(self) -> dict[str, Any] | None:
+        """Load last trip from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_last_trip()
+            if data is None:
+                _LOGGER.debug("SQLite last_trip read returned no data")
+            return data
+
         return await self._load_json(
             self._last_trip_file()
         )
@@ -771,6 +944,14 @@ class FordTriplogStorage:
     async def load_last_charge(
         self,
     ) -> dict[str, Any] | None:
+        """Load last charge from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            data = await self.database.load_last_charge()
+            if data is None:
+                _LOGGER.debug("SQLite last_charge read returned no data")
+            return data
+
         return await self._load_json(
             self._last_charge_file()
         )
@@ -792,6 +973,18 @@ class FordTriplogStorage:
         return True
 
     async def load_statistics(self) -> dict[str, Any] | None:
+        """Load statistics from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Statistics read backend: sqlite")
+            data = await self.database.load_statistics()
+            if data is None:
+                _LOGGER.debug("SQLite statistics read returned no data")
+            else:
+                _LOGGER.debug("SQLite statistics loaded")
+            return data
+
+        _LOGGER.debug("Statistics read backend: json")
         return await self._load_json(
             self._statistics_file()
         )
@@ -812,12 +1005,26 @@ class FordTriplogStorage:
         return True
 
     async def load_diagnostics(self) -> dict[str, Any] | None:
+        """Load diagnostics from the selected read backend."""
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            _LOGGER.debug("Diagnostics read backend: sqlite")
+            data = await self.database.load_diagnostics()
+            if data is None:
+                _LOGGER.debug("SQLite diagnostics read returned no data")
+            else:
+                _LOGGER.debug("SQLite diagnostics loaded")
+            return data
+
+        _LOGGER.debug("Diagnostics read backend: json")
         return await self._load_json(
             self._diagnostics_file()
         )
 
     async def validate_storage(self) -> bool:
-        """Validate storage structure without triggering initialization."""
+        """Validate storage structure."""
+
+        await self.async_setup()
 
         return all(
             path.exists()

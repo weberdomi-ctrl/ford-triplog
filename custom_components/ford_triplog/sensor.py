@@ -1,68 +1,4 @@
-"""
-Ford Triplog
-
-Home Assistant sensor platform.
-
-Version: 2.0.3-dev
-Phase: Language cleanup - Top Charging
-Changes:
-- Language fix 01: use language-neutral internal Home/Unknown codes in Top Charging.
-- Language fix 02: translate Home/Unknown only when values are exposed to Home Assistant.
-- Language fix 03: detect the Home zone via entity_id zone.home instead of its visible name.
-- Preserve all existing 2.0.2 Top Statistics behavior.
-- Recorder fix 01: exclude large GeoJSON attributes from Recorder history while keeping them available on the live entities.
-- Top Locations 01: add Top 5 departures and Top 5 destinations from archived trips.
-- Top Locations 02: group Home language-neutrally via zone.home and translate only on output.
-- Top Locations 03: cluster departures/destinations primarily by GPS proximity (50 m); use address grouping only when GPS is unavailable.
-- Top Locations 04: keep the most complete address label found inside each GPS cluster.
-- Top Locations Fix 01: add missing re import for address quality scoring.
-- Top Locations Fix 02: keep Home in raw sensor attributes as stable English fallback.
-- Top Routes 01: add Top 5 directed routes using the same 50 m GPS clustering as Top Locations.
-- Top Routes 02: expose trip count, average distance and average consumption where available.
-- Top Routes Fix 01: exclude routes where start and destination resolve to the same location.
-- Top Routes Fix 02: include consumption in route averages only for trips of at least 10 km.
-- Zone fix 01: resolve all Home Assistant zones before GPS/address clustering for Top Locations and Top Routes.
-- Zone fix 02: keep zone.home as stable raw value Home; use user-defined names for all other zones.
-- Charging location fix 01: resolve custom charging locations after HA zones and before GPS clustering.
-- Charging location fix 02: resolve current OSM charging locations after custom sites using the coordinator lookup.
-- Charging location fix 03: reuse custom-site radius and configured OSM lookup radius.
-
-Previous changes:
-- Keep Top Trip and Top Journey.
-- Add one compact Top Charging sensor based on archived charging sessions.
-- State is the most-used charging provider.
-- Attributes expose Top 5 providers, Top 5 charging locations and the
-  largest charging session with sessions, energy and cost aggregates.
-- Fix 01: remove undefined SIGNAL_CHARGE_UPDATED dependency.
-- Fix 02: use the real archived charging-site and address field names.
-- Fix 03: resolve Home Assistant zones for historic charges, group home
-  charging as Home, compact long OSM addresses and aggregate locations
-  independently from provider.
-- Fix 04: exclude Unknown from the Top Provider ranking while retaining
-  unknown-provider session totals; format postal code and city together.
-- Fix 05: re-match historic charging sessions against today's user-defined
-  charging sites and current OSM charging-site database without modifying
-  archived charge files. Matching uses end coordinates first, then start,
-  the configured user-site radius, and the coordinator OSM radius.
-- Phase 4: add one compact Top Day sensor.
-- Top Day aggregates all completed Journeys per local calendar day and selects
-  the day with the highest total Journey distance.
-- Attributes include Journey/trip/charge counts, duration, energy, charging
-  costs, start/end locations and compact route references.
-- Route GeoJSON is intentionally not duplicated into Top Day to avoid large
-  recorder attributes.
-- Fix 01: compact Top Day start/end location strings to street/POI and
-  postal code + city, matching the other Top Statistics sensors.
-- Fix 02: use Home Assistant translation keys for Top Trip, Top Journey,
-  Top Charging and Top Day instead of fixed English entity names.
-- Fix 03: make Charging History translatable via charging_history key;
-  Trip Active is handled by binary_sensor.py via trip_active key.
-- Fix 04: remove redundant FordPass last-charge energy entity. The raw
-  FordPass value remains stored internally and in last-charge attributes.
-- Fix 05: make Journey History and Route History entity names translatable.
-- Fix 09: aggregate Journey History across all Journeys on the selected
-  calendar date, including timeline, duration, energy, SOC and costs.
-"""
+"""Ford Triplog Home Assistant sensor platform."""
 
 from __future__ import annotations
 
@@ -129,6 +65,9 @@ async def async_setup_entry(
 
     coordinator = data["coordinator"]
     history = data["history"]
+    storage = data["storage"]
+    database = storage.database
+    read_backend = storage.read_backend
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
@@ -166,7 +105,6 @@ async def async_setup_entry(
 
     async_add_entities(
         [
-            # Last journey
             FordTriplogLastJourneySensor(
                 journey_storage,
                 common_translations,
@@ -195,7 +133,6 @@ async def async_setup_entry(
                 entry.entry_id,
             ),
 
-            # Last trip
             FordTriplogLastStartAddressSensor(coordinator, history, common_translations),
             FordTriplogLastEndAddressSensor(coordinator, history, common_translations),
             FordTriplogLastStartTimeSensor(coordinator, history, common_translations),
@@ -222,30 +159,45 @@ async def async_setup_entry(
             FordTriplogLastTripEndSocSensor(coordinator, history, common_translations),
             FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
 
-            # Statistics
-            FordTriplogTopTripSensor(coordinator, history, common_translations),
+            FordTriplogTopTripSensor(
+                coordinator,
+                history,
+                database,
+                read_backend,
+                common_translations,
+            ),
             FordTriplogTopJourneySensor(
                 journey_storage,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopChargingSensor(
                 coordinator,
                 history,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopDaySensor(
                 journey_storage,
                 route_storage,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopLocationsSensor(
                 coordinator,
                 history,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogTopRoutesSensor(
                 coordinator,
                 history,
+                database,
+                read_backend,
                 common_translations,
             ),
             FordTriplogDistanceSensor(coordinator, history, common_translations),
@@ -253,7 +205,12 @@ async def async_setup_entry(
             FordTriplogAverageConsumptionSensor(coordinator, history, common_translations),
             FordTriplogDurationFormattedSensor(coordinator, history, common_translations),
             FordTriplogDurationSensor(coordinator, history, common_translations),
-            FordTriplogTripCountSensor(coordinator, history, common_translations),         
+            FordTriplogTripCountSensor(
+                coordinator,
+                history,
+                common_translations,
+                read_backend,
+            ),
             FordTriplogChargeCountSensor(coordinator, history, common_translations),
             FordTriplogAverageChargeSocAddedSensor(coordinator, history, common_translations),
             FordTriplogAverageChargeDurationSensor(coordinator, history, common_translations),
@@ -268,7 +225,6 @@ async def async_setup_entry(
 
 
     )
-
 
 
 class FordTriplogLastJourneySensor(SensorEntity):
@@ -351,11 +307,22 @@ class FordTriplogLastJourneySensor(SensorEntity):
         """Return details of the last completed Journey."""
 
         if self._journey is None:
-            return {}
+            return {
+                "read_backend": (
+                    self.storage.read_backend
+                    if self.storage is not None
+                    else "unknown"
+                ),
+            }
 
         journey = self._journey
 
         return {
+            "read_backend": (
+                self.storage.read_backend
+                if self.storage is not None
+                else "unknown"
+            ),
             "journey_id": journey.journey_id,
             "date": journey.date,
             "start_time": journey.start_time,
@@ -676,10 +643,6 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         total_pause_seconds = 0
         items = list(journey.items)
 
-        # Short gaps directly before or after a charging session are
-        # operational buffers (parking, plugging in, unplugging, departure),
-        # not separate Journey pauses. Keep the real charging duration
-        # unchanged and expose the buffers on the charge timeline entry.
         charge_buffers: dict[int, dict[str, int]] = {}
         charging_buffer_limit_seconds = 180
 
@@ -916,8 +879,6 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if pause_seconds <= 0:
                 continue
 
-            # Gaps up to three minutes adjacent to a charge were already
-            # assigned to that charging entry as arrival/departure buffers.
             if (
                 pause_seconds <= charging_buffer_limit_seconds
                 and (
@@ -1274,8 +1235,6 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             }
             return
 
-        # Keep the last Journey as the internal reference for compatibility,
-        # but all exposed day-level values below are aggregated from matches.
         self._journey = matches[-1]
 
         def _number(value: Any) -> float:
@@ -1842,8 +1801,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
         start_time = valid_points[0].get("timestamp")
         end_time = valid_points[-1].get("timestamp")
 
-        # Prefer the optional OSRM geometry when a completed route contains
-        # a valid match. Raw GPS coordinates always remain the fallback.
         display_coordinates = coordinates
         geometry_source = "raw"
         osrm_distance_km = None
@@ -1917,7 +1874,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._route = route
         self._attr_native_value = trip_id or len(display_coordinates)
 
-        # Geographic center of the geometry currently exposed to the map.
         center_latitude = (
             sum(coord[1] for coord in display_coordinates)
             / len(display_coordinates)
@@ -2209,10 +2165,14 @@ class FordTriplogTopDaySensor(SensorEntity):
         self,
         journey_storage: FordTriplogJourneyStorage | None,
         route_storage: FordTriplogRouteStorage | None,
-        translations: dict[str, str],
+        database,
+        read_backend,
+        translations: dict[str, Any],
     ) -> None:
         self.journey_storage = journey_storage
         self.route_storage = route_storage
+        self.database = database
+        self.read_backend = read_backend
         self.translations = translations
         self._attr_native_value = None
         self._attributes: dict[str, Any] = {}
@@ -2242,21 +2202,25 @@ class FordTriplogTopDaySensor(SensorEntity):
         self.async_write_ha_state()
 
     @staticmethod
-    def _optional_number(
-        value: Any,
-        digits: int = 2,
-    ) -> float:
-        """Return a numeric value, defaulting to zero."""
-
+    def _optional_number(value: Any, digits: int = 2) -> float:
         try:
             return round(float(value or 0), digits)
         except (TypeError, ValueError):
             return 0.0
 
     @staticmethod
-    def _compact_location(value: Any) -> str | None:
-        """Return a compact street/POI, postal code and city."""
+    def _get(item: Any, key: str, default: Any = None) -> Any:
+        if isinstance(item, dict):
+            return item.get(key, default)
+        return getattr(item, key, default)
 
+    @staticmethod
+    def _items(journey: Any) -> list[Any]:
+        value = FordTriplogTopDaySensor._get(journey, "items", [])
+        return list(value or [])
+
+    @staticmethod
+    def _compact_location(value: Any) -> str | None:
         if value is None:
             return None
 
@@ -2296,10 +2260,7 @@ class FordTriplogTopDaySensor(SensorEntity):
             if parts:
                 return ", ".join(parts)
 
-            value = (
-                value.get("display_name")
-                or value.get("display")
-            )
+            value = value.get("display_name") or value.get("display")
 
         text = str(value or "").strip()
         if not text:
@@ -2320,7 +2281,6 @@ class FordTriplogTopDaySensor(SensorEntity):
 
         if postcode_index is not None:
             postcode = parts[postcode_index]
-
             if len(parts) >= 3 and parts[0].isdigit():
                 street = f"{parts[1]} {parts[0]}".strip()
                 city = parts[2]
@@ -2338,66 +2298,63 @@ class FordTriplogTopDaySensor(SensorEntity):
         return ", ".join(parts[:3])
 
     def _journey_start_location(self, journey) -> str | None:
-        """Return the best start location for one Journey."""
-
-        items = list(journey.items)
+        items = self._items(journey)
         first_item = items[0] if items else None
 
         if (
             first_item is not None
-            and getattr(first_item, "item_type", None) == "trip"
+            and self._get(first_item, "item_type") == "trip"
         ):
-            location = getattr(first_item, "start_location", None)
-            if location:
-                compact = self._compact_location(location)
-                if compact:
-                    return compact
-
-            address = getattr(first_item, "start_address", None)
-            compact = self._compact_location(address)
+            location = self._get(first_item, "start_location")
+            compact = self._compact_location(location)
             if compact:
                 return compact
 
-        return self._compact_location(journey.start_address)
+            compact = self._compact_location(
+                self._get(first_item, "start_address")
+            )
+            if compact:
+                return compact
+
+        return self._compact_location(
+            self._get(journey, "start_address")
+        )
 
     def _journey_end_location(self, journey) -> str | None:
-        """Return the best end location for one Journey."""
-
-        items = list(journey.items)
+        items = self._items(journey)
         last_item = items[-1] if items else None
 
         if last_item is not None:
-            if getattr(last_item, "item_type", None) == "trip":
-                location = getattr(last_item, "end_location", None)
-                if location:
-                    compact = self._compact_location(location)
-                    if compact:
-                        return compact
+            if self._get(last_item, "item_type") == "trip":
+                compact = self._compact_location(
+                    self._get(last_item, "end_location")
+                )
+                if compact:
+                    return compact
 
-                address = getattr(last_item, "end_address", None)
-                compact = self._compact_location(address)
+                compact = self._compact_location(
+                    self._get(last_item, "end_address")
+                )
                 if compact:
                     return compact
             else:
-                location = getattr(last_item, "location", None)
-                if location:
-                    compact = self._compact_location(location)
-                    if compact:
-                        return compact
-
-                address = getattr(last_item, "address", None)
-                compact = self._compact_location(address)
+                compact = self._compact_location(
+                    self._get(last_item, "location")
+                )
                 if compact:
                     return compact
 
-        return self._compact_location(journey.end_address)
+                compact = self._compact_location(
+                    self._get(last_item, "address")
+                )
+                if compact:
+                    return compact
 
-    async def _route_summary(
-        self,
-        date_value: str,
-    ) -> dict[str, Any]:
-        """Return compact route references for the selected day."""
+        return self._compact_location(
+            self._get(journey, "end_address")
+        )
 
+    async def _route_summary(self, date_value: str) -> dict[str, Any]:
         if self.route_storage is None:
             return {
                 "route_available": False,
@@ -2427,13 +2384,30 @@ class FordTriplogTopDaySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Aggregate Journeys by day and expose the record day."""
 
-        if self.journey_storage is None:
-            self._attr_native_value = None
-            self._attributes = {}
-            self._top_date = None
-            return
-
-        journeys = await self.journey_storage.get_all_journeys()
+        if self.read_backend == "sqlite":
+            _LOGGER.debug("Top Day sensor read backend: sqlite")
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Day SQLite read requested but database is unavailable"
+                )
+                journeys = []
+            else:
+                journeys = await self.database.load_top_day_journeys()
+                _LOGGER.debug(
+                    "Top Day sensor SQLite journeys loaded: %d",
+                    len(journeys),
+                )
+        else:
+            _LOGGER.debug("Top Day sensor read backend: json")
+            journeys = (
+                await self.journey_storage.get_all_journeys()
+                if self.journey_storage is not None
+                else []
+            )
+            _LOGGER.debug(
+                "Top Day sensor JSON journeys loaded: %d",
+                len(journeys),
+            )
 
         if not journeys:
             self._attr_native_value = None
@@ -2444,7 +2418,9 @@ class FordTriplogTopDaySensor(SensorEntity):
         days: dict[str, dict[str, Any]] = {}
 
         for journey in journeys:
-            date_value = str(journey.date or "").strip()
+            date_value = str(
+                self._get(journey, "date", "")
+            ).strip()
             if not date_value:
                 continue
 
@@ -2473,38 +2449,51 @@ class FordTriplogTopDaySensor(SensorEntity):
             row["journeys"].append(journey)
             row["journey_count"] += 1
             row["distance_km"] += self._optional_number(
-                journey.distance_km,
+                self._get(journey, "distance_km"),
                 3,
             )
             row["total_duration_seconds"] += int(
-                journey.total_duration_seconds or 0
+                self._get(journey, "total_duration_seconds", 0) or 0
             )
             row["driving_duration_seconds"] += int(
-                journey.driving_duration_seconds or 0
+                self._get(journey, "driving_duration_seconds", 0) or 0
             )
             row["charging_duration_seconds"] += int(
-                journey.charging_duration_seconds or 0
+                self._get(journey, "charging_duration_seconds", 0) or 0
             )
-            row["trip_count"] += int(journey.trip_count or 0)
-            row["charge_count"] += int(journey.charge_count or 0)
+            row["trip_count"] += int(
+                self._get(journey, "trip_count", 0) or 0
+            )
+            row["charge_count"] += int(
+                self._get(journey, "charge_count", 0) or 0
+            )
             row["energy_used_kwh"] += self._optional_number(
-                journey.energy_used_kwh,
+                self._get(journey, "energy_used_kwh"),
                 3,
             )
             row["energy_charged_kwh"] += self._optional_number(
-                journey.energy_charged_kwh,
+                self._get(journey, "energy_charged_kwh"),
                 3,
             )
             row["charging_cost_total"] += self._optional_number(
-                journey.charging_cost_total,
+                self._get(journey, "charging_cost_total"),
                 3,
             )
 
-            row["journey_ids"].append(journey.journey_id)
-            row["trip_ids"].extend(list(journey.trip_ids))
-            row["charge_ids"].extend(list(journey.charge_ids))
+            journey_id = self._get(journey, "journey_id")
+            if journey_id:
+                row["journey_ids"].append(journey_id)
 
-            currency = str(journey.currency or "").strip().upper()
+            row["trip_ids"].extend(
+                list(self._get(journey, "trip_ids", []) or [])
+            )
+            row["charge_ids"].extend(
+                list(self._get(journey, "charge_ids", []) or [])
+            )
+
+            currency = str(
+                self._get(journey, "currency", "")
+            ).strip().upper()
             if currency:
                 row["currencies"].add(currency)
 
@@ -2525,8 +2514,8 @@ class FordTriplogTopDaySensor(SensorEntity):
         top_journeys = sorted(
             top["journeys"],
             key=lambda journey: (
-                str(journey.start_time or ""),
-                str(journey.journey_id or ""),
+                str(self._get(journey, "start_time", "") or ""),
+                str(self._get(journey, "journey_id", "") or ""),
             ),
         )
 
@@ -2555,8 +2544,8 @@ class FordTriplogTopDaySensor(SensorEntity):
         self._attributes = {
             "date": top["date"],
             "distance_km": distance_km,
-            "start_time": first_journey.start_time,
-            "end_time": last_journey.end_time,
+            "start_time": self._get(first_journey, "start_time"),
+            "end_time": self._get(last_journey, "end_time"),
             "start_location": self._journey_start_location(
                 first_journey
             ),
@@ -2595,14 +2584,10 @@ class FordTriplogTopDaySensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Return whether Top Day data is available."""
-
         return self._top_date is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return dashboard-ready Top Day details."""
-
         return {
             key: value
             for key, value in self._attributes.items()
@@ -2611,8 +2596,6 @@ class FordTriplogTopDaySensor(SensorEntity):
 
     @property
     def device_info(self):
-        """Return device information."""
-
         return {
             "identifiers": {(DOMAIN, "ford_triplog")},
             "name": "Ford Triplog",
@@ -2632,8 +2615,17 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_top_locations"
     _attr_icon = "mdi:map-marker-multiple-outline"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
+        self.read_backend = read_backend
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -2959,7 +2951,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         if len(parts) <= 2:
             return text
 
-        # Prefer street/POI plus postal code and city when possible.
         postcode_index = next(
             (
                 index
@@ -3038,7 +3029,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             has_coordinates = False
 
         if has_coordinates:
-            # Match the nearest existing GPS cluster within the configured radius.
             matching_key = None
             matching_distance = None
 
@@ -3083,8 +3073,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
 
             row = rows[matching_key]
 
-            # Keep a running centroid so repeated GPS samples define the cluster
-            # better than whichever point happened to be seen first.
             coordinate_count = int(row.get("coordinate_count") or 0)
             if coordinate_count <= 0:
                 row["latitude"] = point_latitude
@@ -3115,7 +3103,6 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             row["distance_km"] += distance_km
             return True
 
-        # GPS unavailable: fall back to the normalized address string.
         if not label:
             return False
 
@@ -3163,9 +3150,18 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         return ranked[:5]
 
     async def async_update(self) -> None:
-        """Aggregate departures and destinations from archived trips."""
+        """Aggregate departures and destinations from the selected backend."""
 
-        trips = await self.history.get_all_trips()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Locations SQLite read requested but database is unavailable"
+                )
+                trips = []
+            else:
+                trips = await self.database.load_top_location_trips()
+        else:
+            trips = await self.history.get_all_trips()
 
         valid_trips = [
             trip
@@ -3246,7 +3242,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         last_trip,
         last_charge,
     ):
-        """Top Locations is refreshed directly from the trip archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -3260,8 +3256,21 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     _attr_unique_id = "ford_triplog_top_routes"
     _attr_icon = "mdi:routes"
 
-    def __init__(self, coordinator, history, translations) -> None:
-        super().__init__(coordinator, history, translations)
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
+        super().__init__(
+            coordinator,
+            history,
+            database,
+            read_backend,
+            translations,
+        )
         self._attributes: dict[str, Any] = {}
 
     async def _cluster_endpoint(
@@ -3395,7 +3404,16 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     async def async_update(self) -> None:
         """Aggregate the Top 5 directed routes from archived trips."""
 
-        trips = await self.history.get_all_trips()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Routes SQLite read requested but database is unavailable"
+                )
+                trips = []
+            else:
+                trips = await self.database.load_top_route_trips()
+        else:
+            trips = await self.history.get_all_trips()
 
         valid_trips = [
             trip
@@ -3433,8 +3451,6 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             start_key, start_label = start
             end_key, end_label = end
 
-            # Same-location round trips/local loops do not add useful
-            # information to the directed Top Routes ranking.
             if start_key == end_key:
                 continue
 
@@ -3465,7 +3481,6 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
                 },
             )
 
-            # Endpoint labels can improve as richer addresses are encountered.
             row["start"] = (
                 "Home"
                 if start_key == "zone:home"
@@ -3543,7 +3558,7 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         last_trip,
         last_charge,
     ):
-        """Top Routes is refreshed directly from the trip archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -3560,8 +3575,17 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     _attr_unique_id = "ford_triplog_top_charging"
     _attr_icon = "mdi:ev-station"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
+        self.read_backend = read_backend
         self._attributes: dict[str, Any] = {}
 
     @staticmethod
@@ -3769,7 +3793,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         if postcode_index is not None:
             postcode = parts[postcode_index]
 
-            # OSM often returns "house number, street, city, ... postcode".
             if len(parts) >= 3 and parts[0].isdigit():
                 street = f"{parts[1]} {parts[0]}".strip()
                 city = parts[2]
@@ -3966,8 +3989,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         zone_name = self._resolve_zone_name(charge)
         cost_source = str(charge.get("cost_source") or "").strip().lower()
 
-        # Classification stays language-neutral. Home tariff is definitive;
-        # otherwise use the stable Home Assistant entity_id zone.home.
         if cost_source == "home_tariff" or self._is_home_zone(charge):
             return self._HOME_CODE
 
@@ -4102,8 +4123,8 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     def _handle_charge_data_updated(self) -> None:
         """Schedule an immediate Top Charging archive refresh."""
 
-        self.hass.add_job(
-            self._async_handle_charge_data_updated
+        self.hass.async_create_task(
+            self._async_handle_charge_data_updated()
         )
 
     async def _async_handle_charge_data_updated(self) -> None:
@@ -4120,7 +4141,16 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     async def _async_refresh_top_charging(self) -> None:
         """Aggregate archived charging sessions."""
 
-        charges = await self.history.get_all_charges()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Charging SQLite read requested but database is unavailable"
+                )
+                charges = []
+            else:
+                charges = await self.database.load_top_charging_charges()
+        else:
+            charges = await self.history.get_all_charges()
 
         valid_charges = [
             charge
@@ -4149,8 +4179,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
 
             current_site = None
 
-            # Home remains the highest-priority classification, but the
-            # classification is independent of the configured UI language.
             is_home = (
                 cost_source == "home_tariff"
                 or self._is_home_zone(charge)
@@ -4160,8 +4188,6 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
                 provider = self._HOME_CODE
                 location = self._HOME_CODE
             else:
-                # Current user-defined sites have priority over current OSM,
-                # matching ChargingLocationResolver semantics.
                 current_site = await self._async_match_current_user_site(
                     charge
                 )
@@ -4359,7 +4385,7 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
         last_trip,
         last_charge,
     ):
-        """Top Charging is refreshed from the charging archive."""
+        pass
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
@@ -4381,9 +4407,13 @@ class FordTriplogTopJourneySensor(SensorEntity):
     def __init__(
         self,
         storage: FordTriplogJourneyStorage | None,
+        database,
+        read_backend,
         translations: dict[str, str],
     ) -> None:
         self.storage = storage
+        self.database = database
+        self.read_backend = read_backend
         self.translations = translations
         self._journey = None
         self._attr_native_value = None
@@ -4473,28 +4503,103 @@ class FordTriplogTopJourneySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Find and expose the longest archived Journey."""
 
-        if self.storage is None:
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Journey SQLite read requested but database is unavailable"
+                )
+                journey = None
+            else:
+                journey = await self.database.load_top_journey()
+        else:
+            if self.storage is None:
+                journey = None
+            else:
+                journeys = await self.storage.get_all_journeys()
+
+                def journey_distance(item) -> float:
+                    try:
+                        return float(item.distance_km or 0)
+                    except (TypeError, ValueError):
+                        return 0.0
+
+                journey = (
+                    max(journeys, key=journey_distance)
+                    if journeys
+                    else None
+                )
+
+        if journey is None:
             self._journey = None
             self._attr_native_value = None
             self._attributes = {}
             return
 
-        journeys = await self.storage.get_all_journeys()
+        if isinstance(journey, dict):
+            def get_value(key: str, default: Any = None) -> Any:
+                return journey.get(key, default)
 
-        if not journeys:
-            self._journey = None
-            self._attr_native_value = None
-            self._attributes = {}
-            return
-
-        def journey_distance(journey) -> float:
-            try:
-                return float(journey.distance_km or 0)
-            except (TypeError, ValueError):
-                return 0.0
-
-        journey = max(journeys, key=journey_distance)
-        distance_km = round(journey_distance(journey), 1)
+            items = journey.get("items") or []
+            distance_km = self._optional_number(
+                get_value("distance_km"),
+                1,
+            ) or 0.0
+            journey_id = get_value("journey_id")
+            date = get_value("date")
+            start_time = get_value("start_time")
+            end_time = get_value("end_time")
+            start_address = get_value("start_address")
+            end_address = get_value("end_address")
+            trip_count = get_value("trip_count")
+            charge_count = get_value("charge_count")
+            total_duration_seconds = int(
+                get_value("total_duration_seconds", 0) or 0
+            )
+            driving_duration_seconds = int(
+                get_value("driving_duration_seconds", 0) or 0
+            )
+            charging_duration_seconds = int(
+                get_value("charging_duration_seconds", 0) or 0
+            )
+            energy_used_kwh = get_value("energy_used_kwh")
+            energy_charged_kwh = get_value("energy_charged_kwh")
+            average_consumption = get_value(
+                "average_consumption_kwh_100km"
+            )
+            charging_cost_total = get_value("charging_cost_total")
+            average_charging_price = get_value(
+                "average_charging_price_per_kwh"
+            )
+            currency = get_value("currency")
+        else:
+            items = list(journey.items)
+            distance_km = round(
+                float(journey.distance_km or 0),
+                1,
+            )
+            journey_id = journey.journey_id
+            date = journey.date
+            start_time = journey.start_time
+            end_time = journey.end_time
+            start_address = journey.start_address
+            end_address = journey.end_address
+            trip_count = journey.trip_count
+            charge_count = journey.charge_count
+            total_duration_seconds = int(
+                journey.total_duration_seconds or 0
+            )
+            driving_duration_seconds = int(
+                journey.driving_duration_seconds or 0
+            )
+            charging_duration_seconds = int(
+                journey.charging_duration_seconds or 0
+            )
+            energy_used_kwh = journey.energy_used_kwh
+            energy_charged_kwh = journey.energy_charged_kwh
+            average_consumption = journey.average_consumption_kwh_100km
+            charging_cost_total = journey.charging_cost_total
+            average_charging_price = journey.average_charging_price_per_kwh
+            currency = journey.currency
 
         if distance_km <= 0:
             self._journey = None
@@ -4502,58 +4607,55 @@ class FordTriplogTopJourneySensor(SensorEntity):
             self._attributes = {}
             return
 
-        items = list(journey.items)
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
+        def item_value(item: Any, key: str) -> Any:
+            if isinstance(item, dict):
+                return item.get(key)
+            return getattr(item, key, None)
+
         start_location = (
-            getattr(first_item, "start_location", None)
-            if first_item is not None
-            and getattr(first_item, "item_type", None) == "trip"
+            item_value(first_item, "start_location")
+            if item_value(first_item, "type") == "trip"
+            or item_value(first_item, "item_type") == "trip"
             else None
-        ) or self._short_address(journey.start_address)
+        ) or self._short_address(start_address)
 
         if (
             last_item is not None
-            and getattr(last_item, "item_type", None) == "trip"
+            and (
+                item_value(last_item, "type") == "trip"
+                or item_value(last_item, "item_type") == "trip"
+            )
         ):
             end_location = (
-                getattr(last_item, "end_location", None)
+                item_value(last_item, "end_location")
                 or self._short_address(
-                    getattr(last_item, "end_address", None)
+                    item_value(last_item, "end_address")
                 )
-                or self._short_address(journey.end_address)
+                or self._short_address(end_address)
             )
         elif last_item is not None:
             end_location = (
-                getattr(last_item, "location", None)
+                item_value(last_item, "location")
                 or self._short_address(
-                    getattr(last_item, "address", None)
+                    item_value(last_item, "address")
                 )
-                or self._short_address(journey.end_address)
+                or self._short_address(end_address)
             )
         else:
-            end_location = self._short_address(journey.end_address)
-
-        total_duration_seconds = int(
-            journey.total_duration_seconds or 0
-        )
-        driving_duration_seconds = int(
-            journey.driving_duration_seconds or 0
-        )
-        charging_duration_seconds = int(
-            journey.charging_duration_seconds or 0
-        )
+            end_location = self._short_address(end_address)
 
         self._journey = journey
         self._attr_native_value = distance_km
 
         attributes = {
-            "journey_id": journey.journey_id,
-            "date": journey.date,
+            "journey_id": journey_id,
+            "date": date,
             "distance_km": distance_km,
-            "start_time": journey.start_time,
-            "end_time": journey.end_time,
+            "start_time": start_time,
+            "end_time": end_time,
             "start_location": start_location,
             "end_location": end_location,
             "total_duration_seconds": total_duration_seconds,
@@ -4568,29 +4670,29 @@ class FordTriplogTopJourneySensor(SensorEntity):
             "charging_duration": format_duration(
                 charging_duration_seconds
             ),
-            "trip_count": journey.trip_count,
-            "charge_count": journey.charge_count,
+            "trip_count": trip_count,
+            "charge_count": charge_count,
             "energy_used_kwh": self._optional_number(
-                journey.energy_used_kwh,
+                energy_used_kwh,
                 2,
             ),
             "energy_charged_kwh": self._optional_number(
-                journey.energy_charged_kwh,
+                energy_charged_kwh,
                 2,
             ),
             "average_consumption_kwh_100km": self._optional_number(
-                journey.average_consumption_kwh_100km,
+                average_consumption,
                 1,
             ),
             "charging_cost_total": self._optional_number(
-                journey.charging_cost_total,
+                charging_cost_total,
                 2,
             ),
             "average_charging_price_per_kwh": self._optional_number(
-                journey.average_charging_price_per_kwh,
+                average_charging_price,
                 4,
             ),
-            "currency": journey.currency,
+            "currency": currency,
         }
 
         self._attributes = {
@@ -4635,39 +4737,44 @@ class FordTriplogTopTripSensor(FordTriplogSensorBase):
     _attr_suggested_display_precision = 1
     _attr_icon = "mdi:trophy-outline"
 
-    def __init__(self, coordinator, history, translations) -> None:
+    def __init__(
+        self,
+        coordinator,
+        history,
+        database,
+        read_backend,
+        translations,
+    ) -> None:
         super().__init__(coordinator, history, translations)
+        self.database = database
+        self.read_backend = read_backend
         self._top_trip: dict[str, Any] | None = None
         self._statistics_initialized = False
 
-    async def async_added_to_hass(self) -> None:
-        """Ensure 2.0.1 statistics contain the new Top Trip record."""
+    async def async_update(self) -> None:
+        """Load Top Trip from the selected backend."""
 
-        statistics, _, _ = await self.history.get_sensor_data()
+        if self.read_backend == "sqlite":
+            if self.database is None:
+                _LOGGER.error(
+                    "Top Trip SQLite read requested but database is unavailable"
+                )
+                self._top_trip = None
+            else:
+                self._top_trip = await self.database.load_top_trip()
+        else:
+            statistics, _, _ = await self.history.get_sensor_data()
+            top_trip = statistics.get("top_trip") if statistics else None
+            self._top_trip = (
+                top_trip if isinstance(top_trip, dict) else None
+            )
 
-        if "top_trip" not in statistics:
-            await self.history.refresh_statistics()
-
-        self._statistics_initialized = True
-        await super().async_added_to_hass()
-
-    def update_values(
-        self,
-        statistics,
-        last_trip,
-        last_charge,
-    ):
-        top_trip = statistics.get("top_trip") if statistics else None
-
-        if not isinstance(top_trip, dict):
-            self._top_trip = None
+        if not self._top_trip:
             self._value = None
             return
 
-        self._top_trip = top_trip
-
         try:
-            self._value = round(float(top_trip.get("distance_km")), 1)
+            self._value = round(float(self._top_trip.get("distance_km")), 1)
         except (TypeError, ValueError):
             self._value = None
 
@@ -4712,8 +4819,24 @@ class FordTriplogTripCountSensor(FordTriplogSensorBase):
     _attr_state_class = SensorStateClass.TOTAL_INCREASING
     _attr_icon = ICON_TRIP_COUNT
 
-    def update_values(self, statistics, last_trip,last_charge):
+    def __init__(
+        self,
+        coordinator,
+        history,
+        translations,
+        read_backend,
+    ) -> None:
+        super().__init__(coordinator, history, translations)
+        self.read_backend = read_backend
+
+    def update_values(self, statistics, last_trip, last_charge):
         self._value = statistics.get("trip_count", 0)
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return {
+            "read_backend": self.read_backend,
+        }
 
 
 class FordTriplogDistanceSensor(FordTriplogSensorBase):
@@ -5550,7 +5673,6 @@ class FordTriplogLastChargingSiteSensor(FordTriplogSensorBase):
                 zone_state.name,
             )
 
-            # Prefer the closest matching zone when zones overlap.
             if (
                 matching_zone is None
                 or distance < matching_zone[0]

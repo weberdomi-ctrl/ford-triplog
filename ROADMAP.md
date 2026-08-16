@@ -51,63 +51,73 @@ Location statistics use the following resolution priority:
 
 # Version 2.1 – SQLite Storage Migration
 
-Version 2.1 is planned as a larger storage architecture change.
+Version 2.1 implements the first production-capable SQLite storage backend while keeping JSON available as a compatibility and fallback path.
 
-The migration will be introduced gradually so the new SQLite backend can be compared directly with the existing JSON storage before it becomes the primary storage system.
+## Implemented – Database Mirror
 
-## Phase 1 – 1:1 Database Mirror
+- Local SQLite database
+- Existing JSON data mirrored/migrated into corresponding database tables
+- Parallel JSON and SQLite writes for the transition period
+- Existing IDs and record structures preserved where possible
+- Non-destructive migration behavior
+- JSON remains available for compatibility and recovery
 
-- Introduce a local SQLite database
-- Keep the existing JSON storage fully operational
-- Create a corresponding database table for each existing JSON data type
-- Preserve the current data structure as closely as possible
-- Write new and changed data to JSON and SQLite in parallel
-- Keep JSON as the production read source during the first migration phase
-- Preserve existing IDs and relationships so JSON and database records can be compared directly
-- Avoid premature schema normalization during the initial migration
+## Implemented – Selectable Read Backend
 
-The initial goal is simple:
+- Selectable JSON or SQLite read backend
+- JSON remains the default after upgrade
+- SQLite must be enabled explicitly by the user
+- Backend selection persists in Home Assistant options
+- Integration reloads when storage options change
+- Statistics are recalculated from the selected backend after setup/reload
 
-**JSON record = database record**
+## Implemented – SQLite-backed Data
 
-## Phase 2 – Validation and Selectable Read Backend
+SQLite-backed reads are available for:
 
-- Continue parallel JSON and SQLite writes
-- Add a selectable JSON or database read path for development and testing
-- Compare stored records and calculated results between both backends
-- Verify Trips, Charges, Journeys, Routes, pauses and related stored data
-- Keep existing installations compatible throughout the transition
+- Trips
+- Charges
+- Journeys
+- Routes
+- Current and last caches
+- User-defined charging locations
+- Pending charging locations
+- Charging metadata
+- Pause metadata
+- Receipts and OCR/parser state
+- User-created receipt parser profiles
+- Statistics and diagnostics
 
-SQLite will not become the default until both storage paths produce equivalent results.
+Bundled receipt parser profiles remain program data and are not migrated into user storage.
 
-## Phase 3 – SQL Queries and Views
+## Implemented – Backend-independent Maintenance
 
-After the database mirror is proven reliable:
+- Journey rebuild reads Trips and Charges from the selected backend
+- Journey rebuild no longer depends on archived JSON file paths in SQLite mode
+- Statistics read their source archives from the selected backend
+- Derived statistics are refreshed after integration setup/reload
+- JSON and SQLite can therefore be compared without carrying statistics from the previously selected backend
 
-- Move suitable historical lookups and aggregations to SQL queries
-- Introduce fixed database views for frequently used statistics where useful
-- Use SQL for efficient filtering, grouping and aggregation
-- Keep application-specific logic such as Home Assistant zone resolution and GPS clustering in Python
-- Store resolved values needed for efficient database statistics
+## Implemented – SQL Queries and Views
 
-Potential views include:
+SQLite views and queries are used where they provide a clear benefit, including support for:
 
-- Trip statistics
-- Journey statistics
-- Charging statistics
+- Top Trip
+- Top Journey
+- Top Day
+- Top Charging
 - Top locations
 - Top routes
 
-## Phase 4 – Database as Primary Storage
+Application-specific logic such as Home Assistant zone resolution, charging-site matching and GPS clustering remains in Python.
 
-After successful validation:
+## Transition Policy
 
-- Make SQLite the primary storage backend
-- Retain JSON initially as a compatibility fallback and import/export format
-- Provide a controlled migration path for existing JSON histories
-- Evaluate making JSON storage optional only after the database backend is proven stable
+SQLite is available as an explicit read option in 2.1, but JSON remains the default for upgraded installations.
 
-The goal is not only database acceleration, but a maintainable storage layer that enables efficient long-term history and statistics without exposing large datasets through Home Assistant sensor attributes.
+This allows the SQLite backend to be tested under normal use without silently changing storage behavior for existing users.
+
+A later release can make SQLite the default once the migration path has been proven across a wider range of installations.
 
 ---
 
@@ -135,6 +145,6 @@ Potential future development areas include:
 | 2.0.0 | Released | GPS Route Tracker |
 | 2.0.1 | Released | Daily History, Journey History, Route History, Charging History |
 | 2.0.2 | Released | Top Statistics, Route Tracker improvements, optional OSRM route matching |
-| 2.0.3 | In development | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
-| 2.1 | Planned | SQLite storage migration with parallel JSON/DB operation and SQL-based statistics |
+| 2.0.3 | Released | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
+| 2.1 | In development | SQLite storage backend, selectable JSON/SQLite reads, migration validation and SQL-based statistics |
 | Future | Research | Multi-vehicle support, exports, maintenance tracking, long-term history |
