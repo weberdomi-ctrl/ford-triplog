@@ -303,6 +303,15 @@ class FordTriplogDatabase:
 
                 db.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS charge_metadata (
+                        charge_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS routes (
                         trip_id TEXT PRIMARY KEY,
                         data TEXT NOT NULL
@@ -1956,6 +1965,92 @@ class FordTriplogDatabase:
             return True
         except Exception:
             _LOGGER.exception("Unable to clear last journey from SQLite")
+            return False
+
+    async def load_all_charge_metadata(self) -> dict[str, dict[str, Any]]:
+        """Load all persistent charging-session metadata from SQLite."""
+
+        self._log_read("charge_metadata")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT charge_id, data
+                    FROM charge_metadata
+                    ORDER BY charge_id ASC
+                    """
+                ).fetchall()
+
+            result: dict[str, dict[str, Any]] = {}
+            for charge_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    result[str(charge_id)] = data
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite charge metadata loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read charge metadata from SQLite"
+            )
+            return {}
+
+    async def save_all_charge_metadata(
+        self,
+        items: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Replace the complete persistent charge-metadata collection."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str]] = []
+            for charge_id, value in items.items():
+                normalized_id = str(charge_id).strip()
+                if not normalized_id or not isinstance(value, dict):
+                    continue
+                rows.append(
+                    (
+                        normalized_id,
+                        json.dumps(value, ensure_ascii=False),
+                    )
+                )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM charge_metadata")
+                if rows:
+                    db.executemany(
+                        """
+                        INSERT INTO charge_metadata (charge_id, data)
+                        VALUES (?, ?)
+                        """,
+                        rows,
+                    )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_write)
+            )
+            _LOGGER.debug(
+                "Charge metadata saved to SQLite: %d",
+                len(items),
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save charge metadata to SQLite"
+            )
             return False
 
     async def save_metadata(self, data: dict[str, Any]) -> bool:
