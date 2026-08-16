@@ -1442,6 +1442,48 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_user_charging_sites(self) -> list[dict[str, Any]]:
+        """Load all user-defined charging sites from SQLite."""
+
+        self._log_read("user_charging_sites")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    """
+                    SELECT data
+                    FROM user_charging_sites
+                    ORDER BY site_id ASC
+                    """
+                ).fetchall()
+
+            sites: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    sites.append(data)
+
+            return sites
+
+        try:
+            sites = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite user charging sites loaded: %d",
+                len(sites),
+            )
+            return sites
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read user charging sites from SQLite"
+            )
+            return []
+
     async def save_user_charging_sites(
         self,
         sites: list[dict[str, Any]],
