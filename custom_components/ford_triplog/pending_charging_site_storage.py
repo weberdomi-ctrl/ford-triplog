@@ -26,11 +26,16 @@ from homeassistant.core import HomeAssistant
 
 from .charge import Charge
 from .const import (
+    CONF_STORAGE_READ_BACKEND,
+    DEFAULT_STORAGE_READ_BACKEND,
+    DOMAIN,
     PENDING_CHARGING_SITE_DEDUP_RADIUS,
     PENDING_CHARGING_SITES_FILE,
     PENDING_CHARGING_SITES_SCHEMA_VERSION,
     STORAGE_DIR,
+    STORAGE_READ_BACKEND_SQLITE,
 )
+from .database import FordTriplogDatabase
 
 
 class PendingChargingSiteStorage:
@@ -44,27 +49,64 @@ class PendingChargingSiteStorage:
         self.storage_path = (
             self.storage_directory / PENDING_CHARGING_SITES_FILE
         )
+        self.database = FordTriplogDatabase(hass, self.storage_directory)
+        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        entries = hass.config_entries.async_entries(DOMAIN)
+        if len(entries) == 1:
+            self.read_backend = str(
+                entries[0].options.get(
+                    CONF_STORAGE_READ_BACKEND,
+                    DEFAULT_STORAGE_READ_BACKEND,
+                )
+            )
 
     async def async_setup(self) -> None:
+        await self.database.async_setup()
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            sqlite_sites = await self.database.load_pending_charging_sites()
+            if not sqlite_sites and self.storage_path.exists():
+                json_sites = await self.hass.async_add_executor_job(self._load)
+                if json_sites:
+                    await self.database.save_pending_charging_sites(json_sites)
+            return
+
         await self.hass.async_add_executor_job(self._setup)
+        json_sites = await self.hass.async_add_executor_job(self._load)
+        if json_sites:
+            await self.database.save_pending_charging_sites(json_sites)
 
     async def async_load(self) -> list[dict[str, Any]]:
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            return await self.database.load_pending_charging_sites()
         return await self.hass.async_add_executor_job(self._load)
 
-    async def async_add_from_charge(
-        self,
-        charge: Charge,
-    ) -> dict[str, Any] | None:
-        return await self.hass.async_add_executor_job(
-            self._add_from_charge,
-            charge,
-        )
+    async def async_add_from_charge(self, charge: Charge) -> dict[str, Any] | None:
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            sites = await self.database.load_pending_charging_sites()
+            site = self._add_from_charge_to_sites(sites, charge)
+            if site is None:
+                return None
+            return site if await self.database.save_pending_charging_sites(sites) else None
+
+        site = await self.hass.async_add_executor_job(self._add_from_charge, charge)
+        if site is not None:
+            sites = await self.hass.async_add_executor_job(self._load)
+            await self.database.save_pending_charging_sites(sites)
+        return site
 
     async def async_delete(self, pending_id: str) -> bool:
-        return await self.hass.async_add_executor_job(
-            self._delete,
-            pending_id,
-        )
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            sites = await self.database.load_pending_charging_sites()
+            remaining = [s for s in sites if str(s.get("id")) != str(pending_id)]
+            if len(remaining) == len(sites):
+                return False
+            return await self.database.save_pending_charging_sites(remaining)
+
+        deleted = await self.hass.async_add_executor_job(self._delete, pending_id)
+        if deleted:
+            sites = await self.hass.async_add_executor_job(self._load)
+            await self.database.save_pending_charging_sites(sites)
+        return deleted
 
     def _setup(self) -> None:
         self.storage_directory.mkdir(parents=True, exist_ok=True)
@@ -91,6 +133,17 @@ class PendingChargingSiteStorage:
         self,
         charge: Charge,
     ) -> dict[str, Any] | None:
+        sites = self._load()
+        site = self._add_from_charge_to_sites(sites, charge)
+        if site is not None:
+            self._write(sites)
+        return site
+
+    def _add_from_charge_to_sites(
+        self,
+        sites: list[dict[str, Any]],
+        charge: Charge,
+    ) -> dict[str, Any] | None:
         latitude = charge.end_latitude
         longitude = charge.end_longitude
         address = charge.end_address
@@ -106,8 +159,6 @@ class PendingChargingSiteStorage:
         except (TypeError, ValueError):
             return None
 
-        sites = self._load()
-
         for existing in sites:
             try:
                 distance = self._distance_meters(
@@ -122,7 +173,6 @@ class PendingChargingSiteStorage:
             if distance <= PENDING_CHARGING_SITE_DEDUP_RADIUS:
                 existing["last_charge_id"] = charge.charge_id
                 existing["address"] = address or existing.get("address")
-                self._write(sites)
                 return existing
 
         site = {
@@ -145,7 +195,6 @@ class PendingChargingSiteStorage:
             "osm_ids": [],
         }
         sites.append(site)
-        self._write(sites)
         return site
 
     def _delete(self, pending_id: str) -> bool:
