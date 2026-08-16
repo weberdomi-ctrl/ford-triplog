@@ -1449,6 +1449,16 @@ class FordTriplogDatabase:
 
         def _read() -> list[dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
+                count_row = db.execute(
+                    "SELECT COUNT(*) FROM user_charging_sites"
+                ).fetchone()
+                row_count = int(count_row[0]) if count_row else 0
+                _LOGGER.debug(
+                    "SQLite user charging sites DB check: path=%s rows=%d",
+                    self.db_path,
+                    row_count,
+                )
+
                 rows = db.execute(
                     """
                     SELECT data
