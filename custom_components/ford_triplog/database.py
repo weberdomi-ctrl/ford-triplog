@@ -312,6 +312,15 @@ class FordTriplogDatabase:
 
                 db.execute(
                     """
+                    CREATE TABLE IF NOT EXISTS pause_metadata (
+                        pause_id TEXT PRIMARY KEY,
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+
+                db.execute(
+                    """
                     CREATE TABLE IF NOT EXISTS receipts (
                         receipt_id TEXT PRIMARY KEY,
                         target_type TEXT NOT NULL,
@@ -2230,6 +2239,70 @@ class FordTriplogDatabase:
             return True
         except Exception:
             _LOGGER.exception("Unable to save receipts to SQLite")
+            return False
+
+    async def load_all_pause_metadata(self) -> dict[str, dict[str, Any]]:
+        """Load all persistent pause metadata from SQLite."""
+        self._log_read("pause_metadata")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT pause_id, data FROM pause_metadata ORDER BY pause_id ASC"
+                ).fetchall()
+            result: dict[str, dict[str, Any]] = {}
+            for pause_id, payload in rows:
+                try:
+                    value = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(value, dict):
+                    result[str(pause_id)] = value
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug("SQLite pause metadata loaded: %d", len(result))
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read pause metadata from SQLite")
+            return {}
+
+    async def save_all_pause_metadata(
+        self,
+        items: dict[str, dict[str, Any]],
+    ) -> bool:
+        """Replace the complete persistent pause-metadata collection."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str]] = []
+            for pause_id, value in items.items():
+                normalized_id = str(pause_id).strip()
+                if not normalized_id or not isinstance(value, dict):
+                    continue
+                payload = dict(value)
+                payload.pop("receipts", None)
+                rows.append(
+                    (normalized_id, json.dumps(payload, ensure_ascii=False))
+                )
+
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM pause_metadata")
+                if rows:
+                    db.executemany(
+                        "INSERT INTO pause_metadata (pause_id, data) VALUES (?, ?)",
+                        rows,
+                    )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("Pause metadata saved to SQLite: %d", len(items))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save pause metadata to SQLite")
             return False
 
     async def load_all_charge_metadata(self) -> dict[str, dict[str, Any]]:

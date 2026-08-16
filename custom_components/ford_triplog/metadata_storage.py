@@ -61,6 +61,7 @@ class FordTriplogMetadataStorage:
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
             await self._migrate_charge_metadata_to_table()
             await self._migrate_receipts_to_table()
+            await self._migrate_pause_metadata_to_table()
             return
 
         data = await self.async_load()
@@ -197,6 +198,57 @@ class FordTriplogMetadataStorage:
             len(merged),
         )
 
+    async def _migrate_pause_metadata_to_table(self) -> None:
+        """Move legacy metadata['pauses'] into the dedicated SQLite table."""
+        data = await self.database.load_metadata()
+        if not isinstance(data, dict):
+            return
+
+        migrations = data.setdefault("migrations", {})
+        if not isinstance(migrations, dict):
+            migrations = {}
+            data["migrations"] = migrations
+
+        legacy_pauses = data.get("pauses", {})
+        if not isinstance(legacy_pauses, dict):
+            legacy_pauses = {}
+
+        existing = await self.database.load_all_pause_metadata()
+
+        if (
+            migrations.get("pause_metadata_table_v1") is True
+            and not legacy_pauses
+        ):
+            return
+
+        merged: dict[str, dict[str, Any]] = {}
+        for pause_id, value in legacy_pauses.items():
+            normalized_id = str(pause_id).strip()
+            if not normalized_id or not isinstance(value, dict):
+                continue
+            item = dict(value)
+            item.pop("receipts", None)
+            merged[normalized_id] = item
+
+        # Existing dedicated-table values are authoritative.
+        merged.update(existing)
+
+        if merged:
+            saved = await self.database.save_all_pause_metadata(merged)
+            if not saved:
+                raise OSError("Unable to migrate pause metadata to SQLite table")
+
+        data["pauses"] = {}
+        migrations["pause_metadata_table_v1"] = True
+        saved = await self.database.save_metadata(self._normalize(data))
+        if not saved:
+            raise OSError("Unable to finalize pause metadata migration")
+
+        _LOGGER.info(
+            "Pause metadata migration completed: %d records",
+            len(merged),
+        )
+
     async def async_load(self) -> dict[str, Any] | None:
         if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
             data = await self.database.load_metadata()
@@ -206,6 +258,9 @@ class FordTriplogMetadataStorage:
             normalized = self._normalize(data)
             normalized["charges"] = (
                 await self.database.load_all_charge_metadata()
+            )
+            normalized["pauses"] = (
+                await self.database.load_all_pause_metadata()
             )
             return normalized
 
@@ -235,19 +290,27 @@ class FordTriplogMetadataStorage:
                     "Unable to save charge metadata to SQLite"
                 )
 
+            pause_metadata = normalized.get("pauses", {})
+            if not isinstance(pause_metadata, dict):
+                pause_metadata = {}
+
+            clean_pause_metadata: dict[str, dict[str, Any]] = {}
+            for pause_id, value in pause_metadata.items():
+                if not isinstance(value, dict):
+                    continue
+                item = dict(value)
+                item.pop("receipts", None)
+                clean_pause_metadata[str(pause_id)] = item
+
+            saved = await self.database.save_all_pause_metadata(
+                clean_pause_metadata
+            )
+            if not saved:
+                raise OSError("Unable to save pause metadata to SQLite")
+
             base_metadata = dict(normalized)
             base_metadata["charges"] = {}
-
-            pauses = base_metadata.get("pauses", {})
-            if isinstance(pauses, dict):
-                cleaned_pauses: dict[str, dict[str, Any]] = {}
-                for pause_id, value in pauses.items():
-                    if not isinstance(value, dict):
-                        continue
-                    item = dict(value)
-                    item.pop("receipts", None)
-                    cleaned_pauses[str(pause_id)] = item
-                base_metadata["pauses"] = cleaned_pauses
+            base_metadata["pauses"] = {}
 
             saved = await self.database.save_metadata(base_metadata)
             if not saved:
