@@ -103,7 +103,7 @@ class FordTriplogStorage:
         _LOGGER.debug("Ford Triplog storage initialized")
 
     async def _mirror_existing_storage(self) -> None:
-        """Mirror existing JSON storage into SQLite on initial setup."""
+        """Mirror only missing or changed JSON storage into SQLite."""
 
         mirrored = {
             "trips": 0,
@@ -115,10 +115,19 @@ class FordTriplogStorage:
             "statistics": 0,
             "diagnostics": 0,
         }
+        unchanged = {
+            "trips": 0,
+            "charges": 0,
+            "current_trip": 0,
+            "current_charge": 0,
+            "last_trip": 0,
+            "last_charge": 0,
+            "statistics": 0,
+            "diagnostics": 0,
+        }
 
+        trip_records: list[tuple[Path, str, dict[str, Any]]] = []
         for path in await self.list_trips():
-            # Phase 1 mirror source is always JSON, regardless of the
-            # selected Phase 2 read backend.
             data = await self._load_json(path)
 
             if not isinstance(data, dict):
@@ -128,12 +137,81 @@ class FordTriplogStorage:
                 )
                 continue
 
-            trip_id = data.get("trip_id")
+            trip_id = str(data.get("trip_id") or "").strip()
             if not trip_id:
                 _LOGGER.error(
                     "Initial SQLite mirror skipped trip: missing trip_id: %s",
                     path,
                 )
+                continue
+
+            trip_records.append((path, trip_id, data))
+
+        charge_records: list[tuple[Path, str, dict[str, Any]]] = []
+        for path in await self.list_charges():
+            data = await self._load_json(path)
+
+            if not isinstance(data, dict):
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped charge: invalid JSON: %s",
+                    path,
+                )
+                continue
+
+            charge_id = str(data.get("charge_id") or "").strip()
+            if not charge_id:
+                _LOGGER.error(
+                    "Initial SQLite mirror skipped charge: missing charge_id: %s",
+                    path,
+                )
+                continue
+
+            charge_records.append((path, charge_id, data))
+
+        single_sources: dict[str, dict[str, Any] | None] = {}
+
+        cache_files = (
+            ("current_trip", self._current_trip_file()),
+            ("current_charge", self._current_charge_file()),
+            ("last_trip", self._last_trip_file()),
+            ("last_charge", self._last_charge_file()),
+        )
+
+        for key, path in cache_files:
+            if not path.exists():
+                single_sources[key] = None
+                continue
+
+            data = await self._load_json(path)
+            single_sources[key] = (
+                self._add_metadata(data)
+                if isinstance(data, dict)
+                else None
+            )
+
+        statistics = await self._load_json(self._statistics_file())
+        single_sources["statistics"] = (
+            self._add_metadata(statistics)
+            if isinstance(statistics, dict)
+            else None
+        )
+
+        diagnostics = await self._load_json(self._diagnostics_file())
+        single_sources["diagnostics"] = (
+            self._add_metadata(diagnostics)
+            if isinstance(diagnostics, dict)
+            else None
+        )
+
+        snapshot = await self.database.load_storage_mirror_snapshot(
+            [trip_id for _, trip_id, _ in trip_records],
+            [charge_id for _, charge_id, _ in charge_records],
+        )
+
+        sqlite_trips = snapshot.get("trips", {})
+        for path, trip_id, data in trip_records:
+            if sqlite_trips.get(trip_id) == data:
+                unchanged["trips"] += 1
                 continue
 
             if await self.database.save_trip(data):
@@ -145,24 +223,10 @@ class FordTriplogStorage:
                     path,
                 )
 
-        for path in await self.list_charges():
-            # Phase 1 mirror source is always JSON, regardless of the
-            # selected Phase 2 read backend.
-            data = await self._load_json(path)
-
-            if not isinstance(data, dict):
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped charge: invalid JSON: %s",
-                    path,
-                )
-                continue
-
-            charge_id = data.get("charge_id")
-            if not charge_id:
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped charge: missing charge_id: %s",
-                    path,
-                )
+        sqlite_charges = snapshot.get("charges", {})
+        for path, charge_id, data in charge_records:
+            if sqlite_charges.get(charge_id) == data:
+                unchanged["charges"] += 1
                 continue
 
             if await self.database.save_charge(data):
@@ -174,61 +238,41 @@ class FordTriplogStorage:
                     path,
                 )
 
-        cache_files = (
-            (
-                self._current_trip_file(),
-                self.database.save_current_trip,
-                "current_trip",
-            ),
-            (
-                self._current_charge_file(),
-                self.database.save_current_charge,
-                "current_charge",
-            ),
-            (
-                self._last_trip_file(),
-                self.database.save_last_trip,
-                "last_trip",
-            ),
-            (
-                self._last_charge_file(),
-                self.database.save_last_charge,
-                "last_charge",
-            ),
-        )
+        single_savers = {
+            "current_trip": self.database.save_current_trip,
+            "current_charge": self.database.save_current_charge,
+            "last_trip": self.database.save_last_trip,
+            "last_charge": self.database.save_last_charge,
+            "statistics": self.database.save_statistics,
+            "diagnostics": self.database.save_diagnostics,
+        }
 
-        for path, saver, key in cache_files:
-            if not path.exists():
+        for key, saver in single_savers.items():
+            data = single_sources.get(key)
+            if data is None:
                 continue
 
-            # Initial mirror source is always JSON. Never read the
-            # SQLite copy while populating the SQLite mirror.
-            data = await self._load_json(path)
-            if isinstance(data, dict):
-                if await saver(self._add_metadata(data)):
-                    mirrored[key] += 1
+            if snapshot.get(key) == data:
+                unchanged[key] += 1
+                continue
 
-        # Phase 1 mirror source is always JSON, regardless of the
-        # selected Phase 2 read backend. Do not read the SQLite copy here.
-        statistics = await self._load_json(self._statistics_file())
-        if isinstance(statistics, dict):
-            if await self.database.save_statistics(
-                self._add_metadata(statistics)
-            ):
-                mirrored["statistics"] += 1
-
-        diagnostics = await self._load_json(self._diagnostics_file())
-        if isinstance(diagnostics, dict):
-            if await self.database.save_diagnostics(
-                self._add_metadata(diagnostics)
-            ):
-                mirrored["diagnostics"] += 1
+            if await saver(data):
+                mirrored[key] += 1
+            else:
+                _LOGGER.error(
+                    "Initial SQLite mirror failed for %s",
+                    key,
+                )
 
         _LOGGER.info(
-            "Initial SQLite mirror completed: %s",
+            "Initial SQLite mirror completed: mirrored[%s] unchanged[%s]",
             ", ".join(
                 f"{key}={value}"
                 for key, value in mirrored.items()
+            ),
+            ", ".join(
+                f"{key}={value}"
+                for key, value in unchanged.items()
             ),
         )
 
