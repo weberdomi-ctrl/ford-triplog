@@ -1,6 +1,6 @@
 # Ford Triplog Roadmap
 
-This roadmap describes planned development after the current Ford Triplog 2.0.x releases.
+This roadmap summarizes completed 2.0.x / 2.1 development and outlines future Ford Triplog work.
 
 ---
 
@@ -119,6 +119,24 @@ This allows the SQLite backend to be tested under normal use without silently ch
 
 A later release can make SQLite the default once the migration path has been proven across a wider range of installations.
 
+## Implemented – Runtime and Startup Optimization
+
+- Incremental Trip and Charge compatibility mirror
+- Incremental Journey compatibility mirror
+- Incremental Route compatibility mirror
+- Existing identical records are skipped instead of rewritten
+- SQLite-only archive records remain untouched by the JSON compatibility mirror
+- Bulk mirror-index reads for Journey and Route comparison
+- Combined main-storage mirror snapshot for Trip, Charge and cache comparison
+- SQLite schema setup guarded to run only once per Home Assistant runtime
+- Parallel database initialization protected by an asynchronous lock
+- Metadata and legacy migration checks guarded against repeated execution
+- User-defined charging locations cached after initial load
+- Bulk Route reads for multiple Trip IDs
+- Shared Top Location / Top Route location cache
+- Coordinator update bursts coalesced before sensor publication
+- Redundant periodic polling disabled for push-driven Ford Triplog sensors
+
 ---
 
 # Future Research
@@ -146,5 +164,5 @@ Potential future development areas include:
 | 2.0.1 | Released | Daily History, Journey History, Route History, Charging History |
 | 2.0.2 | Released | Top Statistics, Route Tracker improvements, optional OSRM route matching |
 | 2.0.3 | Released | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
-| 2.1 | In development | SQLite storage backend, selectable JSON/SQLite reads, migration validation and SQL-based statistics |
+| 2.1 | Released | SQLite storage backend, selectable JSON/SQLite reads, migration validation, SQL-based statistics and runtime optimization |
 | Future | Research | Multi-vehicle support, exports, maintenance tracking, long-term history |

@@ -5,14 +5,12 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.0.1-dev
-Phase: 3 - Historical route date selection
-Build: Enable Select platform
+Version: 2.1.0
+Phase: 
+Build: 
 
 Changes:
-- Restores the Route Tracker from the Coordinator's active or paused Trip
-  after a Home Assistant/integration reload.
-- Enables the Home Assistant Select platform for Route History date selection.
+
 """
 
 from __future__ import annotations
@@ -169,9 +167,9 @@ async def async_setup_entry(
     charge_manager = FordTriplogChargeManager(
         hass=hass,
         storage=storage,
+        config=config,
+        history=coordinator.history,
     )
-
-    await charge_manager.async_setup()
 
     receipt_storage = FordTriplogReceiptStorage(hass)
     await receipt_storage.async_setup()
@@ -188,10 +186,10 @@ async def async_setup_entry(
         ),
     )
 
-    # Issue #15
-    # Allow the coordinator to trigger automatic Journey rebuilds
-    # after a trip has been saved successfully.
     coordinator.journey_rebuilder = journey_rebuilder
+    charge_manager.journey_rebuilder = journey_rebuilder
+
+    await charge_manager.async_setup()
 
     await async_register_services(hass)
 

@@ -255,12 +255,16 @@ During the 2.1 transition:
 
 - New and changed data continues to be written to JSON and SQLite
 - Existing JSON data is migrated or mirrored into SQLite
+- Initial mirrors are incremental and skip records that are already identical in SQLite
+- SQLite-only archive records are preserved during compatibility mirroring
 - JSON remains the default read backend after an upgrade
 - Users who want to use SQLite must enable it explicitly in Ford Triplog settings
 - Switching the read backend reloads the integration
 - Derived statistics are recalculated from the selected backend after setup/reload
 - Journey rebuild uses the selected backend directly
 - SQLite-backed historical reads avoid dependency on archived JSON files
+- Frequently used Top Statistics use SQLite views and optimized bulk reads where appropriate
+- Runtime guards prevent repeated schema initialization and repeated migration work during one Home Assistant runtime
 - JSON remains available as a fallback during the migration period
 
 The SQLite database is stored locally inside the Ford Triplog Home Assistant storage directory. No external database service is required.
@@ -354,6 +358,8 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - SQLite can be enabled explicitly in Ford Triplog settings
 - Database-backed Trips, Charges, Journeys, Routes, receipts and metadata
 - SQL-backed Top Statistics and historical archive reads
+- Incremental JSON → SQLite startup mirroring for Trips, Charges, Journeys and Routes
+- Runtime guards and caching reduce repeated database reads and initialization work
 - Journey rebuild and statistics recalculation work with the selected backend
 - JSON retained for compatibility, fallback and migration safety
 

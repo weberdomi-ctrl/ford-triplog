@@ -3,9 +3,9 @@ Ford Triplog
 
 Coordinator
 
-Version: 2.0.0-dev
-Phase: Route Tracker Phase 1
-Build: Fix 02 - Smart Trip reload recovery
+Version: 2.1.0
+Phase: 
+Build: 
 
 Changes:
 - Route Tracker uses Trip start GPS as first route point and finalized fresh Trip end GPS as last route point.
@@ -39,6 +39,7 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
@@ -92,6 +93,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.history = FordTriplogHistory(storage)
         self.config = config
         self.geo = geo
+        self.charging_cost_calculator = FordTriplogChargingCostCalculator(
+            hass,
+            config,
+        )
 
         self.user_charging_site_storage = UserChargingSiteStorage(hass)
         self.pending_charging_site_storage = PendingChargingSiteStorage(hass)
@@ -199,6 +204,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._charge_finalizing = False
         self._trip_finishing = False
 
+        # Coalesce rapid coordinator publishes. FordPass/Home Assistant can
+        # update several watched entities within a few milliseconds. The
+        # transition handling still runs for every event, but sensors only
+        # need the latest resulting vehicle state once per burst.
+        self._publish_delay_seconds = 0.25
+        self._publish_handle: asyncio.TimerHandle | None = None
+        self._pending_publish_data: dict[str, Any] | None = None
+
 
         # Smart Trip
         self.trip_pause_time: float | None = None
@@ -216,6 +229,34 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.journey_rebuilder: Any | None = None
         self.route_tracker: Any | None = None
        
+
+    def _schedule_coordinator_update(
+        self,
+        data: dict[str, Any],
+    ) -> None:
+        """Publish only the latest coordinator state from a rapid update burst."""
+
+        self._pending_publish_data = dict(data)
+
+        if self._publish_handle is not None:
+            self._publish_handle.cancel()
+
+        self._publish_handle = self.hass.loop.call_later(
+            self._publish_delay_seconds,
+            self._publish_coordinator_update,
+        )
+
+    def _publish_coordinator_update(self) -> None:
+        """Publish the most recently queued coordinator state."""
+
+        self._publish_handle = None
+        data = self._pending_publish_data
+        self._pending_publish_data = None
+
+        if data is None:
+            return
+
+        self.async_set_updated_data(data)
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -383,6 +424,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._cancel_last_charge_timer()
         self._cancel_last_charge_timeout_timer()
+
+        if self._publish_handle is not None:
+            self._publish_handle.cancel()
+            self._publish_handle = None
+        self._pending_publish_data = None
+
         self._gps_update_event.set()
 
         _LOGGER.debug("Ford Triplog coordinator shut down")
@@ -636,7 +683,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_ignition = ignition
         self.last_charging = charging
 
-        self.async_set_updated_data(self.vehicle_state)
+        self._schedule_coordinator_update(self.vehicle_state)
 
     @staticmethod
     def _last_charge_to_snapshot(
@@ -1246,7 +1293,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.current_trip.to_dict()
             )           
 
-            self.async_set_updated_data(
+            self._schedule_coordinator_update(
                 self._read_vehicle_state()
             )
 
@@ -1407,7 +1454,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 state.get("soc"),
             )
 
-            self.async_set_updated_data(state)
+            self._schedule_coordinator_update(state)
 
     async def finish_charge(self):
         """Finish charging locally and wait for stable FordPass data."""
@@ -1543,206 +1590,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     
 
-        self.async_set_updated_data(state)
+        self._schedule_coordinator_update(state)
 
         _LOGGER.info("Trip saved successfully")
 
-
-    def _is_charge_in_home_zone(
-        self,
-        charge: Charge,
-    ) -> bool:
-        """Return whether the charging session is inside the home zone."""
-
-        zone_state = self.hass.states.get(
-            self.home_zone_entity_id
-        )
-
-        if zone_state is None:
-            _LOGGER.warning(
-                "Home charging cost check skipped: zone %s not found",
-                self.home_zone_entity_id,
-            )
-            return False
-
-        zone_latitude = zone_state.attributes.get("latitude")
-        zone_longitude = zone_state.attributes.get("longitude")
-        zone_radius = zone_state.attributes.get("radius", 100)
-
-        charge_latitude = (
-            charge.start_latitude
-            if charge.start_latitude is not None
-            else charge.end_latitude
-        )
-        charge_longitude = (
-            charge.start_longitude
-            if charge.start_longitude is not None
-            else charge.end_longitude
-        )
-
-        if any(
-            value is None
-            for value in (
-                zone_latitude,
-                zone_longitude,
-                charge_latitude,
-                charge_longitude,
-            )
-        ):
-            _LOGGER.debug(
-                "Home charging cost check skipped for charge %s: "
-                "zone or charge coordinates unavailable",
-                charge.charge_id,
-            )
-            return False
-
-        try:
-            distance = self._distance_meters(
-                float(zone_latitude),
-                float(zone_longitude),
-                float(charge_latitude),
-                float(charge_longitude),
-            )
-            radius = max(0.0, float(zone_radius))
-        except (TypeError, ValueError):
-            _LOGGER.warning(
-                "Home charging cost check skipped for charge %s: "
-                "invalid zone or charge coordinates",
-                charge.charge_id,
-            )
-            return False
-
-        is_home = distance <= radius
-
-        _LOGGER.debug(
-            "Home zone check for charge %s: zone=%s distance=%.1fm "
-            "radius=%.1fm result=%s",
-            charge.charge_id,
-            self.home_zone_entity_id,
-            distance,
-            radius,
-            is_home,
-        )
-
-        return is_home
-
-    def _can_apply_home_charging_costs(
-        self,
-        charge: Charge,
-    ) -> bool:
-        """Return whether automatic home costs may be applied."""
-
-        if not self.home_tariff_enabled:
-            return False
-
-        cost_source = str(
-            getattr(charge, "cost_source", "none") or "none"
-        ).strip().lower()
-
-        if cost_source in {"manual", "ocr"}:
-            _LOGGER.info(
-                "Automatic home charging costs skipped for charge %s: "
-                "protected cost source %s",
-                charge.charge_id,
-                cost_source,
-            )
-            return False
-
-        return self._is_charge_in_home_zone(charge)
 
     async def _apply_home_charging_costs(
         self,
         charge: Charge,
     ) -> bool:
-        """Apply the configured seasonal tariff to one home charge."""
+        """Apply central automatic charging-cost calculation."""
 
-        if not self._can_apply_home_charging_costs(charge):
-            return False
-
-        start_time = self._parse_fordpass_datetime(
-            charge.start_time
+        return self.charging_cost_calculator.recalculate(
+            charge,
+            allow_automatic_tariff=True,
         )
-
-        if start_time is None:
-            _LOGGER.warning(
-                "Automatic home charging costs skipped for charge %s: "
-                "invalid start time",
-                charge.charge_id,
-            )
-            return False
-
-        local_start = dt_util.as_local(start_time)
-        month = local_start.month
-
-        if 4 <= month <= 9:
-            tariff_name = "summer"
-            tariff_price = self.home_tariff_summer_price
-        else:
-            tariff_name = "winter"
-            tariff_price = self.home_tariff_winter_price
-
-        energy = None
-        energy_source = None
-
-        if (
-            getattr(charge, "energy_billed_kwh", None) is not None
-            and float(charge.energy_billed_kwh) > 0
-        ):
-            energy = float(charge.energy_billed_kwh)
-            energy_source = "billed"
-        elif (
-            getattr(charge, "energy_added_kwh", None) is not None
-            and float(charge.energy_added_kwh) > 0
-        ):
-            energy = float(charge.energy_added_kwh)
-            energy_source = "added"
-
-        if energy is None:
-            _LOGGER.warning(
-                "Automatic home charging costs skipped for charge %s: "
-                "no usable energy value",
-                charge.charge_id,
-            )
-            return False
-
-        charge.energy_cost = round(
-            energy * tariff_price,
-            4,
-        )
-        charge.session_fee = 0.0
-        charge.time_fee = 0.0
-        charge.blocking_fee = 0.0
-        charge.parking_fee = 0.0
-        charge.other_cost = 0.0
-
-        charge.currency = self.home_tariff_currency
-        charge.cost_source = "home_tariff"
-        charge.cost_verified = True
-
-        # Preserve a manually supplied billed-energy source. Otherwise the
-        # vehicle-derived energy remains the calculation basis.
-        if (
-            getattr(charge, "energy_billed_kwh", None) is None
-            and energy_source == "added"
-        ):
-            charge.energy_billed_source = "estimated"
-
-        charge.recalculate_costs()
-
-        _LOGGER.info(
-            "Automatic home charging costs applied: charge=%s tariff=%s "
-            "energy=%.2f kWh source=%s price=%.4f %s/kWh total=%.2f %s",
-            charge.charge_id,
-            tariff_name,
-            energy,
-            energy_source,
-            tariff_price,
-            self.home_tariff_currency,
-            charge.cost_total or 0.0,
-            self.home_tariff_currency,
-        )
-
-        return True
 
     async def _finalize_charge(self, state):
         """Finalize and save charging session exactly once."""
@@ -1826,7 +1688,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 await self.storage.delete_current_charge()
                 self.current_charge = None
 
-            self.async_set_updated_data(state)
+            self._schedule_coordinator_update(state)
 
             _LOGGER.info("Charging session saved successfully")
 

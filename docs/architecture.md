@@ -52,8 +52,8 @@ Ford Triplog was designed with the following principles:
                          │
              ┌───────────┴───────────┐
              ▼                       ▼
-      JSON Storage            Home Assistant
-                                  Sensors
+      JSON + SQLite           Home Assistant
+        Storage                   Sensors
 ```
 
 ---
@@ -167,19 +167,22 @@ This priority allows FordPass information to be used whenever available while st
 
 ## Storage Manager
 
-The Storage Manager provides persistent local storage.
+The Storage Manager provides a backend-independent interface for persistent local storage.
+
+Ford Triplog 2.1 supports JSON and SQLite as local read backends. During the 2.1 transition, compatible data is written to both formats. JSON remains the default read backend after an upgrade; SQLite can be enabled explicitly in Ford Triplog settings.
 
 Responsibilities:
 
-- Save trips
-- Save charging sessions
-- Save statistics
-- Save charging locations
-- Save configuration
-- Data migration
+- Save and load trips, charging sessions and Journeys
+- Save and load route history
+- Save statistics and diagnostics
+- Save charging and pause metadata
+- Save receipts and user receipt parser profiles
+- Save user-defined and pending charging locations
+- Data migration and mirroring
 - Recovery
 
-Storage is optimized for reliability and fast startup.
+Backend-neutral archive access allows statistics and Journey rebuild operations to use the selected read backend without depending on JSON archive files.
 
 ---
 
@@ -332,19 +335,40 @@ Reverse Geocoding
 
 # Local Storage
 
-Ford Triplog stores all information inside Home Assistant.
+Ford Triplog stores its persistent data locally inside Home Assistant.
+
+Version 2.1 introduces a local SQLite database alongside the existing JSON storage.
 
 Typical data includes:
 
 - Journeys
 - Trips
 - Charging sessions
-- Statistics
+- GPS routes
+- Statistics and diagnostics
 - Charging locations
+- Charging and pause metadata
+- Receipts and OCR/parser state
+- User-created receipt parser profiles
 - OpenStreetMap databases
 - Configuration
 
-No external database is required.
+## Storage Backends
+
+JSON remains the default read backend after upgrading to 2.1. Existing users are not switched automatically to SQLite.
+
+Users who want SQLite reads can enable the backend explicitly in Ford Triplog settings. Changing the backend reloads the integration.
+
+During the 2.1 migration period:
+
+- Compatible data is written to JSON and SQLite
+- Existing data is migrated or mirrored into SQLite
+- Historical Trips, Charges, Journeys and Routes can be read from SQLite
+- Journey rebuild uses the selected backend
+- Statistics are recalculated from the selected backend after setup or reload
+- JSON remains available as a compatibility and fallback path
+
+The SQLite database is local to Home Assistant. No external database server is required.
 
 ---
 
@@ -404,7 +428,9 @@ Characteristics:
 
 - Event-driven architecture
 - No continuous polling
-- Lightweight JSON storage
+- Local JSON and SQLite storage
+- Backend-neutral historical reads
+- SQL-backed queries and views for frequently used statistics
 - Fast geohash-based charging lookup
 - Minimal memory usage
 - Native Home Assistant coordinator pattern
@@ -440,7 +466,7 @@ Planned extensions include:
 - Automatic charging database switching
 - Dashboard templates
 - Multi-vehicle support
-- Optional database backend
-- Extended statistics
+- Further SQL-based statistics and aggregation
+- Additional route validation and GPS plausibility checks
 
 Because the core components are separated into dedicated managers, future functionality can be added with minimal impact on the existing architecture.
