@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import math
 import re
 import logging
+import time
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -3152,6 +3153,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Aggregate departures and destinations from the selected backend."""
 
+        total_started = time.perf_counter()
+        load_started = time.perf_counter()
+
         if self.read_backend == "sqlite":
             if self.database is None:
                 _LOGGER.error(
@@ -3163,6 +3167,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         else:
             trips = await self.history.get_all_trips()
 
+        load_elapsed = time.perf_counter() - load_started
+
         valid_trips = [
             trip
             for trip in trips
@@ -3173,7 +3179,15 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         if not valid_trips:
             self._value = None
             self._attributes = {}
+            _LOGGER.debug(
+                "Top Locations finished: loaded=%d valid=0 load=%.3fs total=%.3fs",
+                len(trips),
+                load_elapsed,
+                time.perf_counter() - total_started,
+            )
             return
+
+        aggregation_started = time.perf_counter()
 
         departures: dict[str, dict[str, Any]] = {}
         destinations: dict[str, dict[str, Any]] = {}
@@ -3207,6 +3221,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             ):
                 evaluated_destinations += 1
 
+        aggregation_elapsed = time.perf_counter() - aggregation_started
+        ranking_started = time.perf_counter()
+
         top_departures = self._rank_rows(departures)
         top_destinations = self._rank_rows(destinations)
 
@@ -3235,6 +3252,18 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             "evaluated_departures": evaluated_departures,
             "evaluated_destinations": evaluated_destinations,
         }
+
+        ranking_elapsed = time.perf_counter() - ranking_started
+        _LOGGER.debug(
+            "Top Locations finished: loaded=%d valid=%d load=%.3fs "
+            "aggregation=%.3fs ranking=%.3fs total=%.3fs",
+            len(trips),
+            len(valid_trips),
+            load_elapsed,
+            aggregation_elapsed,
+            ranking_elapsed,
+            time.perf_counter() - total_started,
+        )
 
     def update_values(
         self,
@@ -3404,6 +3433,9 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     async def async_update(self) -> None:
         """Aggregate the Top 5 directed routes from archived trips."""
 
+        total_started = time.perf_counter()
+        load_started = time.perf_counter()
+
         if self.read_backend == "sqlite":
             if self.database is None:
                 _LOGGER.error(
@@ -3415,6 +3447,8 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         else:
             trips = await self.history.get_all_trips()
 
+        load_elapsed = time.perf_counter() - load_started
+
         valid_trips = [
             trip
             for trip in trips
@@ -3425,7 +3459,15 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         if not valid_trips:
             self._value = None
             self._attributes = {}
+            _LOGGER.debug(
+                "Top Routes finished: loaded=%d valid=0 load=%.3fs total=%.3fs",
+                len(trips),
+                load_elapsed,
+                time.perf_counter() - total_started,
+            )
             return
+
+        aggregation_started = time.perf_counter()
 
         endpoint_clusters: dict[str, dict[str, Any]] = {}
         routes: dict[tuple[str, str], dict[str, Any]] = {}
@@ -3508,6 +3550,9 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
 
             evaluated_routes += 1
 
+        aggregation_elapsed = time.perf_counter() - aggregation_started
+        ranking_started = time.perf_counter()
+
         ranked = sorted(
             routes.values(),
             key=lambda row: (
@@ -3551,6 +3596,18 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             "trip_count": len(valid_trips),
             "evaluated_routes": evaluated_routes,
         }
+
+        ranking_elapsed = time.perf_counter() - ranking_started
+        _LOGGER.debug(
+            "Top Routes finished: loaded=%d valid=%d load=%.3fs "
+            "aggregation=%.3fs ranking=%.3fs total=%.3fs",
+            len(trips),
+            len(valid_trips),
+            load_elapsed,
+            aggregation_elapsed,
+            ranking_elapsed,
+            time.perf_counter() - total_started,
+        )
 
     def update_values(
         self,
