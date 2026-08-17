@@ -105,18 +105,33 @@ class FordTriplogRouteStorage:
         routes = await self.hass.async_add_executor_job(_list_and_read)
 
         mirrored = 0
+        unchanged = 0
         failed = 0
 
+        sqlite_routes = await self.database.load_route_mirror_index()
+
         for route in routes:
+            trip_id = str(route.get("trip_id", "")).strip()
+            if not trip_id:
+                failed += 1
+                continue
+
+            if sqlite_routes.get(trip_id) == route:
+                unchanged += 1
+                continue
+
             if await self.database.save_route(route):
                 mirrored += 1
+                sqlite_routes[trip_id] = route
             else:
                 failed += 1
 
         _LOGGER.info(
-            "Initial SQLite route mirror completed: routes=%d mirrored=%d failed=%d",
+            "Initial SQLite route mirror completed: "
+            "routes=%d mirrored=%d unchanged=%d failed=%d",
             len(routes),
             mirrored,
+            unchanged,
             failed,
         )
 
@@ -405,6 +420,14 @@ class FordTriplogRouteStorage:
             self.read_backend,
             len(trip_ids),
         )
+
+        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+            routes = await self.database.load_routes_for_trip_ids(trip_ids)
+            return [
+                route
+                for route in routes
+                if self._is_completed_route(route)
+            ]
 
         routes: list[dict[str, Any]] = []
 
