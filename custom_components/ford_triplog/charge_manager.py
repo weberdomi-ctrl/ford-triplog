@@ -5,8 +5,8 @@ Track your Ford.
 
 Charging-session management and manual cost handling.
 
-Version: 2.0.2
-Release: 2.0.2 - Charge data update notifications
+Version: 2.1.0
+Release: 2.1.0 - Charge data update notifications
 """
 
 from __future__ import annotations
@@ -22,6 +22,9 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from .charge import Charge
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .storage import FordTriplogStorage
+from .history import FordTriplogHistory
+from .charging_costs import FordTriplogChargingCostCalculator
+from homeassistant.util import dt as dt_util
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -59,16 +62,26 @@ class FordTriplogChargeManager:
         self,
         hass: HomeAssistant,
         storage: FordTriplogStorage,
+        config: dict[str, Any] | None = None,
+        history: FordTriplogHistory | None = None,
     ) -> None:
         """Initialize the Charge Manager."""
 
         self.hass = hass
         self.storage = storage
+        self.config = dict(config or {})
+        self.history = history or FordTriplogHistory(storage)
+        self.cost_calculator = FordTriplogChargingCostCalculator(
+            hass,
+            self.config,
+        )
+        self.journey_rebuilder = None
 
     async def async_setup(self) -> None:
-        """Initialize the storage layer."""
+        """Initialize storage and recalculate archived charging costs."""
 
         await self.storage.async_setup()
+        await self.async_recalculate_all_costs()
 
     async def async_get_charges(
         self,
@@ -184,6 +197,156 @@ class FordTriplogChargeManager:
 
         return path, charge
 
+    async def _async_refresh_dependents(
+        self,
+        charge: Charge | None = None,
+    ) -> None:
+        """Refresh statistics and the affected Journey date."""
+
+        await self.history.refresh_statistics()
+
+        if (
+            charge is None
+            or self.journey_rebuilder is None
+            or not charge.start_time
+        ):
+            return
+
+        start_time = dt_util.parse_datetime(str(charge.start_time))
+        if start_time is None:
+            return
+
+        if start_time.tzinfo is None:
+            start_time = start_time.replace(tzinfo=dt_util.UTC)
+
+        local_date = dt_util.as_local(start_time).date()
+
+        try:
+            await self.journey_rebuilder.async_rebuild_journeys(
+                start_date=local_date,
+                end_date=local_date,
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Journey rebuild failed after charging-cost update: charge=%s",
+                charge.charge_id,
+            )
+
+    async def async_recalculate_all_costs(self) -> int:
+        """Recalculate derived and automatic costs for all archived charges."""
+
+        records = await self.storage.load_archived_charges()
+        changed = 0
+        affected_dates = set()
+
+        for data in records:
+            try:
+                charge = Charge.from_dict(data)
+            except Exception:
+                _LOGGER.exception(
+                    "Unable to parse charge during cost recalculation: %s",
+                    data.get("charge_id", "unknown"),
+                )
+                continue
+
+            before = charge.to_dict()
+            self.cost_calculator.recalculate(charge)
+            after = charge.to_dict()
+
+            if after == before or not charge.charge_id:
+                continue
+
+            if await self.storage.update_charge(
+                charge.charge_id,
+                after,
+            ):
+                changed += 1
+
+                if charge.start_time:
+                    parsed = dt_util.parse_datetime(str(charge.start_time))
+                    if parsed is not None:
+                        if parsed.tzinfo is None:
+                            parsed = parsed.replace(tzinfo=dt_util.UTC)
+                        affected_dates.add(
+                            dt_util.as_local(parsed).date()
+                        )
+
+        if changed:
+            await self.history.refresh_statistics()
+
+            if self.journey_rebuilder is not None:
+                for current_date in sorted(affected_dates):
+                    try:
+                        await self.journey_rebuilder.async_rebuild_journeys(
+                            start_date=current_date,
+                            end_date=current_date,
+                        )
+                    except Exception:
+                        _LOGGER.exception(
+                            "Journey rebuild failed after charging-cost "
+                            "recalculation for %s",
+                            current_date,
+                        )
+
+        _LOGGER.info(
+            "Charging cost recalculation completed: %d/%d updated",
+            changed,
+            len(records),
+        )
+        return changed
+
+    async def async_set_billed_energy(
+        self,
+        charge_id: str,
+        *,
+        energy_billed_kwh: float | None,
+        energy_billed_source: str = "manual",
+        cost_source: str = "manual",
+    ) -> ChargeManagerResult:
+        """Update billed energy without replacing real stored costs."""
+
+        normalized_id = self._normalize_charge_id(charge_id)
+        charge = await self.async_get_charge(normalized_id)
+
+        if charge is None:
+            return ChargeManagerResult(
+                action="set_billed_energy",
+                charge_id=normalized_id,
+                reason="charge_not_found",
+            )
+
+        charge.energy_billed_kwh = self._normalize_optional_cost(
+            energy_billed_kwh
+        )
+        charge.energy_billed_source = str(
+            energy_billed_source or "manual"
+        ).strip().lower()
+
+        self.cost_calculator.recalculate(charge)
+
+        saved = await self.storage.update_charge(
+            normalized_id,
+            charge.to_dict(),
+        )
+
+        if not saved:
+            return ChargeManagerResult(
+                action="set_billed_energy",
+                charge_id=normalized_id,
+                charge=charge,
+                reason="save_failed",
+            )
+
+        await self._async_refresh_dependents(charge)
+        async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
+
+        return ChargeManagerResult(
+            action="set_billed_energy",
+            charge_id=normalized_id,
+            charge=charge,
+            updated=True,
+        )
+
     async def async_set_cost(
         self,
         charge_id: str,
@@ -292,6 +455,7 @@ class FordTriplogChargeManager:
             charge.effective_price_per_kwh,
         )
 
+        await self._async_refresh_dependents(charge)
         async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
 
         return ChargeManagerResult(
@@ -357,6 +521,7 @@ class FordTriplogChargeManager:
             normalized_id,
         )
 
+        await self._async_refresh_dependents(charge)
         async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
 
         return ChargeManagerResult(
@@ -385,6 +550,7 @@ class FordTriplogChargeManager:
         )
 
         if saved:
+            await self._async_refresh_dependents(charge)
             async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
 
         return ChargeManagerResult(

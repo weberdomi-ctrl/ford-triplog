@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 import math
 import re
 import logging
+import time
 
 from homeassistant.components.sensor import (
     SensorDeviceClass,
@@ -231,6 +232,7 @@ class FordTriplogLastJourneySensor(SensorEntity):
     """Expose the last completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "last_journey"
     _attr_unique_id = "ford_triplog_last_journey"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -417,6 +419,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
     """Expose a dashboard-ready overview of the last completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "last_journey_overview"
     _attr_unique_id = "ford_triplog_last_journey_overview"
     _attr_icon = "mdi:map-clock-outline"
@@ -1436,6 +1439,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
     """Expose archived charging sessions for the selected History date."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "charging_history"
     _attr_unique_id = "ford_triplog_charging_history"
     _attr_icon = "mdi:ev-station"
@@ -1724,6 +1728,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "last_route"
     _attr_unique_id = "ford_triplog_last_route"
@@ -1933,6 +1938,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
     """Expose all stored routes for the selected historical date."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "route_history"
     _attr_unique_id = "ford_triplog_route_history"
@@ -2079,6 +2085,7 @@ class FordTriplogSensorBase(SensorEntity):
     """Base sensor."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, coordinator, history, translations) -> None:
         self.coordinator = coordinator
@@ -2153,6 +2160,7 @@ class FordTriplogTopDaySensor(SensorEntity):
     """Expose the calendar day with the highest total Journey distance."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "top_day"
     _attr_unique_id = "ford_triplog_top_day"
     _attr_device_class = SensorDeviceClass.DISTANCE
@@ -2610,6 +2618,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
 
     _HOME_CODE = "__home__"
     _CLUSTER_RADIUS_M = 50.0
+    _LOCATION_CACHE_TTL_S = 60.0
+    _LOCATION_CACHE_MAX_ENTRIES = 2048
 
     _attr_translation_key = "top_locations"
     _attr_unique_id = "ford_triplog_top_locations"
@@ -2874,29 +2884,81 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         latitude: Any,
         longitude: Any,
     ) -> tuple[str, str] | None:
-        """Resolve zone or charging-site location by configured priority."""
+        """Resolve zone or charging-site location by configured priority.
 
-        zone = self._resolve_zone(latitude, longitude)
+        Results are cached on the shared coordinator so Top Locations and
+        Top Routes can reuse the same endpoint resolution. Cache entries are
+        short-lived to avoid keeping zone or charging-site edits stale.
+        """
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        cache = getattr(
+            self.coordinator,
+            "_top_location_resolution_cache",
+            None,
+        )
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(
+                self.coordinator,
+                "_top_location_resolution_cache",
+                cache,
+            )
+
+        cache_key = (
+            round(point_latitude, 5),
+            round(point_longitude, 5),
+        )
+        now = time.monotonic()
+
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple) and len(cached) == 2:
+            cached_at, cached_value = cached
+            try:
+                if now - float(cached_at) <= self._LOCATION_CACHE_TTL_S:
+                    return cached_value
+            except (TypeError, ValueError):
+                pass
+            cache.pop(cache_key, None)
+
+        zone = self._resolve_zone(point_latitude, point_longitude)
         if zone is not None:
             zone_key, zone_label = zone
-            return (
+            result = (
                 zone_key,
                 self._HOME_CODE
                 if zone_key == "zone:home"
                 else zone_label,
             )
+        else:
+            result = await self._async_resolve_user_charging_site(
+                point_latitude,
+                point_longitude,
+            )
 
-        user_site = await self._async_resolve_user_charging_site(
-            latitude,
-            longitude,
-        )
-        if user_site is not None:
-            return user_site
+            if result is None:
+                result = await self._async_resolve_osm_charging_site(
+                    point_latitude,
+                    point_longitude,
+                )
 
-        return await self._async_resolve_osm_charging_site(
-            latitude,
-            longitude,
-        )
+        if len(cache) >= self._LOCATION_CACHE_MAX_ENTRIES:
+            oldest_key = min(
+                cache,
+                key=lambda key: cache[key][0]
+                if isinstance(cache[key], tuple)
+                and len(cache[key]) == 2
+                else 0,
+            )
+            cache.pop(oldest_key, None)
+
+        cache[cache_key] = (now, result)
+        return result
 
     @staticmethod
     def _compact_location(value: Any) -> str | None:
@@ -3152,6 +3214,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Aggregate departures and destinations from the selected backend."""
 
+        total_started = time.perf_counter()
+        load_started = time.perf_counter()
+
         if self.read_backend == "sqlite":
             if self.database is None:
                 _LOGGER.error(
@@ -3163,6 +3228,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         else:
             trips = await self.history.get_all_trips()
 
+        load_elapsed = time.perf_counter() - load_started
+
         valid_trips = [
             trip
             for trip in trips
@@ -3173,7 +3240,15 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         if not valid_trips:
             self._value = None
             self._attributes = {}
+            _LOGGER.debug(
+                "Top Locations finished: loaded=%d valid=0 load=%.3fs total=%.3fs",
+                len(trips),
+                load_elapsed,
+                time.perf_counter() - total_started,
+            )
             return
+
+        aggregation_started = time.perf_counter()
 
         departures: dict[str, dict[str, Any]] = {}
         destinations: dict[str, dict[str, Any]] = {}
@@ -3207,6 +3282,9 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             ):
                 evaluated_destinations += 1
 
+        aggregation_elapsed = time.perf_counter() - aggregation_started
+        ranking_started = time.perf_counter()
+
         top_departures = self._rank_rows(departures)
         top_destinations = self._rank_rows(destinations)
 
@@ -3235,6 +3313,18 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
             "evaluated_departures": evaluated_departures,
             "evaluated_destinations": evaluated_destinations,
         }
+
+        ranking_elapsed = time.perf_counter() - ranking_started
+        _LOGGER.debug(
+            "Top Locations finished: loaded=%d valid=%d load=%.3fs "
+            "aggregation=%.3fs ranking=%.3fs total=%.3fs",
+            len(trips),
+            len(valid_trips),
+            load_elapsed,
+            aggregation_elapsed,
+            ranking_elapsed,
+            time.perf_counter() - total_started,
+        )
 
     def update_values(
         self,
@@ -3404,6 +3494,9 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
     async def async_update(self) -> None:
         """Aggregate the Top 5 directed routes from archived trips."""
 
+        total_started = time.perf_counter()
+        load_started = time.perf_counter()
+
         if self.read_backend == "sqlite":
             if self.database is None:
                 _LOGGER.error(
@@ -3415,6 +3508,8 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         else:
             trips = await self.history.get_all_trips()
 
+        load_elapsed = time.perf_counter() - load_started
+
         valid_trips = [
             trip
             for trip in trips
@@ -3425,7 +3520,15 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         if not valid_trips:
             self._value = None
             self._attributes = {}
+            _LOGGER.debug(
+                "Top Routes finished: loaded=%d valid=0 load=%.3fs total=%.3fs",
+                len(trips),
+                load_elapsed,
+                time.perf_counter() - total_started,
+            )
             return
+
+        aggregation_started = time.perf_counter()
 
         endpoint_clusters: dict[str, dict[str, Any]] = {}
         routes: dict[tuple[str, str], dict[str, Any]] = {}
@@ -3508,6 +3611,9 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
 
             evaluated_routes += 1
 
+        aggregation_elapsed = time.perf_counter() - aggregation_started
+        ranking_started = time.perf_counter()
+
         ranked = sorted(
             routes.values(),
             key=lambda row: (
@@ -3551,6 +3657,18 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             "trip_count": len(valid_trips),
             "evaluated_routes": evaluated_routes,
         }
+
+        ranking_elapsed = time.perf_counter() - ranking_started
+        _LOGGER.debug(
+            "Top Routes finished: loaded=%d valid=%d load=%.3fs "
+            "aggregation=%.3fs ranking=%.3fs total=%.3fs",
+            len(trips),
+            len(valid_trips),
+            load_elapsed,
+            aggregation_elapsed,
+            ranking_elapsed,
+            time.perf_counter() - total_started,
+        )
 
     def update_values(
         self,
@@ -4396,6 +4514,7 @@ class FordTriplogTopJourneySensor(SensorEntity):
     """Expose the longest archived completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "top_journey"
     _attr_unique_id = "ford_triplog_top_journey"
     _attr_device_class = SensorDeviceClass.DISTANCE

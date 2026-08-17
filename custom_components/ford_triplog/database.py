@@ -10,10 +10,12 @@ Changes: Add Top Locations SQL view read support
 
 from __future__ import annotations
 
+import asyncio
 import functools
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -167,297 +169,427 @@ class FordTriplogDatabase:
             }
 
     async def async_setup(self) -> None:
-        """Initialize SQLite database."""
+        """Initialize SQLite database once per Home Assistant runtime."""
 
-        def _setup() -> None:
-            self.db_path.parent.mkdir(
-                parents=True,
-                exist_ok=True,
+        runtime_key = f"ford_triplog_database_setup:{self.db_path}"
+        lock_key = f"{runtime_key}:lock"
+
+        lock = self.hass.data.get(lock_key)
+        if not isinstance(lock, asyncio.Lock):
+            lock = asyncio.Lock()
+            self.hass.data[lock_key] = lock
+
+        if self.hass.data.get(runtime_key, False):
+            _LOGGER.debug(
+                "Ford Triplog SQLite database already initialized in this HA runtime: %s",
+                self.db_path,
             )
+            return
 
-            with sqlite3.connect(self.db_path) as db:
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS trips (
-                        trip_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+        async with lock:
+            if self.hass.data.get(runtime_key, False):
+                _LOGGER.debug(
+                    "Ford Triplog SQLite database already initialized in this HA runtime: %s",
+                    self.db_path,
+                )
+                return
+
+            def _setup() -> None:
+                self.db_path.parent.mkdir(
+                    parents=True,
+                    exist_ok=True,
+                )
+
+                with sqlite3.connect(self.db_path) as db:
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS trips (
+                            trip_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS current_trip (
-                        trip_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS current_trip (
+                            trip_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS last_trip (
-                        trip_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS last_trip (
+                            trip_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS current_charge (
-                        charge_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS current_charge (
+                            charge_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS charges (
-                        charge_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS charges (
+                            charge_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS last_charge (
-                        charge_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS last_charge (
+                            charge_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS statistics (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS statistics (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS diagnostics (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS diagnostics (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS user_charging_sites (
-                        site_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS user_charging_sites (
+                            site_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pending_charging_sites (
-                        pending_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS pending_charging_sites (
+                            pending_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS journeys (
-                        journey_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS journeys (
+                            journey_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS current_journey (
-                        journey_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS current_journey (
+                            journey_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS last_journey (
-                        journey_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS last_journey (
+                            journey_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS metadata (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS metadata (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS charge_metadata (
-                        charge_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS charge_metadata (
+                            charge_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS pause_metadata (
-                        pause_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS pause_metadata (
+                            pause_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS user_receipt_parser_profiles (
-                        profile_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS user_receipt_parser_profiles (
+                            profile_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
 
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS receipts (
-                        receipt_id TEXT PRIMARY KEY,
-                        target_type TEXT NOT NULL,
-                        target_id TEXT NOT NULL,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS receipts (
+                            receipt_id TEXT PRIMARY KEY,
+                            target_type TEXT NOT NULL,
+                            target_id TEXT NOT NULL,
+                            data TEXT NOT NULL
+                        )
+                        """
                     )
-                    """
-                )
-                db.execute(
-                    """
-                    CREATE INDEX IF NOT EXISTS idx_receipts_target
-                    ON receipts (target_type, target_id)
-                    """
-                )
-
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS routes (
-                        trip_id TEXT PRIMARY KEY,
-                        data TEXT NOT NULL
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_receipts_target
+                        ON receipts (target_type, target_id)
+                        """
                     )
-                    """
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS routes (
+                            trip_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
+                    )
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_location_trips AS
+                        SELECT
+                            trip_id,
+                            data,
+                            json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                            json_extract(data, '$.distance_km') AS distance_km,
+                            json_extract(data, '$.start_latitude') AS start_latitude,
+                            json_extract(data, '$.start_longitude') AS start_longitude,
+                            json_extract(data, '$.end_latitude') AS end_latitude,
+                            json_extract(data, '$.end_longitude') AS end_longitude,
+                            json_extract(data, '$.start_address') AS start_address,
+                            json_extract(data, '$.end_address') AS end_address
+                        FROM trips
+                        """
+                    )
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_route_trips AS
+                        SELECT
+                            trip_id,
+                            data,
+                            json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                            json_extract(data, '$.distance_km') AS distance_km,
+                            json_extract(data, '$.start_latitude') AS start_latitude,
+                            json_extract(data, '$.start_longitude') AS start_longitude,
+                            json_extract(data, '$.end_latitude') AS end_latitude,
+                            json_extract(data, '$.end_longitude') AS end_longitude,
+                            json_extract(data, '$.consumption_kwh_100km') AS consumption_kwh_100km,
+                            json_extract(data, '$.start_address') AS start_address,
+                            json_extract(data, '$.end_address') AS end_address
+                        FROM trips
+                        """
+                    )
+
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
+                        SELECT
+                            trip_id,
+                            data,
+                            json_extract(data, '$.include_in_statistics') AS include_in_statistics,
+                            json_extract(data, '$.distance_km') AS distance_km
+                        FROM trips
+                        """
+                    )
+
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
+                        SELECT
+                            journey_id,
+                            data,
+                            json_extract(data, '$.distance_km') AS distance_km
+                        FROM journeys
+                        """
+                    )
+
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
+                        SELECT
+                            charge_id,
+                            data,
+                            json_extract(data, '$.include_in_statistics') AS include_in_statistics
+                        FROM charges
+                        """
+                    )
+
+
+                    db.execute(
+                        """
+                        CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
+                        SELECT
+                            journey_id,
+                            data,
+                            json_extract(data, '$.date') AS date,
+                            json_extract(data, '$.distance_km') AS distance_km
+                        FROM journeys
+                        """
+                    )
+
+
+                    db.commit()
+
+
+            try:
+                await self.hass.async_add_executor_job(
+                    functools.partial(_setup)
                 )
-
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_location_trips AS
-                    SELECT
-                        trip_id,
-                        data,
-                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
-                        json_extract(data, '$.distance_km') AS distance_km,
-                        json_extract(data, '$.start_latitude') AS start_latitude,
-                        json_extract(data, '$.start_longitude') AS start_longitude,
-                        json_extract(data, '$.end_latitude') AS end_latitude,
-                        json_extract(data, '$.end_longitude') AS end_longitude,
-                        json_extract(data, '$.start_address') AS start_address,
-                        json_extract(data, '$.end_address') AS end_address
-                    FROM trips
-                    """
+            except Exception:
+                self.hass.data.pop(runtime_key, None)
+                _LOGGER.exception(
+                    "Unable to initialize Ford Triplog SQLite database"
                 )
+                return
 
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_route_trips AS
-                    SELECT
-                        trip_id,
-                        data,
-                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
-                        json_extract(data, '$.distance_km') AS distance_km,
-                        json_extract(data, '$.start_latitude') AS start_latitude,
-                        json_extract(data, '$.start_longitude') AS start_longitude,
-                        json_extract(data, '$.end_latitude') AS end_latitude,
-                        json_extract(data, '$.end_longitude') AS end_longitude,
-                        json_extract(data, '$.consumption_kwh_100km') AS consumption_kwh_100km,
-                        json_extract(data, '$.start_address') AS start_address,
-                        json_extract(data, '$.end_address') AS end_address
-                    FROM trips
-                    """
-                )
-
-
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
-                    SELECT
-                        trip_id,
-                        data,
-                        json_extract(data, '$.include_in_statistics') AS include_in_statistics,
-                        json_extract(data, '$.distance_km') AS distance_km
-                    FROM trips
-                    """
-                )
-
-
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
-                    SELECT
-                        journey_id,
-                        data,
-                        json_extract(data, '$.distance_km') AS distance_km
-                    FROM journeys
-                    """
-                )
-
-
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
-                    SELECT
-                        charge_id,
-                        data,
-                        json_extract(data, '$.include_in_statistics') AS include_in_statistics
-                    FROM charges
-                    """
-                )
-
-
-                db.execute(
-                    """
-                    CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
-                    SELECT
-                        journey_id,
-                        data,
-                        json_extract(data, '$.date') AS date,
-                        json_extract(data, '$.distance_km') AS distance_km
-                    FROM journeys
-                    """
-                )
-
-
-                db.commit()
-
-        try:
-            await self.hass.async_add_executor_job(
-                functools.partial(_setup)
-            )
-
+            self.hass.data[runtime_key] = True
             _LOGGER.info(
                 "Ford Triplog SQLite database initialized: %s",
                 self.db_path,
             )
 
+    async def load_storage_mirror_snapshot(
+        self,
+        trip_ids: list[str],
+        charge_ids: list[str],
+    ) -> dict[str, Any]:
+        """Load current SQLite values needed by the main initial mirror."""
+
+        normalized_trip_ids = [
+            str(value).strip()
+            for value in trip_ids
+            if str(value).strip()
+        ]
+        normalized_charge_ids = [
+            str(value).strip()
+            for value in charge_ids
+            if str(value).strip()
+        ]
+
+        self._log_read(
+            "storage_mirror_snapshot "
+            f"trips={len(normalized_trip_ids)} "
+            f"charges={len(normalized_charge_ids)}"
+        )
+
+        def _decode(payload: Any) -> dict[str, Any] | None:
+            if payload is None:
+                return None
+            try:
+                value = json.loads(payload)
+            except (TypeError, json.JSONDecodeError):
+                return None
+            return value if isinstance(value, dict) else None
+
+        def _read() -> dict[str, Any]:
+            result: dict[str, Any] = {
+                "trips": {},
+                "charges": {},
+                "current_trip": None,
+                "current_charge": None,
+                "last_trip": None,
+                "last_charge": None,
+                "statistics": None,
+                "diagnostics": None,
+            }
+
+            with sqlite3.connect(self.db_path) as db:
+                if normalized_trip_ids:
+                    placeholders = ",".join("?" for _ in normalized_trip_ids)
+                    rows = db.execute(
+                        f"SELECT trip_id, data FROM trips "
+                        f"WHERE trip_id IN ({placeholders})",
+                        normalized_trip_ids,
+                    ).fetchall()
+                    for trip_id, payload in rows:
+                        value = _decode(payload)
+                        if value is not None:
+                            result["trips"][str(trip_id)] = value
+
+                if normalized_charge_ids:
+                    placeholders = ",".join("?" for _ in normalized_charge_ids)
+                    rows = db.execute(
+                        f"SELECT charge_id, data FROM charges "
+                        f"WHERE charge_id IN ({placeholders})",
+                        normalized_charge_ids,
+                    ).fetchall()
+                    for charge_id, payload in rows:
+                        value = _decode(payload)
+                        if value is not None:
+                            result["charges"][str(charge_id)] = value
+
+                single_queries = {
+                    "current_trip": "SELECT data FROM current_trip LIMIT 1",
+                    "current_charge": "SELECT data FROM current_charge LIMIT 1",
+                    "last_trip": "SELECT data FROM last_trip LIMIT 1",
+                    "last_charge": "SELECT data FROM last_charge LIMIT 1",
+                    "statistics": "SELECT data FROM statistics WHERE id = 1",
+                    "diagnostics": "SELECT data FROM diagnostics WHERE id = 1",
+                }
+
+                for key, query in single_queries.items():
+                    row = db.execute(query).fetchone()
+                    result[key] = _decode(row[0]) if row else None
+
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
         except Exception:
             _LOGGER.exception(
-                "Unable to initialize Ford Triplog SQLite database"
+                "Unable to read SQLite main storage mirror snapshot"
             )
+            return {
+                "trips": {},
+                "charges": {},
+                "current_trip": None,
+                "current_charge": None,
+                "last_trip": None,
+                "last_charge": None,
+                "statistics": None,
+                "diagnostics": None,
+            }
 
     async def save_route(
         self,
@@ -511,6 +643,90 @@ class FordTriplogDatabase:
                 trip_id,
             )
             return False
+
+    async def load_route_mirror_index(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        """Load route payloads keyed by trip_id for mirror comparison."""
+
+        self._log_read("route_mirror_index")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT trip_id, data FROM routes"
+                ).fetchall()
+
+            result: dict[str, dict[str, Any]] = {}
+            for trip_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    result[str(trip_id)] = data
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite route mirror index loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read SQLite route mirror index")
+            return {}
+
+    async def load_routes_for_trip_ids(
+        self,
+        trip_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Load routes for multiple Trip IDs with one SQLite query."""
+
+        normalized_ids = [
+            str(trip_id).strip()
+            for trip_id in trip_ids
+            if str(trip_id).strip()
+        ]
+        if not normalized_ids:
+            return []
+
+        self._log_read(f"route_trip_ids={len(normalized_ids)}")
+
+        def _read() -> list[dict[str, Any]]:
+            placeholders = ",".join("?" for _ in normalized_ids)
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    f"SELECT trip_id, data FROM routes "
+                    f"WHERE trip_id IN ({placeholders})",
+                    normalized_ids,
+                ).fetchall()
+
+            by_id: dict[str, dict[str, Any]] = {}
+            for trip_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    by_id[str(trip_id)] = data
+
+            return [
+                by_id[trip_id]
+                for trip_id in normalized_ids
+                if trip_id in by_id
+            ]
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read routes for Trip IDs from SQLite")
+            return []
 
     async def load_route(
         self,
@@ -670,6 +886,7 @@ class FordTriplogDatabase:
         """Load the trip fields required by the Top Locations sensor in one query."""
 
         self._log_read("view=v_top_location_trips")
+        started = time.perf_counter()
 
         def _read() -> list[dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
@@ -703,9 +920,15 @@ class FordTriplogDatabase:
             return result
 
         try:
-            return await self.hass.async_add_executor_job(
+            result = await self.hass.async_add_executor_job(
                 functools.partial(_read)
             )
+            _LOGGER.debug(
+                "SQLite Top Locations load finished: trips=%d elapsed=%.3fs",
+                len(result),
+                time.perf_counter() - started,
+            )
+            return result
         except Exception:
             _LOGGER.exception(
                 "Unable to read Top Locations trips from SQLite view"
@@ -1721,6 +1944,46 @@ class FordTriplogDatabase:
         except Exception:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
             return False
+
+    async def load_journey_mirror_index(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        """Load archived journey payloads keyed by journey_id for mirror comparison."""
+
+        self._log_read("journey_mirror_index")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT journey_id, data FROM journeys"
+                ).fetchall()
+
+            result: dict[str, dict[str, Any]] = {}
+            for journey_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    result[str(journey_id)] = data
+
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite journey mirror index loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read SQLite journey mirror index"
+            )
+            return {}
 
     async def load_journey(
         self,

@@ -5,11 +5,12 @@ Track your Ford.
 
 Configuration Flow.
 
+Version: 2.1.0
+Phase: 
+Build: 
 Release: 2.1.0
 
-Changes:
-- Keeps Build 14 translation-placeholder compatibility.
-- Adds configurable Journey base zone, home timeout and maximum gap options.
+
 """
 
 from __future__ import annotations
@@ -3382,19 +3383,29 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ).upper()
 
             try:
-                result = await self._get_charge_manager().async_set_cost(
-                    target_id,
-                    currency=currency,
-                    cost_total=None,
-                    energy_billed_kwh=energy_billed,
-                    energy_cost=total_cost,
-                    session_fee=0.0,
-                    time_fee=0.0,
-                    blocking_fee=0.0,
-                    parking_fee=0.0,
-                    other_cost=0.0,
-                    energy_billed_source="receipt",
-                )
+                if isinstance(parsed_total, (int, float)):
+                    result = await self._get_charge_manager().async_set_cost(
+                        target_id,
+                        currency=currency,
+                        cost_total=None,
+                        energy_billed_kwh=energy_billed,
+                        energy_cost=total_cost,
+                        session_fee=0.0,
+                        time_fee=0.0,
+                        blocking_fee=0.0,
+                        parking_fee=0.0,
+                        other_cost=0.0,
+                        energy_billed_source="receipt",
+                        cost_source="ocr",
+                    )
+                else:
+                    result = (
+                        await self._get_charge_manager().async_set_billed_energy(
+                            target_id,
+                            energy_billed_kwh=energy_billed,
+                            energy_billed_source="receipt",
+                        )
+                    )
             except (HomeAssistantError, OSError, RuntimeError, ValueError):
                 _LOGGER.exception(
                     "Unable to apply parsed receipt values: receipt_id=%s "
@@ -3407,13 +3418,22 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 if not result.updated:
                     errors["base"] = "receipt_apply_failed"
                 else:
+                    saved_charge = result.charge
+                    saved_total = float(
+                        getattr(saved_charge, "cost_total", None) or 0.0
+                    )
+                    saved_currency = str(
+                        getattr(saved_charge, "currency", None)
+                        or currency
+                    ).upper()
+
                     await self._get_receipt_storage().async_mark_applied(
                         receipt_id,
                         charge_id=target_id,
                         applied_values={
                             "energy_billed_kwh": energy_billed,
-                            "cost_total": total_cost,
-                            "currency": currency,
+                            "cost_total": saved_total,
+                            "currency": saved_currency,
                         },
                     )
                     self._receipt_apply_result = {
@@ -3424,8 +3444,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             or receipt_id
                         ),
                         "energy": f"{energy_billed:.3f}",
-                        "total": f"{total_cost:.2f}",
-                        "currency": currency,
+                        "total": f"{saved_total:.2f}",
+                        "currency": saved_currency,
                         "profile": str(
                             parser_result.get("profile_name") or "—"
                         ),

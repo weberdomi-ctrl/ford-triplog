@@ -1,6 +1,6 @@
 # Ford Triplog Roadmap
 
-This roadmap summarizes completed development and outlines the next planned Ford Triplog releases.
+This roadmap summarizes completed 2.0.x / 2.1 development and outlines the next planned Ford Triplog releases.
 
 ---
 
@@ -187,6 +187,24 @@ Users requiring specialized queries, reporting or additional export formats can 
 
 JSON may remain useful as an import/export format, but no longer as a continuously maintained parallel production database.
 
+## Implemented – Runtime and Startup Optimization
+
+- Incremental Trip and Charge compatibility mirror
+- Incremental Journey compatibility mirror
+- Incremental Route compatibility mirror
+- Existing identical records are skipped instead of rewritten
+- SQLite-only archive records remain untouched by the JSON compatibility mirror
+- Bulk mirror-index reads for Journey and Route comparison
+- Combined main-storage mirror snapshot for Trip, Charge and cache comparison
+- SQLite schema setup guarded to run only once per Home Assistant runtime
+- Parallel database initialization protected by an asynchronous lock
+- Metadata and legacy migration checks guarded against repeated execution
+- User-defined charging locations cached after initial load
+- Bulk Route reads for multiple Trip IDs
+- Shared Top Location / Top Route location cache
+- Coordinator update bursts coalesced before sensor publication
+- Redundant periodic polling disabled for push-driven Ford Triplog sensors
+
 ---
 
 # Future Research
@@ -216,4 +234,4 @@ Potential future development areas include:
 | 2.1 | Released | SQLite storage backend, selectable JSON/SQLite reads, migration validation, SQL-based statistics and runtime optimization |
 | 2.2 | Planned | Trip/Route reliability, CSV exports, continued JSON/SQLite validation |
 | 2.3 | Planned | SQLite-only production storage, end of parallel JSON writes |
-| Future | Research | Multi-vehicle support, maintenance tracking, long-term history and additional reporting |
+| Future | Research | Multi-vehicle support, exports, maintenance tracking, long-term history and additional reporting |
