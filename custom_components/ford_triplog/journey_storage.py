@@ -124,6 +124,7 @@ class FordTriplogJourneyStorage:
         """
 
         mirrored = 0
+        unchanged = 0
         skipped = 0
         failed = 0
 
@@ -134,6 +135,10 @@ class FordTriplogJourneyStorage:
                 "Initial SQLite journey mirror: no JSON files found; "
                 "existing SQLite journeys preserved"
             )
+
+        # Read the SQLite journey archive once. Unchanged JSON journeys then
+        # require no individual SQLite SELECT and no INSERT OR REPLACE.
+        sqlite_journeys = await self.database.load_journey_mirror_index()
 
         for path in json_paths:
             data = await self._async_load_json(path)
@@ -155,8 +160,14 @@ class FordTriplogJourneyStorage:
                 )
                 continue
 
+            existing = sqlite_journeys.get(journey_id)
+            if existing == data:
+                unchanged += 1
+                continue
+
             if await self.database.save_journey(data):
                 mirrored += 1
+                sqlite_journeys[journey_id] = data
             else:
                 failed += 1
                 _LOGGER.error(
@@ -167,10 +178,11 @@ class FordTriplogJourneyStorage:
 
         _LOGGER.info(
             "Initial SQLite journey mirror completed: "
-            "json_files=%d mirrored=%d skipped=%d failed=%d "
+            "json_files=%d mirrored=%d unchanged=%d skipped=%d failed=%d "
             "existing_sqlite_rows_preserved=true",
             len(json_paths),
             mirrored,
+            unchanged,
             skipped,
             failed,
         )
