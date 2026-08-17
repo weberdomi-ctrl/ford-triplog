@@ -232,6 +232,7 @@ class FordTriplogLastJourneySensor(SensorEntity):
     """Expose the last completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "last_journey"
     _attr_unique_id = "ford_triplog_last_journey"
     _attr_device_class = SensorDeviceClass.TIMESTAMP
@@ -418,6 +419,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
     """Expose a dashboard-ready overview of the last completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "last_journey_overview"
     _attr_unique_id = "ford_triplog_last_journey_overview"
     _attr_icon = "mdi:map-clock-outline"
@@ -1437,6 +1439,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
     """Expose archived charging sessions for the selected History date."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "charging_history"
     _attr_unique_id = "ford_triplog_charging_history"
     _attr_icon = "mdi:ev-station"
@@ -1725,6 +1728,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     """Expose the last stored Route Tracker track as GeoJSON."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "last_route"
     _attr_unique_id = "ford_triplog_last_route"
@@ -1934,6 +1938,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
     """Expose all stored routes for the selected historical date."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _unrecorded_attributes = frozenset({"geojson"})
     _attr_translation_key = "route_history"
     _attr_unique_id = "ford_triplog_route_history"
@@ -2080,6 +2085,7 @@ class FordTriplogSensorBase(SensorEntity):
     """Base sensor."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
 
     def __init__(self, coordinator, history, translations) -> None:
         self.coordinator = coordinator
@@ -2154,6 +2160,7 @@ class FordTriplogTopDaySensor(SensorEntity):
     """Expose the calendar day with the highest total Journey distance."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "top_day"
     _attr_unique_id = "ford_triplog_top_day"
     _attr_device_class = SensorDeviceClass.DISTANCE
@@ -4507,6 +4514,7 @@ class FordTriplogTopJourneySensor(SensorEntity):
     """Expose the longest archived completed Journey."""
 
     _attr_has_entity_name = True
+    _attr_should_poll = False
     _attr_translation_key = "top_journey"
     _attr_unique_id = "ford_triplog_top_journey"
     _attr_device_class = SensorDeviceClass.DISTANCE
