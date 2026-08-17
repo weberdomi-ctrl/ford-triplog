@@ -513,6 +513,90 @@ class FordTriplogDatabase:
             )
             return False
 
+    async def load_route_mirror_index(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        """Load route payloads keyed by trip_id for mirror comparison."""
+
+        self._log_read("route_mirror_index")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT trip_id, data FROM routes"
+                ).fetchall()
+
+            result: dict[str, dict[str, Any]] = {}
+            for trip_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    result[str(trip_id)] = data
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite route mirror index loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read SQLite route mirror index")
+            return {}
+
+    async def load_routes_for_trip_ids(
+        self,
+        trip_ids: list[str],
+    ) -> list[dict[str, Any]]:
+        """Load routes for multiple Trip IDs with one SQLite query."""
+
+        normalized_ids = [
+            str(trip_id).strip()
+            for trip_id in trip_ids
+            if str(trip_id).strip()
+        ]
+        if not normalized_ids:
+            return []
+
+        self._log_read(f"route_trip_ids={len(normalized_ids)}")
+
+        def _read() -> list[dict[str, Any]]:
+            placeholders = ",".join("?" for _ in normalized_ids)
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    f"SELECT trip_id, data FROM routes "
+                    f"WHERE trip_id IN ({placeholders})",
+                    normalized_ids,
+                ).fetchall()
+
+            by_id: dict[str, dict[str, Any]] = {}
+            for trip_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    by_id[str(trip_id)] = data
+
+            return [
+                by_id[trip_id]
+                for trip_id in normalized_ids
+                if trip_id in by_id
+            ]
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception("Unable to read routes for Trip IDs from SQLite")
+            return []
+
     async def load_route(
         self,
         trip_id: str,
