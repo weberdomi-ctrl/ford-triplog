@@ -14,6 +14,7 @@ import functools
 import json
 import logging
 import sqlite3
+import time
 from pathlib import Path
 from typing import Any
 
@@ -670,6 +671,7 @@ class FordTriplogDatabase:
         """Load the trip fields required by the Top Locations sensor in one query."""
 
         self._log_read("view=v_top_location_trips")
+        started = time.perf_counter()
 
         def _read() -> list[dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
@@ -703,9 +705,15 @@ class FordTriplogDatabase:
             return result
 
         try:
-            return await self.hass.async_add_executor_job(
+            result = await self.hass.async_add_executor_job(
                 functools.partial(_read)
             )
+            _LOGGER.debug(
+                "SQLite Top Locations load finished: trips=%d elapsed=%.3fs",
+                len(result),
+                time.perf_counter() - started,
+            )
+            return result
         except Exception:
             _LOGGER.exception(
                 "Unable to read Top Locations trips from SQLite view"
