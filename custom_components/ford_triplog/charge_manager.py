@@ -428,9 +428,7 @@ class FordTriplogChargeManager:
         )
 
         charge.currency = normalized_currency
-        charge.cost_source = str(cost_source or "manual").strip().lower()
-        if charge.cost_source not in {"manual", "ocr"}:
-            charge.cost_source = "manual"
+        charge.cost_source = "manual"
         charge.cost_verified = True
         # Keep an existing receipt filename when manually updating costs.
         charge.recalculate_costs()
