@@ -1730,6 +1730,46 @@ class FordTriplogDatabase:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
             return False
 
+    async def load_journey_mirror_index(
+        self,
+    ) -> dict[str, dict[str, Any]]:
+        """Load archived journey payloads keyed by journey_id for mirror comparison."""
+
+        self._log_read("journey_mirror_index")
+
+        def _read() -> dict[str, dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT journey_id, data FROM journeys"
+                ).fetchall()
+
+            result: dict[str, dict[str, Any]] = {}
+            for journey_id, payload in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+
+                if isinstance(data, dict):
+                    result[str(journey_id)] = data
+
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite journey mirror index loaded: %d",
+                len(result),
+            )
+            return result
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read SQLite journey mirror index"
+            )
+            return {}
+
     async def load_journey(
         self,
         journey_id: str,
