@@ -110,6 +110,21 @@ The route history and last-route reads can therefore operate without requiring t
 ## ⚙️ Improvements and Fixes
 
 - Added backend-neutral archive reads for Trips and charging sessions
+- Added incremental startup mirroring for Trips, Charges, Journeys and Routes
+- Unchanged JSON records are skipped instead of being written to SQLite again on every restart
+- SQLite-only archive records are preserved during compatibility mirroring
+- Added bulk mirror-index reads for Journey and Route startup comparison
+- Added a compact main-storage mirror snapshot to avoid repeated per-record SQLite lookups
+- Added a Home Assistant runtime guard for SQLite schema initialization
+- Added a shared initialization lock to prevent parallel duplicate schema setup
+- Reduced repeated metadata, charging-site and migration reads through runtime caching/guards
+- Cached user-defined charging locations after initial load instead of re-reading them for every location lookup
+- Added bulk Route lookups for multiple Trip IDs
+- Reduced redundant Top Statistics and Route History database access
+- Coalesced rapid coordinator update bursts before publishing sensor updates
+- Disabled redundant Home Assistant polling for push-driven Ford Triplog sensors
+- Fixed manual charging-cost editing when setting additional costs such as parking fees to `0`
+- Improved charging-cost recalculation consistency for stored home charging sessions
 - Fixed Journey rebuild returning zero source records in SQLite-only mode
 - Fixed statistics depending on the number of remaining JSON archive files
 - Added automatic statistics refresh after setup/reload
@@ -119,6 +134,21 @@ The route history and last-route reads can therefore operate without requiring t
 - Added SQLite Journey and Route archive support
 - Reduced remaining hidden JSON-only read paths
 - Preserved JSON fallback behavior throughout the migration
+
+## 🚀 Storage and Runtime Efficiency
+
+The 2.1 storage migration also includes a number of startup and runtime optimizations discovered during SQLite testing:
+
+- SQLite schema creation is performed only once per Home Assistant runtime
+- Journey and Route compatibility mirrors compare existing records before writing
+- Main Trip/Charge/cache mirroring skips unchanged records
+- Metadata migration checks run once per runtime
+- User-defined charging locations are cached after loading
+- Top Location and Top Route processing share cached location resolution data
+- Rapid FordPass entity-update bursts are published as a single coordinator update
+- Ford Triplog sensors use push updates instead of additional periodic Home Assistant polling
+
+These changes substantially reduce unnecessary SQLite reads, writes and repeated sensor recalculations during normal operation.
 
 ## ⬆️ Upgrade Notes
 
