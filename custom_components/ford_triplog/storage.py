@@ -83,9 +83,17 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        # Phase 1: mirror all existing JSON-backed storage into SQLite
-        # after creating the database. JSON remains the production source.
-        await self._mirror_existing_storage()
+        # Mirror existing JSON-backed storage only once per Home Assistant
+        # runtime. Multiple components may create their own Storage instance.
+        mirror_key = "ford_triplog_initial_storage_mirror_done"
+
+        if not self.hass.data.get(mirror_key, False):
+            self.hass.data[mirror_key] = True
+            await self._mirror_existing_storage()
+        else:
+            _LOGGER.debug(
+                "Initial SQLite storage mirror already completed in this HA runtime"
+            )
 
         _LOGGER.info(
             "Ford Triplog read backend: %s",
