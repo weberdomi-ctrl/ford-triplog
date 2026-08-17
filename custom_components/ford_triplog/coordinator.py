@@ -204,6 +204,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._charge_finalizing = False
         self._trip_finishing = False
 
+        # Coalesce rapid coordinator publishes. FordPass/Home Assistant can
+        # update several watched entities within a few milliseconds. The
+        # transition handling still runs for every event, but sensors only
+        # need the latest resulting vehicle state once per burst.
+        self._publish_delay_seconds = 0.25
+        self._publish_handle: asyncio.TimerHandle | None = None
+        self._pending_publish_data: dict[str, Any] | None = None
+
 
         # Smart Trip
         self.trip_pause_time: float | None = None
@@ -221,6 +229,34 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.journey_rebuilder: Any | None = None
         self.route_tracker: Any | None = None
        
+
+    def _schedule_coordinator_update(
+        self,
+        data: dict[str, Any],
+    ) -> None:
+        """Publish only the latest coordinator state from a rapid update burst."""
+
+        self._pending_publish_data = dict(data)
+
+        if self._publish_handle is not None:
+            self._publish_handle.cancel()
+
+        self._publish_handle = self.hass.loop.call_later(
+            self._publish_delay_seconds,
+            self._publish_coordinator_update,
+        )
+
+    def _publish_coordinator_update(self) -> None:
+        """Publish the most recently queued coordinator state."""
+
+        self._publish_handle = None
+        data = self._pending_publish_data
+        self._pending_publish_data = None
+
+        if data is None:
+            return
+
+        self.async_set_updated_data(data)
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -388,6 +424,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._cancel_last_charge_timer()
         self._cancel_last_charge_timeout_timer()
+
+        if self._publish_handle is not None:
+            self._publish_handle.cancel()
+            self._publish_handle = None
+        self._pending_publish_data = None
+
         self._gps_update_event.set()
 
         _LOGGER.debug("Ford Triplog coordinator shut down")
@@ -641,7 +683,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_ignition = ignition
         self.last_charging = charging
 
-        self.async_set_updated_data(self.vehicle_state)
+        self._schedule_coordinator_update(self.vehicle_state)
 
     @staticmethod
     def _last_charge_to_snapshot(
@@ -1251,7 +1293,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.current_trip.to_dict()
             )           
 
-            self.async_set_updated_data(
+            self._schedule_coordinator_update(
                 self._read_vehicle_state()
             )
 
@@ -1412,7 +1454,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 state.get("soc"),
             )
 
-            self.async_set_updated_data(state)
+            self._schedule_coordinator_update(state)
 
     async def finish_charge(self):
         """Finish charging locally and wait for stable FordPass data."""
@@ -1548,7 +1590,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     
 
-        self.async_set_updated_data(state)
+        self._schedule_coordinator_update(state)
 
         _LOGGER.info("Trip saved successfully")
 
@@ -1646,7 +1688,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 await self.storage.delete_current_charge()
                 self.current_charge = None
 
-            self.async_set_updated_data(state)
+            self._schedule_coordinator_update(state)
 
             _LOGGER.info("Charging session saved successfully")
 
