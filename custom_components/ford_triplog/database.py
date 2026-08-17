@@ -460,6 +460,110 @@ class FordTriplogDatabase:
                 "Unable to initialize Ford Triplog SQLite database"
             )
 
+    async def load_storage_mirror_snapshot(
+        self,
+        trip_ids: list[str],
+        charge_ids: list[str],
+    ) -> dict[str, Any]:
+        """Load current SQLite values needed by the main initial mirror."""
+
+        normalized_trip_ids = [
+            str(value).strip()
+            for value in trip_ids
+            if str(value).strip()
+        ]
+        normalized_charge_ids = [
+            str(value).strip()
+            for value in charge_ids
+            if str(value).strip()
+        ]
+
+        self._log_read(
+            "storage_mirror_snapshot "
+            f"trips={len(normalized_trip_ids)} "
+            f"charges={len(normalized_charge_ids)}"
+        )
+
+        def _decode(payload: Any) -> dict[str, Any] | None:
+            if payload is None:
+                return None
+            try:
+                value = json.loads(payload)
+            except (TypeError, json.JSONDecodeError):
+                return None
+            return value if isinstance(value, dict) else None
+
+        def _read() -> dict[str, Any]:
+            result: dict[str, Any] = {
+                "trips": {},
+                "charges": {},
+                "current_trip": None,
+                "current_charge": None,
+                "last_trip": None,
+                "last_charge": None,
+                "statistics": None,
+                "diagnostics": None,
+            }
+
+            with sqlite3.connect(self.db_path) as db:
+                if normalized_trip_ids:
+                    placeholders = ",".join("?" for _ in normalized_trip_ids)
+                    rows = db.execute(
+                        f"SELECT trip_id, data FROM trips "
+                        f"WHERE trip_id IN ({placeholders})",
+                        normalized_trip_ids,
+                    ).fetchall()
+                    for trip_id, payload in rows:
+                        value = _decode(payload)
+                        if value is not None:
+                            result["trips"][str(trip_id)] = value
+
+                if normalized_charge_ids:
+                    placeholders = ",".join("?" for _ in normalized_charge_ids)
+                    rows = db.execute(
+                        f"SELECT charge_id, data FROM charges "
+                        f"WHERE charge_id IN ({placeholders})",
+                        normalized_charge_ids,
+                    ).fetchall()
+                    for charge_id, payload in rows:
+                        value = _decode(payload)
+                        if value is not None:
+                            result["charges"][str(charge_id)] = value
+
+                single_queries = {
+                    "current_trip": "SELECT data FROM current_trip LIMIT 1",
+                    "current_charge": "SELECT data FROM current_charge LIMIT 1",
+                    "last_trip": "SELECT data FROM last_trip LIMIT 1",
+                    "last_charge": "SELECT data FROM last_charge LIMIT 1",
+                    "statistics": "SELECT data FROM statistics WHERE id = 1",
+                    "diagnostics": "SELECT data FROM diagnostics WHERE id = 1",
+                }
+
+                for key, query in single_queries.items():
+                    row = db.execute(query).fetchone()
+                    result[key] = _decode(row[0]) if row else None
+
+            return result
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read SQLite main storage mirror snapshot"
+            )
+            return {
+                "trips": {},
+                "charges": {},
+                "current_trip": None,
+                "current_charge": None,
+                "last_trip": None,
+                "last_charge": None,
+                "statistics": None,
+                "diagnostics": None,
+            }
+
     async def save_route(
         self,
         data: dict[str, Any],
