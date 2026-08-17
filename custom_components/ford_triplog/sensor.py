@@ -2611,6 +2611,8 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
 
     _HOME_CODE = "__home__"
     _CLUSTER_RADIUS_M = 50.0
+    _LOCATION_CACHE_TTL_S = 60.0
+    _LOCATION_CACHE_MAX_ENTRIES = 2048
 
     _attr_translation_key = "top_locations"
     _attr_unique_id = "ford_triplog_top_locations"
@@ -2875,29 +2877,81 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         latitude: Any,
         longitude: Any,
     ) -> tuple[str, str] | None:
-        """Resolve zone or charging-site location by configured priority."""
+        """Resolve zone or charging-site location by configured priority.
 
-        zone = self._resolve_zone(latitude, longitude)
+        Results are cached on the shared coordinator so Top Locations and
+        Top Routes can reuse the same endpoint resolution. Cache entries are
+        short-lived to avoid keeping zone or charging-site edits stale.
+        """
+
+        try:
+            point_latitude = float(latitude)
+            point_longitude = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        cache = getattr(
+            self.coordinator,
+            "_top_location_resolution_cache",
+            None,
+        )
+        if not isinstance(cache, dict):
+            cache = {}
+            setattr(
+                self.coordinator,
+                "_top_location_resolution_cache",
+                cache,
+            )
+
+        cache_key = (
+            round(point_latitude, 5),
+            round(point_longitude, 5),
+        )
+        now = time.monotonic()
+
+        cached = cache.get(cache_key)
+        if isinstance(cached, tuple) and len(cached) == 2:
+            cached_at, cached_value = cached
+            try:
+                if now - float(cached_at) <= self._LOCATION_CACHE_TTL_S:
+                    return cached_value
+            except (TypeError, ValueError):
+                pass
+            cache.pop(cache_key, None)
+
+        zone = self._resolve_zone(point_latitude, point_longitude)
         if zone is not None:
             zone_key, zone_label = zone
-            return (
+            result = (
                 zone_key,
                 self._HOME_CODE
                 if zone_key == "zone:home"
                 else zone_label,
             )
+        else:
+            result = await self._async_resolve_user_charging_site(
+                point_latitude,
+                point_longitude,
+            )
 
-        user_site = await self._async_resolve_user_charging_site(
-            latitude,
-            longitude,
-        )
-        if user_site is not None:
-            return user_site
+            if result is None:
+                result = await self._async_resolve_osm_charging_site(
+                    point_latitude,
+                    point_longitude,
+                )
 
-        return await self._async_resolve_osm_charging_site(
-            latitude,
-            longitude,
-        )
+        if len(cache) >= self._LOCATION_CACHE_MAX_ENTRIES:
+            oldest_key = min(
+                cache,
+                key=lambda key: cache[key][0]
+                if isinstance(cache[key], tuple)
+                and len(cache[key]) == 2
+                else 0,
+            )
+            cache.pop(oldest_key, None)
+
+        cache[cache_key] = (now, result)
+        return result
 
     @staticmethod
     def _compact_location(value: Any) -> str | None:
