@@ -3,9 +3,9 @@ Ford Triplog
 
 Route Tracker
 
-Version: 2.0.0-dev
+Version: 2.2.0
 Phase: Route Tracker Phase 1
-Build: OSRM Step 03 - Finalize matching
+Build: 03 - Trip-end GPS validation
 
 Changes:
 - Persists the route JSON immediately when a Trip starts.
@@ -577,7 +577,6 @@ class FordTriplogRouteTracker:
             return None
 
         return dict(self.points[-1])
-
 
     @staticmethod
     def _coordinate_from_point(
