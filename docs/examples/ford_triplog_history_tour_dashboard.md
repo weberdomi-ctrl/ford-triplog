@@ -1,5 +1,3 @@
-type: markdown
-content: >-
   {% set s = 'sensor.garage_ford_triplog_journey_history' %}
 
   {% set timeline = state_attr(s, 'timeline') or [] %}
@@ -58,8 +56,7 @@ content: >-
 
   - 🔋 Geladen: **{{ state_attr(s, 'energy_charged_kwh') }} kWh**
 
-  - ⚖️ Netto-Energiebilanz: **{{ state_attr(s, 'battery_energy_balance_kwh') }}
-  kWh**
+  - ⚖️ Netto-Energiebilanz: **{{ state_attr(s, 'battery_energy_balance_kwh') }} kWh**
 
   - 🔄 Gesamtenergiefluss: **{{ state_attr(s, 'total_energy_flow_kwh') }} kWh**
 
@@ -76,11 +73,9 @@ content: >-
 
   {% set energy_cost = state_attr(s, 'charging_energy_cost') | float(0) %}
 
-  {% set additional_cost = state_attr(s, 'charging_additional_cost') | float(0)
-  %}
+  {% set additional_cost = state_attr(s, 'charging_additional_cost') | float(0) %}
 
-  {% set average_price = state_attr(s, 'average_charging_price_per_kwh') |
-  float(0) %}
+  {% set average_price = state_attr(s, 'average_charging_price_per_kwh') | float(0) %}
 
 
   - 💳 Gesamtkosten: **{{ total_cost | round(2) }} {{ currency }}**
@@ -123,8 +118,7 @@ content: >-
 
   - ⚡ SOC Korrektur: **{{ state_attr(s, 'soc_adjustment_kwh') }} kWh**
 
-  - 📈 Ø Verbrauch: **{{ state_attr(s, 'average_consumption_kwh_100km') }}
-  kWh/100 km**
+  - 📈 Ø Verbrauch: **{{ state_attr(s, 'average_consumption_kwh_100km') }} kWh/100 km**
 
 
   ---
@@ -154,12 +148,10 @@ content: >-
   {% elif item_type == 'trip' %}
 
 
-  ### 🚗 {{ journey_date }} · {{ item.get('start_time_formatted', '—') }}–{{
-  item.get('end_time_formatted', '—') }}
+  ### 🚗 {{ journey_date }} · {{ item.get('start_time_formatted', '—') }}–{{ item.get('end_time_formatted', '—') }}
 
 
-  ⏱️ {{ item.get('duration', '—') }} · {{ item.get('distance_km', 0) | float(0)
-  | round(1) }} km
+  ⏱️ {{ item.get('duration', '—') }} · {{ item.get('distance_km', 0) | float(0) | round(1) }} km
 
 
   {% if item.get('start_soc') is not none and item.get('end_soc') is not none %}
@@ -183,7 +175,6 @@ content: >-
 
 
   {% if item.get('distance_km', 0) | float(0) >= 3
-
   and item.get('consumption_kwh_100km') is not none %}
 
   📈 {{ item.get('consumption_kwh_100km') | float(0) | round(1) }} kWh/100 km
@@ -209,6 +200,8 @@ content: >-
 
 
   {% set category = item.get('category', '') %}
+
+  {% set title = item.get('title', '') %}
 
   {% set location = item.get('location', '') %}
 
@@ -258,6 +251,13 @@ content: >-
   {% endif %}
 
 
+  {% if title %}
+
+  📝 **{{ title }}**
+
+  {% endif %}
+
+
   {% if location %}
 
   📍 {{ location }}
@@ -267,7 +267,7 @@ content: >-
 
   {% if note %}
 
-  📝 {{ note }}
+  🗒️ {{ note }}
 
   {% endif %}
 
@@ -278,8 +278,7 @@ content: >-
 
   {% if item.get('soc_delta') is not none %}
 
-  ({% if item.get('soc_delta') | float(0) > 0 %}+{% endif %}{{
-  item.get('soc_delta') | int }} %)
+  ({% if item.get('soc_delta') | float(0) > 0 %}+{% endif %}{{ item.get('soc_delta') | int }} %)
 
   {% endif %}
 
@@ -288,17 +287,14 @@ content: >-
 
   {% if item.get('battery_energy_change_kwh') is not none %}
 
-  ⚡ Batterie: **{% if item.get('battery_energy_change_kwh') | float(0) > 0 %}+{%
-  endif %}{{ item.get('battery_energy_change_kwh') | float(0) | round(2) }}
-  kWh**
+  ⚡ Batterie: **{% if item.get('battery_energy_change_kwh') | float(0) > 0 %}+{% endif %}{{ item.get('battery_energy_change_kwh') | float(0) | round(2) }} kWh**
 
   {% endif %}
 
 
   {% if item.get('cost_total') is not none %}
 
-  💰 {{ item.get('cost_total') | float(0) | round(2) }} {{ item.get('currency',
-  'CHF') or 'CHF' }}
+  💰 Kosten: **{{ item.get('cost_total') | float(0) | round(2) }} {{ item.get('currency') or 'CHF' }}**
 
   {% endif %}
 
@@ -316,8 +312,7 @@ content: >-
   {% elif item_type == 'charge' %}
 
 
-  ### ⚡ {{ journey_date }} · {{ item.get('start_time_formatted', '—') }}–{{
-  item.get('end_time_formatted', '—') }}
+  ### ⚡ {{ journey_date }} · {{ item.get('start_time_formatted', '—') }}–{{ item.get('end_time_formatted', '—') }}
 
 
   {% if item.get('arrival_buffer_seconds', 0) | int > 0 %}
@@ -359,44 +354,37 @@ content: >-
 
   {% if item.get('energy_charged_kwh') is not none %}
 
-  ⚡ Im Fahrzeug: **{{ item.get('energy_charged_kwh') | float(0) | round(2) }}
-  kWh**
+  ⚡ Im Fahrzeug: **{{ item.get('energy_charged_kwh') | float(0) | round(2) }} kWh**
 
   {% endif %}
 
 
   {% if item.get('energy_billed_kwh') is not none %}
 
-  🧾 Abgerechnet: **{{ item.get('energy_billed_kwh') | float(0) | round(2) }}
-  kWh**
+  🧾 Abgerechnet: **{{ item.get('energy_billed_kwh') | float(0) | round(2) }} kWh**
 
   {% endif %}
 
 
   {% if item.get('cost_total') is not none %}
 
-  💰 Kosten: **{{ item.get('cost_total') | float(0) | round(2) }} {{
-  item.get('currency', '') }}**
+  💰 Kosten: **{{ item.get('cost_total') | float(0) | round(2) }} {{ item.get('currency', '') }}**
 
   {% endif %}
 
 
   {% if item.get('energy_price_per_kwh') is not none %}
 
-  📊 Energiepreis: **{{ item.get('energy_price_per_kwh') | float(0) | round(4)
-  }} {{ item.get('currency', '') }}/kWh**
+  📊 Energiepreis: **{{ item.get('energy_price_per_kwh') | float(0) | round(4) }} {{ item.get('currency', '') }}/kWh**
 
   {% endif %}
 
 
   {% if item.get('effective_price_per_kwh') is not none
-
   and item.get('energy_price_per_kwh') is not none
-
   and item.get('effective_price_per_kwh') != item.get('energy_price_per_kwh') %}
 
-  💳 Effektiver Preis: **{{ item.get('effective_price_per_kwh') | float(0) |
-  round(4) }} {{ item.get('currency', '') }}/kWh**
+  💳 Effektiver Preis: **{{ item.get('effective_price_per_kwh') | float(0) | round(4) }} {{ item.get('currency', '') }}/kWh**
 
   {% endif %}
 
