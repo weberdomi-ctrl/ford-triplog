@@ -49,14 +49,16 @@
           "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR connection",
           "init": "Back to main menu",
-          "osrm_settings": "OSRM route smoothing"
+          "osrm_settings": "OSRM route smoothing",
+          "vehicle_sensors": "Vehicle sensors"
         },
         "menu_option_descriptions": {
           "general_settings": "Edit trip, charging, vehicle and tariff options.",
           "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog overview.",
-          "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection."
+          "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection.",
+          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog."
         }
       },
       "import_charging_sites": {
@@ -592,6 +594,26 @@
         },
         "data_description": {
           "storage_read_backend": "Select which backend is used for reading stored Ford Triplog data. JSON is the default. SQLite is currently intended for Phase 2 validation."
+        }
+      },
+      "vehicle_sensors": {
+        "title": "Vehicle sensors",
+        "description": "Select the Home Assistant entities Ford Triplog should use as vehicle data sources. Required fields must be configured; optional sensors may be left empty.",
+        "data": {
+          "ignition": "Ignition",
+          "odometer": "Odometer",
+          "tracker": "Vehicle tracker",
+          "soc": "State of charge (SOC)",
+          "charging": "Charging status",
+          "last_charge": "Last charging session / Last Charge"
+        },
+        "data_description": {
+          "ignition": "Sensor providing the ignition or driving state.",
+          "odometer": "Sensor providing the current odometer value.",
+          "tracker": "Device tracker providing the vehicle latitude and longitude.",
+          "soc": "Optional sensor providing the current state of charge in percent.",
+          "charging": "Optional sensor providing the current charging status.",
+          "last_charge": "Optional sensor containing data from the most recently completed charging session."
         }
       }
     },

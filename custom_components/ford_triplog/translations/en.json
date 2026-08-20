@@ -49,14 +49,16 @@
           "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR connection",
           "init": "Back to main menu",
-          "osrm_settings": "OSRM route smoothing"
+          "osrm_settings": "OSRM route smoothing",
+          "vehicle_sensors": "Vehicle sensors"
         },
         "menu_option_descriptions": {
           "general_settings": "Configure trip, charging, vehicle and tariff settings.",
           "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog overview.",
-          "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection."
+          "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection.",
+          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog."
         }
       },
       "import_charging_sites": {
@@ -572,7 +574,6 @@
         "data": {
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)",
-          "charging": "Charging status sensor",
           "charging_site_country": "Charging-location database country",
           "battery_capacity_kwh": "Usable battery capacity (kWh)",
           "soh": "Battery state of health (SOH)",
@@ -588,7 +589,6 @@
         "data_description": {
           "smart_trip": "Short intermediate stops are automatically merged into one trip.",
           "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
-          "charging": "Charging status sensor (available only for FordPass electric vehicles).",
           "charging_site_country": "Country of the currently used OpenStreetMap charging location database.",
           "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
           "journey_home_zone": "Zone whose arrival can end a journey.",
@@ -618,6 +618,26 @@
       "osrm_connection_result": {
         "title": "OSRM connection saved",
         "description": "**Status:** {status}\n\n**Address:** {url}\n**Matching radius:** {radius} m\n**Test road:** {road}\n**Distance from test point:** {distance} m"
+      },
+      "vehicle_sensors": {
+        "title": "Vehicle sensors",
+        "description": "Select the Home Assistant entities Ford Triplog should use as vehicle data sources. Required fields must be configured; optional sensors may be left empty.",
+        "data": {
+          "ignition": "Ignition",
+          "odometer": "Odometer",
+          "tracker": "Vehicle tracker",
+          "soc": "State of charge (SOC)",
+          "charging": "Charging status",
+          "last_charge": "Last charging session / Last Charge"
+        },
+        "data_description": {
+          "ignition": "Sensor providing the ignition or driving state.",
+          "odometer": "Sensor providing the current odometer value.",
+          "tracker": "Device tracker providing the vehicle latitude and longitude.",
+          "soc": "Optional sensor providing the current state of charge in percent.",
+          "charging": "Optional sensor providing the current charging status.",
+          "last_charge": "Optional sensor containing data from the most recently completed charging session."
+        }
       }
     },
     "error": {

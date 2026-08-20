@@ -49,14 +49,16 @@
           "route_tracker_settings": "Rejestrator trasy",
           "ocr_settings": "Połączenie OCR",
           "init": "Wróć do menu głównego",
-          "osrm_settings": "Wygładzanie trasy OSRM"
+          "osrm_settings": "Wygładzanie trasy OSRM",
+          "vehicle_sensors": "Czujniki pojazdu"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
           "route_tracker_settings": "Skonfiguruj oddzielne źródło GPS do rejestrowania trasy. Istniejący lokalizator pojazdu pozostaje bez zmian.",
           "ocr_settings": "Skonfiguruj opcjonalną lokalną usługę OCR i sprawdź połączenie.",
           "init": "Wróć do przeglądu Ford Triplog.",
-          "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie."
+          "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie.",
+          "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog."
         }
       },
       "import_charging_sites": {
@@ -572,7 +574,6 @@
         "data": {
           "smart_trip": "Włącz Smart Trip",
           "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
-          "charging": "Czujnik stanu ładowania",
           "charging_site_country": "Kraj bazy lokalizacji ładowania",
           "battery_capacity_kwh": "Użyteczna pojemność akumulatora (kWh)",
           "soh": "Stan zdrowia akumulatora (SOH)",
@@ -588,7 +589,6 @@
         "data_description": {
           "smart_trip": "Krótkie postoje są automatycznie łączone w jeden przejazd.",
           "smart_trip_timeout": "Zalecane: 300 sekund (5 minut). Minimum: 30 sekund.",
-          "charging": "Czujnik stanu ładowania dostępny tylko dla elektrycznych pojazdów FordPass.",
           "charging_site_country": "Kraj aktualnie używanej bazy lokalizacji ładowania OpenStreetMap.",
           "battery_capacity_kwh": "Użyteczna pojemność akumulatora pojazdu. Domyślnie: 77 kWh.",
           "journey_home_zone": "Strefa, której osiągnięcie może zakończyć podróż.",
@@ -618,6 +618,26 @@
       "osrm_connection_result": {
         "title": "Połączenie OSRM zapisane",
         "description": "**Status:** {status}\n\n**Adres:** {url}\n**Promień dopasowania:** {radius} m\n**Droga testowa:** {road}\n**Odległość od punktu testowego:** {distance} m"
+      },
+      "vehicle_sensors": {
+        "title": "Czujniki pojazdu",
+        "description": "Wybierz encje Home Assistant, których Ford Triplog ma używać jako źródeł danych pojazdu. Pola wymagane muszą być skonfigurowane; opcjonalne czujniki mogą pozostać puste.",
+        "data": {
+          "ignition": "Zapłon",
+          "odometer": "Przebieg",
+          "tracker": "Lokalizator pojazdu",
+          "soc": "Poziom naładowania (SOC)",
+          "charging": "Stan ładowania",
+          "last_charge": "Ostatnia sesja ładowania / Last Charge"
+        },
+        "data_description": {
+          "ignition": "Czujnik podający stan zapłonu lub jazdy.",
+          "odometer": "Czujnik podający aktualny przebieg pojazdu.",
+          "tracker": "Lokalizator podający szerokość i długość geograficzną pojazdu.",
+          "soc": "Opcjonalny czujnik aktualnego poziomu naładowania w procentach.",
+          "charging": "Opcjonalny czujnik aktualnego stanu ładowania.",
+          "last_charge": "Opcjonalny czujnik zawierający dane ostatniej zakończonej sesji ładowania."
+        }
       }
     },
     "error": {
