@@ -3,9 +3,9 @@ Ford Triplog
 
 Coordinator
 
-Version: 2.1.0
+Version: 2.2.0
 Phase: 
-Build: 
+Build: 03
 
 Changes:
 - Route Tracker uses Trip start GPS as first route point and finalized fresh Trip end GPS as last route point.
@@ -62,6 +62,7 @@ STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
 GPS_UPDATE_TIMEOUT = 60
 TRIP_END_GPS_MAX_DISTANCE_METERS = 250
+TRIP_END_ROUTE_MAX_AGE_SECONDS = 20
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -1715,80 +1716,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         return current > baseline
 
-    async def _select_trip_end_position(
-        self,
-        fresh_gps_state: dict[str, Any] | None,
-    ) -> dict[str, Any]:
-        """Return the most plausible final Trip GPS position."""
-
-        route_point = None
-        if self.route_tracker is not None:
-            route_point = self.route_tracker.get_last_point()
-
-        if fresh_gps_state is None:
-            if route_point is None:
-                _LOGGER.warning(
-                    "Trip-end GPS unavailable: no fresh vehicle GPS and no route point"
-                )
-                return {
-                    "latitude": None,
-                    "longitude": None,
-                    "address": None,
-                    "gps_updated_at": None,
-                }
-
-            route_state = {
-                "latitude": route_point.get("latitude"),
-                "longitude": route_point.get("longitude"),
-                "gps_updated_at": route_point.get("timestamp"),
-            }
-            route_state["address"] = await self._get_address(route_state)
-            _LOGGER.warning(
-                "No fresh vehicle trip-end GPS; using last route tracker point"
-            )
-            return route_state
-
-        if route_point is None:
-            _LOGGER.info(
-                "Trip-end GPS validation skipped: no route tracker point; using vehicle GPS"
-            )
-            return fresh_gps_state
-
-        try:
-            distance = self._distance_meters(
-                float(fresh_gps_state["latitude"]),
-                float(fresh_gps_state["longitude"]),
-                float(route_point["latitude"]),
-                float(route_point["longitude"]),
-            )
-        except (KeyError, TypeError, ValueError):
-            _LOGGER.warning(
-                "Trip-end GPS validation failed because coordinates are invalid; using vehicle GPS"
-            )
-            return fresh_gps_state
-
-        if distance <= TRIP_END_GPS_MAX_DISTANCE_METERS:
-            _LOGGER.info(
-                "Trip-end GPS validation: vehicle-route distance=%.0fm; using vehicle GPS",
-                distance,
-            )
-            return fresh_gps_state
-
-        route_state = {
-            "latitude": route_point.get("latitude"),
-            "longitude": route_point.get("longitude"),
-            "gps_updated_at": route_point.get("timestamp"),
-        }
-        route_state["address"] = await self._get_address(route_state)
-
-        _LOGGER.warning(
-            "Trip-end GPS validation: vehicle-route distance=%.0fm exceeds %sm; using route tracker GPS",
-            distance,
-            TRIP_END_GPS_MAX_DISTANCE_METERS,
-        )
-        return route_state
-
-
     async def _wait_for_fresh_trip_end_gps(
         self,
         baseline_timestamp: Any,
@@ -1852,6 +1779,174 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 )
                 return None
 
+    async def _validate_trip_end_gps(
+        self,
+        end_state: dict[str, Any],
+        fresh_gps_state: dict[str, Any] | None,
+    ) -> dict[str, Any]:
+        """Choose the most plausible Trip end GPS using freshness and distance."""
+
+        route_point = None
+        if self.route_tracker is not None:
+            route_point = self.route_tracker.get_last_point()
+
+        route_latitude = (
+            route_point.get("latitude")
+            if isinstance(route_point, dict)
+            else None
+        )
+        route_longitude = (
+            route_point.get("longitude")
+            if isinstance(route_point, dict)
+            else None
+        )
+        route_timestamp = (
+            route_point.get("timestamp")
+            if isinstance(route_point, dict)
+            else None
+        )
+
+        route_age_seconds: float | None = None
+        trip_end_time = end_state.get("end_time")
+        route_time = dt_util.parse_datetime(str(route_timestamp or ""))
+
+        if isinstance(trip_end_time, datetime):
+            parsed_trip_end = trip_end_time
+        else:
+            parsed_trip_end = dt_util.parse_datetime(
+                str(trip_end_time or "")
+            )
+
+        if route_time is not None and parsed_trip_end is not None:
+            if route_time.tzinfo is None:
+                route_time = route_time.replace(tzinfo=dt_util.UTC)
+            if parsed_trip_end.tzinfo is None:
+                parsed_trip_end = parsed_trip_end.replace(
+                    tzinfo=dt_util.UTC
+                )
+
+            route_age_seconds = max(
+                0.0,
+                (parsed_trip_end - route_time).total_seconds(),
+            )
+
+        if fresh_gps_state is None:
+            if route_latitude is not None and route_longitude is not None:
+                end_state["latitude"] = route_latitude
+                end_state["longitude"] = route_longitude
+                end_state["gps_updated_at"] = route_timestamp
+                end_state["address"] = await self._get_address(end_state)
+
+                _LOGGER.warning(
+                    "No fresh vehicle trip-end GPS; using last route "
+                    "tracker point%s",
+                    (
+                        f" ({route_age_seconds:.0f}s old)"
+                        if route_age_seconds is not None
+                        else ""
+                    ),
+                )
+                return end_state
+
+            end_state["latitude"] = None
+            end_state["longitude"] = None
+            end_state["address"] = None
+            return end_state
+
+        vehicle_latitude = fresh_gps_state.get("latitude")
+        vehicle_longitude = fresh_gps_state.get("longitude")
+
+        if (
+            route_latitude is None
+            or route_longitude is None
+            or vehicle_latitude is None
+            or vehicle_longitude is None
+        ):
+            end_state["latitude"] = vehicle_latitude
+            end_state["longitude"] = vehicle_longitude
+            end_state["gps_updated_at"] = fresh_gps_state.get(
+                "gps_updated_at"
+            )
+            end_state["address"] = fresh_gps_state.get("address")
+
+            _LOGGER.info(
+                "Trip-end GPS validation: route point unavailable; "
+                "using fresh vehicle GPS"
+            )
+            return end_state
+
+        try:
+            distance = self._distance_meters(
+                float(vehicle_latitude),
+                float(vehicle_longitude),
+                float(route_latitude),
+                float(route_longitude),
+            )
+        except (TypeError, ValueError):
+            distance = None
+
+        route_is_stale = (
+            route_age_seconds is None
+            or route_age_seconds > TRIP_END_ROUTE_MAX_AGE_SECONDS
+        )
+
+        use_vehicle = (
+            distance is None
+            or distance <= TRIP_END_GPS_MAX_DISTANCE_METERS
+            or route_is_stale
+        )
+
+        if use_vehicle:
+            end_state["latitude"] = vehicle_latitude
+            end_state["longitude"] = vehicle_longitude
+            end_state["gps_updated_at"] = fresh_gps_state.get(
+                "gps_updated_at"
+            )
+            end_state["address"] = fresh_gps_state.get("address")
+
+            if distance is None:
+                _LOGGER.info(
+                    "Trip-end GPS validation: distance unavailable; "
+                    "using fresh vehicle GPS"
+                )
+            elif (
+                route_is_stale
+                and distance > TRIP_END_GPS_MAX_DISTANCE_METERS
+            ):
+                _LOGGER.info(
+                    "Trip-end GPS validation: vehicle-route distance=%.0fm "
+                    "exceeds %sm but route point is %.0fs old; using "
+                    "fresh vehicle GPS",
+                    distance,
+                    TRIP_END_GPS_MAX_DISTANCE_METERS,
+                    route_age_seconds
+                    if route_age_seconds is not None
+                    else -1,
+                )
+            else:
+                _LOGGER.info(
+                    "Trip-end GPS validation: vehicle-route distance=%.0fm; "
+                    "using vehicle GPS",
+                    distance,
+                )
+
+            return end_state
+
+        end_state["latitude"] = route_latitude
+        end_state["longitude"] = route_longitude
+        end_state["gps_updated_at"] = route_timestamp
+        end_state["address"] = await self._get_address(end_state)
+
+        _LOGGER.warning(
+            "Trip-end GPS validation: vehicle-route distance=%.0fm exceeds "
+            "%sm and route point is only %.0fs old; using route tracker GPS",
+            distance,
+            TRIP_END_GPS_MAX_DISTANCE_METERS,
+            route_age_seconds,
+        )
+
+        return end_state
+
     async def _smart_trip_timeout(self):
         """Finalize a paused trip after refreshing its final GPS position."""
 
@@ -1883,14 +1978,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             end_state.get("gps_updated_at")
         )
 
-        final_position = await self._select_trip_end_position(
-            fresh_gps_state
-        )
-        end_state["latitude"] = final_position.get("latitude")
-        end_state["longitude"] = final_position.get("longitude")
-        end_state["address"] = final_position.get("address")
-        end_state["gps_updated_at"] = final_position.get(
-            "gps_updated_at"
+        end_state = await self._validate_trip_end_gps(
+            end_state,
+            fresh_gps_state,
         )
 
         self.current_trip.finish(
