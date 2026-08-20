@@ -2094,12 +2094,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "pause_id": pause_id,
                         "date": date_text,
                         "start_time": self._pause_time(current.end_time),
+                        "_sort_time": str(current.end_time),
                         "title": str(title or ""),
                         "location": str(location or "—"),
                         "cost_total": override.get("cost_total"),
                         "currency": str(override.get("currency") or ""),
                     }
                 )
+
+        # Show newest pauses first, independent of Journey/archive ordering.
+        entries.sort(
+            key=lambda entry: entry.get("_sort_time", ""),
+            reverse=True,
+        )
+        for entry in entries:
+            entry.pop("_sort_time", None)
 
         return entries
 
