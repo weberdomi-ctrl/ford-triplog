@@ -3,14 +3,15 @@ Ford Triplog
 
 Home Assistant select platform.
 
-Version: 2.0.2
+Version: 2.2.0
 Phase: 5 - Unified Route/Journey/Charging History date selection / Translation Fix
+Build: 04 - History dispatcher thread-safety fix
 
 Changes:
 - Adds a Route History Date select entity.
-- Lists only local calendar dates that contain completed stored routes.
-- Selects the newest available route date by default.
-- Keeps the selected date in the integration runtime data.
+- Lists local calendar dates from Route, Journey and Charging history.
+- Keeps the selected date synchronized with History sensors.
+- Fixes thread-unsafe task creation in History dispatcher callbacks.
 """
 
 from __future__ import annotations
@@ -131,7 +132,7 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
     def _handle_history_data_updated(self, *_args: Any) -> None:
         """Refresh available History dates after Journey or Charge changes."""
 
-        self.hass.async_create_task(
+        self.hass.create_task(
             self._async_refresh_options_and_write()
         )
 
