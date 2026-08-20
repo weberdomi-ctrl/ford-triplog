@@ -570,6 +570,15 @@ class FordTriplogRouteTracker:
                 self._debounce_task.cancel()
             self._debounce_task = None
 
+    def get_last_point(self) -> dict[str, Any] | None:
+        """Return the latest recorded raw route point."""
+
+        if not self.points:
+            return None
+
+        return dict(self.points[-1])
+
+
     @staticmethod
     def _coordinate_from_point(
         point: dict[str, Any],

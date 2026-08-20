@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.1.0
+Version: 2.2.0
 Phase: 
 Build: 
 Release: 2.1.0
@@ -67,6 +67,7 @@ from .services import (
 from .const import (
     CONF_CHARGING,
     CONF_IGNITION,
+    CONF_LAST_CHARGE,
     CONF_ODOMETER,
     CONF_SMART_TRIP,
     CONF_SMART_TRIP_TIMEOUT,
@@ -3824,12 +3825,69 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="settings",
             menu_options=[
                 "general_settings",
+                "vehicle_sensors",
                 "route_tracker_settings",
                 "osrm_settings",
                 "ocr_settings",
                 "init",
             ],
         )
+
+    async def async_step_vehicle_sensors(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure vehicle source entities."""
+
+        if user_input is not None:
+            updated_options = dict(self._config_entry.options)
+            updated_options.update(user_input)
+
+            # Optional vehicle sources must explicitly override values from
+            # config_entry.data as well. Storing None makes it possible to
+            # disable a source that was selected during initial setup.
+            for key in (CONF_SOC, CONF_CHARGING, CONF_LAST_CHARGE):
+                updated_options[key] = user_input.get(key)
+
+            self.hass.config_entries.async_update_entry(
+                self._config_entry,
+                options=updated_options,
+            )
+            self._options.update(updated_options)
+
+            return await self.async_step_settings()
+
+        return self.async_show_form(
+            step_id="vehicle_sensors",
+            data_schema=self.add_suggested_values_to_schema(
+                vol.Schema(
+                    {
+                        vol.Required(CONF_IGNITION): selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                        vol.Required(CONF_ODOMETER): selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                        vol.Required(CONF_TRACKER): selector.EntitySelector(
+                            selector.EntitySelectorConfig(
+                                domain="device_tracker"
+                            )
+                        ),
+                        vol.Optional(CONF_SOC): selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                        vol.Optional(CONF_CHARGING): selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                        vol.Optional(CONF_LAST_CHARGE): selector.EntitySelector(
+                            selector.EntitySelectorConfig(domain="sensor")
+                        ),
+                    }
+                ),
+                self._options,
+            ),
+        )
+
 
     async def async_step_osrm_settings(
         self,
@@ -5644,10 +5702,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return vol.Schema(
             {
-                vol.Optional(CONF_CHARGING): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-
                 vol.Optional(CONF_SMART_TRIP): bool,
 
                 vol.Optional(CONF_SMART_TRIP_TIMEOUT): int,
