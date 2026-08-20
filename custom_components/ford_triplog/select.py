@@ -20,9 +20,15 @@ from typing import Any
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, VERSION
+from .const import (
+    DOMAIN,
+    VERSION,
+    SIGNAL_LAST_JOURNEY_UPDATED,
+    SIGNAL_CHARGE_DATA_UPDATED,
+)
 from .route_storage import FordTriplogRouteStorage
 
 
@@ -88,8 +94,24 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
         return self._current_option
 
     async def async_added_to_hass(self) -> None:
-        """Load available dates and initialize the shared History sensor."""
+        """Load available dates and keep them synchronized with History data."""
         await super().async_added_to_hass()
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_history_data_updated,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_CHARGE_DATA_UPDATED,
+                self._handle_history_data_updated,
+            )
+        )
+
         await self._async_refresh_options()
         self.async_write_ha_state()
 
@@ -105,6 +127,27 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
                     await sensor.async_set_selected_date(
                         self._current_option
                     )
+
+    def _handle_history_data_updated(self, *_args: Any) -> None:
+        """Refresh available History dates after Journey or Charge changes."""
+
+        self.hass.async_create_task(
+            self._async_refresh_options_and_write()
+        )
+
+    async def _async_refresh_options_and_write(self) -> None:
+        """Refresh date options and publish the select state."""
+
+        previous_options = tuple(self._options)
+        previous_option = self._current_option
+
+        await self._async_refresh_options()
+
+        if (
+            tuple(self._options) != previous_options
+            or self._current_option != previous_option
+        ):
+            self.async_write_ha_state()
 
     async def _async_refresh_options(self) -> None:
         """Build one date list from Route, Journey and Charge archives."""
