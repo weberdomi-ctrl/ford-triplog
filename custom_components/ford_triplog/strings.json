@@ -30,7 +30,8 @@
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
-          "charging_site_database": "OpenStreetMap charging locations"
+          "charging_site_database": "OpenStreetMap charging locations",
+          "export": "Export data"
         },
         "menu_option_descriptions": {
           "settings": "Edit trip, charging and vehicle settings.",
@@ -38,7 +39,8 @@
           "pause_management": "Add title, category, location, note and costs to pauses.",
           "charge_management": "Manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
-          "charging_site_database": "Download or import the charging location database."
+          "charging_site_database": "Download or import the charging location database.",
+          "export": "Export stored Ford Triplog data as a CSV file."
         }
       },
       "settings": {
@@ -615,6 +617,30 @@
           "charging": "Optional sensor providing the current charging status.",
           "last_charge": "Optional sensor containing data from the most recently completed charging session."
         }
+      },
+      "export": {
+        "title": "Export data",
+        "description": "Select which data you want to export.",
+        "menu_options": {
+          "export_trips": "Export trips as CSV",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
+          "init": "Return to the Ford Triplog overview."
+        }
+      },
+      "export_trips": {
+        "title": "Export trips",
+        "description": "Exports stored trips as a CSV file. Start and end dates are optional; without a date range, all stored trips are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_result": {
+        "title": "Export completed",
+        "description": "**Exported trips:** {record_count}\n\n**File:** `{filename}`\n\n**Path:** `{path}`\n\n**Date range:** {start_date} to {end_date}"
       }
     },
     "error": {
@@ -659,7 +685,9 @@
       "user_parser_test_failed": "The profile was saved but could not successfully parse the current receipt.",
       "osrm_invalid_url": "The OSRM address is invalid. Use a complete HTTP or HTTPS address.",
       "osrm_connection_failed": "The OSRM service cannot be reached. Check address, port, container and network.",
-      "osrm_invalid_response": "The OSRM service did not return a valid response."
+      "osrm_invalid_response": "The OSRM service did not return a valid response.",
+      "export_invalid_date_range": "The start date must not be after the end date.",
+      "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details."
     }
   },
   "entity": {
