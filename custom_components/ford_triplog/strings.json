@@ -688,7 +688,7 @@
       },
       "charge_delete_confirm": {
         "title": "Really delete charging session?",
-        "description": "**Date:** {date}\\n**Charging location:** {location}\\n**Charge ID:** {charge_id}\\n\\n**Vehicle energy:** {energy} kWh\\n**SOC:** {soc_start} % → {soc_end} %\\n**Duration:** {duration}\\n**Cost:** {cost_total} {currency}\\n\\nThe charging session will be permanently removed from history. Journeys and statistics are rebuilt afterwards. Existing receipts are not deleted.",
+        "description": "**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\n**Vehicle energy:** {energy} kWh\n**SOC:** {soc_start} % → {soc_end} %\n**Duration:** {duration}\n**Cost:** {cost_total} {currency}\n\nThe charging session will be permanently removed from history. Journeys and statistics are rebuilt afterwards. Existing receipts are not deleted.",
         "data": {
           "confirm": "Permanently delete charging session"
         },
@@ -698,7 +698,7 @@
       },
       "charge_delete_result": {
         "title": "Charging session deleted",
-        "description": "The invalid charging session was removed.\\n\\n**Date:** {date}\\n**Charging location:** {location}\\n**Charge ID:** {charge_id}\\n\\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
+        "description": "The invalid charging session was removed.\n\n**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
       }
     },
     "error": {

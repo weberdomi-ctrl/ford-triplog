@@ -8,13 +8,13 @@
           "ignition": "Ignition",
           "odometer": "Odometer",
           "tracker": "Vehicle tracker",
-          "charging": "Charging status sensor (available only for FordPass electric vehicles)",
+          "charging": "Charging status sensor (available for FordPass electric vehicles only)",
           "smart_trip": "Enable Smart Trip",
           "smart_trip_timeout": "Smart Trip timeout (seconds)"
         },
         "data_description": {
-          "smart_trip": "Pauses short stops and merges them into a single trip.",
-          "smart_trip_timeout": "Time until a paused trip is finalized."
+          "smart_trip": "Pauses short stops and combines them into one trip.",
+          "smart_trip_timeout": "Time until a paused trip is finally completed."
         }
       }
     }
@@ -23,27 +23,29 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Select the section you want to configure.",
+        "description": "Select the area you want to edit.",
         "menu_options": {
           "settings": "Settings",
           "journey_management": "Manage journeys",
-          "pause_management": "Manage pauses",
-          "charge_management": "Manage charging sessions",
+          "pause_management": "Edit pauses",
+          "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
-          "charging_site_database": "OpenStreetMap charging locations"
+          "charging_site_database": "OpenStreetMap charging locations",
+          "export": "Export data"
         },
         "menu_option_descriptions": {
-          "settings": "Configure trip, charging, vehicle and tariff settings.",
-          "journey_management": "Update, rebuild or delete saved journeys.",
-          "pause_management": "Manage detected pauses, including titles, categories, locations, notes and costs.",
-          "charge_management": "View and manage charging sessions, costs and related receipts.",
+          "settings": "Edit trip, charging and vehicle settings.",
+          "journey_management": "Update, rebuild or delete journeys.",
+          "pause_management": "Add title, category, location, note and costs to pauses.",
+          "charge_management": "Manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
-          "charging_site_database": "Download or import the charging location database."
+          "charging_site_database": "Download or import the charging location database.",
+          "export": "Export stored Ford Triplog data as a CSV file."
         }
       },
       "settings": {
         "title": "Settings",
-        "description": "Select the section you want to configure.",
+        "description": "Select the area you want to configure.",
         "menu_options": {
           "general_settings": "General settings",
           "route_tracker_settings": "Route Tracker",
@@ -53,7 +55,7 @@
           "vehicle_sensors": "Vehicle sensors"
         },
         "menu_option_descriptions": {
-          "general_settings": "Configure trip, charging, vehicle and tariff settings.",
+          "general_settings": "Edit trip, charging, vehicle and tariff options.",
           "route_tracker_settings": "Configure a separate GPS source for route recording. The existing vehicle tracker remains unchanged.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog overview.",
@@ -63,7 +65,7 @@
       },
       "import_charging_sites": {
         "title": "Import charging location database",
-        "description": "Select a Ford Triplog charging location database in JSON format. The existing database will be backed up automatically and replaced after successful validation.\n\nThe latest charging location databases for all supported countries are available in the [GitHub “charging_sites” folder]({github_url}).",
+        "description": "Select a Ford Triplog charging location database in JSON format. The existing database is backed up automatically and replaced after successful validation.",
         "data": {
           "charging_site_file": "JSON file"
         },
@@ -77,7 +79,7 @@
       },
       "download_charging_sites": {
         "title": "Download charging location database",
-        "description": "Select the country whose charging locations should be downloaded directly from OpenStreetMap. The existing database is backed up automatically before activation.\n\n**Note:** After downloading, the charging locations are processed and optimized locally. Depending on the database size and hardware, this may take several minutes. The progress bar may temporarily remain unchanged.",
+        "description": "Select the country whose charging locations should be downloaded directly from OpenStreetMap. The existing database is backed up automatically before activation.\n\n**Note:** After the download, the charging locations are processed and optimized locally. Depending on database size and hardware, this step may take several minutes. During this time, the progress bar may temporarily remain unchanged.",
         "data": {
           "charging_site_country": "Country"
         },
@@ -86,15 +88,15 @@
         }
       },
       "download_charging_sites_success": {
-        "title": "Charging location database activated",
-        "description": "The charging location database for **{country} ({country_code})** was downloaded from OpenStreetMap, processed and activated successfully.\n\n**Download and processing**\n- OSM elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Detected charging locations: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging location detection."
+        "title": "Charging location database activated successfully",
+        "description": "The charging location database for **{country} ({country_code})** was successfully downloaded from OpenStreetMap, processed and activated immediately.\n\n**Download and processing**\n- OSM elements: **{downloaded_elements}**\n- Normalized charging stations: **{normalized_stations}**\n- Detected charging locations: **{searchable_sites}**\n- Geohash cells: **{index_cells}**\n- Skipped elements: **{skipped_elements}**\n\n**Database**\n- Size: **{database_size}**\n- Total duration: **{duration}**\n\nThe new database is immediately available for charging location detection."
       },
       "download_charging_sites_progress": {
         "title": "Creating charging location database",
         "description": "Country: {country_code}\n\nStage: {stage}\n{message}\n\nProgress: {progress}%\nStep {step} of {total_steps}\nElapsed time: {elapsed} s\n\n{progress_log}"
       },
       "download_charging_sites_result": {
-        "title": "Charging location database created",
+        "title": "Charging location database completed",
         "description": "The charging location database was created and activated successfully."
       },
       "user_charging_sites": {
@@ -106,18 +108,18 @@
           "init": "Back to main menu"
         },
         "menu_option_descriptions": {
-          "user_charging_site_selection": "Open and edit a stored charging location.",
+          "user_charging_site_selection": "Open and edit a saved charging location.",
           "user_charging_site_new": "Create a new custom charging location.",
           "init": "Return to the Ford Triplog overview."
         }
       },
       "user_charging_site_details": {
         "title": "{name}",
-        "description": "**Type:** {type}\n**Coordinates:** {coordinates}\n**Radius:** {radius}\n**Operator:** {operator}\n**Network:** {network}\n**Power:** {power}"
+        "description": "**Type:** {type}\n**Coordinates:** {coordinates}\n**Radius:** {radius}\n**Operator:** {operator}\n**Network:** {network}\n**Power:** {power}\n\nCreating, editing and deleting will follow in Build 04."
       },
       "user_charging_site_edit": {
         "title": "Create or edit charging location",
-        "description": "The fields match the OSM charging location database model. Multiple connectors can be selected and custom brand values are supported. Available data is prefilled for a detected charging location.",
+        "description": "The fields match the data model of the OSM charging station database. Multiple connectors can be selected; custom values are also allowed for the brand. If a charging location is detected, available data is prefilled.",
         "data": {
           "name": "Name",
           "street": "Street",
@@ -152,14 +154,14 @@
       },
       "pending_charging_sites": {
         "title": "Add unknown charging locations",
-        "description": "Select one of the {pending_count} detected charging locations. Coordinates and available station data are prefilled.",
+        "description": "Select one of the {pending_count} detected charging locations. Coordinates and available station data will be prefilled when creating it.",
         "data": {
           "user_charging_site_selection": "Detected charging location"
         }
       },
       "journey_management": {
         "title": "Manage journeys",
-        "description": "Select the action you want to perform on saved journeys.",
+        "description": "What do you want to do with the stored journeys?",
         "menu_options": {
           "journey_update": "Update journeys",
           "journey_rebuild": "Rebuild journeys",
@@ -167,15 +169,15 @@
           "init": "Back to main menu"
         },
         "menu_option_descriptions": {
-          "journey_update": "Update existing journeys with the latest data.",
-          "journey_rebuild": "Recalculate and save all journeys from scratch.",
-          "journey_delete": "Permanently delete saved journeys.",
+          "journey_update": "Update existing journeys with the current data.",
+          "journey_rebuild": "Fully recalculate and save all journeys.",
+          "journey_delete": "Permanently delete stored journeys.",
           "init": "Return to the Ford Triplog overview."
         }
       },
       "journey_update": {
         "title": "Update journeys",
-        "description": "Creates only missing journeys in the optional date range.",
+        "description": "Creates only missing journeys within the optional date range.",
         "data": {
           "start_date": "Start date",
           "end_date": "End date"
@@ -183,7 +185,7 @@
       },
       "journey_rebuild": {
         "title": "Rebuild journeys",
-        "description": "Deletes existing journeys in the date range and recalculates them.",
+        "description": "Deletes existing journeys in the selected date range and recalculates them.",
         "data": {
           "start_date": "Start date",
           "end_date": "End date",
@@ -192,7 +194,7 @@
       },
       "journey_delete": {
         "title": "Delete journeys",
-        "description": "Deletes journeys. Trips and charging sessions remain unchanged.",
+        "description": "Deletes journeys. Trips and charging sessions are retained.",
         "data": {
           "start_date": "Start date",
           "end_date": "End date",
@@ -201,30 +203,32 @@
       },
       "journey_result": {
         "title": "Journey action completed",
-        "description": "Mode: {mode}\n\nTrips: {source_trips} · Charging sessions: {source_charges} · Processed: {processed_records}\n\nJourneys created: {journeys_created} · Journeys deleted: {journeys_deleted}\n\nSkipped source files: {source_files_skipped}\n\nDate range: {start_date} to {end_date}\n\nAffected dates: {affected_dates}"
+        "description": "Mode: {mode}\n\nTrips: {source_trips} · Charging sessions: {source_charges} · Processed: {processed_records}\n\nJourneys created: {journeys_created} · Journeys deleted: {journeys_deleted}\n\nSource files skipped: {source_files_skipped}\n\nDate range: {start_date} to {end_date}\n\nAffected days: {affected_dates}"
       },
       "charge_management": {
         "title": "Charging sessions",
-        "description": "Select what you want to do with the stored charging sessions.",
+        "description": "Select what you want to do.",
         "menu_options": {
           "charge_selection": "Select charging session",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "charge_delete_selection": "Delete invalid charging session"
         },
         "menu_option_descriptions": {
           "charge_selection": "Open and edit a stored charging session.",
-          "init": "Return to the Ford Triplog overview."
+          "init": "Return to the Ford Triplog overview.",
+          "charge_delete_selection": "Shows only clearly suspicious charging sessions for targeted deletion."
         }
       },
       "charge_cost_edit": {
         "title": "Edit charging costs",
-        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Charging location:** {location}\n**Energy delivered to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
+        "description": "**Charging session:** {charge_id}\n\n**Date:** {date}\n**Location:** {location}\n**Energy added to vehicle:** {energy_kwh} kWh\n**State of charge:** {start_soc} % → {end_soc} %\n\n**Billed energy:** {current_energy_billed_kwh} kWh\n**Charging loss:** {current_charging_loss_kwh} kWh ({current_charging_loss_percent} %)\n**Current cost:** {current_cost} {current_currency}\n**Energy price per kWh:** {current_energy_price_per_kwh}\n**Effective price per kWh:** {current_price_per_kwh}",
         "data": {
           "cost_total": "Total cost",
           "currency": "Currency",
           "action": "Action",
           "energy_billed_kwh": "Billed energy",
           "energy_cost": "Energy cost",
-          "session_fee": "Session fee",
+          "session_fee": "Start / session fee",
           "time_fee": "Time fee",
           "blocking_fee": "Blocking fee",
           "parking_fee": "Parking fee",
@@ -236,7 +240,7 @@
           "action": "Save costs or remove all stored cost information.",
           "energy_billed_kwh": "Energy shown on the invoice, charging station, or charging app. Used to calculate charging losses.",
           "energy_cost": "Energy-only cost excluding additional fees.",
-          "session_fee": "One-time session fee charged at the start of charging.",
+          "session_fee": "One-time start or session fee.",
           "time_fee": "Time-based charging fee.",
           "blocking_fee": "Fee for occupying the charging point.",
           "parking_fee": "Additional parking fee.",
@@ -248,10 +252,10 @@
         "description": "**Action:** {action}\n\n**Charging session:** {charge_id}\n**Billed energy:** {energy_billed_kwh} kWh\n**Charging loss:** {charging_loss_kwh} kWh ({charging_loss_percent} %)\n**Cost:** {cost_total} {currency}\n**Energy price per kWh:** {energy_price_per_kwh}\n**Effective price per kWh:** {price_per_kwh}"
       },
       "receipt_management": {
-        "title": "Receipts and OCR",
-        "description": "Manage receipts, the OCR connection and detected billing values.",
+        "title": "Receipt management",
+        "description": "Manage receipts for pauses and charging sessions.",
         "menu_options": {
-          "receipt_import_type": "Add receipt",
+          "receipt_import_type": "Import receipt",
           "receipt_list": "View receipts",
           "receipt_delete": "Delete receipt",
           "receipt_ocr": "Run OCR",
@@ -264,18 +268,18 @@
           "receipt_delete": "Permanently delete a receipt file and its metadata.",
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "receipt_ocr": "Send a stored receipt to the configured OCR service.",
-          "receipt_apply": "Review and correct detected billing values and apply them to the related charging session."
+          "receipt_apply": "Review, correct and apply detected billing values to the related charging session."
         }
       },
       "receipt_import_type": {
-        "title": "Add receipt",
+        "title": "Import receipt",
         "description": "Select whether the receipt belongs to a pause or charging session.",
         "data": {
           "target_type": "Assignment"
         }
       },
       "receipt_import": {
-        "title": "Add receipt",
+        "title": "Import receipt",
         "description": "Upload a PDF or image and assign it to the selected item.",
         "data": {
           "target": "Pause or charging session",
@@ -296,20 +300,20 @@
       },
       "receipt_list": {
         "title": "Stored receipts",
-        "description": "There are {receipt_count} stored receipts. Select a pause or charging session; the internal filename is shown only in the detail view.",
+        "description": "There are {receipt_count} stored receipt(s). Select a pause or charging session; the internal filename is shown only in the detail view.",
         "data": {
           "receipt_selection": "Receipt"
         }
       },
       "pause_management": {
-        "title": "Manage pauses",
-        "description": "Select an action for the detected pauses.",
+        "title": "Pauses",
+        "description": "Select what you want to do.",
         "menu_options": {
-          "pause_selection": "Select and edit a pause",
+          "pause_selection": "Select and edit pause",
           "init": "Back to main menu"
         },
         "menu_option_descriptions": {
-          "pause_selection": "Select an automatically detected pause and add or edit its title, category, location, notes and costs.",
+          "pause_selection": "Select an automatically detected pause and add title, category, location, note or costs.",
           "init": "Return to the Ford Triplog overview."
         }
       },
@@ -327,16 +331,16 @@
         },
         "data_description": {
           "category": "For example food, shopping, leisure, work, parking, overnight or other.",
-          "action": "Save changes or reset all manually maintained data for this pause."
+          "action": "Save changes or clear all manually maintained data for this pause."
         }
       },
       "pause_result": {
-        "title": "Pause saved",
+        "title": "Pause updated",
         "description": "Action **{action}** completed for pause **{pause_id}** in journey **{journey_id}**."
       },
       "receipt_ocr": {
-        "title": "Analyse receipt with OCR",
-        "description": "Select a stored receipt. The status at the beginning of each row shows whether the receipt has already been read and evaluated with a parser profile. OCR can be run again.",
+        "title": "Analyze receipt with OCR",
+        "description": "Select a stored receipt. The status at the beginning of each line shows whether the receipt has already been read and evaluated with a parser profile. OCR can still be run again.",
         "data": {
           "receipt_ocr_selection": "Receipt"
         }
@@ -347,18 +351,18 @@
       },
       "receipt_detail": {
         "title": "Receipt details",
-        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Cost:** {cost}\n\n**File:** {document_type} ({size})\n**OCR analysis:** {ocr_status}\n\n**Note:** After selecting “Open receipt in browser”, Home Assistant displays a separate dialog. Select “Open website” there to view the document.",
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n\n**State of charge:** {soc}\n**Energy:** {energy}\n**Costs:** {cost}\n\n**File:** {document_type} ({size})\n**OCR analysis:** {ocr_status}\n\n**Note:** After selecting “Open receipt in browser”, Home Assistant displays a separate dialog. Click “Open website” there to view the document.",
         "data": {
           "receipt_detail_action": "Action"
         }
       },
       "receipt_open": {
         "title": "Open receipt",
-        "description": "Select “Open website” to display the selected receipt in a new browser window or tab."
+        "description": "Click “Open website” to display the selected receipt in a new browser window or tab."
       },
       "ocr_settings": {
         "title": "OCR connection",
-        "description": "Ford Triplog can optionally analyse receipts using an external local OCR service. All other functions remain fully available without an enabled OCR connection.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
+        "description": "Ford Triplog can optionally analyze receipts using an external local OCR service. Without an enabled OCR connection, all other functions remain fully available.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
         "data": {
           "ocr_enabled": "Enable OCR",
           "ocr_url": "OCR service URL",
@@ -368,7 +372,7 @@
         "data_description": {
           "ocr_enabled": "Enables the connection to the external OCR service.",
           "ocr_url": "For example http://192.168.1.20:9080",
-          "ocr_api_key": "Must match the container's OCR_API_KEY.",
+          "ocr_api_key": "Must match the OCR_API_KEY of the container.",
           "ocr_timeout": "Maximum wait time for connection tests and later OCR requests."
         }
       },
@@ -398,7 +402,7 @@
       },
       "charge_receipt_upload": {
         "title": "Add receipt to charging session",
-        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nAfter saving, the receipt is opened directly. When OCR is enabled, the text and parser profile are detected automatically.",
+        "description": "**Charging session:** {date} · {location}\n**Charge ID:** {charge_id}\n**OCR:** {ocr_status}\n\nAfter saving, the receipt is opened directly. If OCR is enabled, text and parser profile are determined automatically.",
         "data": {
           "receipt_file": "Receipt file",
           "note": "Note"
@@ -417,10 +421,10 @@
           "charge_selection": "Back to charging sessions"
         },
         "menu_option_descriptions": {
-          "charge_technical": "View the technical details of this charging session.",
+          "charge_technical": "Display stored technical charging data.",
           "charge_cost_edit": "Edit costs and billed energy.",
-          "charge_receipts": "View existing receipts or add a new one.",
-          "charge_selection": "Return to the list of charging sessions."
+          "charge_receipts": "View receipts or add a new receipt.",
+          "charge_selection": "Return to the list of stored charging sessions."
         }
       },
       "charge_technical": {
@@ -436,14 +440,14 @@
           "charge_receipt_list": "Receipts"
         },
         "menu_option_descriptions": {
-          "charge_receipt_upload": "Add a PDF or image. When OCR is enabled, the receipt is analysed automatically.",
+          "charge_receipt_upload": "Attach a PDF or image. If OCR is enabled, the receipt is analyzed automatically.",
           "charge_detail": "Return to the charging session overview.",
           "charge_receipt_list": "View and manage receipts for this charging session."
         }
       },
       "charge_receipt_list": {
         "title": "Receipts for this charging session",
-        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}\n\nSelect “← Back” to return to the receipt menu.",
+        "description": "Charging session: {charge_id}\n\nLinked receipts: {receipt_count}\n\nUse “← Back” to return to the receipt menu.",
         "data": {
           "receipt_list_selection": "Receipt"
         }
@@ -460,33 +464,33 @@
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Display the original file in the browser.",
-          "charge_receipt_ocr": "Analyse the receipt again and update parser values.",
+          "charge_receipt_ocr": "Analyze the receipt again and update parser values.",
           "charge_receipt_delete": "Delete the receipt file and stored metadata.",
-          "charge_receipt_list": "Return to this charging session's receipt list.",
+          "charge_receipt_list": "Return to the receipt list for this charging session.",
           "charge_receipt_parser_create": "Create a custom parser profile from the existing OCR text."
         }
       },
       "charge_receipt_ocr": {
         "title": "Run OCR again",
-        "description": "The existing OCR analysis and parser result will be replaced by a new analysis."
+        "description": "The existing OCR analysis and parser result are replaced by a new analysis."
       },
       "charge_receipt_delete": {
         "title": "Delete receipt",
-        "description": "Do you want to permanently delete the receipt **{filename}**?",
+        "description": "Do you really want to permanently delete the receipt **{filename}**?",
         "data": {
           "confirm": "Confirm deletion"
         }
       },
       "charge_receipt_open": {
         "title": "View receipt",
-        "description": "[Open receipt]({receipt_url})\n\nThe link is valid for 10 minutes.\n\n**Note:** Due to a Home Assistant limitation, some browsers may not open the link correctly when clicked directly from this dialog. If this happens, right-click the link and select **Open link in new tab**."
+        "description": "[Open receipt in a new window]({receipt_url})\n\nThe link is valid for 10 minutes. Select **OK** afterwards to return to the receipt."
       },
       "charge_receipt_parser_create": {
         "title": "Create parser profile",
-        "description": "**Receipt:** {filename}\n\nCreate a simple user profile. The matching text must occur in future receipts of this type. After saving, the existing OCR text is evaluated again immediately.\n\n**OCR text:**\n\n{raw_text}",
+        "description": "**Receipt:** {filename}\n\nCreate a simple custom profile. The match text must occur in future receipts of this type. After saving, the existing OCR text is evaluated again immediately.\n\n**OCR text:**\n\n{raw_text}",
         "data": {
           "user_parser_name": "Profile name",
-          "user_parser_match_text": "Matching text",
+          "user_parser_match_text": "Match text",
           "user_parser_provider": "Fixed provider",
           "user_parser_location": "Fixed charging location",
           "user_parser_energy": "Detect energy before kWh",
@@ -504,7 +508,7 @@
           "charge_selection": "Charging session"
         },
         "data_description": {
-          "charge_selection": "The list shows date, location, charged energy and stored costs. Select “← Back” to return to the charging session menu."
+          "charge_selection": "The list shows date, location, charged energy and stored costs. Use “← Back” to return to the charging session menu."
         }
       },
       "pause_selection": {
@@ -514,12 +518,12 @@
           "pause_selection": "Pause"
         },
         "data_description": {
-          "pause_selection": "The list shows date, time range, duration and location. Select “← Back” to return to the pause menu."
+          "pause_selection": "The list shows date, time range, duration and location. Use “← Back” to return to the pause menu."
         }
       },
       "user_charging_site_selection": {
         "title": "Select charging location",
-        "description": "{stored_text}\n\nSelect “Back to charging locations” to return to the menu.",
+        "description": "{stored_text}\n\nUse “Back to charging locations” to return to the menu.",
         "data": {
           "user_charging_site_selection": "Charging location"
         }
@@ -530,7 +534,7 @@
       },
       "charging_site_database": {
         "title": "OpenStreetMap charging locations",
-        "description": "Select the desired action for the charging location database.",
+        "description": "Select what you want to do.",
         "menu_options": {
           "download_charging_sites": "Download charging locations",
           "import_charging_sites": "Import database",
@@ -551,7 +555,7 @@
         },
         "data_description": {
           "route_tracker_enabled": "Records GPS points during a trip using a separate position source.",
-          "route_source_type": "Select the integration from which the Route Tracker receives its GPS coordinates."
+          "route_source_type": "Select the integration from which Route Tracker receives its GPS coordinates."
         }
       },
       "route_tracker_source": {
@@ -565,52 +569,19 @@
         "data_description": {
           "route_latitude_entity": "Sensor that provides the current latitude.",
           "route_longitude_entity": "Sensor that provides the current longitude.",
-          "route_geocoded_entity": "Home Assistant Companion App Geocoded Location sensor with the “location” attribute."
-        }
-      },
-      "general_settings": {
-        "title": "General settings",
-        "description": "Configure Ford Triplog.",
-        "data": {
-          "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)",
-          "charging_site_country": "Charging-location database country",
-          "battery_capacity_kwh": "Usable battery capacity (kWh)",
-          "soh": "Battery state of health (SOH)",
-          "journey_home_zone": "Journey base",
-          "journey_home_timeout_minutes": "Minimum stay at journey base",
-          "journey_max_gap_hours": "Maximum gap between journeys",
-          "home_tariff_enabled": "Automatic home charging costs",
-          "home_tariff_summer_price": "Summer tariff (1 April to 30 September)",
-          "home_tariff_winter_price": "Winter tariff (1 October to 31 March)",
-          "home_tariff_currency": "Home tariff currency",
-          "storage_read_backend": "Storage read backend"
-        },
-        "data_description": {
-          "smart_trip": "Short intermediate stops are automatically merged into one trip.",
-          "smart_trip_timeout": "Recommended: 300 seconds (5 minutes). Minimum: 30 seconds.",
-          "charging_site_country": "Country of the currently used OpenStreetMap charging location database.",
-          "battery_capacity_kwh": "The usable battery capacity of the vehicle. Default: 77 kWh.",
-          "journey_home_zone": "Zone whose arrival can end a journey.",
-          "journey_home_timeout_minutes": "The journey ends only after the vehicle has remained in the journey base for at least this amount of time. 0 minutes ends the journey immediately.",
-          "journey_max_gap_hours": "Maximum time between two trips before a new journey starts. This value is used as a fallback when no journey base can be used.",
-          "home_tariff_enabled": "Automatically calculates costs for charging sessions at the journey base.",
-          "home_tariff_summer_price": "Price per kWh for charging sessions from 1 April to 30 September.",
-          "home_tariff_winter_price": "Price per kWh for charging sessions from 1 October to 31 March.",
-          "home_tariff_currency": "Currency used for automatically calculated home charging costs.",
-          "storage_read_backend": "Select the backend used to read stored Ford Triplog data. JSON is the default. SQLite is currently prepared for Phase 2 validation."
+          "route_geocoded_entity": "Geocoded location sensor from the Home Assistant Companion App with the “location” attribute."
         }
       },
       "osrm_settings": {
         "title": "OSRM route smoothing",
-        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 metres is used by default.",
+        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default.",
         "data": {
           "osrm_enabled": "Enable OSRM",
           "osrm_url": "OSRM service URL",
           "osrm_match_radius": "Matching radius"
         },
         "data_description": {
-          "osrm_enabled": "Enables optional local route smoothing using OSRM.",
+          "osrm_enabled": "Enables optional local route smoothing via OSRM.",
           "osrm_url": "For example http://192.168.1.20:5005",
           "osrm_match_radius": "Search radius per GPS point. Recommended and default: 15 m."
         }
@@ -618,6 +589,16 @@
       "osrm_connection_result": {
         "title": "OSRM connection saved",
         "description": "**Status:** {status}\n\n**Address:** {url}\n**Matching radius:** {radius} m\n**Test road:** {road}\n**Distance from test point:** {distance} m"
+      },
+      "general_settings": {
+        "title": "General settings",
+        "description": "Configure Ford Triplog.",
+        "data": {
+          "storage_read_backend": "Storage Read Backend"
+        },
+        "data_description": {
+          "storage_read_backend": "Select which backend is used for reading stored Ford Triplog data. JSON is the default. SQLite is currently intended for Phase 2 validation."
+        }
       },
       "vehicle_sensors": {
         "title": "Vehicle sensors",
@@ -638,22 +619,102 @@
           "charging": "Optional sensor providing the current charging status.",
           "last_charge": "Optional sensor containing data from the most recently completed charging session."
         }
+      },
+      "export": {
+        "title": "Export data",
+        "description": "Select which data you want to export.",
+        "menu_options": {
+          "export_trips": "Export trips as CSV",
+          "export_journeys": "Export journeys as CSV",
+          "export_charges": "Export charging sessions as CSV",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
+          "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
+          "init": "Return to the Ford Triplog overview.",
+          "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range."
+        }
+      },
+      "export_trips": {
+        "title": "Export trips",
+        "description": "Exports stored trips as a CSV file. Start and end dates are optional; without a date range, all stored trips are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_result": {
+        "title": "Export completed",
+        "description": "**Exported records:** {record_count}\n\n**File:** `{filename}`\n\n**Date range:** {period}\n\nThe CSV file can be downloaded directly.",
+        "menu_options": {
+          "export_download": "Download CSV",
+          "export": "Back to export"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Download the generated CSV file to this device.",
+          "export": "Return to the export selection."
+        }
+      },
+      "export_download": {
+        "title": "Download CSV",
+        "description": "Click “Open website” to download the CSV file. The download link is valid for 10 minutes."
+      },
+      "export_journeys": {
+        "title": "Export journeys",
+        "description": "Exports stored journeys as a CSV file. Start and end dates are optional; without a date range, all stored journeys are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_charges": {
+        "title": "Export charging sessions",
+        "description": "Exports stored charging sessions as a CSV file. Start and end dates are optional; without a date range, all stored charging sessions are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "charge_delete_selection": {
+        "title": "Delete invalid charging session",
+        "description": "{charge_count} clearly suspicious charging sessions were found. Only sessions with strong plausibility issues are shown, such as 0 kWh vehicle energy, decreasing SOC or an extremely short duration.",
+        "data": {
+          "charge_delete_selection": "Charging session"
+        },
+        "data_description": {
+          "charge_delete_selection": "Normal charging sessions are intentionally not offered here."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Really delete charging session?",
+        "description": "**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\n**Vehicle energy:** {energy} kWh\n**SOC:** {soc_start} % → {soc_end} %\n**Duration:** {duration}\n**Cost:** {cost_total} {currency}\n\nThe charging session will be permanently removed from history. Journeys and statistics are rebuilt afterwards. Existing receipts are not deleted.",
+        "data": {
+          "confirm": "Permanently delete charging session"
+        },
+        "data_description": {
+          "confirm": "Enable only if this charging session is actually invalid."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Charging session deleted",
+        "description": "The invalid charging session was removed.\n\n**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
       }
     },
     "error": {
       "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging location database.",
-      "charging_site_download_failed": "The charging location database could not be downloaded from OpenStreetMap or processed. Check the Home Assistant log for details.",
+      "charging_site_download_failed": "The charging location database could not be downloaded from OpenStreetMap or processed. Check the Home Assistant log for more details.",
       "charging_site_download_in_progress": "A charging location database download is already in progress.",
       "user_charging_sites_load_failed": "The custom charging location database could not be loaded.",
       "user_charging_site_not_found": "The selected charging location was not found.",
       "user_charging_site_save_failed": "The charging location could not be saved.",
       "journey_operation_failed": "The journey action could not be completed.",
       "journey_confirmation_required": "The action must be confirmed.",
-      "charge_load_failed": "Unable to load stored charging sessions.",
-      "charge_none_available": "No stored charging sessions were found.",
+      "charge_load_failed": "Unable to load archived charging sessions.",
+      "charge_none_available": "No archived charging sessions were found.",
       "charge_not_found": "The selected charging session was not found.",
       "charge_cost_save_failed": "Charging costs could not be saved or cleared.",
-      "receipt_target_load_failed": "Assignments could not be loaded.",
+      "receipt_target_load_failed": "Targets could not be loaded.",
       "receipt_no_targets": "No suitable pauses or charging sessions are available.",
       "receipt_import_failed": "The receipt could not be imported. Use PDF, JPG, PNG or WEBP up to 20 MB.",
       "receipt_load_failed": "Receipts could not be loaded.",
@@ -665,24 +726,28 @@
       "pause_invalid_selection": "The selected pause is invalid.",
       "pause_journey_not_found": "The related journey was not found.",
       "pause_save_failed": "The pause could not be saved.",
-      "receipt_ocr_failed": "The receipt could not be analysed. Check the Home Assistant and OCR container logs.",
+      "receipt_ocr_failed": "The receipt could not be analyzed. Check the Home Assistant and OCR container logs.",
       "ocr_invalid_url": "The OCR address is invalid. Use a complete HTTP or HTTPS address.",
       "ocr_authentication_failed": "The OCR service rejected the API key.",
-      "ocr_connection_failed": "The OCR service is not reachable. Check address, port, container and network.",
+      "ocr_connection_failed": "The OCR service cannot be reached. Check address, port, container and network.",
       "ocr_invalid_response": "The OCR service did not return a valid health response.",
-      "ocr_not_configured": "OCR is not enabled or has not been configured.",
+      "ocr_not_configured": "OCR is not enabled or has not yet been configured.",
       "receipt_ocr_response_failed": "The OCR service rejected the file or request.",
-      "receipt_no_parsed_charge_receipts": "No successfully parsed charging receipts are available.",
+      "receipt_no_parsed_charge_receipts": "There are no successfully parsed charging receipts.",
       "receipt_not_charge": "This receipt is not assigned to a charging session.",
       "receipt_apply_failed": "The receipt values could not be applied to the charging session.",
       "receipt_no_ocr_text": "No OCR text is stored for this receipt.",
-      "user_parser_required_fields": "Profile name and matching text are required.",
-      "user_parser_match_not_found": "The matching text does not occur in the OCR text.",
-      "user_parser_create_failed": "The user profile could not be saved.",
+      "user_parser_required_fields": "Profile name and match text are required.",
+      "user_parser_match_not_found": "The match text does not occur in the OCR text.",
+      "user_parser_create_failed": "The custom profile could not be saved.",
       "user_parser_test_failed": "The profile was saved but could not successfully parse the current receipt.",
       "osrm_invalid_url": "The OSRM address is invalid. Use a complete HTTP or HTTPS address.",
-      "osrm_connection_failed": "The OSRM service is not reachable. Check address, port, container and network.",
-      "osrm_invalid_response": "The OSRM service did not return a valid response."
+      "osrm_connection_failed": "The OSRM service cannot be reached. Check address, port, container and network.",
+      "osrm_invalid_response": "The OSRM service did not return a valid response.",
+      "export_invalid_date_range": "The start date must not be after the end date.",
+      "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
+      "charge_delete_failed": "The charging session could not be deleted completely.",
+      "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion."
     }
   },
   "entity": {
@@ -801,8 +866,11 @@
       "last_charge_energy": {
         "name": "Last charging session energy"
       },
+      "last_charge_energy_fordpass": {
+        "name": "Last charging session FordPass energy"
+      },
       "last_charge_energy_calculated": {
-        "name": "Calculated energy of last charging session"
+        "name": "Last charging session calculated energy"
       },
       "last_charge_energy_source": {
         "name": "Last charging session energy source"
@@ -874,7 +942,7 @@
     "charging_site_location": "Charging location",
     "charging_site_unknown_location": "Unknown charging location",
     "charging_site_new_location": "+ New charging location",
-    "charging_site_pending_locations": "⚠ Newly detected charging locations ({count})",
+    "charging_site_pending_locations": "⚠ New detected charging locations ({count})",
     "charging_site_save": "Save",
     "charging_site_delete": "Delete",
     "charging_site_step": "Step",
@@ -890,59 +958,19 @@
     "charge_currency": "Currency",
     "charge_price_per_kwh": "Price per kWh",
     "pause_action_save": "Save",
-    "pause_action_clear": "Clear manual data",
+    "pause_action_clear": "Clear manual entries",
     "charge_action_add_receipt": "Add receipt",
     "pause_action_back": "Back to pauses",
     "charging_site_back": "Back to charging locations",
-    "receipt": "Receipt",
-    "receipt_none": "No receipt available",
-    "receipt_status_not_started": "Not started",
-    "receipt_status_queued": "Queued",
-    "receipt_status_running": "Processing",
-    "receipt_status_completed": "Completed",
-    "receipt_status_failed": "Failed",
-    "receipt_status_unread": "Not read yet",
-    "receipt_status_values_applied": "Values applied",
-    "receipt_status_values_detected": "Values detected",
-    "receipt_status_no_profile": "OCR completed · no profile",
-    "receipt_status_ocr_completed": "OCR completed",
-    "receipt_parser_none": "No parser values available",
-    "receipt_parser_provider": "Provider",
-    "receipt_parser_location": "Charging location",
-    "receipt_parser_energy": "Energy",
-    "receipt_parser_duration": "Duration",
-    "receipt_parser_current": "Current",
-    "receipt_parser_voltage": "Voltage",
-    "receipt_parser_power": "Power",
-    "receipt_parser_temperature": "Temperature",
-    "receipt_parser_price": "Price per kWh",
-    "receipt_parser_total": "Total",
-    "receipt_profile_none": "No matching profile",
-    "receipt_text_none": "No text detected.",
-    "receipt_not_evaluated": "Not evaluated yet",
-    "receipt_open_browser": "Open receipt in browser",
-    "receipt_back_list": "Back to receipt list",
-    "receipt_upload_ocr_enabled": "enabled – receipt will be analysed automatically",
-    "receipt_upload_ocr_disabled": "disabled – receipt will only be stored",
-    "ocr_enabled": "enabled",
-    "ocr_disabled": "disabled",
-    "ocr_service_disabled": "OCR disabled",
-    "ocr_pdf_first_page": "First page only",
-    "ocr_pdf_all_pages": "All pages / not specified",
-    "operation_completed": "Operation completed",
-    "charge": "Charging session",
-    "unknown_charging_location": "Unknown charging location",
-    "selection_back": "← Back",
-    "document_pdf": "PDF document",
-    "document_image": "Image file",
-    "document_generic": "Document",
-    "profile": "Profile",
-    "receipt_more": "more"
+    "export_all_data": "all data",
+    "export_from": "from {date}",
+    "export_until": "until {date}",
+    "export_range": "{start} to {end}"
   },
   "services": {
     "import_charging_sites": {
-      "name": "Import charging location database",
-      "description": "Imports a charging location database from a JSON file in the Home Assistant configuration directory.",
+      "name": "Import charging stations",
+      "description": "Imports a charging station database from a JSON file in the Home Assistant configuration directory.",
       "fields": {
         "file": {
           "name": "File",
@@ -951,8 +979,8 @@
       }
     },
     "download_charging_database": {
-      "name": "Download charging location database",
-      "description": "Downloads, creates, imports and activates the charging location database for a country.",
+      "name": "Download charging station database",
+      "description": "Downloads, creates, imports and activates the charging station database for a country.",
       "fields": {
         "country": {
           "name": "Country",
@@ -978,16 +1006,16 @@
       "message": "The import file must be located below the Home Assistant configuration directory."
     },
     "import_file_not_json": {
-      "message": "The charging location database import file must be a JSON file."
+      "message": "The charging station database import file must be a JSON file."
     },
     "import_file_not_found": {
-      "message": "The charging location database import file was not found: {path}"
+      "message": "The charging station database import file was not found: {path}"
     },
     "database_invalid": {
-      "message": "The charging location database is invalid: {error}"
+      "message": "The charging station database is invalid: {error}"
     },
     "database_validation_failed": {
-      "message": "The charging location database could not be validated: {error}"
+      "message": "The charging station database could not be validated: {error}"
     },
     "integration_not_loaded": {
       "message": "Ford Triplog is currently not loaded."
@@ -996,16 +1024,16 @@
       "message": "The country code “{country_code}” is not supported. Supported countries: {supported}."
     },
     "imported_database_load_failed": {
-      "message": "The imported charging location database could not be loaded: {error}"
+      "message": "The imported charging station database could not be loaded: {error}"
     },
     "database_import_failed": {
-      "message": "The charging location database could not be imported: {error}"
+      "message": "The charging station database could not be imported: {error}"
     },
     "database_download_failed": {
-      "message": "Downloading the charging location database failed: {error}"
+      "message": "Downloading the charging station database failed: {error}"
     },
     "database_generation_failed": {
-      "message": "The charging location database could not be created: {error}"
+      "message": "The charging station database could not be created: {error}"
     }
   },
   "selector": {
