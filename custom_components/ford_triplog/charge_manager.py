@@ -6,7 +6,7 @@ Track your Ford.
 Charging-session management and manual cost handling.
 
 Version: 2.1.0
-Release: 2.2.0 - Invalid charge deletion
+Release: 2.2.0 - Invalid charge deletion Build 08a
 """
 
 from __future__ import annotations
@@ -261,12 +261,12 @@ class FordTriplogChargeManager:
             energy = None
 
         try:
-            soc_start = float(charge.soc_start)
+            soc_start = float(charge.start_soc)
         except (TypeError, ValueError):
             soc_start = None
 
         try:
-            soc_end = float(charge.soc_end)
+            soc_end = float(charge.end_soc)
         except (TypeError, ValueError):
             soc_end = None
 
