@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09e - Pause receipt detail handler
+Build: 09f - Clean pause receipt overview
 Release: 2.2.0
 
 
@@ -2505,15 +2505,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if receipts:
             lines = []
             for receipt in receipts[:10]:
-                filename = str(
-                    receipt.get("original_filename")
-                    or receipt.get("filename")
-                    or ui_text["receipt"]
+                created = self._parse_datetime_value(
+                    receipt.get("created_at")
+                    or receipt.get("created")
+                    or receipt.get("uploaded_at")
                 )
-                lines.append(
-                    f"{filename} · "
-                    f"{self._format_receipt_processing_status(receipt, ui_text)}"
-                )
+                if created is not None:
+                    local_created = dt_util.as_local(created)
+                    receipt_date = local_created.strftime("%d.%m.%Y %H:%M")
+                else:
+                    receipt_date = str(pause.get("date") or "—")
+
+                note = str(receipt.get("note") or "").strip()
+                label = note or ui_text["receipt"]
+                lines.append(f"{receipt_date} · {label}")
+
             receipt_summary = "\n".join(lines)
             if len(receipts) > 10:
                 receipt_summary += (
