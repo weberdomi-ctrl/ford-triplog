@@ -623,10 +623,12 @@
         "description": "Select which data you want to export.",
         "menu_options": {
           "export_trips": "Export trips as CSV",
+          "export_journeys": "Export journeys as CSV",
           "init": "Back to main menu"
         },
         "menu_option_descriptions": {
           "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
+          "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
           "init": "Return to the Ford Triplog overview."
         }
       },
@@ -640,7 +642,7 @@
       },
       "export_result": {
         "title": "Export completed",
-        "description": "**Exported trips:** {record_count}\n\n**File:** `{filename}`\n\n**Date range:** {start_date} to {end_date}\n\nThe CSV file can be downloaded directly.",
+        "description": "**Exported records:** {record_count}\\n\\n**File:** `{filename}`\\n\\n**Date range:** {start_date} to {end_date}\\n\\nThe CSV file can be downloaded directly.",
         "menu_options": {
           "export_download": "Download CSV",
           "export": "Back to export"
@@ -653,6 +655,14 @@
       "export_download": {
         "title": "Download CSV",
         "description": "Click “Open website” to download the CSV file. The download link is valid for 10 minutes."
+      },
+      "export_journeys": {
+        "title": "Export journeys",
+        "description": "Exports stored journeys as a CSV file. Start and end dates are optional; without a date range, all stored journeys are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
       }
     },
     "error": {
