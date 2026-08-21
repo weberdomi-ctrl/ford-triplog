@@ -644,7 +644,7 @@
       },
       "export_result": {
         "title": "Export completed",
-        "description": "**Exported records:** {record_count}\\n\\n**File:** `{filename}`\\n\\n**Date range:** {start_date} to {end_date}\\n\\nThe CSV file can be downloaded directly.",
+        "description": "**Exported records:** {record_count}\n\n**File:** `{filename}`\n\n**Date range:** {period}\n\nThe CSV file can be downloaded directly.",
         "menu_options": {
           "export_download": "Download CSV",
           "export": "Back to export"
@@ -933,7 +933,11 @@
     "pause_action_clear": "Clear manual entries",
     "charge_action_add_receipt": "Add receipt",
     "pause_action_back": "Back to pauses",
-    "charging_site_back": "Back to charging locations"
+    "charging_site_back": "Back to charging locations",
+    "export_all_data": "all data",
+    "export_from": "from {date}",
+    "export_until": "until {date}",
+    "export_range": "{start} to {end}"
   },
   "services": {
     "import_charging_sites": {
