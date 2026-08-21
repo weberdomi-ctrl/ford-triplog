@@ -65,7 +65,7 @@
       },
       "import_charging_sites": {
         "title": "Import charging location database",
-        "description": "Select a Ford Triplog charging location database in JSON format. The existing database is backed up automatically and replaced after successful validation.",
+        "description": "Select a Ford Triplog charging location database in JSON format. The existing database is backed up automatically and replaced after successful validation.\n\nCountry database: {github_url}",
         "data": {
           "charging_site_file": "JSON file"
         },

@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09c - Pause receipt details/delete
+Build: 09d - Receipt delete translation fix
 Release: 2.2.0
 
 
@@ -386,6 +386,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "receipt_not_evaluated": "Not evaluated yet",
             "receipt_open_browser": "Open receipt in browser",
             "receipt_back_list": "Back to receipt list",
+            "receipt_delete": "Delete receipt",
             "receipt_upload_ocr_enabled": (
                 "enabled – receipt will be analysed automatically"
             ),
