@@ -60,7 +60,7 @@ Ford Triplog was designed with the following principles:
 
 # Main Components
 
-## ExplorerCoordinator
+## Coordinator
 
 The coordinator is responsible for collecting all required vehicle data.
 
@@ -169,7 +169,7 @@ This priority allows FordPass information to be used whenever available while st
 
 The Storage Manager provides a backend-independent interface for persistent local storage.
 
-Ford Triplog 2.1 supports JSON and SQLite as local read backends. During the 2.1 transition, compatible data is written to both formats. JSON remains the default read backend after an upgrade; SQLite can be enabled explicitly in Ford Triplog settings.
+Ford Triplog 2.1 introduced JSON and SQLite as selectable local read backends. Ford Triplog 2.2 continues this parallel-storage transition: compatible data is written to both formats. JSON remains the default read backend after an upgrade; SQLite can be enabled explicitly in Ford Triplog settings.
 
 Responsibilities:
 
@@ -178,11 +178,86 @@ Responsibilities:
 - Save statistics and diagnostics
 - Save charging and pause metadata
 - Save receipts and user receipt parser profiles
+- Link receipts to charging sessions and Journey pauses
 - Save user-defined and pending charging locations
+- Backend-neutral archive access for CSV export
+- Consistent deletion and rebuild of invalid charging records
 - Data migration and mirroring
 - Recovery
 
 Backend-neutral archive access allows statistics and Journey rebuild operations to use the selected read backend without depending on JSON archive files.
+
+---
+
+
+## Receipt Management
+
+Receipt management stores documents locally and links their metadata to
+the corresponding Ford Triplog record.
+
+Receipts can be associated with:
+
+- Charging sessions
+- Journey pauses
+
+Multiple receipts can be linked to the same charging session or pause.
+
+Charging receipts can optionally use OCR and parser profiles for
+automatic charging-data extraction. Pause receipts are stored and linked
+without requiring OCR.
+
+Receipt files remain local to Home Assistant. Dashboard access uses
+authenticated signed Home Assistant URLs instead of exposing local
+filesystem paths.
+
+Journey History exposes pause receipt information for the selected
+History date so dedicated dashboard cards can display the pause context
+and open its associated documents.
+
+---
+
+## Export
+
+Ford Triplog 2.2 provides backend-neutral CSV export for the main
+historical data sets.
+
+Supported exports include:
+
+- Trips
+- Journeys
+- Charging sessions
+
+The export layer reads records through the Storage Manager and converts
+them into practical flattened CSV columns rather than exposing internal
+JSON structures.
+
+Optional date filtering can limit the exported records.
+
+Generated files can be downloaded directly through Home Assistant. Users
+therefore do not need direct access to the Home Assistant VM, container
+or local storage directory.
+
+---
+
+## Maintenance Operations
+
+Ford Triplog 2.2 includes guarded maintenance operations for stored
+history.
+
+Invalid or clearly suspicious charging sessions can be selected for
+deletion. Deletion requires explicit confirmation.
+
+After a charging session is removed, dependent derived data is updated
+consistently:
+
+- Journeys are rebuilt where required
+- Statistics are recalculated
+- The stored last charging session is refreshed when required
+- Existing receipt files are preserved instead of being deleted
+  implicitly
+
+These operations use the Storage Manager so JSON and SQLite remain
+consistent during the 2.2 parallel-storage phase.
 
 ---
 
@@ -337,7 +412,7 @@ Reverse Geocoding
 
 Ford Triplog stores its persistent data locally inside Home Assistant.
 
-Version 2.1 introduces a local SQLite database alongside the existing JSON storage.
+Version 2.1 introduced a local SQLite database alongside the existing JSON storage. Version 2.2 continues the parallel JSON/SQLite validation phase.
 
 Typical data includes:
 
@@ -348,8 +423,10 @@ Typical data includes:
 - Statistics and diagnostics
 - Charging locations
 - Charging and pause metadata
-- Receipts and OCR/parser state
+- Charging and pause receipts
+- Receipt OCR/parser state
 - User-created receipt parser profiles
+- CSV export files
 - OpenStreetMap databases
 - Configuration
 
@@ -359,7 +436,7 @@ JSON remains the default read backend after upgrading to 2.1. Existing users are
 
 Users who want SQLite reads can enable the backend explicitly in Ford Triplog settings. Changing the backend reloads the integration.
 
-During the 2.1 migration period:
+During the 2.1/2.2 migration period:
 
 - Compatible data is written to JSON and SQLite
 - Existing data is migrated or mirrored into SQLite
@@ -429,7 +506,7 @@ Characteristics:
 - Event-driven architecture
 - No continuous polling
 - Local JSON and SQLite storage
-- Backend-neutral historical reads
+- Backend-neutral historical reads and exports
 - SQL-backed queries and views for frequently used statistics
 - Fast geohash-based charging lookup
 - Minimal memory usage
@@ -452,6 +529,12 @@ Ford Triplog never transmits:
 - Statistics
 - Charging locations
 - User-defined charging locations
+- Receipt documents
+- CSV exports
+
+Receipt dashboard links are authenticated through Home Assistant. Export
+files are generated locally and are only downloaded when explicitly
+requested by the user.
 
 This makes the integration suitable for users who prefer complete local control over their driving history.
 
@@ -463,9 +546,10 @@ The architecture has been designed to support future features without major stru
 
 Planned extensions include:
 
-- Automatic charging database switching
-- Dashboard templates
+- SQLite-only production storage after completion of the parallel-storage transition
 - Multi-vehicle support
+- Maintenance tracking
+- Long-term history improvements
 - Further SQL-based statistics and aggregation
 - Additional route validation and GPS plausibility checks
 
