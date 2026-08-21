@@ -60,7 +60,7 @@ Ford Triplog was designed with the following principles:
 
 # Main Components
 
-## ExplorerCoordinator
+## Coordinator
 
 The coordinator is responsible for collecting all required vehicle data.
 
