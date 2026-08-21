@@ -7,8 +7,8 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 
-Release: 2.1.0
+Build: 05 - Trip CSV export
+Release: 2.2.0
 
 
 """
@@ -58,6 +58,8 @@ from .osrm_client import (
     FordTriplogOSRMConnectionError,
     FordTriplogOSRMResponseError,
 )
+
+from .export import FordTriplogExporter
 
 from .services import (
     async_download_charging_database,
@@ -195,6 +197,9 @@ RECEIPT_DETAIL_BACK = "back"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
 
+CONF_EXPORT_START_DATE = "start_date"
+CONF_EXPORT_END_DATE = "end_date"
+
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -312,6 +317,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._receipt_apply_result: dict[str, str] = {}
         self._ui_translations: dict[str, str] | None = None
         self._route_tracker_draft: dict[str, Any] = {}
+        self._export_result: dict[str, str] = {}
 
     async def async_step_init(
         self,
@@ -326,7 +332,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_management",
                 "pause_management",
                 "charge_management",
-                    "user_charging_sites",
+                "export",
+                "user_charging_sites",
                 "charging_site_database",
             ],
         )
@@ -3813,6 +3820,131 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             "affected_dates": ", ".join(affected_dates) or "—",
         }
+
+
+    def _get_trip_storage(self):
+        """Return Ford Triplog storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("storage")
+
+        if storage is None:
+            coordinator = runtime_data.get("coordinator")
+            storage = getattr(coordinator, "storage", None)
+
+        if storage is None:
+            raise HomeAssistantError(
+                "Ford Triplog storage is not initialized"
+            )
+
+        return storage
+
+    async def async_step_export(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show export navigation."""
+
+        return self.async_show_menu(
+            step_id="export",
+            menu_options=[
+                "export_trips",
+                "init",
+            ],
+        )
+
+    async def async_step_export_trips(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived Trips to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_trips(
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Trip CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "filename": str(
+                            result.get("filename") or ""
+                        ),
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "start_date": str(
+                            result.get("start_date") or "—"
+                        ),
+                        "end_date": str(
+                            result.get("end_date") or "—"
+                        ),
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_trips",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show CSV export result."""
+
+        if user_input is not None:
+            return await self.async_step_export()
+
+        return self.async_show_form(
+            step_id="export_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._export_result,
+        )
 
 
     async def async_step_settings(
