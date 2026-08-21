@@ -4,7 +4,7 @@ Ford Triplog
 CSV export helpers.
 
 Version: 2.2.0
-Build: 05 - Trip CSV export
+Build: 05a - Trip CSV export with download
 """
 
 from __future__ import annotations
@@ -15,9 +15,13 @@ from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
+from aiohttp import web
+
 from homeassistant.core import HomeAssistant
+from homeassistant.components.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
 
+from .const import DOMAIN
 from .storage import FordTriplogStorage
 
 
@@ -112,11 +116,62 @@ def _trip_row(trip: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+class FordTriplogExportView(HomeAssistantView):
+    """Authenticated HTTP view for downloading generated export files."""
+
+    url = "/api/ford_triplog/exports/{filename}"
+    name = "api:ford_triplog:export"
+    requires_auth = True
+
+    async def get(
+        self,
+        request: web.Request,
+        filename: str,
+    ) -> web.StreamResponse:
+        """Return one generated CSV export as an attachment."""
+
+        hass: HomeAssistant = request.app["hass"]
+        safe_name = Path(str(filename)).name
+
+        if safe_name != filename or not safe_name.lower().endswith(".csv"):
+            raise web.HTTPNotFound()
+
+        export_directory = Path(
+            hass.config.path(
+                "ford_triplog",
+                "export",
+            )
+        ).resolve()
+        path = (export_directory / safe_name).resolve()
+
+        try:
+            path.relative_to(export_directory)
+        except ValueError as error:
+            raise web.HTTPNotFound() from error
+
+        if not await hass.async_add_executor_job(path.is_file):
+            raise web.HTTPNotFound()
+
+        response = web.FileResponse(path)
+        response.headers["Content-Disposition"] = (
+            f'attachment; filename="{safe_name.replace(chr(34), "")}"'
+        )
+        response.headers["Content-Type"] = "text/csv; charset=utf-8"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
+
+
 class FordTriplogExporter:
     def __init__(self, hass: HomeAssistant, storage: FordTriplogStorage) -> None:
         self.hass = hass
         self.storage = storage
         self.export_path = Path(hass.config.path("ford_triplog", "export"))
+
+        domain_data = hass.data.setdefault(DOMAIN, {})
+        if not domain_data.get("export_view_registered"):
+            hass.http.register_view(FordTriplogExportView())
+            domain_data["export_view_registered"] = True
 
     async def async_export_trips(
         self,
