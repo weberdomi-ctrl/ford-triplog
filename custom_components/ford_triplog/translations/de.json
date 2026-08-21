@@ -647,12 +647,14 @@
         "menu_options": {
           "export_trips": "Fahrten als CSV exportieren",
           "export_journeys": "Touren als CSV exportieren",
+          "export_charges": "Ladevorgänge als CSV exportieren",
           "init": "Zurück zum Hauptmenü"
         },
         "menu_option_descriptions": {
           "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "export_journeys": "Gespeicherte Touren optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
-          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
+          "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren."
         }
       },
       "export_trips": {
@@ -682,6 +684,14 @@
       "export_journeys": {
         "title": "Touren exportieren",
         "description": "Exportiert gespeicherte Touren als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Touren exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "export_charges": {
+        "title": "Ladevorgänge exportieren",
+        "description": "Exportiert gespeicherte Ladevorgänge als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Ladevorgänge exportiert.",
         "data": {
           "start_date": "Startdatum",
           "end_date": "Enddatum"
