@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 07 - Trip, Journey and Charge CSV export
+Build: 07b - Unified export period display
 Release: 2.2.0
 
 
@@ -405,6 +405,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "document_generic": "Document",
             "profile": "Profile",
             "receipt_more": "more",
+            "export_all_data": "all data",
+            "export_from": "from {date}",
+            "export_until": "until {date}",
+            "export_range": "{start} to {end}",
         }
 
         self._ui_translations = {
@@ -3824,6 +3828,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
         }
 
 
+    async def _format_export_period(
+        self,
+        start_date: Any,
+        end_date: Any,
+    ) -> str:
+        """Return one localized export period label."""
+
+        ui_text = await self._async_get_ui_translations()
+
+        start = str(start_date or "").strip()
+        end = str(end_date or "").strip()
+
+        if not start and not end:
+            return ui_text["export_all_data"]
+        if start and not end:
+            return ui_text["export_from"].format(date=start)
+        if end and not start:
+            return ui_text["export_until"].format(date=end)
+
+        return ui_text["export_range"].format(
+            start=start,
+            end=end,
+        )
+
+
     def _get_trip_storage(self):
         """Return Ford Triplog storage for this config entry."""
 
@@ -3976,11 +4005,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "path": str(
                             result.get("path") or ""
                         ),
-                        "start_date": str(
-                            result.get("start_date") or "—"
-                        ),
-                        "end_date": str(
-                            result.get("end_date") or "—"
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
                         ),
                     }
                     return await self.async_step_export_result()
@@ -4074,11 +4101,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "path": str(
                             result.get("path") or ""
                         ),
-                        "start_date": str(
-                            result.get("start_date") or "—"
-                        ),
-                        "end_date": str(
-                            result.get("end_date") or "—"
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
                         ),
                         "record_type": "Journeys",
                     }
@@ -4173,11 +4198,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "path": str(
                             result.get("path") or ""
                         ),
-                        "start_date": str(
-                            result.get("start_date") or "—"
-                        ),
-                        "end_date": str(
-                            result.get("end_date") or "—"
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
                         ),
                         "record_type": "Charges",
                     }
