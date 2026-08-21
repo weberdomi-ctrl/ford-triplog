@@ -768,6 +768,20 @@
         "data": {
           "receipt_selection": "Beleg"
         }
+      },
+      "pause_receipt_detail": {
+        "title": "Belegdetails",
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n\n**Hinweis:** Nach der Auswahl von „Beleg im Browser öffnen“ zeigt Home Assistant einen separaten Dialog. Klicke dort auf „Website öffnen“, um das Dokument anzuzeigen.",
+        "data": {
+          "receipt_detail_action": "Aktion"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Beleg wirklich löschen?",
+        "description": "**Datum:** {date}\n**Name:** {title}\n**Datei:** {filename}\n\nDie Belegdatei wird dauerhaft gelöscht.",
+        "data": {
+          "confirm": "Beleg endgültig löschen"
+        }
       }
     },
     "error": {
@@ -1078,7 +1092,8 @@
     "export_all_data": "alle Daten",
     "export_from": "ab {date}",
     "export_until": "bis {date}",
-    "export_range": "{start} bis {end}"
+    "export_range": "{start} bis {end}",
+    "receipt_delete": "Beleg löschen"
   },
   "services": {
     "import_charging_sites": {
