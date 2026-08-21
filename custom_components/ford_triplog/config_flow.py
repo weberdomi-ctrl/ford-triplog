@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09 - Pause receipt management
+Build: 09b - Pause receipts without OCR
 Release: 2.2.0
 
 
@@ -910,11 +910,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "receipt_count": str(len(receipts)),
                 "receipt_summary": receipt_summary,
-                "ocr_status": (
-                    ui_text["ocr_enabled"]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
-                    else ui_text["ocr_disabled"]
-                ),
             },
         )
 
@@ -2328,7 +2323,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "pause_id": pause_id,
                         "date": date_text,
                         "start_time": self._pause_time(current.end_time),
-                        "_sort_time": str(current.end_time),
+                        "_sort_time": (
+                            dt_util.parse_datetime(str(current.end_time))
+                            or datetime.min.replace(tzinfo=dt_util.UTC)
+                        ),
                         "title": str(title or ""),
                         "location": str(location or "—"),
                         "cost_total": override.get("cost_total"),
@@ -2337,8 +2335,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
 
         # Show newest pauses first, independent of Journey/archive ordering.
+        # Sort by parsed timestamps instead of ISO strings so timezone offsets
+        # cannot reverse otherwise correctly ordered pauses.
         entries.sort(
-            key=lambda entry: entry.get("_sort_time", ""),
+            key=lambda entry: entry.get(
+                "_sort_time",
+                datetime.min.replace(tzinfo=dt_util.UTC),
+            ).timestamp(),
             reverse=True,
         )
         for entry in entries:
@@ -2573,23 +2576,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 receipt_id = str(receipt.get("receipt_id") or "")
                 self._selected_receipt_id = receipt_id or None
 
-                if (
-                    receipt_id
-                    and bool(self._options.get(CONF_OCR_ENABLED, False))
-                ):
-                    try:
-                        await self._get_receipt_storage().async_analyze(
-                            receipt_id,
-                            self._get_ocr_client(),
-                        )
-                    except Exception:
-                        # The receipt itself is already stored. OCR failure must
-                        # not turn a successful upload into a failed import.
-                        _LOGGER.exception(
-                            "Automatic OCR failed for pause receipt: receipt_id=%s",
-                            receipt_id,
-                        )
-
                 return await self.async_step_pause_receipts()
 
         ui_text = await self._async_get_ui_translations()
@@ -2617,11 +2603,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "date": str(pause.get("date") or "—"),
                 "location": str(pause.get("location") or "—"),
                 "pause_id": str(self._selected_pause_id or ""),
-                "ocr_status": (
-                    ui_text["receipt_upload_ocr_enabled"]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
-                    else ui_text["receipt_upload_ocr_disabled"]
-                ),
             },
         )
 
