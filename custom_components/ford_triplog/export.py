@@ -4,7 +4,7 @@ Ford Triplog
 CSV export helpers.
 
 Version: 2.2.0
-Build: 05a - Trip CSV export with download
+Build: 06 - Trip and Journey CSV export
 """
 
 from __future__ import annotations
@@ -46,6 +46,47 @@ TRIP_EXPORT_FIELDS = (
     "end_longitude",
 )
 
+
+
+JOURNEY_EXPORT_FIELDS = (
+    "journey_id",
+    "date",
+    "start_time",
+    "end_time",
+    "start_address",
+    "end_address",
+    "start_latitude",
+    "start_longitude",
+    "end_latitude",
+    "end_longitude",
+    "trip_count",
+    "charge_count",
+    "distance_km",
+    "driving_duration_seconds",
+    "charging_duration_seconds",
+    "total_duration_seconds",
+    "energy_used_kwh",
+    "energy_charged_kwh",
+    "average_consumption_kwh_100km",
+    "charging_cost_total",
+    "charging_energy_cost",
+    "charging_additional_cost",
+    "average_charging_price_per_kwh",
+    "currency",
+    "start_soc",
+    "end_soc",
+    "soc_delta",
+    "soc_used",
+    "soc_charged",
+    "soc_adjustment",
+    "battery_capacity_kwh",
+    "battery_energy_delta_kwh",
+    "soc_adjustment_kwh",
+    "battery_energy_balance_kwh",
+    "total_energy_flow_kwh",
+    "trip_ids",
+    "charge_ids",
+)
 
 def _parse_local_date(value: Any) -> date | None:
     if not value:
@@ -113,6 +154,89 @@ def _trip_row(trip: dict[str, Any]) -> dict[str, Any]:
         "start_longitude": _csv_value(trip.get("start_longitude")),
         "end_latitude": _csv_value(trip.get("end_latitude")),
         "end_longitude": _csv_value(trip.get("end_longitude")),
+    }
+
+
+
+def _journey_row(journey: Any) -> dict[str, Any]:
+    """Return one stable CSV row from one archived Journey."""
+
+    data = (
+        journey.to_dict()
+        if hasattr(journey, "to_dict")
+        else dict(journey)
+        if isinstance(journey, dict)
+        else {}
+    )
+
+    return {
+        "journey_id": _csv_value(data.get("journey_id")),
+        "date": _csv_value(data.get("date")),
+        "start_time": _csv_value(data.get("start_time")),
+        "end_time": _csv_value(data.get("end_time")),
+        "start_address": _address_text(data.get("start_address")),
+        "end_address": _address_text(data.get("end_address")),
+        "start_latitude": _csv_value(data.get("start_latitude")),
+        "start_longitude": _csv_value(data.get("start_longitude")),
+        "end_latitude": _csv_value(data.get("end_latitude")),
+        "end_longitude": _csv_value(data.get("end_longitude")),
+        "trip_count": _csv_value(data.get("trip_count")),
+        "charge_count": _csv_value(data.get("charge_count")),
+        "distance_km": _csv_value(data.get("distance_km")),
+        "driving_duration_seconds": _csv_value(
+            data.get("driving_duration_seconds")
+        ),
+        "charging_duration_seconds": _csv_value(
+            data.get("charging_duration_seconds")
+        ),
+        "total_duration_seconds": _csv_value(
+            data.get("total_duration_seconds")
+        ),
+        "energy_used_kwh": _csv_value(data.get("energy_used_kwh")),
+        "energy_charged_kwh": _csv_value(data.get("energy_charged_kwh")),
+        "average_consumption_kwh_100km": _csv_value(
+            data.get("average_consumption_kwh_100km")
+        ),
+        "charging_cost_total": _csv_value(
+            data.get("charging_cost_total")
+        ),
+        "charging_energy_cost": _csv_value(
+            data.get("charging_energy_cost")
+        ),
+        "charging_additional_cost": _csv_value(
+            data.get("charging_additional_cost")
+        ),
+        "average_charging_price_per_kwh": _csv_value(
+            data.get("average_charging_price_per_kwh")
+        ),
+        "currency": _csv_value(data.get("currency")),
+        "start_soc": _csv_value(data.get("start_soc")),
+        "end_soc": _csv_value(data.get("end_soc")),
+        "soc_delta": _csv_value(data.get("soc_delta")),
+        "soc_used": _csv_value(data.get("soc_used")),
+        "soc_charged": _csv_value(data.get("soc_charged")),
+        "soc_adjustment": _csv_value(data.get("soc_adjustment")),
+        "battery_capacity_kwh": _csv_value(
+            data.get("battery_capacity_kwh")
+        ),
+        "battery_energy_delta_kwh": _csv_value(
+            data.get("battery_energy_delta_kwh")
+        ),
+        "soc_adjustment_kwh": _csv_value(
+            data.get("soc_adjustment_kwh")
+        ),
+        "battery_energy_balance_kwh": _csv_value(
+            data.get("battery_energy_balance_kwh")
+        ),
+        "total_energy_flow_kwh": _csv_value(
+            data.get("total_energy_flow_kwh")
+        ),
+        "trip_ids": ",".join(
+            str(value) for value in (data.get("trip_ids") or [])
+        ),
+        "charge_ids": ",".join(
+            str(value) for value in (data.get("charge_ids") or [])
+        ),
     }
 
 
@@ -204,7 +328,7 @@ class FordTriplogExporter:
         rows = [_trip_row(trip) for trip in filtered]
 
         await self.hass.async_add_executor_job(
-            functools.partial(self._write_csv, output_file, rows)
+            functools.partial(self._write_csv, output_file, rows, TRIP_EXPORT_FIELDS)
         )
 
         return {
@@ -216,13 +340,106 @@ class FordTriplogExporter:
             "end_date": end_date.isoformat() if end_date else "",
         }
 
+
+    async def async_export_journeys(
+        self,
+        journey_storage: Any,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict[str, Any]:
+        """Export archived Journeys to one CSV file."""
+
+        if (
+            start_date is not None
+            and end_date is not None
+            and start_date > end_date
+        ):
+            raise ValueError("start_date must not be after end_date")
+
+        journeys = await journey_storage.get_all_journeys()
+
+        filtered = []
+        for journey in journeys:
+            data = (
+                journey.to_dict()
+                if hasattr(journey, "to_dict")
+                else journey
+                if isinstance(journey, dict)
+                else None
+            )
+            if not isinstance(data, dict):
+                continue
+
+            journey_date = None
+            raw_date = data.get("date")
+            if raw_date:
+                try:
+                    journey_date = date.fromisoformat(str(raw_date))
+                except ValueError:
+                    journey_date = None
+
+            if journey_date is None:
+                journey_date = _parse_local_date(data.get("start_time"))
+
+            if journey_date is None:
+                continue
+            if start_date is not None and journey_date < start_date:
+                continue
+            if end_date is not None and journey_date > end_date:
+                continue
+
+            filtered.append(journey)
+
+        filtered.sort(
+            key=lambda item: str(
+                getattr(item, "start_time", None)
+                or (
+                    item.get("start_time")
+                    if isinstance(item, dict)
+                    else ""
+                )
+                or ""
+            )
+        )
+
+        filename = (
+            "ford_triplog_journeys_"
+            + dt_util.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + ".csv"
+        )
+        output_file = self.export_path / filename
+        rows = [_journey_row(journey) for journey in filtered]
+
+        await self.hass.async_add_executor_job(
+            functools.partial(
+                self._write_csv,
+                output_file,
+                rows,
+                JOURNEY_EXPORT_FIELDS,
+            )
+        )
+
+        return {
+            "type": "journeys",
+            "record_count": len(rows),
+            "filename": filename,
+            "path": str(output_file),
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+        }
+
     @staticmethod
-    def _write_csv(output_file: Path, rows: list[dict[str, Any]]) -> None:
+    def _write_csv(
+        output_file: Path,
+        rows: list[dict[str, Any]],
+        fieldnames: tuple[str, ...],
+    ) -> None:
         output_file.parent.mkdir(parents=True, exist_ok=True)
         with output_file.open("w", encoding="utf-8-sig", newline="") as file_handle:
             writer = csv.DictWriter(
                 file_handle,
-                fieldnames=TRIP_EXPORT_FIELDS,
+                fieldnames=fieldnames,
                 delimiter=";",
                 extrasaction="ignore",
             )
