@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 08 - Delete suspicious charging sessions
+Build: 08b - Suspicious charge label fix
 Release: 2.2.0
 
 
@@ -2023,6 +2023,40 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="charge_cost_result",
             data_schema=vol.Schema({}),
             description_placeholders=self._charge_result,
+        )
+
+    async def _format_suspicious_charge_label(
+        self,
+        charge: Any,
+    ) -> str:
+        """Return compact label for one suspicious charging session."""
+
+        parts = [
+            self._format_charge_datetime(
+                getattr(charge, "start_time", None)
+            ),
+            await self._charge_location(charge),
+        ]
+
+        energy = getattr(charge, "energy_added_kwh", None)
+        try:
+            energy_text = f"{float(energy):.2f} kWh"
+        except (TypeError, ValueError):
+            energy_text = "— kWh"
+        parts.append(energy_text)
+
+        soc_start = self._format_optional_number(
+            getattr(charge, "start_soc", None),
+            0,
+        )
+        soc_end = self._format_optional_number(
+            getattr(charge, "end_soc", None),
+            0,
+        )
+        parts.append(f"{soc_start} → {soc_end} %")
+
+        return " · ".join(
+            part for part in parts if part
         )
 
     async def _format_charge_label(self, charge: Any) -> str:
