@@ -30,7 +30,8 @@
           "pause_management": "Pausen verwalten",
           "charge_management": "Ladevorgänge verwalten",
           "user_charging_sites": "Eigene Ladeorte",
-          "charging_site_database": "OpenStreetMap-Ladeorte"
+          "charging_site_database": "OpenStreetMap-Ladeorte",
+          "export": "Daten exportieren"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
@@ -38,7 +39,8 @@
           "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
           "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren."
+          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
+          "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren."
         }
       },
       "settings": {
@@ -638,6 +640,30 @@
           "charging": "Optionaler Sensor für den aktuellen Ladestatus.",
           "last_charge": "Optionaler Sensor mit den Daten des zuletzt abgeschlossenen Ladevorgangs."
         }
+      },
+      "export": {
+        "title": "Daten exportieren",
+        "description": "Wähle aus, welche Daten exportiert werden sollen.",
+        "menu_options": {
+          "export_trips": "Fahrten als CSV exportieren",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "export_trips": {
+        "title": "Fahrten exportieren",
+        "description": "Exportiert gespeicherte Fahrten als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Fahrten exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "export_result": {
+        "title": "Export abgeschlossen",
+        "description": "**Exportierte Fahrten:** {record_count}\n\n**Datei:** `{filename}`\n\n**Pfad:** `{path}`\n\n**Zeitraum:** {start_date} bis {end_date}"
       }
     },
     "error": {
@@ -682,7 +708,9 @@
       "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg jedoch nicht erfolgreich auswerten.",
       "osrm_invalid_url": "Die OSRM-Adresse ist ungültig. Verwende eine vollständige HTTP- oder HTTPS-Adresse.",
       "osrm_connection_failed": "Der OSRM-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
-      "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert."
+      "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert.",
+      "export_invalid_date_range": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details."
     }
   },
   "entity": {
