@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 05a - Trip CSV export with download
+Build: 06 - Trip and Journey CSV export
 Release: 2.2.0
 
 
@@ -319,6 +319,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._route_tracker_draft: dict[str, Any] = {}
         self._export_result: dict[str, str] = {}
         self._selected_export_url: str | None = None
+        self._export_kind: str = "trips"
 
     async def async_step_init(
         self,
@@ -3847,6 +3848,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return storage
 
+    def _get_export_journey_storage(self):
+        """Return Journey storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("journey_storage")
+        if storage is None:
+            raise HomeAssistantError(
+                "Journey storage is not initialized"
+            )
+
+        return storage
+
     async def async_step_export(
         self,
         user_input: dict[str, Any] | None = None,
@@ -3857,6 +3877,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="export",
             menu_options=[
                 "export_trips",
+                "export_journeys",
                 "init",
             ],
         )
@@ -3925,10 +3946,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     except NoURLAvailableError:
                         self._selected_export_url = signed_path
 
+                    self._export_kind = "trips"
                     self._export_result = {
                         "record_count": str(
                             result.get("record_count", 0)
                         ),
+                        "record_type": "Trips",
                         "filename": filename,
                         "path": str(
                             result.get("path") or ""
@@ -3944,6 +3967,105 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="export_trips",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_journeys(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived Journeys to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_journeys(
+                        self._get_export_journey_storage(),
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Journey CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
+                    self._export_kind = "journeys"
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "filename": filename,
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "start_date": str(
+                            result.get("start_date") or "—"
+                        ),
+                        "end_date": str(
+                            result.get("end_date") or "—"
+                        ),
+                        "record_type": "Journeys",
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_journeys",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
