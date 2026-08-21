@@ -646,10 +646,12 @@
         "description": "Wähle aus, welche Daten exportiert werden sollen.",
         "menu_options": {
           "export_trips": "Fahrten als CSV exportieren",
+          "export_journeys": "Touren als CSV exportieren",
           "init": "Zurück zum Hauptmenü"
         },
         "menu_option_descriptions": {
           "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
+          "export_journeys": "Gespeicherte Touren optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren."
         }
       },
@@ -663,7 +665,7 @@
       },
       "export_result": {
         "title": "Export abgeschlossen",
-        "description": "**Exportierte Fahrten:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {start_date} bis {end_date}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
+        "description": "**Exportierte Datensätze:** {record_count}\\n\\n**Datei:** `{filename}`\\n\\n**Zeitraum:** {start_date} bis {end_date}\\n\\nDie CSV-Datei kann direkt heruntergeladen werden.",
         "menu_options": {
           "export_download": "CSV herunterladen",
           "export": "Zurück zum Export"
@@ -676,6 +678,14 @@
       "export_download": {
         "title": "CSV herunterladen",
         "description": "Klicke auf „Website öffnen“, um die CSV-Datei herunterzuladen. Der Download-Link ist 10 Minuten gültig."
+      },
+      "export_journeys": {
+        "title": "Touren exportieren",
+        "description": "Exportiert gespeicherte Touren als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Touren exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
       }
     },
     "error": {
