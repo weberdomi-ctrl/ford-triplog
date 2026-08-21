@@ -20,11 +20,10 @@ It extends the existing FordPass integration by creating a permanent local histo
 
 No.
 
-Ford Triplog depends on the community-maintained FordPass integration.
 
-FordPass provides the vehicle data.
+Ford Triplog uses Home Assistant vehicle entities as its data source. FordPass is the traditional source, while Ford Triplog 2.2 allows the configured vehicle entities to be changed later when using another compatible vehicle-data integration.
 
-Ford Triplog processes and stores that information locally.
+Ford Triplog processes and stores the selected vehicle information locally.
 
 ---
 
@@ -252,6 +251,43 @@ docs/sensors.md
 Yes.
 
 All entities are standard Home Assistant entities.
+
+---
+
+
+# Export and Storage
+
+## Can I export my history?
+
+Yes.
+
+Ford Triplog 2.2 can export Trips, Journeys and charging sessions as CSV files. Exports can optionally be filtered by date and downloaded directly through Home Assistant.
+
+---
+
+## Does Ford Triplog use SQLite?
+
+Yes.
+
+Ford Triplog 2.2 supports both JSON and SQLite during the storage transition. JSON remains the default read backend after an upgrade, while SQLite can be selected explicitly in the integration settings.
+
+Compatible data is written to both formats during this transition phase.
+
+---
+
+## Can I delete an invalid charging session?
+
+Yes.
+
+Clearly invalid or suspicious charging sessions can be selected in the Ford Triplog options and deleted after confirmation. Dependent Journey and statistics data is rebuilt as required.
+
+---
+
+## Can pauses have receipts?
+
+Yes.
+
+Journey pauses can contain metadata such as category, note and costs, and can have multiple receipts attached. Pause receipts do not require OCR.
 
 ---
 

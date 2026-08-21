@@ -20,6 +20,9 @@ All processing is performed inside Home Assistant, including:
 - Charging location recognition
 - Charging history
 - User charging locations
+- Journey pause metadata
+- Receipt metadata
+- CSV export generation
 
 No external database is required.
 
@@ -37,6 +40,9 @@ Examples include:
 - Charging statistics
 - User-defined charging locations
 - Configuration settings
+- Charging and pause receipts
+- JSON and SQLite storage data
+- Generated CSV exports
 
 All data is stored locally.
 
@@ -54,6 +60,8 @@ Ford Triplog never uploads:
 - Home address
 - Workplace address
 - User-defined charging locations
+- Receipt documents
+- Generated CSV exports
 
 There is no Ford Triplog cloud service.
 
@@ -98,6 +106,14 @@ Reverse geocoding is only used as the lowest-priority fallback after:
 3. OpenStreetMap Charging Database
 
 Users who prefer to avoid reverse geocoding can instead create their own charging locations for frequently visited places.
+
+---
+
+# Receipts and Exports
+
+Receipt files are stored locally. Dashboard access to receipt files uses authenticated signed Home Assistant URLs rather than exposing local filesystem paths.
+
+CSV exports are generated locally and are only downloaded when explicitly requested by the user.
 
 ---
 

@@ -2,7 +2,9 @@
 
 After installing Ford Triplog, the integration must be configured once.
 
-The configuration process only requires selecting the existing entities provided by the FordPass integration.
+The configuration process requires selecting the Home Assistant entities that provide the required vehicle data.
+
+Ford Triplog 2.2 allows these source entities to be changed later, making it possible to switch between compatible vehicle-data integrations without deleting the recorded Triplog history.
 
 Additional options can be changed at any time without losing recorded trips or charging history.
 
@@ -22,9 +24,9 @@ Select **Configure**.
 
 ---
 
-# Required Entities
+# Required Vehicle Entities
 
-Four entities are required.
+Four vehicle entities are required.
 
 ## Vehicle Tracker
 
@@ -296,6 +298,44 @@ This combination provides reliable recognition while allowing complete user cust
 
 ---
 
+# Vehicle Data Sources
+
+The selected vehicle entities can be changed later from the Ford Triplog options.
+
+This is useful when migrating from one compatible vehicle-data integration to another. Existing Ford Triplog trips, Journeys, charging sessions and statistics remain stored locally.
+
+---
+
+# Storage Backend
+
+Ford Triplog 2.2 supports JSON and SQLite as local read backends during the storage transition.
+
+JSON remains the default read backend after an upgrade. SQLite can be selected explicitly in Ford Triplog settings. Compatible data continues to be written to both storage formats during the 2.2 transition phase.
+
+Changing the read backend reloads the integration but does not delete recorded history.
+
+---
+
+# Export
+
+Ford Triplog 2.2 provides CSV export for:
+
+- Trips
+- Journeys
+- Charging sessions
+
+Exports can optionally be limited by date and downloaded directly through Home Assistant.
+
+---
+
+# History Maintenance
+
+Ford Triplog provides maintenance functions for stored history.
+
+Clearly invalid or suspicious charging sessions can be selected and deleted after explicit confirmation. Dependent Journey and statistics data is rebuilt as required.
+
+---
+
 # Diagnostics
 
 Diagnostic information can be downloaded directly from Home Assistant.
@@ -325,10 +365,15 @@ All data is stored locally inside Home Assistant.
 This includes:
 
 - Trips
+- Journeys
 - Charging sessions
 - Statistics
 - Charging locations
 - Charging databases
+- Charging and pause metadata
+- Receipts
+- CSV exports
+- JSON and SQLite storage
 
 No trip or charging history is uploaded to external services.
 

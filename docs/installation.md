@@ -30,11 +30,11 @@ https://hacs.xyz/
 
 ## FordPass Integration
 
-Ford Triplog extends the community-maintained FordPass integration.
+Ford Triplog requires compatible Home Assistant vehicle entities.
 
-The FordPass integration must already be installed and configured.
+FordPass is the traditional data source. Ford Triplog 2.2 allows the selected vehicle entities to be changed later, so another compatible vehicle-data integration can be used without deleting the existing Triplog history.
 
-Make sure your vehicle is correctly connected and the following entities are available:
+Make sure your vehicle data source is correctly connected and the following entities are available:
 
 - Vehicle Tracker
 - Odometer
@@ -109,7 +109,7 @@ Select the integration.
 
 # Initial Configuration
 
-During setup you will be asked to select four entities.
+During setup you will be asked to select four vehicle entities. These selections can be changed later in the Ford Triplog options.
 
 ## Vehicle Tracker
 
@@ -234,6 +234,14 @@ Download Charging Database
 Choose the desired country.
 
 The database is downloaded automatically and stored locally.
+
+---
+
+# Changing Vehicle Data Source
+
+Ford Triplog 2.2 allows the configured tracker, ignition, odometer and SOC entities to be changed later.
+
+This can be used to migrate between compatible vehicle-data integrations while preserving the existing Ford Triplog history.
 
 ---
 

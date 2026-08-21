@@ -13,11 +13,15 @@ charging session, as well as lifetime statistics.
 
 # Overview
 
-Ford Triplog sensors are grouped into five categories:
+Ford Triplog sensors include the following main categories:
 
+-   Current Journey
 -   Last Journey
+-   Journey History
 -   Last Trip
+-   Trip / route history
 -   Last Charging Session
+-   Charging History
 -   Statistics
 -   Status
 
@@ -95,6 +99,50 @@ The timeline contains ordered entries for:
 -   Pauses
 -   Charging sessions
 -   Destination
+
+------------------------------------------------------------------------
+
+
+# History Sensors
+
+Ford Triplog provides history-oriented sensors for dashboard use and
+record review.
+
+## Journey History
+
+The Journey History sensor provides the Journey data for the selected
+history date.
+
+Depending on the recorded data, attributes can include:
+
+-   Trips
+-   Pauses
+-   Charging sessions
+-   Journey totals
+-   Pause category
+-   Pause notes
+-   Pause costs
+-   Pause receipts
+
+Pause receipts can therefore be displayed in dedicated Home Assistant
+Markdown cards together with pause duration and location.
+
+------------------------------------------------------------------------
+
+## Charging History
+
+The Charging History sensor exposes recorded charging sessions for
+history and dashboard presentation.
+
+Charging entries can include receipt metadata and receipt URLs for
+authenticated dashboard access.
+
+------------------------------------------------------------------------
+
+## Route / Trip History
+
+Route history sensors expose stored trip and GPS route information used
+by dashboard maps and history views.
 
 ------------------------------------------------------------------------
 
@@ -369,7 +417,7 @@ Examples include:
 -   Charging Database Status
 -   Charging Database Country
 
-The available sensors may vary depending on the configured options.
+The available sensors may vary depending on the configured options. Ford Triplog 2.2 also allows supported vehicle source entities to be changed through the integration options.
 
 ------------------------------------------------------------------------
 

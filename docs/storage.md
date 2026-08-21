@@ -13,42 +13,65 @@ No trip history, charging history or statistics are uploaded to cloud services.
 Ford Triplog follows a simple design philosophy:
 
 - Local-first
-- Human-readable data
 - Reliable recovery
 - Fast startup
 - Easy backup
 - Automatic migration
+- Backend-neutral access
 
-All persistent data is stored as JSON files.
+Ford Triplog 2.1 introduced SQLite alongside the existing JSON storage. Ford Triplog 2.2 continues the parallel JSON/SQLite validation phase.
 
 ---
 
 # Storage Location
 
-All files are stored in the Home Assistant storage directory.
+Ford Triplog stores its persistent files locally inside the Home Assistant configuration and storage area.
 
-```
-/config/.storage/ford_triplog/
-```
-
-The directory is created automatically during the first startup.
+The exact files depend on the enabled features and storage backend. The integration manages these locations automatically; manual file handling is not required.
 
 ---
 
 # Stored Data
 
-Ford Triplog maintains several independent storage files.
+Ford Triplog maintains several independent local data sets.
 
 Typical data includes:
 
 - Trips
+- Journeys
 - Charging Sessions
-- Statistics
-- User Charging Locations
+- GPS routes
+- Statistics and diagnostics
+- User and pending Charging Locations
+- Charging and pause metadata
+- Receipts and receipt parser profiles
 - OpenStreetMap Charging Database
 - Runtime Information
+- Configuration
 
-Keeping these components separate simplifies updates and future migrations.
+The Storage Manager provides a backend-neutral interface so higher-level components do not depend directly on JSON or SQLite.
+
+---
+
+
+# Storage Backends
+
+Ford Triplog 2.2 supports JSON and SQLite as local read backends.
+
+JSON remains the default read backend after upgrading. Existing users are not switched automatically to SQLite.
+
+SQLite can be selected explicitly in the Ford Triplog settings. Changing the selected read backend reloads the integration.
+
+During the 2.2 transition phase:
+
+- Compatible data is written to JSON and SQLite
+- Existing compatible data is migrated or mirrored into SQLite
+- Historical Trips, charging sessions, Journeys and routes can be read from SQLite
+- Journey rebuild uses the selected read backend
+- Statistics are recalculated from the selected backend after setup or reload
+- JSON remains available as a compatibility and fallback path
+
+No external database server is required.
 
 ---
 
@@ -148,6 +171,24 @@ The database only needs to be downloaded once for each country.
 
 ---
 
+# Receipts
+
+Receipt documents are stored locally and linked through metadata to charging sessions or Journey pauses.
+
+Multiple receipts can be linked to the same record. Charging receipts can optionally use OCR/parser information, while pause receipts do not require OCR.
+
+---
+
+# CSV Exports
+
+Ford Triplog 2.2 can generate CSV exports for Trips, Journeys and charging sessions.
+
+Export data is read through the Storage Manager so it works independently of the selected JSON or SQLite read backend.
+
+Generated files remain local until explicitly downloaded through Home Assistant.
+
+---
+
 # Automatic Saving
 
 Ford Triplog automatically saves data whenever necessary.
@@ -224,11 +265,9 @@ Ford Triplog resumes operation automatically.
 
 # File Size
 
-Trip and charging history grow over time.
+Trip, Journey, route, charging and receipt history grow over time.
 
-Typical installations remain relatively small because data is stored efficiently as JSON.
-
-Even several years of driving history usually require only a few megabytes of storage.
+Structured history remains relatively compact. Receipt files and route data can require additional storage depending on usage.
 
 ---
 
@@ -241,7 +280,7 @@ The storage system has been optimized for:
 - Low memory usage
 - Reliable recovery
 
-Statistics are maintained incrementally, avoiding expensive recalculations during normal operation.
+Statistics are maintained efficiently during normal operation. Backend-neutral archive access and SQL-backed queries/views are used where appropriate, while statistics can also be rebuilt from the selected historical backend.
 
 ---
 
@@ -265,11 +304,11 @@ Only the communication already performed by the FordPass integration is required
 
 ## Can I edit the storage files?
 
-Yes.
+Manual editing is not recommended.
 
-The files are standard JSON files.
+Ford Triplog 2.2 may store related information in both JSON and SQLite. Editing one backend directly can therefore create inconsistencies between the mirrored data sets.
 
-However, manual editing is only recommended for advanced users and should always be performed while Home Assistant is stopped.
+Use the Ford Triplog configuration and maintenance functions whenever possible.
 
 ---
 
@@ -295,6 +334,4 @@ If the Home Assistant configuration is moved, the storage directory moves with i
 
 No.
 
-Ford Triplog uses lightweight local JSON storage and does not require SQLite, MariaDB or PostgreSQL.
-
-Future versions may optionally support a database backend for very large installations, while JSON storage will remain the default.
+SQLite is embedded locally and requires no separate server. Ford Triplog 2.2 continues to support JSON alongside SQLite during the storage transition.

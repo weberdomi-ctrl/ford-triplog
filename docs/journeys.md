@@ -13,11 +13,15 @@ A Journey starts automatically when a new trip begins.
 While the Journey is active, Ford Triplog continuously collects:
 
 - Trips
+- Pauses
 - Charging sessions
 - Distance
 - Driving time
+- Pause time
+- Charging time
 - Energy consumption
 - State of Charge (SOC) usage
+- Charging costs
 
 A Journey is automatically completed when one of the configured completion conditions is met.
 
@@ -32,6 +36,7 @@ Journey
 ├── Trip 2 (Supermarket → Fast Charger)
 ├── Charging Session
 ├── Trip 3 (Fast Charger → Restaurant)
+├── Pause (Restaurant)
 ├── Trip 4 (Restaurant → Home)
 └── Journey completed
 ```
@@ -90,14 +95,21 @@ Each Journey stores useful summary information, including:
 
 - Start time
 - End time
-- Duration
+- Total duration
+- Driving duration
+- Pause duration
+- Charging duration
 - Total distance
 - Number of trips
 - Number of charging sessions
 - Energy consumption
+- Energy charged
 - SOC consumption
+- Battery energy balance
+- Charging cost summary
+- Average charging price
 
-These values are used by the Journey sensor and future statistics.
+These values are used by the Journey and Journey History sensors, dashboards and statistics.
 
 ---
 
@@ -115,11 +127,26 @@ These options allow Ford Triplog to adapt to different driving habits.
 
 ---
 
+# Pause Metadata and Receipts
+
+Journey pauses can contain additional user-maintained information, including:
+
+- Category
+- Note
+- Costs
+- Receipts
+
+Multiple receipts can be linked to the same pause. Pause receipts do not require OCR.
+
+Journey History exposes this information for the selected date so it can be used in dedicated Home Assistant dashboard cards.
+
+---
+
 # Local Storage
 
-Journeys are stored locally as JSON files inside Home Assistant.
+Journeys are stored locally through the Ford Triplog Storage Manager.
 
-No cloud service or external database is required.
+Ford Triplog 2.2 supports JSON and SQLite during the parallel-storage transition. No external database server or cloud service is required.
 
 All Journey information remains under your control.
 
@@ -138,11 +165,18 @@ Journey Management provides several advantages:
 
 ---
 
+# Export
+
+Ford Triplog 2.2 can export Journey history as CSV.
+
+The export can optionally be filtered by date and downloaded directly through Home Assistant.
+
+---
+
 # Future Improvements
 
-Future versions will extend Journey functionality with features such as:
+Future versions may further extend Journey functionality with:
 
-- Journey cost calculation
-- Journey efficiency statistics
-- Dashboard widgets
-- Extended history and analytics
+- Long-term history improvements
+- Additional SQL-based statistics and aggregation
+- Multi-vehicle support

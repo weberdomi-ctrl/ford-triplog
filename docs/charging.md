@@ -112,7 +112,9 @@ This allows future dashboard views and timelines to present a complete travel hi
 
 # Charging History
 
-Every completed charging session is stored locally.
+Every completed charging session is stored locally and is available through the charging history sensors.
+
+Ford Triplog 2.2 can also export charging history as CSV. Optional date filtering can be used before downloading the generated file directly through Home Assistant.
 
 Historical data remains available after:
 
@@ -204,7 +206,7 @@ Charging sessions may contain:
 - Effective charging price
 - Manual or automatic cost source
 - Verified costs
-- Receipt reference
+- Receipt references
 
 ---
 
@@ -265,9 +267,9 @@ This ensures:
 
 ## Can I edit a charging session?
 
-No.
+The recorded vehicle data itself remains the historical basis of the charging session.
 
-Charging sessions are automatically generated and represent the recorded vehicle data.
+Ford Triplog allows charging-related metadata to be maintained afterwards, including costs and receipts. Clearly invalid or suspicious charging sessions, such as sessions with no charged energy, can also be selected and deleted through the integration options.
 
 ---
 
