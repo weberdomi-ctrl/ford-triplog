@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 05 - Trip CSV export
+Build: 05a - Trip CSV export with download
 Release: 2.2.0
 
 
@@ -318,6 +318,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._ui_translations: dict[str, str] | None = None
         self._route_tracker_draft: dict[str, Any] = {}
         self._export_result: dict[str, str] = {}
+        self._selected_export_url: str | None = None
 
     async def async_step_init(
         self,
@@ -3897,13 +3898,38 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     _LOGGER.exception("Trip CSV export failed")
                     errors["base"] = "export_failed"
                 else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
                     self._export_result = {
                         "record_count": str(
                             result.get("record_count", 0)
                         ),
-                        "filename": str(
-                            result.get("filename") or ""
-                        ),
+                        "filename": filename,
                         "path": str(
                             result.get("path") or ""
                         ),
@@ -3935,15 +3961,29 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show CSV export result."""
+        """Show CSV export result and download action."""
 
-        if user_input is not None:
+        return self.async_show_menu(
+            step_id="export_result",
+            menu_options=[
+                "export_download",
+                "export",
+            ],
+            description_placeholders=self._export_result,
+        )
+
+    async def async_step_export_download(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Open the signed CSV download URL."""
+
+        if not self._selected_export_url:
             return await self.async_step_export()
 
-        return self.async_show_form(
-            step_id="export_result",
-            data_schema=vol.Schema({}),
-            description_placeholders=self._export_result,
+        return self.async_external_step(
+            step_id="export_download",
+            url=self._selected_export_url,
         )
 
 
