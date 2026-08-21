@@ -624,12 +624,14 @@
         "menu_options": {
           "export_trips": "Export trips as CSV",
           "export_journeys": "Export journeys as CSV",
+          "export_charges": "Export charging sessions as CSV",
           "init": "Back to main menu"
         },
         "menu_option_descriptions": {
           "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
           "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
-          "init": "Return to the Ford Triplog overview."
+          "init": "Return to the Ford Triplog overview.",
+          "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range."
         }
       },
       "export_trips": {
@@ -659,6 +661,14 @@
       "export_journeys": {
         "title": "Export journeys",
         "description": "Exports stored journeys as a CSV file. Start and end dates are optional; without a date range, all stored journeys are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_charges": {
+        "title": "Export charging sessions",
+        "description": "Exports stored charging sessions as a CSV file. Start and end dates are optional; without a date range, all stored charging sessions are exported.",
         "data": {
           "start_date": "Start date",
           "end_date": "End date"
