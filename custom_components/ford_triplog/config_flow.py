@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 06 - Trip and Journey CSV export
+Build: 07 - Trip, Journey and Charge CSV export
 Release: 2.2.0
 
 
@@ -3867,6 +3867,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return storage
 
+    def _get_export_charge_manager(self):
+        """Return Charge Manager for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        manager = runtime_data.get("charge_manager")
+        if manager is None:
+            raise HomeAssistantError(
+                "Charge Manager is not initialized"
+            )
+
+        return manager
+
     async def async_step_export(
         self,
         user_input: dict[str, Any] | None = None,
@@ -3878,6 +3897,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=[
                 "export_trips",
                 "export_journeys",
+                "export_charges",
                 "init",
             ],
         )
@@ -4066,6 +4086,105 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return self.async_show_form(
             step_id="export_journeys",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_charges(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived charging sessions to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_charges(
+                        self._get_export_charge_manager(),
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Charge CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
+                    self._export_kind = "charges"
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "filename": filename,
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "start_date": str(
+                            result.get("start_date") or "—"
+                        ),
+                        "end_date": str(
+                            result.get("end_date") or "—"
+                        ),
+                        "record_type": "Charges",
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_charges",
             data_schema=vol.Schema(
                 {
                     vol.Optional(
