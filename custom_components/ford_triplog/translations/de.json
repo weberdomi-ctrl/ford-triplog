@@ -711,7 +711,7 @@
       },
       "charge_delete_confirm": {
         "title": "Ladevorgang wirklich löschen?",
-        "description": "**Datum:** {date}\\n**Ladeort:** {location}\\n**Charge-ID:** {charge_id}\\n\\n**Fahrzeugenergie:** {energy} kWh\\n**SOC:** {soc_start} % → {soc_end} %\\n**Dauer:** {duration}\\n**Kosten:** {cost_total} {currency}\\n\\nDer Ladevorgang wird dauerhaft aus der Historie entfernt. Touren und Statistiken werden anschließend neu aufgebaut. Vorhandene Belege werden nicht gelöscht.",
+        "description": "**Datum:** {date}\n**Ladeort:** {location}\n**Charge-ID:** {charge_id}\n\n**Fahrzeugenergie:** {energy} kWh\n**SOC:** {soc_start} % → {soc_end} %\n**Dauer:** {duration}\n**Kosten:** {cost_total} {currency}\n\nDer Ladevorgang wird dauerhaft aus der Historie entfernt. Touren und Statistiken werden anschließend neu aufgebaut. Vorhandene Belege werden nicht gelöscht.",
         "data": {
           "confirm": "Ladevorgang endgültig löschen"
         },
@@ -721,7 +721,7 @@
       },
       "charge_delete_result": {
         "title": "Ladevorgang gelöscht",
-        "description": "Der ungültige Ladevorgang wurde entfernt.\\n\\n**Datum:** {date}\\n**Ladeort:** {location}\\n**Charge-ID:** {charge_id}\\n\\nAbhängige Touren, Statistiken und der letzte Ladevorgang wurden aktualisiert. Vorhandene Belege bleiben gespeichert."
+        "description": "Der ungültige Ladevorgang wurde entfernt.\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Charge-ID:** {charge_id}\n\nAbhängige Touren, Statistiken und der letzte Ladevorgang wurden aktualisiert. Vorhandene Belege bleiben gespeichert."
       }
     },
     "error": {
