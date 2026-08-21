@@ -122,38 +122,60 @@ Version 2.2 continues the parallel JSON/SQLite transition so the SQLite backend 
 
 ---
 
-# Version 2.2 – Reliability & Export
+# Version 2.2 – Reliability, Export & Maintenance
 
-Version 2.2 focuses on Trip/Route reliability and practical data export while retaining the 2.1 parallel-storage architecture.
+Version 2.2 completes the next practical feature layer on top of the
+2.1 parallel JSON/SQLite storage architecture.
 
-## Planned – Trip End Position Validation
+## Implemented – CSV Export
 
-Improve Trip end-position reliability by comparing the Ford-provided end GPS position with the latest Route Tracker position.
-
-Planned behavior:
-
-- Compare the Ford API end position with the last available Route Tracker GPS point
-- Detect implausible distance differences or stale Ford position data
-- Prefer the latest plausible Route Tracker point as the Trip end position when appropriate
-- Support Route Tracker sources such as ABRP and Home Assistant position data
-- Preserve the existing Ford position when no better Route Tracker point is available
-
-## Planned – CSV Export
-
-Provide straightforward CSV exports for the main historical data sets:
+Ford Triplog now provides CSV export for:
 
 - Trips
-- Charging sessions
 - Journeys
-- Routes
+- Charging sessions
 
-Exports should use useful, flattened columns rather than exposing internal JSON payloads directly.
+Exports support optional date ranges and can be downloaded directly
+through the Home Assistant options flow.
 
-Typical exported information includes timestamps, distances, durations, SOC values, energy data, consumption, charging provider/location, charging costs and related record IDs.
+The export format uses practical flattened columns instead of exposing
+internal JSON payloads directly.
 
-Route export should keep route metadata practical for tabular use. Detailed GPS track data may be handled separately where appropriate.
+## Implemented – Configurable Vehicle Data Sources
 
-The export feature is intended to cover common user requirements. Advanced or custom analysis can be performed directly against the local SQLite database with external SQLite tools.
+- Vehicle data-source entities can be changed from Ford Triplog settings
+- Existing stored Triplog data is preserved
+- The integration can be pointed to different compatible Ford entities
+  without reinstalling Ford Triplog
+
+## Implemented – Invalid Charging Session Cleanup
+
+- Suspicious charging sessions are filtered before deletion is offered
+- Explicit confirmation is required
+- Dependent Journeys and statistics are rebuilt after deletion
+- The stored last charging session is refreshed when required
+- Existing receipt files are preserved
+
+## Implemented – Pause Receipt Workflow
+
+- Direct receipt upload from a selected pause
+- Multiple receipts per pause
+- Optional receipt notes
+- Open and delete pause receipts
+- Pause-specific receipt detail views
+- Pause receipts exposed in Journey History with signed dashboard URLs
+- Dedicated dashboard cards can display pause duration, location, costs
+  and all receipts linked to the pause
+- OCR is not required for pause receipts
+
+## Implemented – History Reliability
+
+- Fixed Journey History date-selection/display issues
+- Newest pauses are shown first
+- Pause titles, notes and costs are exposed in Journey History
+- History selector refresh scheduling follows Home Assistant thread-safety
+  requirements
+- Pause receipts follow the shared selected History date
 
 ## Storage Policy for 2.2
 
@@ -163,6 +185,9 @@ The export feature is intended to cover common user requirements. Advanced or cu
 - No write-backend selector is planned
 - Storage architecture remains compatible with 2.1 throughout this release
 
+---
+
+# Version 2.3
 ---
 
 # Version 2.3 – SQLite Primary Storage
@@ -232,6 +257,6 @@ Potential future development areas include:
 | 2.0.2 | Released | Top Statistics, Route Tracker improvements, optional OSRM route matching |
 | 2.0.3 | Released | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
 | 2.1 | Released | SQLite storage backend, selectable JSON/SQLite reads, migration validation, SQL-based statistics and runtime optimization |
-| 2.2 | Planned | Trip/Route reliability, CSV exports, continued JSON/SQLite validation |
+| 2.2 | Released | CSV exports, maintenance tools, pause receipts, History reliability and continued JSON/SQLite validation |
 | 2.3 | Planned | SQLite-only production storage, end of parallel JSON writes |
-| Future | Research | Multi-vehicle support, exports, maintenance tracking, long-term history and additional reporting |
+| Future | Research | Multi-vehicle support, maintenance tracking, long-term history and additional reporting |
