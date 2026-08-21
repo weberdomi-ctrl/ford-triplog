@@ -667,7 +667,7 @@
       },
       "export_result": {
         "title": "Export abgeschlossen",
-        "description": "**Exportierte Datensätze:** {record_count}\\n\\n**Datei:** `{filename}`\\n\\n**Zeitraum:** {start_date} bis {end_date}\\n\\nDie CSV-Datei kann direkt heruntergeladen werden.",
+        "description": "**Exportierte Datensätze:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {start_date} bis {end_date}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
         "menu_options": {
           "export_download": "CSV herunterladen",
           "export": "Zurück zum Export"
