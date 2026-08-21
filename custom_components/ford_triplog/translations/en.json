@@ -699,6 +699,52 @@
       "charge_delete_result": {
         "title": "Charging session deleted",
         "description": "The invalid charging session was removed.\n\n**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
+      },
+      "pause_detail": {
+        "title": "Pause",
+        "description": "{date} · {start_time} · {location}\n\nTitle: {title}\n\nReceipts: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Edit pause",
+          "pause_receipts": "Receipts",
+          "pause_selection": "Back to pauses"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Edit category, title, note, location and costs.",
+          "pause_receipts": "Show receipts or attach a new receipt to this pause.",
+          "pause_selection": "Return to the list of detected pauses."
+        }
+      },
+      "pause_receipts": {
+        "title": "Receipts",
+        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}",
+        "menu_options": {
+          "pause_receipt_upload": "Add receipt",
+          "pause_receipt_list": "Receipts",
+          "pause_detail": "Back to pause"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "Attach a PDF or image directly to this pause.",
+          "pause_receipt_list": "Show receipts attached to this pause.",
+          "pause_detail": "Return to the pause overview."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Add receipt to pause",
+        "description": "**Pause:** {date} · {location}\n**Pause ID:** {pause_id}\n\nThe receipt is attached directly to this pause.",
+        "data": {
+          "receipt_file": "Receipt file",
+          "note": "Note"
+        },
+        "data_description": {
+          "note": "Optional note for the receipt."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Receipts for this pause",
+        "description": "Attached receipts: {receipt_count}",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
       }
     },
     "error": {
