@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09f - Clean pause receipt overview
+Build: 09g - Pause receipt datetime fix
 Release: 2.2.0
 
 
@@ -2505,12 +2505,25 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if receipts:
             lines = []
             for receipt in receipts[:10]:
-                created = self._parse_datetime_value(
+                created_value = (
                     receipt.get("created_at")
                     or receipt.get("created")
                     or receipt.get("uploaded_at")
                 )
+                created = None
+                if created_value:
+                    try:
+                        created = datetime.fromisoformat(
+                            str(created_value).replace("Z", "+00:00")
+                        )
+                    except (TypeError, ValueError):
+                        created = None
+
                 if created is not None:
+                    if created.tzinfo is None:
+                        created = created.replace(
+                            tzinfo=dt_util.DEFAULT_TIME_ZONE
+                        )
                     local_created = dt_util.as_local(created)
                     receipt_date = local_created.strftime("%d.%m.%Y %H:%M")
                 else:
