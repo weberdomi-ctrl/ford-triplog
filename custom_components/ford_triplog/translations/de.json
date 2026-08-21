@@ -210,11 +210,13 @@
         "description": "Wähle aus, was du mit den gespeicherten Ladevorgängen machen möchtest.",
         "menu_options": {
           "charge_selection": "Ladevorgang auswählen",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "charge_delete_selection": "Ungültigen Ladevorgang löschen"
         },
         "menu_option_descriptions": {
           "charge_selection": "Einen gespeicherten Ladevorgang öffnen und bearbeiten.",
-          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
+          "charge_delete_selection": "Zeigt nur eindeutig auffällige Ladevorgänge zur gezielten Löschung an."
         }
       },
       "charge_cost_edit": {
@@ -667,7 +669,7 @@
       },
       "export_result": {
         "title": "Export abgeschlossen",
-        "description": "**Exportierte Datensätze:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {start_date} bis {end_date}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
+        "description": "**Exportierte Datensätze:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {period}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
         "menu_options": {
           "export_download": "CSV herunterladen",
           "export": "Zurück zum Export"
@@ -696,6 +698,30 @@
           "start_date": "Startdatum",
           "end_date": "Enddatum"
         }
+      },
+      "charge_delete_selection": {
+        "title": "Ungültigen Ladevorgang löschen",
+        "description": "Es wurden {charge_count} eindeutig auffällige Ladevorgänge gefunden. Angezeigt werden nur Sessions mit klaren Plausibilitätsfehlern, zum Beispiel 0 kWh Fahrzeugenergie, fallendem SOC oder extrem kurzer Dauer.",
+        "data": {
+          "charge_delete_selection": "Ladevorgang"
+        },
+        "data_description": {
+          "charge_delete_selection": "Normale Ladevorgänge werden hier bewusst nicht angeboten."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Ladevorgang wirklich löschen?",
+        "description": "**Datum:** {date}\\n**Ladeort:** {location}\\n**Charge-ID:** {charge_id}\\n\\n**Fahrzeugenergie:** {energy} kWh\\n**SOC:** {soc_start} % → {soc_end} %\\n**Dauer:** {duration}\\n**Kosten:** {cost_total} {currency}\\n\\nDer Ladevorgang wird dauerhaft aus der Historie entfernt. Touren und Statistiken werden anschließend neu aufgebaut. Vorhandene Belege werden nicht gelöscht.",
+        "data": {
+          "confirm": "Ladevorgang endgültig löschen"
+        },
+        "data_description": {
+          "confirm": "Nur aktivieren, wenn dieser Ladevorgang tatsächlich ungültig ist."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Ladevorgang gelöscht",
+        "description": "Der ungültige Ladevorgang wurde entfernt.\\n\\n**Datum:** {date}\\n**Ladeort:** {location}\\n**Charge-ID:** {charge_id}\\n\\nAbhängige Touren, Statistiken und der letzte Ladevorgang wurden aktualisiert. Vorhandene Belege bleiben gespeichert."
       }
     },
     "error": {
@@ -742,7 +768,9 @@
       "osrm_connection_failed": "Der OSRM-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
       "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert.",
       "export_invalid_date_range": "Das Startdatum darf nicht nach dem Enddatum liegen.",
-      "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details."
+      "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
+      "charge_delete_failed": "Der Ladevorgang konnte nicht vollständig gelöscht werden.",
+      "charge_not_suspicious": "Dieser Ladevorgang erfüllt die Kriterien für eine sichere Löschung nicht."
     }
   },
   "entity": {
@@ -1000,7 +1028,11 @@
     "document_image": "Bilddatei",
     "document_generic": "Dokument",
     "profile": "Profil",
-    "receipt_more": "weitere"
+    "receipt_more": "weitere",
+    "export_all_data": "alle Daten",
+    "export_from": "ab {date}",
+    "export_until": "bis {date}",
+    "export_range": "{start} bis {end}"
   },
   "services": {
     "import_charging_sites": {

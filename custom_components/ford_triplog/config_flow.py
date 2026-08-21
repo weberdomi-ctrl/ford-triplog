@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 07b - Unified export period display
+Build: 08 - Delete suspicious charging sessions
 Release: 2.2.0
 
 
@@ -142,6 +142,8 @@ CONF_CHARGE_BLOCKING_FEE = "blocking_fee"
 CONF_CHARGE_PARKING_FEE = "parking_fee"
 CONF_CHARGE_OTHER_COST = "other_cost"
 CONF_CHARGE_ACTION = "action"
+CONF_CHARGE_DELETE_SELECTION = "charge_delete_selection"
+CONF_CHARGE_DELETE_CONFIRM = "confirm"
 
 CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
 CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
@@ -480,8 +482,192 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="charge_management",
             menu_options=[
                 "charge_selection",
+                "charge_delete_selection",
                 "init",
             ],
+        )
+
+    async def async_step_charge_delete_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one clearly suspicious charging session for deletion."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            charges = (
+                await self._get_charge_manager()
+                .async_get_suspicious_charges()
+            )
+        except (HomeAssistantError, OSError, ValueError):
+            charges = []
+            errors["base"] = "charge_load_failed"
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_CHARGE_DELETE_SELECTION) or ""
+            ).strip()
+
+            if selected == SELECTION_BACK:
+                return await self.async_step_charge_management()
+
+            if selected and not errors:
+                self._selected_charge_id = selected
+                return await self.async_step_charge_delete_confirm()
+
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=await self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=await self._format_suspicious_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ],
+        ]
+
+        return self.async_show_form(
+            step_id="charge_delete_selection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGE_DELETE_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_count": str(len(charges)),
+            },
+        )
+
+    async def async_step_charge_delete_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm deletion of one suspicious charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_delete_selection()
+
+        manager = self._get_charge_manager()
+        charge = await manager.async_get_charge(self._selected_charge_id)
+
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_delete_confirm",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        if not manager.is_suspicious_charge(charge):
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_delete_confirm",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_suspicious"},
+            )
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if bool(user_input.get(CONF_CHARGE_DELETE_CONFIRM, False)):
+                result = await manager.async_delete_charge(
+                    self._selected_charge_id
+                )
+                if result.updated:
+                    self._charge_result = {
+                        "charge_id": str(result.charge_id),
+                        "date": self._format_charge_datetime(
+                            getattr(charge, "start_time", None)
+                        ),
+                        "location": await self._charge_location(charge),
+                    }
+                    self._selected_charge_id = None
+                    return await self.async_step_charge_delete_result()
+
+                errors["base"] = (
+                    "charge_not_suspicious"
+                    if result.reason == "charge_not_suspicious"
+                    else "charge_delete_failed"
+                )
+            else:
+                return await self.async_step_charge_delete_selection()
+
+        duration = manager._charge_duration_seconds(charge)
+        duration_text = (
+            f"{duration} s"
+            if duration is not None and duration < 120
+            else (
+                f"{round(duration / 60)} min"
+                if duration is not None
+                else "—"
+            )
+        )
+
+        return self.async_show_form(
+            step_id="charge_delete_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGE_DELETE_CONFIRM,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_id": str(charge.charge_id or ""),
+                "date": self._format_charge_datetime(charge.start_time),
+                "location": await self._charge_location(charge),
+                "energy": self._format_optional_number(
+                    getattr(charge, "energy_added_kwh", None),
+                    3,
+                ),
+                "soc_start": self._format_optional_number(
+                    getattr(charge, "soc_start", None),
+                    0,
+                ),
+                "soc_end": self._format_optional_number(
+                    getattr(charge, "soc_end", None),
+                    0,
+                ),
+                "duration": duration_text,
+                "cost_total": self._format_optional_number(
+                    getattr(charge, "cost_total", None),
+                    2,
+                ),
+                "currency": str(
+                    getattr(charge, "currency", None) or "CHF"
+                ),
+            },
+        )
+
+    async def async_step_charge_delete_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show result after deleting one suspicious charging session."""
+
+        if user_input is not None:
+            return await self.async_step_charge_delete_selection()
+
+        return self.async_show_form(
+            step_id="charge_delete_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._charge_result,
         )
 
     async def async_step_charge_selection(

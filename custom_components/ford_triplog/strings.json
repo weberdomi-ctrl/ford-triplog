@@ -210,11 +210,13 @@
         "description": "Select what you want to do.",
         "menu_options": {
           "charge_selection": "Select charging session",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "charge_delete_selection": "Delete invalid charging session"
         },
         "menu_option_descriptions": {
           "charge_selection": "Open and edit a stored charging session.",
-          "init": "Return to the Ford Triplog overview."
+          "init": "Return to the Ford Triplog overview.",
+          "charge_delete_selection": "Shows only clearly suspicious charging sessions for targeted deletion."
         }
       },
       "charge_cost_edit": {
@@ -673,6 +675,30 @@
           "start_date": "Start date",
           "end_date": "End date"
         }
+      },
+      "charge_delete_selection": {
+        "title": "Delete invalid charging session",
+        "description": "{charge_count} clearly suspicious charging sessions were found. Only sessions with strong plausibility issues are shown, such as 0 kWh vehicle energy, decreasing SOC or an extremely short duration.",
+        "data": {
+          "charge_delete_selection": "Charging session"
+        },
+        "data_description": {
+          "charge_delete_selection": "Normal charging sessions are intentionally not offered here."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Really delete charging session?",
+        "description": "**Date:** {date}\\n**Charging location:** {location}\\n**Charge ID:** {charge_id}\\n\\n**Vehicle energy:** {energy} kWh\\n**SOC:** {soc_start} % → {soc_end} %\\n**Duration:** {duration}\\n**Cost:** {cost_total} {currency}\\n\\nThe charging session will be permanently removed from history. Journeys and statistics are rebuilt afterwards. Existing receipts are not deleted.",
+        "data": {
+          "confirm": "Permanently delete charging session"
+        },
+        "data_description": {
+          "confirm": "Enable only if this charging session is actually invalid."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Charging session deleted",
+        "description": "The invalid charging session was removed.\\n\\n**Date:** {date}\\n**Charging location:** {location}\\n**Charge ID:** {charge_id}\\n\\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
       }
     },
     "error": {
@@ -719,7 +745,9 @@
       "osrm_connection_failed": "The OSRM service cannot be reached. Check address, port, container and network.",
       "osrm_invalid_response": "The OSRM service did not return a valid response.",
       "export_invalid_date_range": "The start date must not be after the end date.",
-      "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details."
+      "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
+      "charge_delete_failed": "The charging session could not be deleted completely.",
+      "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion."
     }
   },
   "entity": {
