@@ -722,6 +722,52 @@
       "charge_delete_result": {
         "title": "Ladevorgang gelöscht",
         "description": "Der ungültige Ladevorgang wurde entfernt.\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Charge-ID:** {charge_id}\n\nAbhängige Touren, Statistiken und der letzte Ladevorgang wurden aktualisiert. Vorhandene Belege bleiben gespeichert."
+      },
+      "pause_detail": {
+        "title": "Pause",
+        "description": "{date} · {start_time} · {location}\n\nTitel: {title}\n\nBelege: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Pause bearbeiten",
+          "pause_receipts": "Belege",
+          "pause_selection": "Zurück zu den Pausen"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Kategorie, Titel, Notiz, Ort und Kosten bearbeiten.",
+          "pause_receipts": "Belege anzeigen oder einen neuen Beleg direkt dieser Pause zuordnen.",
+          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren."
+        }
+      },
+      "pause_receipts": {
+        "title": "Belege",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "menu_options": {
+          "pause_receipt_upload": "Beleg hinzufügen",
+          "pause_receipt_list": "Belege",
+          "pause_detail": "Zurück zur Pause"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "PDF oder Bild direkt dieser Pause zuordnen.",
+          "pause_receipt_list": "Belege dieser Pause anzeigen.",
+          "pause_detail": "Zur Übersicht der Pause zurückkehren."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Beleg zur Pause hinzufügen",
+        "description": "**Pause:** {date} · {location}\n**Pause-ID:** {pause_id}\n**OCR:** {ocr_status}\n\nDer Beleg wird direkt dieser Pause zugeordnet.",
+        "data": {
+          "receipt_file": "Belegdatei",
+          "note": "Notiz"
+        },
+        "data_description": {
+          "note": "Optionaler Hinweis zum Beleg."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Belege dieser Pause",
+        "description": "Verknüpfte Belege: {receipt_count}",
+        "data": {
+          "receipt_selection": "Beleg"
+        }
       }
     },
     "error": {
