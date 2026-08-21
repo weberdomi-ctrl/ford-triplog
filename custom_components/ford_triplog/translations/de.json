@@ -739,7 +739,7 @@
       },
       "pause_receipts": {
         "title": "Belege",
-        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}",
         "menu_options": {
           "pause_receipt_upload": "Beleg hinzufügen",
           "pause_receipt_list": "Belege",
@@ -753,7 +753,7 @@
       },
       "pause_receipt_upload": {
         "title": "Beleg zur Pause hinzufügen",
-        "description": "**Pause:** {date} · {location}\n**Pause-ID:** {pause_id}\n**OCR:** {ocr_status}\n\nDer Beleg wird direkt dieser Pause zugeordnet.",
+        "description": "**Pause:** {date} · {location}\n**Pause-ID:** {pause_id}\n\nDer Beleg wird direkt dieser Pause zugeordnet.",
         "data": {
           "receipt_file": "Belegdatei",
           "note": "Notiz"
