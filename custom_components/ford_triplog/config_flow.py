@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09d - Receipt delete translation fix
+Build: 09e - Pause receipt detail handler
 Release: 2.2.0
 
 
@@ -3488,6 +3488,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 ),
             },
         )
+
+    async def async_step_pause_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle the pause-specific receipt detail step."""
+
+        return await self.async_step_receipt_detail(user_input)
 
     async def async_step_pause_receipt_delete(
         self,
