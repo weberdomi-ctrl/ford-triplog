@@ -722,6 +722,52 @@
       "charge_delete_result": {
         "title": "Sesja ładowania usunięta",
         "description": "Nieprawidłowa sesja ładowania została usunięta.\n\n**Data:** {date}\n**Lokalizacja ładowania:** {location}\n**Identyfikator ładowania:** {charge_id}\n\nPowiązane podróże, statystyki i ostatnia sesja ładowania zostały zaktualizowane. Istniejące paragony pozostają zapisane."
+      },
+      "pause_detail": {
+        "title": "Przerwa",
+        "description": "{date} · {start_time} · {location}\n\nTytuł: {title}\n\nParagony: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Edytuj przerwę",
+          "pause_receipts": "Paragony",
+          "pause_selection": "Wróć do przerw"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Edytuj kategorię, tytuł, notatkę, lokalizację i koszty.",
+          "pause_receipts": "Wyświetl paragony lub przypisz nowy paragon bezpośrednio do tej przerwy.",
+          "pause_selection": "Wróć do listy wykrytych przerw."
+        }
+      },
+      "pause_receipts": {
+        "title": "Paragony",
+        "description": "Zapisane paragony: {receipt_count}\n\n{receipt_summary}",
+        "menu_options": {
+          "pause_receipt_upload": "Dodaj paragon",
+          "pause_receipt_list": "Paragony",
+          "pause_detail": "Wróć do przerwy"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "Przypisz plik PDF lub obraz bezpośrednio do tej przerwy.",
+          "pause_receipt_list": "Wyświetl paragony przypisane do tej przerwy.",
+          "pause_detail": "Wróć do przeglądu przerwy."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Dodaj paragon do przerwy",
+        "description": "**Przerwa:** {date} · {location}\n**Identyfikator przerwy:** {pause_id}\n\nParagon zostanie przypisany bezpośrednio do tej przerwy.",
+        "data": {
+          "receipt_file": "Plik paragonu",
+          "note": "Notatka"
+        },
+        "data_description": {
+          "note": "Opcjonalna notatka do paragonu."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Paragony tej przerwy",
+        "description": "Powiązane paragony: {receipt_count}",
+        "data": {
+          "receipt_selection": "Paragon"
+        }
       }
     },
     "error": {
