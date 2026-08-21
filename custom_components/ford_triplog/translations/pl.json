@@ -768,6 +768,20 @@
         "data": {
           "receipt_selection": "Paragon"
         }
+      },
+      "pause_receipt_detail": {
+        "title": "Szczegóły paragonu",
+        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Lokalizacja:** {location}\n**Koszty:** {cost}\n\n**Plik:** {document_type} ({size})\n\n**Uwaga:** Po wybraniu „Otwórz paragon w przeglądarce” Home Assistant wyświetli osobne okno. Wybierz tam „Otwórz witrynę”, aby wyświetlić dokument.",
+        "data": {
+          "receipt_detail_action": "Akcja"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Usunąć paragon?",
+        "description": "**Data:** {date}\n**Nazwa:** {title}\n**Plik:** {filename}\n\nPlik paragonu zostanie trwale usunięty.",
+        "data": {
+          "confirm": "Trwale usuń paragon"
+        }
       }
     },
     "error": {
@@ -1078,7 +1092,8 @@
     "export_all_data": "wszystkie dane",
     "export_from": "od {date}",
     "export_until": "do {date}",
-    "export_range": "{start}–{end}"
+    "export_range": "{start}–{end}",
+    "receipt_delete": "Usuń paragon"
   },
   "services": {
     "import_charging_sites": {

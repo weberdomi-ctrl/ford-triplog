@@ -745,6 +745,20 @@
         "data": {
           "receipt_selection": "Receipt"
         }
+      },
+      "pause_receipt_detail": {
+        "title": "Receipt details",
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n**Costs:** {cost}\n\n**File:** {document_type} ({size})\n\n**Note:** After selecting “Open receipt in browser”, Home Assistant shows a separate dialog. Select “Open website” there to display the document.",
+        "data": {
+          "receipt_detail_action": "Action"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Delete receipt?",
+        "description": "**Date:** {date}\n**Name:** {title}\n**File:** {filename}\n\nThe receipt file will be permanently deleted.",
+        "data": {
+          "confirm": "Permanently delete receipt"
+        }
       }
     },
     "error": {
@@ -1011,7 +1025,8 @@
     "export_all_data": "all data",
     "export_from": "from {date}",
     "export_until": "until {date}",
-    "export_range": "{start} to {end}"
+    "export_range": "{start} to {end}",
+    "receipt_delete": "Delete receipt"
   },
   "services": {
     "import_charging_sites": {
