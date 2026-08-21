@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage mirror.
 
 Version: 2.1.0
-Build: 16
+Build: 17a - Charge delete support
 Changes: Add Top Locations SQL view read support
 """
 
@@ -1594,6 +1594,61 @@ class FordTriplogDatabase:
             _LOGGER.exception(
                 "Unable to mirror charge to SQLite: %s",
                 charge_id,
+            )
+            return False
+
+    async def delete_charge(
+        self,
+        charge_id: str,
+    ) -> bool:
+        """Delete one archived charging session from SQLite."""
+
+        normalized_id = str(charge_id).strip()
+        if not normalized_id:
+            return False
+
+        def _delete() -> bool:
+            with sqlite3.connect(self.db_path) as db:
+                cursor = db.execute(
+                    "DELETE FROM charges WHERE charge_id = ?",
+                    (normalized_id,),
+                )
+                db.commit()
+                return cursor.rowcount > 0
+
+        try:
+            deleted = await self.hass.async_add_executor_job(
+                functools.partial(_delete)
+            )
+            if deleted:
+                _LOGGER.info(
+                    "Charge removed from SQLite: %s",
+                    normalized_id,
+                )
+            return deleted
+        except Exception:
+            _LOGGER.exception(
+                "Unable to remove charge from SQLite: %s",
+                normalized_id,
+            )
+            return False
+
+    async def delete_last_charge(self) -> bool:
+        """Clear the last-charge cache in SQLite."""
+
+        def _delete() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM last_charge")
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(
+                functools.partial(_delete)
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to clear last charge from SQLite"
             )
             return False
 

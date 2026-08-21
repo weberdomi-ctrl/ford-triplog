@@ -1,3 +1,157 @@
+# Ford Triplog 2.2.0
+
+Ford Triplog 2.2 focuses on practical data export, safer maintenance
+tools and a more complete History workflow while retaining the parallel
+JSON/SQLite storage architecture introduced in 2.1.
+
+## 📤 CSV Export
+
+Ford Triplog can now export the main stored history data directly from
+the Home Assistant options flow.
+
+Available exports include:
+
+-   Trips
+-   Journeys
+-   Charging sessions
+
+Each export supports an optional date range. If no date range is
+selected, all available records are exported.
+
+The generated CSV file can be downloaded directly through Home Assistant,
+so users do not need to access the Home Assistant VM, container or
+filesystem manually.
+
+## 🚗 Configurable Vehicle Data Sources
+
+Ford Triplog settings now allow the configured vehicle data-source
+entities to be changed after initial setup.
+
+This makes it possible to switch the Ford entities used by Ford Triplog
+without reinstalling the integration or recreating the stored history.
+
+## 🗑️ Invalid Charging Session Cleanup
+
+A new guarded maintenance workflow can remove clearly invalid charging
+sessions from the stored history.
+
+Only suspicious sessions are offered for deletion, for example sessions
+with zero vehicle energy or other strongly implausible data.
+
+Before deletion, Ford Triplog shows the session details and requires
+explicit confirmation.
+
+After deletion:
+
+-   dependent Journeys are rebuilt
+-   statistics are recalculated
+-   the stored last charging session is refreshed when required
+-   existing receipt files are preserved
+
+This avoids silently deleting documents while still allowing corrupted
+or aborted charging records to be removed cleanly.
+
+## ⏸️ Pause Receipt Management
+
+Receipts can now be managed directly from a selected Journey pause.
+
+Pause receipt features include:
+
+-   direct PDF or image upload
+-   multiple receipts per pause
+-   optional receipt note
+-   pause-specific receipt overview
+-   open stored receipt
+-   delete receipt with confirmation
+
+OCR is intentionally not required for pause receipts. The receipt is
+stored and linked directly to the selected pause.
+
+## 🧾 Pause Receipts in History
+
+Journey History now exposes pause receipts for the currently selected
+History date.
+
+Each pause receipt entry includes useful dashboard context such as:
+
+-   pause title/category
+-   start time
+-   duration
+-   location
+-   pause costs
+-   receipt filename/note
+-   authenticated signed receipt URL
+
+This allows dedicated Home Assistant dashboard cards for pause receipts,
+similar to the existing charging-receipt History card.
+
+Multiple receipts belonging to the same pause can be displayed together
+without repeating the pause itself.
+
+## 🕓 History Improvements
+
+Ford Triplog 2.2 includes additional History reliability and display
+improvements.
+
+Changes include:
+
+-   fixed Journey History date-selection/display issues
+-   newest pauses are shown first
+-   pause titles, notes and costs are available in Journey History
+-   pause receipt data is synchronized with the selected History date
+-   History selector refresh scheduling is safe with current Home
+    Assistant thread-safety requirements
+
+## 🌍 Translation and Options Flow Cleanup
+
+The new export, maintenance and pause-receipt workflows are synchronized
+across:
+
+-   English fallback strings
+-   English translation
+-   German translation
+-   Polish translation
+
+Several dialog formatting, line-break and placeholder-validation issues
+found during 2.2 testing were also corrected.
+
+## ⚙️ Fixes and Reliability Improvements
+
+-   Fixed thread-unsafe History selector refresh scheduling
+-   Fixed Journey History date-selection/display issues
+-   Fixed suspicious charging-session detection with stored Charge
+    objects
+-   Added complete SQLite deletion support for charging sessions
+-   Fixed missing delete-dialog helpers and translation handlers
+-   Fixed pause receipt detail navigation
+-   Fixed pause receipt deletion flow
+-   Fixed translation placeholder validation for charging-site database
+    import
+-   Preserved receipt files when invalid charging sessions are removed
+
+## 🗃️ Storage Policy
+
+Ford Triplog 2.2 continues the controlled storage transition introduced
+in 2.1.
+
+-   JSON and SQLite continue to be written in parallel
+-   the selectable JSON/SQLite read backend remains available
+-   JSON remains the compatibility and fallback path
+-   no write-backend selector is introduced
+-   the final SQLite-only production cutover remains planned for 2.3
+
+## ⬆️ Upgrade Notes
+
+Ford Triplog 2.2.0 is compatible with existing Ford Triplog 2.1.x
+installations.
+
+No manual storage migration is required.
+
+Existing Trips, charging sessions, Journeys, Routes, receipts and
+metadata remain compatible.
+
+------------------------------------------------------------------------
+
 # Ford Triplog 2.1.1
 
 Ford Triplog 2.1.1 is a maintenance and bugfix release for the 2.1

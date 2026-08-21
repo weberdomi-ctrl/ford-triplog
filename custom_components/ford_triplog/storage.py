@@ -6,7 +6,7 @@ Track your Ford.
 Storage layer for trips, charging, recovery data and cache.
 
 Version: 2.1.0
-Build: 19
+Build: 20
 Changes: Add JSON/SQLite identity validation
 """
 
@@ -868,6 +868,90 @@ class FordTriplogStorage:
             return False
 
         return True
+
+
+    async def delete_charge(
+        self,
+        charge_id: str,
+    ) -> bool:
+        """Delete one archived charging session from JSON and SQLite."""
+
+        normalized_id = str(charge_id or "").strip()
+        if not normalized_id:
+            return False
+
+        json_path: Path | None = None
+        for path in reversed(await self.list_charges()):
+            data = await self._load_json(path)
+            if (
+                isinstance(data, dict)
+                and str(data.get("charge_id") or "").strip()
+                == normalized_id
+            ):
+                json_path = path
+                break
+
+        sqlite_exists = (
+            await self.database.load_charge(normalized_id)
+        ) is not None
+
+        if json_path is None and not sqlite_exists:
+            _LOGGER.warning(
+                "Unable to delete missing charging session: %s",
+                normalized_id,
+            )
+            return False
+
+        if json_path is not None:
+            try:
+                await self._delete_file(json_path)
+            except Exception:
+                _LOGGER.exception(
+                    "Unable to remove archived charge JSON: %s",
+                    json_path,
+                )
+                return False
+
+        if sqlite_exists:
+            if not await self.database.delete_charge(normalized_id):
+                _LOGGER.error(
+                    "SQLite deletion failed for charge %s",
+                    normalized_id,
+                )
+                return False
+
+        _LOGGER.info(
+            "Archived charging session deleted: %s",
+            normalized_id,
+        )
+        return True
+
+    async def clear_last_charge(self) -> None:
+        """Clear last-charge cache in both storage backends."""
+
+        await self._delete_file(self._last_charge_file())
+        await self.database.delete_last_charge()
+
+    async def synchronize_last_charge(self) -> dict[str, Any] | None:
+        """Rebuild last_charge from the newest remaining archived charge."""
+
+        charges = await self.load_archived_charges()
+        if not charges:
+            await self.clear_last_charge()
+            return None
+
+        def _sort_key(item: dict[str, Any]) -> tuple[str, str]:
+            return (
+                str(item.get("end_time") or item.get("start_time") or ""),
+                str(item.get("charge_id") or ""),
+            )
+
+        newest = max(charges, key=_sort_key)
+        if not await self.save_last_charge(newest):
+            _LOGGER.error("Unable to synchronize last_charge after deletion")
+            return None
+
+        return newest
 
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:

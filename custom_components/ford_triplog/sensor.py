@@ -127,6 +127,7 @@ async def async_setup_entry(
                 journey_storage,
                 common_translations,
                 entry.entry_id,
+                receipt_storage,
             ),
             FordTriplogChargingHistorySensor(
                 charge_manager,
@@ -1011,7 +1012,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             },
             "pause": {
                 "type",
+                "id",
+                "start_time",
+                "end_time",
                 "start_time_formatted",
+                "duration_seconds",
                 "duration",
                 "title",
                 "category",
@@ -1177,9 +1182,16 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
     _attr_unique_id = "ford_triplog_journey_history"
     _attr_icon = "mdi:map-clock-outline"
 
-    def __init__(self, storage, translations, entry_id: str) -> None:
+    def __init__(
+        self,
+        storage,
+        translations,
+        entry_id: str,
+        receipt_storage=None,
+    ) -> None:
         super().__init__(storage, translations)
         self.entry_id = entry_id
+        self.receipt_storage = receipt_storage
         self._selected_date = None
         self._journeys = []
 
@@ -1202,6 +1214,110 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         self._selected_date = selected_date
         await self._async_refresh()
         self.async_write_ha_state()
+
+    async def _async_pause_receipts_by_id(
+        self,
+    ) -> dict[str, list[dict[str, Any]]]:
+        """Return stored pause receipts grouped by pause ID."""
+
+        grouped: dict[str, list[dict[str, Any]]] = {}
+
+        if self.receipt_storage is None:
+            return grouped
+
+        try:
+            receipts = await self.receipt_storage.async_list()
+        except (OSError, RuntimeError, ValueError):
+            _LOGGER.exception("Unable to load pause receipts for Journey History")
+            return grouped
+
+        for receipt in receipts:
+            if str(receipt.get("target_type") or "") != "pause":
+                continue
+
+            target_id = str(receipt.get("target_id") or "").strip()
+            receipt_id = str(receipt.get("receipt_id") or "").strip()
+            if not target_id or not receipt_id:
+                continue
+
+            signed_path = async_sign_path(
+                self.hass,
+                f"/api/ford_triplog/receipts/{receipt_id}",
+                timedelta(hours=24),
+                use_content_user=True,
+            )
+
+            item = {
+                "receipt_id": receipt_id,
+                "filename": (
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or receipt_id
+                ),
+                "stored_filename": receipt.get("filename"),
+                "media_type": receipt.get("media_type"),
+                "size_bytes": receipt.get("size_bytes"),
+                "created_at": receipt.get("created_at"),
+                "note": receipt.get("note"),
+                "receipt_url": signed_path,
+            }
+
+            grouped.setdefault(target_id, []).append(
+                {
+                    key: value
+                    for key, value in item.items()
+                    if value is not None
+                }
+            )
+
+        return grouped
+
+    @staticmethod
+    def _build_pause_receipt_entries(
+        timeline: list[dict[str, Any]],
+        receipts_by_pause: dict[str, list[dict[str, Any]]],
+    ) -> list[dict[str, Any]]:
+        """Build compact pause entries that actually have receipts."""
+
+        pause_entries: list[dict[str, Any]] = []
+
+        for entry in timeline:
+            if str(entry.get("type") or "") != "pause":
+                continue
+
+            pause_id = str(entry.get("id") or "").strip()
+            if not pause_id:
+                continue
+
+            receipts = receipts_by_pause.get(pause_id, [])
+            if not receipts:
+                continue
+
+            pause_entry = {
+                "pause_id": pause_id,
+                "start_time": entry.get("start_time"),
+                "end_time": entry.get("end_time"),
+                "start_time_formatted": entry.get("start_time_formatted"),
+                "duration_seconds": entry.get("duration_seconds"),
+                "duration": entry.get("duration"),
+                "title": entry.get("title"),
+                "category": entry.get("category"),
+                "location": entry.get("location"),
+                "note": entry.get("note"),
+                "cost_total": entry.get("cost_total"),
+                "currency": entry.get("currency"),
+                "receipts": receipts,
+            }
+
+            pause_entries.append(
+                {
+                    key: value
+                    for key, value in pause_entry.items()
+                    if value is not None
+                }
+            )
+
+        return pause_entries
 
     async def _async_refresh(self) -> None:
         """Load and aggregate all Journeys for the selected History date."""
@@ -1262,6 +1378,7 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
 
         timeline: list[dict[str, Any]] = []
         pause_seconds = 0
+        receipts_by_pause = await self._async_pause_receipts_by_id()
 
         for journey in matches:
             journey_timeline, journey_pause_seconds = self._build_timeline(
@@ -1377,6 +1494,10 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         )
 
         battery_capacity_kwh = _first_non_null("battery_capacity_kwh")
+        pause_receipt_entries = self._build_pause_receipt_entries(
+            timeline,
+            receipts_by_pause,
+        )
 
         self._attributes = {
             "date": self._selected_date,
@@ -1416,6 +1537,11 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             "soc_adjustment_kwh": round(soc_adjustment_kwh, 2),
             "average_consumption_kwh_100km": average_consumption,
             "timeline": timeline,
+            "pause_receipts": pause_receipt_entries,
+            "pause_receipt_count": sum(
+                len(entry.get("receipts", []))
+                for entry in pause_receipt_entries
+            ),
             "journeys": [
                 {
                     "journey_id": journey.journey_id,

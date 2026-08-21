@@ -6,7 +6,7 @@ Track your Ford.
 Charging-session management and manual cost handling.
 
 Version: 2.1.0
-Release: 2.1.0 - Charge data update notifications
+Release: 2.2.0 - Invalid charge deletion Build 08a
 """
 
 from __future__ import annotations
@@ -231,6 +231,128 @@ class FordTriplogChargeManager:
                 "Journey rebuild failed after charging-cost update: charge=%s",
                 charge.charge_id,
             )
+
+    @staticmethod
+    def _charge_duration_seconds(charge: Charge) -> int | None:
+        """Return charging duration derived from start/end timestamps."""
+
+        if not charge.start_time or not charge.end_time:
+            return None
+
+        start = dt_util.parse_datetime(str(charge.start_time))
+        end = dt_util.parse_datetime(str(charge.end_time))
+        if start is None or end is None:
+            return None
+
+        if start.tzinfo is None:
+            start = start.replace(tzinfo=dt_util.UTC)
+        if end.tzinfo is None:
+            end = end.replace(tzinfo=dt_util.UTC)
+
+        return max(0, int((end - start).total_seconds()))
+
+    @classmethod
+    def is_suspicious_charge(cls, charge: Charge) -> bool:
+        """Return True only for clearly suspicious charging sessions."""
+
+        try:
+            energy = float(charge.energy_added_kwh)
+        except (TypeError, ValueError):
+            energy = None
+
+        try:
+            soc_start = float(charge.start_soc)
+        except (TypeError, ValueError):
+            soc_start = None
+
+        try:
+            soc_end = float(charge.end_soc)
+        except (TypeError, ValueError):
+            soc_end = None
+
+        duration = cls._charge_duration_seconds(charge)
+
+        # Strong indicators only. A missing value alone is not enough.
+        if energy is not None and energy <= 0:
+            return True
+
+        if (
+            soc_start is not None
+            and soc_end is not None
+            and soc_end < soc_start
+        ):
+            return True
+
+        if (
+            duration is not None
+            and duration <= 30
+            and (energy is None or energy < 0.2)
+        ):
+            return True
+
+        return False
+
+    async def async_get_suspicious_charges(
+        self,
+    ) -> list[Charge]:
+        """Return only archived sessions that are clearly suspicious."""
+
+        return [
+            charge
+            for charge in await self.async_get_charges(newest_first=True)
+            if self.is_suspicious_charge(charge)
+        ]
+
+    async def async_delete_charge(
+        self,
+        charge_id: str,
+    ) -> ChargeManagerResult:
+        """Delete one suspicious archived charging session."""
+
+        normalized_id = self._normalize_charge_id(charge_id)
+        charge = await self.async_get_charge(normalized_id)
+
+        if charge is None:
+            return ChargeManagerResult(
+                action="delete_charge",
+                charge_id=normalized_id,
+                reason="charge_not_found",
+            )
+
+        if not self.is_suspicious_charge(charge):
+            return ChargeManagerResult(
+                action="delete_charge",
+                charge_id=normalized_id,
+                charge=charge,
+                reason="charge_not_suspicious",
+            )
+
+        deleted = await self.storage.delete_charge(normalized_id)
+        if not deleted:
+            return ChargeManagerResult(
+                action="delete_charge",
+                charge_id=normalized_id,
+                charge=charge,
+                reason="delete_failed",
+            )
+
+        # Keep the cache and all derived data consistent. Receipts are
+        # intentionally not deleted; their stored document remains available.
+        await self.storage.synchronize_last_charge()
+        await self._async_refresh_dependents(charge)
+        async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
+
+        _LOGGER.info(
+            "Suspicious charging session deleted: %s",
+            normalized_id,
+        )
+
+        return ChargeManagerResult(
+            action="delete_charge",
+            charge_id=normalized_id,
+            charge=charge,
+            updated=True,
+        )
 
     async def async_recalculate_all_costs(self) -> int:
         """Recalculate derived and automatic costs for all archived charges."""

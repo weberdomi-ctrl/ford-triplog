@@ -90,6 +90,7 @@ Features include:
 - Daily Charging history
 - Charging-only days
 - Charging receipt access
+- Pause receipt access
 - Synchronized History sensors
 - Home Assistant local calendar dates
 
@@ -107,6 +108,9 @@ Features include:
 - Notes
 - Costs
 - Manual editing
+- Receipt upload and management
+- Multiple receipts per pause
+- Receipt access from the selected History date
 - Journey timeline integration
 
 ------------------------------------------------------------------------
@@ -190,15 +194,16 @@ Automatically records every charging session including:
 
 ## 🧾 Receipt Management
 
-Ford Triplog can manage charging receipts directly inside Home Assistant.
+Ford Triplog can manage receipts for charging sessions and Journey pauses directly inside Home Assistant.
 
 Features include:
 
 - PDF and image receipt upload
 - Multiple receipts per charging session
+- Multiple receipts per Journey pause
 - Receipt browser
 - Open stored receipts
-- Open receipts from the History dashboard
+- Open charging and pause receipts from the History dashboard
 - Delete receipts
 - OCR integration (optional)
 - User parser profiles
@@ -216,6 +221,24 @@ Priority order:
 2. FordPass charging information
 3. Local OpenStreetMap charging database
 4. Address fallback
+
+------------------------------------------------------------------------
+
+## 📤 CSV Export
+
+Ford Triplog can export stored history data directly from the Home
+Assistant options flow.
+
+Available exports include:
+
+- Trips
+- Journeys
+- Charging sessions
+- Optional start/end date filtering
+- Direct CSV download through Home Assistant
+
+The exported files use practical flattened columns and can be used in
+spreadsheet applications or external analysis tools.
 
 ------------------------------------------------------------------------
 
@@ -247,11 +270,24 @@ Ford Triplog continuously maintains:
 ------------------------------------------------------------------------
 
 
+## 🧹 Maintenance Tools
+
+Ford Triplog includes guarded maintenance functions for stored history.
+
+- Clearly suspicious charging sessions can be selected and deleted
+- Deletion requires explicit confirmation
+- Dependent Journeys and statistics are rebuilt afterwards
+- The stored last charging session is refreshed when required
+- Existing receipt files are preserved when an invalid charging session
+  is removed
+
+------------------------------------------------------------------------
+
 ## 🗃️ Local SQLite Storage
 
-Ford Triplog 2.1 introduces an optional local SQLite read backend while retaining the existing JSON storage for compatibility.
+Ford Triplog 2.1 introduced an optional local SQLite read backend while retaining the existing JSON storage for compatibility. Ford Triplog 2.2 continues this transition.
 
-During the 2.1 transition:
+During the 2.1/2.2 transition:
 
 - New and changed data continues to be written to JSON and SQLite
 - Existing JSON data is migrated or mirrored into SQLite
@@ -324,6 +360,7 @@ Examples include:
 - Route History map
 - Charging History
 - Charging receipt History
+- Pause receipt History
 - Charging cost overview
 - Journey energy balance
 - Top Departures & Destinations
@@ -362,6 +399,17 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - Runtime guards and caching reduce repeated database reads and initialization work
 - Journey rebuild and statistics recalculation work with the selected backend
 - JSON retained for compatibility, fallback and migration safety
+
+## Version 2.2
+
+- CSV export for Trips, Journeys and charging sessions
+- Direct CSV download through Home Assistant
+- Configurable vehicle data-source entities
+- Guarded deletion of invalid charging sessions
+- Pause receipt upload, viewing and deletion
+- Pause receipts available in Journey History dashboards
+- Additional History reliability and translation fixes
+- Parallel JSON/SQLite storage continues for validation
 
 Complete roadmap:
 

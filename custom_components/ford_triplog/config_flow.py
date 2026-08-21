@@ -7,8 +7,8 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 
-Release: 2.1.0
+Build: 09f - Clean pause receipt overview
+Release: 2.2.0
 
 
 """
@@ -58,6 +58,8 @@ from .osrm_client import (
     FordTriplogOSRMConnectionError,
     FordTriplogOSRMResponseError,
 )
+
+from .export import FordTriplogExporter
 
 from .services import (
     async_download_charging_database,
@@ -140,6 +142,8 @@ CONF_CHARGE_BLOCKING_FEE = "blocking_fee"
 CONF_CHARGE_PARKING_FEE = "parking_fee"
 CONF_CHARGE_OTHER_COST = "other_cost"
 CONF_CHARGE_ACTION = "action"
+CONF_CHARGE_DELETE_SELECTION = "charge_delete_selection"
+CONF_CHARGE_DELETE_CONFIRM = "confirm"
 
 CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
 CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
@@ -191,9 +195,13 @@ CONF_OCR_API_KEY = "ocr_api_key"
 CONF_OCR_TIMEOUT = "ocr_timeout"
 CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
 RECEIPT_DETAIL_OPEN = "open"
+RECEIPT_DETAIL_DELETE = "delete"
 RECEIPT_DETAIL_BACK = "back"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
+
+CONF_EXPORT_START_DATE = "start_date"
+CONF_EXPORT_END_DATE = "end_date"
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -312,6 +320,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._receipt_apply_result: dict[str, str] = {}
         self._ui_translations: dict[str, str] | None = None
         self._route_tracker_draft: dict[str, Any] = {}
+        self._export_result: dict[str, str] = {}
+        self._selected_export_url: str | None = None
+        self._export_kind: str = "trips"
 
     async def async_step_init(
         self,
@@ -326,7 +337,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "journey_management",
                 "pause_management",
                 "charge_management",
-                    "user_charging_sites",
+                "export",
+                "user_charging_sites",
                 "charging_site_database",
             ],
         )
@@ -374,6 +386,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "receipt_not_evaluated": "Not evaluated yet",
             "receipt_open_browser": "Open receipt in browser",
             "receipt_back_list": "Back to receipt list",
+            "receipt_delete": "Delete receipt",
             "receipt_upload_ocr_enabled": (
                 "enabled – receipt will be analysed automatically"
             ),
@@ -396,6 +409,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "document_generic": "Document",
             "profile": "Profile",
             "receipt_more": "more",
+            "export_all_data": "all data",
+            "export_from": "from {date}",
+            "export_until": "until {date}",
+            "export_range": "{start} to {end}",
         }
 
         self._ui_translations = {
@@ -467,8 +484,192 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="charge_management",
             menu_options=[
                 "charge_selection",
+                "charge_delete_selection",
                 "init",
             ],
+        )
+
+    async def async_step_charge_delete_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one clearly suspicious charging session for deletion."""
+
+        errors: dict[str, str] = {}
+
+        try:
+            charges = (
+                await self._get_charge_manager()
+                .async_get_suspicious_charges()
+            )
+        except (HomeAssistantError, OSError, ValueError):
+            charges = []
+            errors["base"] = "charge_load_failed"
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_CHARGE_DELETE_SELECTION) or ""
+            ).strip()
+
+            if selected == SELECTION_BACK:
+                return await self.async_step_charge_management()
+
+            if selected and not errors:
+                self._selected_charge_id = selected
+                return await self.async_step_charge_delete_confirm()
+
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=await self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(charge.charge_id),
+                    label=await self._format_suspicious_charge_label(charge),
+                )
+                for charge in charges
+                if charge.charge_id
+            ],
+        ]
+
+        return self.async_show_form(
+            step_id="charge_delete_selection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGE_DELETE_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_count": str(len(charges)),
+            },
+        )
+
+    async def async_step_charge_delete_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm deletion of one suspicious charging session."""
+
+        if not self._selected_charge_id:
+            return await self.async_step_charge_delete_selection()
+
+        manager = self._get_charge_manager()
+        charge = await manager.async_get_charge(self._selected_charge_id)
+
+        if charge is None:
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_delete_confirm",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_found"},
+            )
+
+        if not manager.is_suspicious_charge(charge):
+            self._selected_charge_id = None
+            return self.async_show_form(
+                step_id="charge_delete_confirm",
+                data_schema=vol.Schema({}),
+                errors={"base": "charge_not_suspicious"},
+            )
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if bool(user_input.get(CONF_CHARGE_DELETE_CONFIRM, False)):
+                result = await manager.async_delete_charge(
+                    self._selected_charge_id
+                )
+                if result.updated:
+                    self._charge_result = {
+                        "charge_id": str(result.charge_id),
+                        "date": self._format_charge_datetime(
+                            getattr(charge, "start_time", None)
+                        ),
+                        "location": await self._charge_location(charge),
+                    }
+                    self._selected_charge_id = None
+                    return await self.async_step_charge_delete_result()
+
+                errors["base"] = (
+                    "charge_not_suspicious"
+                    if result.reason == "charge_not_suspicious"
+                    else "charge_delete_failed"
+                )
+            else:
+                return await self.async_step_charge_delete_selection()
+
+        duration = manager._charge_duration_seconds(charge)
+        duration_text = (
+            f"{duration} s"
+            if duration is not None and duration < 120
+            else (
+                f"{round(duration / 60)} min"
+                if duration is not None
+                else "—"
+            )
+        )
+
+        return self.async_show_form(
+            step_id="charge_delete_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CHARGE_DELETE_CONFIRM,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "charge_id": str(charge.charge_id or ""),
+                "date": self._format_charge_datetime(charge.start_time),
+                "location": await self._charge_location(charge),
+                "energy": self._format_optional_number(
+                    getattr(charge, "energy_added_kwh", None),
+                    3,
+                ),
+                "soc_start": self._format_optional_number(
+                    getattr(charge, "soc_start", None),
+                    0,
+                ),
+                "soc_end": self._format_optional_number(
+                    getattr(charge, "soc_end", None),
+                    0,
+                ),
+                "duration": duration_text,
+                "cost_total": self._format_optional_number(
+                    getattr(charge, "cost_total", None),
+                    2,
+                ),
+                "currency": str(
+                    getattr(charge, "currency", None) or "CHF"
+                ),
+            },
+        )
+
+    async def async_step_charge_delete_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show result after deleting one suspicious charging session."""
+
+        if user_input is not None:
+            return await self.async_step_charge_delete_selection()
+
+        return self.async_show_form(
+            step_id="charge_delete_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._charge_result,
         )
 
     async def async_step_charge_selection(
@@ -711,11 +912,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "receipt_count": str(len(receipts)),
                 "receipt_summary": receipt_summary,
-                "ocr_status": (
-                    ui_text["ocr_enabled"]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
-                    else ui_text["ocr_disabled"]
-                ),
             },
         )
 
@@ -1826,6 +2022,40 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders=self._charge_result,
         )
 
+    async def _format_suspicious_charge_label(
+        self,
+        charge: Any,
+    ) -> str:
+        """Return compact label for one suspicious charging session."""
+
+        parts = [
+            self._format_charge_datetime(
+                getattr(charge, "start_time", None)
+            ),
+            await self._charge_location(charge),
+        ]
+
+        energy = getattr(charge, "energy_added_kwh", None)
+        try:
+            energy_text = f"{float(energy):.2f} kWh"
+        except (TypeError, ValueError):
+            energy_text = "— kWh"
+        parts.append(energy_text)
+
+        soc_start = self._format_optional_number(
+            getattr(charge, "start_soc", None),
+            0,
+        )
+        soc_end = self._format_optional_number(
+            getattr(charge, "end_soc", None),
+            0,
+        )
+        parts.append(f"{soc_start} → {soc_end} %")
+
+        return " · ".join(
+            part for part in parts if part
+        )
+
     async def _format_charge_label(self, charge: Any) -> str:
         """Return a short one-line label for a charging session."""
 
@@ -2095,7 +2325,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "pause_id": pause_id,
                         "date": date_text,
                         "start_time": self._pause_time(current.end_time),
-                        "_sort_time": str(current.end_time),
+                        "_sort_time": (
+                            dt_util.parse_datetime(str(current.end_time))
+                            or datetime.min.replace(tzinfo=dt_util.UTC)
+                        ),
                         "title": str(title or ""),
                         "location": str(location or "—"),
                         "cost_total": override.get("cost_total"),
@@ -2104,8 +2337,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 )
 
         # Show newest pauses first, independent of Journey/archive ordering.
+        # Sort by parsed timestamps instead of ISO strings so timezone offsets
+        # cannot reverse otherwise correctly ordered pauses.
         entries.sort(
-            key=lambda entry: entry.get("_sort_time", ""),
+            key=lambda entry: entry.get(
+                "_sort_time",
+                datetime.min.replace(tzinfo=dt_util.UTC),
+            ).timestamp(),
             reverse=True,
         )
         for entry in entries:
@@ -2156,7 +2394,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 else:
                     self._selected_pause_journey_id = journey_id
                     self._selected_pause_id = pause_id
-                    return await self.async_step_pause_edit()
+                    return await self.async_step_pause_detail()
 
         schema: dict[Any, Any] = {}
         options = [
@@ -2190,6 +2428,259 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"pause_count": str(len(pauses))},
+        )
+
+    async def _async_get_selected_pause_entry(self) -> dict[str, Any] | None:
+        """Return the currently selected pause entry."""
+
+        if not self._selected_pause_journey_id or not self._selected_pause_id:
+            return None
+
+        entries = await self._async_get_pause_entries()
+        return next(
+            (
+                entry
+                for entry in entries
+                if str(entry.get("journey_id") or "")
+                == self._selected_pause_journey_id
+                and str(entry.get("pause_id") or "")
+                == self._selected_pause_id
+            ),
+            None,
+        )
+
+    async def async_step_pause_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the selected pause as a compact navigation hub."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            self._selected_pause_journey_id = None
+            self._selected_pause_id = None
+            return await self.async_step_pause_selection()
+
+        receipts = [
+            receipt
+            for receipt in await self._get_receipt_storage().async_list()
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+            and str(receipt.get("target_id") or "") == self._selected_pause_id
+        ]
+
+        return self.async_show_menu(
+            step_id="pause_detail",
+            menu_options=[
+                "pause_edit",
+                "pause_receipts",
+                "pause_selection",
+            ],
+            description_placeholders={
+                "date": str(pause.get("date") or "—"),
+                "start_time": str(pause.get("start_time") or "—"),
+                "location": str(pause.get("location") or "—"),
+                "title": str(pause.get("title") or "—"),
+                "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_pause_receipts(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt actions for the selected pause."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        receipts = [
+            receipt
+            for receipt in await self._get_receipt_storage().async_list()
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+            and str(receipt.get("target_id") or "") == self._selected_pause_id
+        ]
+        ui_text = await self._async_get_ui_translations()
+
+        if receipts:
+            lines = []
+            for receipt in receipts[:10]:
+                created = self._parse_datetime_value(
+                    receipt.get("created_at")
+                    or receipt.get("created")
+                    or receipt.get("uploaded_at")
+                )
+                if created is not None:
+                    local_created = dt_util.as_local(created)
+                    receipt_date = local_created.strftime("%d.%m.%Y %H:%M")
+                else:
+                    receipt_date = str(pause.get("date") or "—")
+
+                note = str(receipt.get("note") or "").strip()
+                label = note or ui_text["receipt"]
+                lines.append(f"{receipt_date} · {label}")
+
+            receipt_summary = "\n".join(lines)
+            if len(receipts) > 10:
+                receipt_summary += (
+                    f"\n… +{len(receipts) - 10} {ui_text['receipt_more']}"
+                )
+        else:
+            receipt_summary = ui_text["receipt_none"]
+
+        return self.async_show_menu(
+            step_id="pause_receipts",
+            menu_options=[
+                "pause_receipt_upload",
+                "pause_receipt_list",
+                "pause_detail",
+            ],
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+                "receipt_summary": receipt_summary,
+                "ocr_status": (
+                    ui_text["ocr_enabled"]
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else ui_text["ocr_disabled"]
+                ),
+            },
+        )
+
+    async def async_step_pause_receipt_upload(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Attach a receipt directly to the currently selected pause."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            pause_id = self._selected_pause_id
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=RECEIPT_TARGET_PAUSE,
+                        target_id=pause_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                _LOGGER.exception(
+                    "Unable to attach receipt to pause: journey_id=%s pause_id=%s",
+                    self._selected_pause_journey_id,
+                    pause_id,
+                )
+                errors["base"] = "receipt_import_failed"
+            else:
+                receipt_id = str(receipt.get("receipt_id") or "")
+                self._selected_receipt_id = receipt_id or None
+
+                return await self.async_step_pause_receipts()
+
+        ui_text = await self._async_get_ui_translations()
+        return self.async_show_form(
+            step_id="pause_receipt_upload",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_FILE,
+                    ): selector.FileSelector(
+                        selector.FileSelectorConfig(
+                            accept=".pdf,.png,.jpg,.jpeg,.webp"
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_RECEIPT_NOTE,
+                        default="",
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "date": str(pause.get("date") or "—"),
+                "location": str(pause.get("location") or "—"),
+                "pause_id": str(self._selected_pause_id or ""),
+            },
+        )
+
+    async def async_step_pause_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one receipt attached to the currently selected pause."""
+
+        if not self._selected_pause_id:
+            return await self.async_step_pause_selection()
+
+        errors: dict[str, str] = {}
+        try:
+            contexts = await self._async_receipt_contexts()
+            receipts = [
+                receipt
+                for receipt in contexts
+                if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+                and str(receipt.get("target_id") or "") == self._selected_pause_id
+            ]
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=await self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(receipt.get("receipt_id")),
+                    label=str(receipt.get("display_label")),
+                )
+                for receipt in receipts
+                if receipt.get("receipt_id")
+            ],
+        ]
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_RECEIPT_SELECTION) or ""
+            )
+            if selected == SELECTION_BACK:
+                return await self.async_step_pause_receipts()
+            if selected and not errors:
+                self._selected_receipt_id = selected
+                self._receipt_target_type = RECEIPT_TARGET_PAUSE
+                return await self.async_step_receipt_detail()
+
+        return self.async_show_form(
+            step_id="pause_receipt_list",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+            },
         )
 
     async def async_step_pause_edit(
@@ -2260,9 +2751,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             except (HomeAssistantError, ValueError):
                 errors["base"] = "pause_save_failed"
             else:
-                self._selected_pause_journey_id = None
-                self._selected_pause_id = None
-                return await self.async_step_pause_selection()
+                return await self.async_step_pause_detail()
 
         fields: dict[Any, Any] = {
             vol.Optional(
@@ -2870,7 +3359,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
             if action == RECEIPT_DETAIL_BACK:
                 self._selected_receipt_url = None
+                if (
+                    self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                    and self._selected_pause_id
+                ):
+                    return await self.async_step_pause_receipt_list()
                 return await self.async_step_receipt_list()
+            if (
+                action == RECEIPT_DETAIL_DELETE
+                and self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                and self._selected_pause_id
+            ):
+                return await self.async_step_pause_receipt_delete()
             return await self.async_step_receipt_open()
 
         receipt_id = str(self._selected_receipt_id or "")
@@ -2939,7 +3439,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_receipt_url = signed_path
 
         return self.async_show_form(
-            step_id="receipt_detail",
+            step_id=(
+                "pause_receipt_detail"
+                if self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                else "receipt_detail"
+            ),
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -2951,6 +3455,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_OPEN,
                                     label=ui_text["receipt_open_browser"],
+                                ),
+                                *(
+                                    [
+                                        selector.SelectOptionDict(
+                                            value=RECEIPT_DETAIL_DELETE,
+                                            label=ui_text["receipt_delete"],
+                                        )
+                                    ]
+                                    if self._receipt_target_type
+                                    == RECEIPT_TARGET_PAUSE
+                                    else []
                                 ),
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_BACK,
@@ -2980,6 +3495,74 @@ class FordTriplogOptionsFlow(OptionsFlow):
             },
         )
 
+    async def async_step_pause_receipt_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle the pause-specific receipt detail step."""
+
+        return await self.async_step_receipt_detail(user_input)
+
+    async def async_step_pause_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm and permanently delete the selected pause receipt."""
+
+        receipt_id = str(self._selected_receipt_id or "")
+        receipts = await self._async_receipt_contexts()
+        receipt = next(
+            (
+                item
+                for item in receipts
+                if str(item.get("receipt_id") or "") == receipt_id
+                and str(item.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+                and str(item.get("target_id") or "") == self._selected_pause_id
+            ),
+            None,
+        )
+        if receipt is None:
+            return self.async_show_form(
+                step_id="pause_receipt_delete",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not bool(user_input.get("confirm", False)):
+                return await self.async_step_pause_receipt_list()
+            try:
+                removed = await self._get_receipt_storage().async_remove(receipt_id)
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if removed is None:
+                    errors["base"] = "receipt_not_found"
+                else:
+                    self._selected_receipt_id = None
+                    self._selected_receipt_url = None
+                    return await self.async_step_pause_receipts()
+
+        return self.async_show_form(
+            step_id="pause_receipt_delete",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("confirm", default=False): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "—"
+                ),
+                "date": str(receipt.get("display_date") or "—"),
+                "title": str(receipt.get("display_title") or "—"),
+            },
+        )
+
     async def async_step_receipt_open(
         self,
         user_input: dict[str, Any] | None = None,
@@ -2987,6 +3570,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Open the signed receipt URL using a Home Assistant external step."""
 
         if not self._selected_receipt_url:
+            if (
+                self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                and self._selected_pause_id
+            ):
+                return await self.async_step_pause_receipt_list()
             return await self.async_step_receipt_list()
 
         return self.async_external_step(
@@ -3813,6 +4401,429 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             "affected_dates": ", ".join(affected_dates) or "—",
         }
+
+
+    async def _format_export_period(
+        self,
+        start_date: Any,
+        end_date: Any,
+    ) -> str:
+        """Return one localized export period label."""
+
+        ui_text = await self._async_get_ui_translations()
+
+        start = str(start_date or "").strip()
+        end = str(end_date or "").strip()
+
+        if not start and not end:
+            return ui_text["export_all_data"]
+        if start and not end:
+            return ui_text["export_from"].format(date=start)
+        if end and not start:
+            return ui_text["export_until"].format(date=end)
+
+        return ui_text["export_range"].format(
+            start=start,
+            end=end,
+        )
+
+
+    def _get_trip_storage(self):
+        """Return Ford Triplog storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("storage")
+
+        if storage is None:
+            coordinator = runtime_data.get("coordinator")
+            storage = getattr(coordinator, "storage", None)
+
+        if storage is None:
+            raise HomeAssistantError(
+                "Ford Triplog storage is not initialized"
+            )
+
+        return storage
+
+    def _get_export_journey_storage(self):
+        """Return Journey storage for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        storage = runtime_data.get("journey_storage")
+        if storage is None:
+            raise HomeAssistantError(
+                "Journey storage is not initialized"
+            )
+
+        return storage
+
+    def _get_export_charge_manager(self):
+        """Return Charge Manager for this config entry."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        manager = runtime_data.get("charge_manager")
+        if manager is None:
+            raise HomeAssistantError(
+                "Charge Manager is not initialized"
+            )
+
+        return manager
+
+    async def async_step_export(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show export navigation."""
+
+        return self.async_show_menu(
+            step_id="export",
+            menu_options=[
+                "export_trips",
+                "export_journeys",
+                "export_charges",
+                "init",
+            ],
+        )
+
+    async def async_step_export_trips(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived Trips to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_trips(
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Trip CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
+                    self._export_kind = "trips"
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "record_type": "Trips",
+                        "filename": filename,
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
+                        ),
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_trips",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_journeys(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived Journeys to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_journeys(
+                        self._get_export_journey_storage(),
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Journey CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
+                    self._export_kind = "journeys"
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "filename": filename,
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
+                        ),
+                        "record_type": "Journeys",
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_journeys",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_charges(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export archived charging sessions to CSV."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            start_date = user_input.get(CONF_EXPORT_START_DATE)
+            end_date = user_input.get(CONF_EXPORT_END_DATE)
+
+            if (
+                start_date is not None
+                and end_date is not None
+                and start_date > end_date
+            ):
+                errors["base"] = "export_invalid_date_range"
+            else:
+                try:
+                    exporter = FordTriplogExporter(
+                        self.hass,
+                        self._get_trip_storage(),
+                    )
+                    result = await exporter.async_export_charges(
+                        self._get_export_charge_manager(),
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except (
+                    HomeAssistantError,
+                    OSError,
+                    RuntimeError,
+                    ValueError,
+                ):
+                    _LOGGER.exception("Charge CSV export failed")
+                    errors["base"] = "export_failed"
+                else:
+                    filename = str(
+                        result.get("filename") or ""
+                    )
+                    export_path = (
+                        f"/api/ford_triplog/exports/{filename}"
+                    )
+                    signed_path = async_sign_path(
+                        self.hass,
+                        export_path,
+                        timedelta(minutes=10),
+                        use_content_user=True,
+                    )
+                    try:
+                        base_url = get_url(
+                            self.hass,
+                            allow_internal=True,
+                            allow_external=True,
+                            allow_cloud=True,
+                            allow_ip=True,
+                            prefer_external=True,
+                        ).rstrip("/")
+                        self._selected_export_url = (
+                            f"{base_url}{signed_path}"
+                        )
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+
+                    self._export_kind = "charges"
+                    self._export_result = {
+                        "record_count": str(
+                            result.get("record_count", 0)
+                        ),
+                        "filename": filename,
+                        "path": str(
+                            result.get("path") or ""
+                        ),
+                        "period": await self._format_export_period(
+                            result.get("start_date"),
+                            result.get("end_date"),
+                        ),
+                        "record_type": "Charges",
+                    }
+                    return await self.async_step_export_result()
+
+        return self.async_show_form(
+            step_id="export_charges",
+            data_schema=vol.Schema(
+                {
+                    vol.Optional(
+                        CONF_EXPORT_START_DATE
+                    ): selector.DateSelector(),
+                    vol.Optional(
+                        CONF_EXPORT_END_DATE
+                    ): selector.DateSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_export_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show CSV export result and download action."""
+
+        return self.async_show_menu(
+            step_id="export_result",
+            menu_options=[
+                "export_download",
+                "export",
+            ],
+            description_placeholders=self._export_result,
+        )
+
+    async def async_step_export_download(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Open the signed CSV download URL."""
+
+        if not self._selected_export_url:
+            return await self.async_step_export()
+
+        return self.async_external_step(
+            step_id="export_download",
+            url=self._selected_export_url,
+        )
 
 
     async def async_step_settings(

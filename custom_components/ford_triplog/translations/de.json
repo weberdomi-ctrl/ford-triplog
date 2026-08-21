@@ -30,7 +30,8 @@
           "pause_management": "Pausen verwalten",
           "charge_management": "Ladevorgänge verwalten",
           "user_charging_sites": "Eigene Ladeorte",
-          "charging_site_database": "OpenStreetMap-Ladeorte"
+          "charging_site_database": "OpenStreetMap-Ladeorte",
+          "export": "Daten exportieren"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
@@ -38,7 +39,8 @@
           "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
           "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
-          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren."
+          "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
+          "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren."
         }
       },
       "settings": {
@@ -208,11 +210,13 @@
         "description": "Wähle aus, was du mit den gespeicherten Ladevorgängen machen möchtest.",
         "menu_options": {
           "charge_selection": "Ladevorgang auswählen",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "charge_delete_selection": "Ungültigen Ladevorgang löschen"
         },
         "menu_option_descriptions": {
           "charge_selection": "Einen gespeicherten Ladevorgang öffnen und bearbeiten.",
-          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
+          "charge_delete_selection": "Zeigt nur eindeutig auffällige Ladevorgänge zur gezielten Löschung an."
         }
       },
       "charge_cost_edit": {
@@ -638,6 +642,146 @@
           "charging": "Optionaler Sensor für den aktuellen Ladestatus.",
           "last_charge": "Optionaler Sensor mit den Daten des zuletzt abgeschlossenen Ladevorgangs."
         }
+      },
+      "export": {
+        "title": "Daten exportieren",
+        "description": "Wähle aus, welche Daten exportiert werden sollen.",
+        "menu_options": {
+          "export_trips": "Fahrten als CSV exportieren",
+          "export_journeys": "Touren als CSV exportieren",
+          "export_charges": "Ladevorgänge als CSV exportieren",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
+          "export_journeys": "Gespeicherte Touren optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
+          "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren."
+        }
+      },
+      "export_trips": {
+        "title": "Fahrten exportieren",
+        "description": "Exportiert gespeicherte Fahrten als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Fahrten exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "export_result": {
+        "title": "Export abgeschlossen",
+        "description": "**Exportierte Datensätze:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {period}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
+        "menu_options": {
+          "export_download": "CSV herunterladen",
+          "export": "Zurück zum Export"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Die erzeugte CSV-Datei auf dieses Gerät herunterladen.",
+          "export": "Zur Auswahl der Exportfunktionen zurückkehren."
+        }
+      },
+      "export_download": {
+        "title": "CSV herunterladen",
+        "description": "Klicke auf „Website öffnen“, um die CSV-Datei herunterzuladen. Der Download-Link ist 10 Minuten gültig."
+      },
+      "export_journeys": {
+        "title": "Touren exportieren",
+        "description": "Exportiert gespeicherte Touren als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Touren exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "export_charges": {
+        "title": "Ladevorgänge exportieren",
+        "description": "Exportiert gespeicherte Ladevorgänge als CSV-Datei. Start- und Enddatum sind optional; ohne Datumsangabe werden alle gespeicherten Ladevorgänge exportiert.",
+        "data": {
+          "start_date": "Startdatum",
+          "end_date": "Enddatum"
+        }
+      },
+      "charge_delete_selection": {
+        "title": "Ungültigen Ladevorgang löschen",
+        "description": "Es wurden {charge_count} eindeutig auffällige Ladevorgänge gefunden. Angezeigt werden nur Sessions mit klaren Plausibilitätsfehlern, zum Beispiel 0 kWh Fahrzeugenergie, fallendem SOC oder extrem kurzer Dauer.",
+        "data": {
+          "charge_delete_selection": "Ladevorgang"
+        },
+        "data_description": {
+          "charge_delete_selection": "Normale Ladevorgänge werden hier bewusst nicht angeboten."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Ladevorgang wirklich löschen?",
+        "description": "**Datum:** {date}\n**Ladeort:** {location}\n**Charge-ID:** {charge_id}\n\n**Fahrzeugenergie:** {energy} kWh\n**SOC:** {soc_start} % → {soc_end} %\n**Dauer:** {duration}\n**Kosten:** {cost_total} {currency}\n\nDer Ladevorgang wird dauerhaft aus der Historie entfernt. Touren und Statistiken werden anschließend neu aufgebaut. Vorhandene Belege werden nicht gelöscht.",
+        "data": {
+          "confirm": "Ladevorgang endgültig löschen"
+        },
+        "data_description": {
+          "confirm": "Nur aktivieren, wenn dieser Ladevorgang tatsächlich ungültig ist."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Ladevorgang gelöscht",
+        "description": "Der ungültige Ladevorgang wurde entfernt.\n\n**Datum:** {date}\n**Ladeort:** {location}\n**Charge-ID:** {charge_id}\n\nAbhängige Touren, Statistiken und der letzte Ladevorgang wurden aktualisiert. Vorhandene Belege bleiben gespeichert."
+      },
+      "pause_detail": {
+        "title": "Pause",
+        "description": "{date} · {start_time} · {location}\n\nTitel: {title}\n\nBelege: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Pause bearbeiten",
+          "pause_receipts": "Belege",
+          "pause_selection": "Zurück zu den Pausen"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Kategorie, Titel, Notiz, Ort und Kosten bearbeiten.",
+          "pause_receipts": "Belege anzeigen oder einen neuen Beleg direkt dieser Pause zuordnen.",
+          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren."
+        }
+      },
+      "pause_receipts": {
+        "title": "Belege",
+        "description": "Gespeicherte Belege: {receipt_count}\n\n{receipt_summary}",
+        "menu_options": {
+          "pause_receipt_upload": "Beleg hinzufügen",
+          "pause_receipt_list": "Belege",
+          "pause_detail": "Zurück zur Pause"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "PDF oder Bild direkt dieser Pause zuordnen.",
+          "pause_receipt_list": "Belege dieser Pause anzeigen.",
+          "pause_detail": "Zur Übersicht der Pause zurückkehren."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Beleg zur Pause hinzufügen",
+        "description": "**Pause:** {date} · {location}\n**Pause-ID:** {pause_id}\n\nDer Beleg wird direkt dieser Pause zugeordnet.",
+        "data": {
+          "receipt_file": "Belegdatei",
+          "note": "Notiz"
+        },
+        "data_description": {
+          "note": "Optionaler Hinweis zum Beleg."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Belege dieser Pause",
+        "description": "Verknüpfte Belege: {receipt_count}",
+        "data": {
+          "receipt_selection": "Beleg"
+        }
+      },
+      "pause_receipt_detail": {
+        "title": "Belegdetails",
+        "description": "**Typ:** {type}\n\n**Datum:** {date}\n**Name:** {title}\n**Ort:** {location}\n**Kosten:** {cost}\n\n**Datei:** {document_type} ({size})\n\n**Hinweis:** Nach der Auswahl von „Beleg im Browser öffnen“ zeigt Home Assistant einen separaten Dialog. Klicke dort auf „Website öffnen“, um das Dokument anzuzeigen.",
+        "data": {
+          "receipt_detail_action": "Aktion"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Beleg wirklich löschen?",
+        "description": "**Datum:** {date}\n**Name:** {title}\n**Datei:** {filename}\n\nDie Belegdatei wird dauerhaft gelöscht.",
+        "data": {
+          "confirm": "Beleg endgültig löschen"
+        }
       }
     },
     "error": {
@@ -682,7 +826,11 @@
       "user_parser_test_failed": "Das Profil wurde gespeichert, konnte den aktuellen Beleg jedoch nicht erfolgreich auswerten.",
       "osrm_invalid_url": "Die OSRM-Adresse ist ungültig. Verwende eine vollständige HTTP- oder HTTPS-Adresse.",
       "osrm_connection_failed": "Der OSRM-Dienst ist nicht erreichbar. Prüfe Adresse, Port, Container und Netzwerk.",
-      "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert."
+      "osrm_invalid_response": "Der OSRM-Dienst hat keine gültige Antwort geliefert.",
+      "export_invalid_date_range": "Das Startdatum darf nicht nach dem Enddatum liegen.",
+      "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
+      "charge_delete_failed": "Der Ladevorgang konnte nicht vollständig gelöscht werden.",
+      "charge_not_suspicious": "Dieser Ladevorgang erfüllt die Kriterien für eine sichere Löschung nicht."
     }
   },
   "entity": {
@@ -940,7 +1088,12 @@
     "document_image": "Bilddatei",
     "document_generic": "Dokument",
     "profile": "Profil",
-    "receipt_more": "weitere"
+    "receipt_more": "weitere",
+    "export_all_data": "alle Daten",
+    "export_from": "ab {date}",
+    "export_until": "bis {date}",
+    "export_range": "{start} bis {end}",
+    "receipt_delete": "Beleg löschen"
   },
   "services": {
     "import_charging_sites": {

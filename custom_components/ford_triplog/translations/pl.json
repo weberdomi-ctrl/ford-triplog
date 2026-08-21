@@ -30,7 +30,8 @@
           "pause_management": "Zarządzaj postojami",
           "charge_management": "Zarządzaj sesjami ładowania",
           "user_charging_sites": "Własne lokalizacje ładowania",
-          "charging_site_database": "Lokalizacje ładowania OpenStreetMap"
+          "charging_site_database": "Lokalizacje ładowania OpenStreetMap",
+          "export": "Eksport danych"
         },
         "menu_option_descriptions": {
           "settings": "Edytuj ustawienia przejazdów, ładowania, pojazdu i taryf.",
@@ -38,7 +39,8 @@
           "pause_management": "Uzupełniaj postoje o tytuł, kategorię, miejsce, notatkę i koszty.",
           "charge_management": "Zarządzaj sesjami ładowania, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Wyświetlaj i zarządzaj własnymi lokalizacjami ładowania.",
-          "charging_site_database": "Pobierz lub zaimportuj bazę lokalizacji ładowania."
+          "charging_site_database": "Pobierz lub zaimportuj bazę lokalizacji ładowania.",
+          "export": "Eksportuj zapisane dane Ford Triplog do pliku CSV."
         }
       },
       "settings": {
@@ -208,11 +210,13 @@
         "description": "Wybierz działanie dla zapisanych sesji ładowania.",
         "menu_options": {
           "charge_selection": "Wybierz sesję ładowania",
-          "init": "Wróć do menu głównego"
+          "init": "Wróć do menu głównego",
+          "charge_delete_selection": "Usuń nieprawidłową sesję ładowania"
         },
         "menu_option_descriptions": {
           "charge_selection": "Otwórz i edytuj zapisaną sesję ładowania.",
-          "init": "Wróć do przeglądu Ford Triplog."
+          "init": "Wróć do przeglądu Ford Triplog.",
+          "charge_delete_selection": "Wyświetla tylko wyraźnie podejrzane sesje ładowania przeznaczone do celowego usunięcia."
         }
       },
       "charge_cost_edit": {
@@ -638,6 +642,146 @@
           "charging": "Opcjonalny czujnik aktualnego stanu ładowania.",
           "last_charge": "Opcjonalny czujnik zawierający dane ostatniej zakończonej sesji ładowania."
         }
+      },
+      "export": {
+        "title": "Eksport danych",
+        "description": "Wybierz dane, które chcesz wyeksportować.",
+        "menu_options": {
+          "export_trips": "Eksportuj przejazdy do CSV",
+          "export_journeys": "Eksportuj podróże do CSV",
+          "export_charges": "Eksportuj sesje ładowania do CSV",
+          "init": "Wróć do menu głównego"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Eksportuj zapisane przejazdy do pliku CSV, opcjonalnie ograniczając zakres dat.",
+          "export_journeys": "Eksportuj zapisane podróże do pliku CSV, opcjonalnie ograniczając zakres dat.",
+          "export_charges": "Eksportuj zapisane sesje ładowania do pliku CSV, opcjonalnie ograniczając zakres dat.",
+          "init": "Wróć do przeglądu Ford Triplog."
+        }
+      },
+      "export_trips": {
+        "title": "Eksport przejazdów",
+        "description": "Eksportuje zapisane przejazdy do pliku CSV. Data początkowa i końcowa są opcjonalne; bez zakresu dat zostaną wyeksportowane wszystkie zapisane przejazdy.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa"
+        }
+      },
+      "export_journeys": {
+        "title": "Eksport podróży",
+        "description": "Eksportuje zapisane podróże do pliku CSV. Data początkowa i końcowa są opcjonalne; bez zakresu dat zostaną wyeksportowane wszystkie zapisane podróże.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa"
+        }
+      },
+      "export_charges": {
+        "title": "Eksport sesji ładowania",
+        "description": "Eksportuje zapisane sesje ładowania do pliku CSV. Data początkowa i końcowa są opcjonalne; bez zakresu dat zostaną wyeksportowane wszystkie zapisane sesje ładowania.",
+        "data": {
+          "start_date": "Data początkowa",
+          "end_date": "Data końcowa"
+        }
+      },
+      "export_result": {
+        "title": "Eksport zakończony",
+        "description": "**Wyeksportowane rekordy:** {record_count}\n\n**Plik:** `{filename}`\n\n**Zakres dat:** {period}\n\nPlik CSV można pobrać bezpośrednio.",
+        "menu_options": {
+          "export_download": "Pobierz CSV",
+          "export": "Wróć do eksportu"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Pobierz utworzony plik CSV na to urządzenie.",
+          "export": "Wróć do wyboru eksportu."
+        }
+      },
+      "export_download": {
+        "title": "Pobierz CSV",
+        "description": "Wybierz „Otwórz witrynę”, aby pobrać plik CSV. Link do pobrania jest ważny przez 10 minut."
+      },
+      "charge_delete_selection": {
+        "title": "Usuń nieprawidłową sesję ładowania",
+        "description": "Znaleziono {charge_count} wyraźnie podejrzanych sesji ładowania. Wyświetlane są tylko sesje z poważnymi problemami wiarygodności danych, na przykład 0 kWh energii pojazdu, spadający poziom naładowania lub wyjątkowo krótki czas trwania.",
+        "data": {
+          "charge_delete_selection": "Sesja ładowania"
+        },
+        "data_description": {
+          "charge_delete_selection": "Prawidłowe sesje ładowania celowo nie są tutaj wyświetlane."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Czy na pewno usunąć sesję ładowania?",
+        "description": "**Data:** {date}\n**Lokalizacja ładowania:** {location}\n**Identyfikator ładowania:** {charge_id}\n\n**Energia pojazdu:** {energy} kWh\n**Poziom naładowania:** {soc_start} % → {soc_end} %\n**Czas trwania:** {duration}\n**Koszt:** {cost_total} {currency}\n\nSesja ładowania zostanie trwale usunięta z historii. Podróże i statystyki zostaną następnie przebudowane. Istniejące paragony nie zostaną usunięte.",
+        "data": {
+          "confirm": "Trwale usuń sesję ładowania"
+        },
+        "data_description": {
+          "confirm": "Włącz tylko wtedy, gdy ta sesja ładowania jest rzeczywiście nieprawidłowa."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Sesja ładowania usunięta",
+        "description": "Nieprawidłowa sesja ładowania została usunięta.\n\n**Data:** {date}\n**Lokalizacja ładowania:** {location}\n**Identyfikator ładowania:** {charge_id}\n\nPowiązane podróże, statystyki i ostatnia sesja ładowania zostały zaktualizowane. Istniejące paragony pozostają zapisane."
+      },
+      "pause_detail": {
+        "title": "Przerwa",
+        "description": "{date} · {start_time} · {location}\n\nTytuł: {title}\n\nParagony: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Edytuj przerwę",
+          "pause_receipts": "Paragony",
+          "pause_selection": "Wróć do przerw"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Edytuj kategorię, tytuł, notatkę, lokalizację i koszty.",
+          "pause_receipts": "Wyświetl paragony lub przypisz nowy paragon bezpośrednio do tej przerwy.",
+          "pause_selection": "Wróć do listy wykrytych przerw."
+        }
+      },
+      "pause_receipts": {
+        "title": "Paragony",
+        "description": "Zapisane paragony: {receipt_count}\n\n{receipt_summary}",
+        "menu_options": {
+          "pause_receipt_upload": "Dodaj paragon",
+          "pause_receipt_list": "Paragony",
+          "pause_detail": "Wróć do przerwy"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "Przypisz plik PDF lub obraz bezpośrednio do tej przerwy.",
+          "pause_receipt_list": "Wyświetl paragony przypisane do tej przerwy.",
+          "pause_detail": "Wróć do przeglądu przerwy."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Dodaj paragon do przerwy",
+        "description": "**Przerwa:** {date} · {location}\n**Identyfikator przerwy:** {pause_id}\n\nParagon zostanie przypisany bezpośrednio do tej przerwy.",
+        "data": {
+          "receipt_file": "Plik paragonu",
+          "note": "Notatka"
+        },
+        "data_description": {
+          "note": "Opcjonalna notatka do paragonu."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Paragony tej przerwy",
+        "description": "Powiązane paragony: {receipt_count}",
+        "data": {
+          "receipt_selection": "Paragon"
+        }
+      },
+      "pause_receipt_detail": {
+        "title": "Szczegóły paragonu",
+        "description": "**Typ:** {type}\n\n**Data:** {date}\n**Nazwa:** {title}\n**Lokalizacja:** {location}\n**Koszty:** {cost}\n\n**Plik:** {document_type} ({size})\n\n**Uwaga:** Po wybraniu „Otwórz paragon w przeglądarce” Home Assistant wyświetli osobne okno. Wybierz tam „Otwórz witrynę”, aby wyświetlić dokument.",
+        "data": {
+          "receipt_detail_action": "Akcja"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Usunąć paragon?",
+        "description": "**Data:** {date}\n**Nazwa:** {title}\n**Plik:** {filename}\n\nPlik paragonu zostanie trwale usunięty.",
+        "data": {
+          "confirm": "Trwale usuń paragon"
+        }
       }
     },
     "error": {
@@ -682,7 +826,11 @@
       "user_parser_test_failed": "Profil został zapisany, ale nie przetworzył poprawnie bieżącego paragonu.",
       "osrm_invalid_url": "Adres OSRM jest nieprawidłowy. Użyj pełnego adresu HTTP lub HTTPS.",
       "osrm_connection_failed": "Usługa OSRM jest niedostępna. Sprawdź adres, port, kontener i sieć.",
-      "osrm_invalid_response": "Usługa OSRM nie zwróciła prawidłowej odpowiedzi."
+      "osrm_invalid_response": "Usługa OSRM nie zwróciła prawidłowej odpowiedzi.",
+      "export_invalid_date_range": "Data początkowa nie może być późniejsza niż data końcowa.",
+      "export_failed": "Nie udało się utworzyć eksportu CSV. Sprawdź dziennik Home Assistant, aby uzyskać więcej informacji.",
+      "charge_delete_failed": "Nie udało się całkowicie usunąć sesji ładowania.",
+      "charge_not_suspicious": "Ta sesja ładowania nie spełnia kryteriów bezpiecznego usunięcia."
     }
   },
   "entity": {
@@ -845,6 +993,9 @@
       },
       "route_history": {
         "name": "Historia tras"
+      },
+      "last_charge_energy_fordpass": {
+        "name": "Energia ostatniej sesji ładowania z FordPass"
       }
     },
     "binary_sensor": {
@@ -937,7 +1088,12 @@
     "document_image": "Plik obrazu",
     "document_generic": "Dokument",
     "profile": "Profil",
-    "receipt_more": "więcej"
+    "receipt_more": "więcej",
+    "export_all_data": "wszystkie dane",
+    "export_from": "od {date}",
+    "export_until": "do {date}",
+    "export_range": "{start}–{end}",
+    "receipt_delete": "Usuń paragon"
   },
   "services": {
     "import_charging_sites": {

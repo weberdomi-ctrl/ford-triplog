@@ -30,7 +30,8 @@
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
-          "charging_site_database": "OpenStreetMap charging locations"
+          "charging_site_database": "OpenStreetMap charging locations",
+          "export": "Export data"
         },
         "menu_option_descriptions": {
           "settings": "Edit trip, charging and vehicle settings.",
@@ -38,7 +39,8 @@
           "pause_management": "Add title, category, location, note and costs to pauses.",
           "charge_management": "Manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
-          "charging_site_database": "Download or import the charging location database."
+          "charging_site_database": "Download or import the charging location database.",
+          "export": "Export stored Ford Triplog data as a CSV file."
         }
       },
       "settings": {
@@ -63,7 +65,7 @@
       },
       "import_charging_sites": {
         "title": "Import charging location database",
-        "description": "Select a Ford Triplog charging location database in JSON format. The existing database is backed up automatically and replaced after successful validation.",
+        "description": "Select a Ford Triplog charging location database in JSON format. The existing database is backed up automatically and replaced after successful validation.\n\nCountry database: {github_url}",
         "data": {
           "charging_site_file": "JSON file"
         },
@@ -208,11 +210,13 @@
         "description": "Select what you want to do.",
         "menu_options": {
           "charge_selection": "Select charging session",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "charge_delete_selection": "Delete invalid charging session"
         },
         "menu_option_descriptions": {
           "charge_selection": "Open and edit a stored charging session.",
-          "init": "Return to the Ford Triplog overview."
+          "init": "Return to the Ford Triplog overview.",
+          "charge_delete_selection": "Shows only clearly suspicious charging sessions for targeted deletion."
         }
       },
       "charge_cost_edit": {
@@ -615,6 +619,146 @@
           "charging": "Optional sensor providing the current charging status.",
           "last_charge": "Optional sensor containing data from the most recently completed charging session."
         }
+      },
+      "export": {
+        "title": "Export data",
+        "description": "Select which data you want to export.",
+        "menu_options": {
+          "export_trips": "Export trips as CSV",
+          "export_journeys": "Export journeys as CSV",
+          "export_charges": "Export charging sessions as CSV",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
+          "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
+          "init": "Return to the Ford Triplog overview.",
+          "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range."
+        }
+      },
+      "export_trips": {
+        "title": "Export trips",
+        "description": "Exports stored trips as a CSV file. Start and end dates are optional; without a date range, all stored trips are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_result": {
+        "title": "Export completed",
+        "description": "**Exported records:** {record_count}\n\n**File:** `{filename}`\n\n**Date range:** {period}\n\nThe CSV file can be downloaded directly.",
+        "menu_options": {
+          "export_download": "Download CSV",
+          "export": "Back to export"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Download the generated CSV file to this device.",
+          "export": "Return to the export selection."
+        }
+      },
+      "export_download": {
+        "title": "Download CSV",
+        "description": "Click “Open website” to download the CSV file. The download link is valid for 10 minutes."
+      },
+      "export_journeys": {
+        "title": "Export journeys",
+        "description": "Exports stored journeys as a CSV file. Start and end dates are optional; without a date range, all stored journeys are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "export_charges": {
+        "title": "Export charging sessions",
+        "description": "Exports stored charging sessions as a CSV file. Start and end dates are optional; without a date range, all stored charging sessions are exported.",
+        "data": {
+          "start_date": "Start date",
+          "end_date": "End date"
+        }
+      },
+      "charge_delete_selection": {
+        "title": "Delete invalid charging session",
+        "description": "{charge_count} clearly suspicious charging sessions were found. Only sessions with strong plausibility issues are shown, such as 0 kWh vehicle energy, decreasing SOC or an extremely short duration.",
+        "data": {
+          "charge_delete_selection": "Charging session"
+        },
+        "data_description": {
+          "charge_delete_selection": "Normal charging sessions are intentionally not offered here."
+        }
+      },
+      "charge_delete_confirm": {
+        "title": "Really delete charging session?",
+        "description": "**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\n**Vehicle energy:** {energy} kWh\n**SOC:** {soc_start} % → {soc_end} %\n**Duration:** {duration}\n**Cost:** {cost_total} {currency}\n\nThe charging session will be permanently removed from history. Journeys and statistics are rebuilt afterwards. Existing receipts are not deleted.",
+        "data": {
+          "confirm": "Permanently delete charging session"
+        },
+        "data_description": {
+          "confirm": "Enable only if this charging session is actually invalid."
+        }
+      },
+      "charge_delete_result": {
+        "title": "Charging session deleted",
+        "description": "The invalid charging session was removed.\n\n**Date:** {date}\n**Charging location:** {location}\n**Charge ID:** {charge_id}\n\nDependent journeys, statistics and the last charging session were updated. Existing receipts remain stored."
+      },
+      "pause_detail": {
+        "title": "Pause",
+        "description": "{date} · {start_time} · {location}\n\nTitle: {title}\n\nReceipts: {receipt_count}",
+        "menu_options": {
+          "pause_edit": "Edit pause",
+          "pause_receipts": "Receipts",
+          "pause_selection": "Back to pauses"
+        },
+        "menu_option_descriptions": {
+          "pause_edit": "Edit category, title, note, location and costs.",
+          "pause_receipts": "Show receipts or attach a new receipt to this pause.",
+          "pause_selection": "Return to the list of detected pauses."
+        }
+      },
+      "pause_receipts": {
+        "title": "Receipts",
+        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}",
+        "menu_options": {
+          "pause_receipt_upload": "Add receipt",
+          "pause_receipt_list": "Receipts",
+          "pause_detail": "Back to pause"
+        },
+        "menu_option_descriptions": {
+          "pause_receipt_upload": "Attach a PDF or image directly to this pause.",
+          "pause_receipt_list": "Show receipts attached to this pause.",
+          "pause_detail": "Return to the pause overview."
+        }
+      },
+      "pause_receipt_upload": {
+        "title": "Add receipt to pause",
+        "description": "**Pause:** {date} · {location}\n**Pause ID:** {pause_id}\n\nThe receipt is attached directly to this pause.",
+        "data": {
+          "receipt_file": "Receipt file",
+          "note": "Note"
+        },
+        "data_description": {
+          "note": "Optional note for the receipt."
+        }
+      },
+      "pause_receipt_list": {
+        "title": "Receipts for this pause",
+        "description": "Attached receipts: {receipt_count}",
+        "data": {
+          "receipt_selection": "Receipt"
+        }
+      },
+      "pause_receipt_detail": {
+        "title": "Receipt details",
+        "description": "**Type:** {type}\n\n**Date:** {date}\n**Name:** {title}\n**Location:** {location}\n**Costs:** {cost}\n\n**File:** {document_type} ({size})\n\n**Note:** After selecting “Open receipt in browser”, Home Assistant shows a separate dialog. Select “Open website” there to display the document.",
+        "data": {
+          "receipt_detail_action": "Action"
+        }
+      },
+      "pause_receipt_delete": {
+        "title": "Delete receipt?",
+        "description": "**Date:** {date}\n**Name:** {title}\n**File:** {filename}\n\nThe receipt file will be permanently deleted.",
+        "data": {
+          "confirm": "Permanently delete receipt"
+        }
       }
     },
     "error": {
@@ -659,7 +803,11 @@
       "user_parser_test_failed": "The profile was saved but could not successfully parse the current receipt.",
       "osrm_invalid_url": "The OSRM address is invalid. Use a complete HTTP or HTTPS address.",
       "osrm_connection_failed": "The OSRM service cannot be reached. Check address, port, container and network.",
-      "osrm_invalid_response": "The OSRM service did not return a valid response."
+      "osrm_invalid_response": "The OSRM service did not return a valid response.",
+      "export_invalid_date_range": "The start date must not be after the end date.",
+      "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
+      "charge_delete_failed": "The charging session could not be deleted completely.",
+      "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion."
     }
   },
   "entity": {
@@ -873,7 +1021,12 @@
     "pause_action_clear": "Clear manual entries",
     "charge_action_add_receipt": "Add receipt",
     "pause_action_back": "Back to pauses",
-    "charging_site_back": "Back to charging locations"
+    "charging_site_back": "Back to charging locations",
+    "export_all_data": "all data",
+    "export_from": "from {date}",
+    "export_until": "until {date}",
+    "export_range": "{start} to {end}",
+    "receipt_delete": "Delete receipt"
   },
   "services": {
     "import_charging_sites": {
