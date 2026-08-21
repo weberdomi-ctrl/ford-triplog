@@ -4,7 +4,7 @@ Ford Triplog
 CSV export helpers.
 
 Version: 2.2.0
-Build: 06 - Trip and Journey CSV export
+Build: 07 - Trip, Journey and Charge CSV export
 """
 
 from __future__ import annotations
@@ -88,6 +88,55 @@ JOURNEY_EXPORT_FIELDS = (
     "charge_ids",
 )
 
+
+CHARGE_EXPORT_FIELDS = (
+    "charge_id",
+    "start_time",
+    "end_time",
+    "duration_seconds",
+    "start_soc",
+    "end_soc",
+    "energy_added_kwh",
+    "energy_billed_kwh",
+    "energy_source",
+    "energy_billed_source",
+    "charging_loss_kwh",
+    "charging_loss_percent",
+    "energy_cost",
+    "session_fee",
+    "time_fee",
+    "blocking_fee",
+    "parking_fee",
+    "other_cost",
+    "cost_total",
+    "currency",
+    "energy_price_per_kwh",
+    "effective_price_per_kwh",
+    "cost_source",
+    "cost_verified",
+    "start_address",
+    "end_address",
+    "start_latitude",
+    "start_longitude",
+    "end_latitude",
+    "end_longitude",
+    "charging_site_id",
+    "charging_site_name",
+    "charging_site_brand",
+    "charging_site_operator",
+    "charging_site_network",
+    "charging_site_power_kw",
+    "charging_site_capacity",
+    "charging_site_connectors",
+    "charging_site_quality",
+    "charging_site_distance_m",
+    "trip_id",
+    "previous_trip_id",
+    "receipt_filename",
+    "notes",
+    "tags",
+)
+
 def _parse_local_date(value: Any) -> date | None:
     if not value:
         return None
@@ -132,6 +181,27 @@ def _csv_value(value: Any) -> Any:
     if isinstance(value, (int, float)):
         return value
     return str(value)
+
+
+
+def _duration_seconds(start_time: Any, end_time: Any) -> int | None:
+    """Return duration in whole seconds for two timestamps."""
+
+    if not start_time or not end_time:
+        return None
+
+    try:
+        start = datetime.fromisoformat(str(start_time).replace("Z", "+00:00"))
+        end = datetime.fromisoformat(str(end_time).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+
+    if start.tzinfo is None:
+        start = start.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    if end.tzinfo is None:
+        end = end.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+
+    return max(0, int((end - start).total_seconds()))
 
 
 def _trip_row(trip: dict[str, Any]) -> dict[str, Any]:
@@ -237,6 +307,104 @@ def _journey_row(journey: Any) -> dict[str, Any]:
         "charge_ids": ",".join(
             str(value) for value in (data.get("charge_ids") or [])
         ),
+    }
+
+
+
+def _charge_row(charge: Any) -> dict[str, Any]:
+    """Return one stable CSV row from one archived charging session."""
+
+    data = (
+        charge.to_dict()
+        if hasattr(charge, "to_dict")
+        else dict(charge)
+        if isinstance(charge, dict)
+        else {}
+    )
+
+    connectors = data.get("charging_site_connectors")
+    if isinstance(connectors, (list, tuple, set)):
+        connectors_text = ",".join(str(value) for value in connectors)
+    else:
+        connectors_text = _csv_value(connectors)
+
+    tags = data.get("tags")
+    if isinstance(tags, (list, tuple, set)):
+        tags_text = ",".join(str(value) for value in tags)
+    else:
+        tags_text = _csv_value(tags)
+
+    return {
+        "charge_id": _csv_value(data.get("charge_id")),
+        "start_time": _csv_value(data.get("start_time")),
+        "end_time": _csv_value(data.get("end_time")),
+        "duration_seconds": _csv_value(
+            _duration_seconds(
+                data.get("start_time"),
+                data.get("end_time"),
+            )
+        ),
+        "start_soc": _csv_value(data.get("start_soc")),
+        "end_soc": _csv_value(data.get("end_soc")),
+        "energy_added_kwh": _csv_value(data.get("energy_added_kwh")),
+        "energy_billed_kwh": _csv_value(data.get("energy_billed_kwh")),
+        "energy_source": _csv_value(data.get("energy_source")),
+        "energy_billed_source": _csv_value(
+            data.get("energy_billed_source")
+        ),
+        "charging_loss_kwh": _csv_value(data.get("charging_loss_kwh")),
+        "charging_loss_percent": _csv_value(
+            data.get("charging_loss_percent")
+        ),
+        "energy_cost": _csv_value(data.get("energy_cost")),
+        "session_fee": _csv_value(data.get("session_fee")),
+        "time_fee": _csv_value(data.get("time_fee")),
+        "blocking_fee": _csv_value(data.get("blocking_fee")),
+        "parking_fee": _csv_value(data.get("parking_fee")),
+        "other_cost": _csv_value(data.get("other_cost")),
+        "cost_total": _csv_value(data.get("cost_total")),
+        "currency": _csv_value(data.get("currency")),
+        "energy_price_per_kwh": _csv_value(
+            data.get("energy_price_per_kwh")
+        ),
+        "effective_price_per_kwh": _csv_value(
+            data.get("effective_price_per_kwh")
+        ),
+        "cost_source": _csv_value(data.get("cost_source")),
+        "cost_verified": _csv_value(data.get("cost_verified")),
+        "start_address": _address_text(data.get("start_address")),
+        "end_address": _address_text(data.get("end_address")),
+        "start_latitude": _csv_value(data.get("start_latitude")),
+        "start_longitude": _csv_value(data.get("start_longitude")),
+        "end_latitude": _csv_value(data.get("end_latitude")),
+        "end_longitude": _csv_value(data.get("end_longitude")),
+        "charging_site_id": _csv_value(data.get("charging_site_id")),
+        "charging_site_name": _csv_value(data.get("charging_site_name")),
+        "charging_site_brand": _csv_value(data.get("charging_site_brand")),
+        "charging_site_operator": _csv_value(
+            data.get("charging_site_operator")
+        ),
+        "charging_site_network": _csv_value(
+            data.get("charging_site_network")
+        ),
+        "charging_site_power_kw": _csv_value(
+            data.get("charging_site_power_kw")
+        ),
+        "charging_site_capacity": _csv_value(
+            data.get("charging_site_capacity")
+        ),
+        "charging_site_connectors": connectors_text,
+        "charging_site_quality": _csv_value(
+            data.get("charging_site_quality")
+        ),
+        "charging_site_distance_m": _csv_value(
+            data.get("charging_site_distance_m")
+        ),
+        "trip_id": _csv_value(data.get("trip_id")),
+        "previous_trip_id": _csv_value(data.get("previous_trip_id")),
+        "receipt_filename": _csv_value(data.get("receipt_filename")),
+        "notes": _csv_value(data.get("notes")),
+        "tags": tags_text,
     }
 
 
@@ -422,6 +590,75 @@ class FordTriplogExporter:
 
         return {
             "type": "journeys",
+            "record_count": len(rows),
+            "filename": filename,
+            "path": str(output_file),
+            "start_date": start_date.isoformat() if start_date else "",
+            "end_date": end_date.isoformat() if end_date else "",
+        }
+
+
+    async def async_export_charges(
+        self,
+        charge_manager: Any,
+        *,
+        start_date: date | None = None,
+        end_date: date | None = None,
+    ) -> dict[str, Any]:
+        """Export archived charging sessions to one CSV file."""
+
+        if (
+            start_date is not None
+            and end_date is not None
+            and start_date > end_date
+        ):
+            raise ValueError("start_date must not be after end_date")
+
+        charges = await charge_manager.async_get_charges(
+            newest_first=False
+        )
+
+        filtered = []
+        for charge in charges:
+            data = (
+                charge.to_dict()
+                if hasattr(charge, "to_dict")
+                else charge
+                if isinstance(charge, dict)
+                else None
+            )
+            if not isinstance(data, dict):
+                continue
+
+            charge_date = _parse_local_date(data.get("start_time"))
+            if charge_date is None:
+                continue
+            if start_date is not None and charge_date < start_date:
+                continue
+            if end_date is not None and charge_date > end_date:
+                continue
+
+            filtered.append(charge)
+
+        filename = (
+            "ford_triplog_charges_"
+            + dt_util.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + ".csv"
+        )
+        output_file = self.export_path / filename
+        rows = [_charge_row(charge) for charge in filtered]
+
+        await self.hass.async_add_executor_job(
+            functools.partial(
+                self._write_csv,
+                output_file,
+                rows,
+                CHARGE_EXPORT_FIELDS,
+            )
+        )
+
+        return {
+            "type": "charges",
             "record_count": len(rows),
             "filename": filename,
             "path": str(output_file),
