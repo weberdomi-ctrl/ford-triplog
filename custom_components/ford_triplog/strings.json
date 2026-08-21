@@ -716,7 +716,7 @@
       },
       "pause_receipts": {
         "title": "Receipts",
-        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}\n\nOCR: {ocr_status}",
+        "description": "Stored receipts: {receipt_count}\n\n{receipt_summary}",
         "menu_options": {
           "pause_receipt_upload": "Add receipt",
           "pause_receipt_list": "Receipts",
@@ -730,7 +730,7 @@
       },
       "pause_receipt_upload": {
         "title": "Add receipt to pause",
-        "description": "**Pause:** {date} · {location}\n**Pause ID:** {pause_id}\n**OCR:** {ocr_status}\n\nThe receipt is attached directly to this pause.",
+        "description": "**Pause:** {date} · {location}\n**Pause ID:** {pause_id}\n\nThe receipt is attached directly to this pause.",
         "data": {
           "receipt_file": "Receipt file",
           "note": "Note"
