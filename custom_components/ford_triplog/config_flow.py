@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 09b - Pause receipts without OCR
+Build: 09c - Pause receipt details/delete
 Release: 2.2.0
 
 
@@ -195,6 +195,7 @@ CONF_OCR_API_KEY = "ocr_api_key"
 CONF_OCR_TIMEOUT = "ocr_timeout"
 CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
 RECEIPT_DETAIL_OPEN = "open"
+RECEIPT_DETAIL_DELETE = "delete"
 RECEIPT_DETAIL_BACK = "back"
 RECEIPT_TARGET_PAUSE = "pause"
 RECEIPT_TARGET_CHARGE = "charge"
@@ -3357,6 +3358,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 ):
                     return await self.async_step_pause_receipt_list()
                 return await self.async_step_receipt_list()
+            if (
+                action == RECEIPT_DETAIL_DELETE
+                and self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                and self._selected_pause_id
+            ):
+                return await self.async_step_pause_receipt_delete()
             return await self.async_step_receipt_open()
 
         receipt_id = str(self._selected_receipt_id or "")
@@ -3425,7 +3432,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_receipt_url = signed_path
 
         return self.async_show_form(
-            step_id="receipt_detail",
+            step_id=(
+                "pause_receipt_detail"
+                if self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                else "receipt_detail"
+            ),
             data_schema=vol.Schema(
                 {
                     vol.Required(
@@ -3437,6 +3448,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_OPEN,
                                     label=ui_text["receipt_open_browser"],
+                                ),
+                                *(
+                                    [
+                                        selector.SelectOptionDict(
+                                            value=RECEIPT_DETAIL_DELETE,
+                                            label=ui_text["receipt_delete"],
+                                        )
+                                    ]
+                                    if self._receipt_target_type
+                                    == RECEIPT_TARGET_PAUSE
+                                    else []
                                 ),
                                 selector.SelectOptionDict(
                                     value=RECEIPT_DETAIL_BACK,
@@ -3463,6 +3485,66 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     receipt.get("ocr_status"),
                     ui_text,
                 ),
+            },
+        )
+
+    async def async_step_pause_receipt_delete(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm and permanently delete the selected pause receipt."""
+
+        receipt_id = str(self._selected_receipt_id or "")
+        receipts = await self._async_receipt_contexts()
+        receipt = next(
+            (
+                item
+                for item in receipts
+                if str(item.get("receipt_id") or "") == receipt_id
+                and str(item.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+                and str(item.get("target_id") or "") == self._selected_pause_id
+            ),
+            None,
+        )
+        if receipt is None:
+            return self.async_show_form(
+                step_id="pause_receipt_delete",
+                data_schema=vol.Schema({}),
+                errors={"base": "receipt_not_found"},
+            )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            if not bool(user_input.get("confirm", False)):
+                return await self.async_step_pause_receipt_list()
+            try:
+                removed = await self._get_receipt_storage().async_remove(receipt_id)
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "receipt_delete_failed"
+            else:
+                if removed is None:
+                    errors["base"] = "receipt_not_found"
+                else:
+                    self._selected_receipt_id = None
+                    self._selected_receipt_url = None
+                    return await self.async_step_pause_receipts()
+
+        return self.async_show_form(
+            step_id="pause_receipt_delete",
+            data_schema=vol.Schema(
+                {
+                    vol.Required("confirm", default=False): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "filename": str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or "—"
+                ),
+                "date": str(receipt.get("display_date") or "—"),
+                "title": str(receipt.get("display_title") or "—"),
             },
         )
 
