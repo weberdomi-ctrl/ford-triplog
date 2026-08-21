@@ -640,7 +640,19 @@
       },
       "export_result": {
         "title": "Export completed",
-        "description": "**Exported trips:** {record_count}\n\n**File:** `{filename}`\n\n**Path:** `{path}`\n\n**Date range:** {start_date} to {end_date}"
+        "description": "**Exported trips:** {record_count}\n\n**File:** `{filename}`\n\n**Date range:** {start_date} to {end_date}\n\nThe CSV file can be downloaded directly.",
+        "menu_options": {
+          "export_download": "Download CSV",
+          "export": "Back to export"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Download the generated CSV file to this device.",
+          "export": "Return to the export selection."
+        }
+      },
+      "export_download": {
+        "title": "Download CSV",
+        "description": "Click “Open website” to download the CSV file. The download link is valid for 10 minutes."
       }
     },
     "error": {

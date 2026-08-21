@@ -663,7 +663,19 @@
       },
       "export_result": {
         "title": "Export abgeschlossen",
-        "description": "**Exportierte Fahrten:** {record_count}\n\n**Datei:** `{filename}`\n\n**Pfad:** `{path}`\n\n**Zeitraum:** {start_date} bis {end_date}"
+        "description": "**Exportierte Fahrten:** {record_count}\n\n**Datei:** `{filename}`\n\n**Zeitraum:** {start_date} bis {end_date}\n\nDie CSV-Datei kann direkt heruntergeladen werden.",
+        "menu_options": {
+          "export_download": "CSV herunterladen",
+          "export": "Zurück zum Export"
+        },
+        "menu_option_descriptions": {
+          "export_download": "Die erzeugte CSV-Datei auf dieses Gerät herunterladen.",
+          "export": "Zur Auswahl der Exportfunktionen zurückkehren."
+        }
+      },
+      "export_download": {
+        "title": "CSV herunterladen",
+        "description": "Klicke auf „Website öffnen“, um die CSV-Datei herunterzuladen. Der Download-Link ist 10 Minuten gültig."
       }
     },
     "error": {
