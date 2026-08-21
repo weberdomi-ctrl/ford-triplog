@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.2.0
 Phase: 
-Build: 08b - Suspicious charge label fix
+Build: 09 - Pause receipt management
 Release: 2.2.0
 
 
@@ -2389,7 +2389,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 else:
                     self._selected_pause_journey_id = journey_id
                     self._selected_pause_id = pause_id
-                    return await self.async_step_pause_edit()
+                    return await self.async_step_pause_detail()
 
         schema: dict[Any, Any] = {}
         options = [
@@ -2423,6 +2423,275 @@ class FordTriplogOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(schema),
             errors=errors,
             description_placeholders={"pause_count": str(len(pauses))},
+        )
+
+    async def _async_get_selected_pause_entry(self) -> dict[str, Any] | None:
+        """Return the currently selected pause entry."""
+
+        if not self._selected_pause_journey_id or not self._selected_pause_id:
+            return None
+
+        entries = await self._async_get_pause_entries()
+        return next(
+            (
+                entry
+                for entry in entries
+                if str(entry.get("journey_id") or "")
+                == self._selected_pause_journey_id
+                and str(entry.get("pause_id") or "")
+                == self._selected_pause_id
+            ),
+            None,
+        )
+
+    async def async_step_pause_detail(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show the selected pause as a compact navigation hub."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            self._selected_pause_journey_id = None
+            self._selected_pause_id = None
+            return await self.async_step_pause_selection()
+
+        receipts = [
+            receipt
+            for receipt in await self._get_receipt_storage().async_list()
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+            and str(receipt.get("target_id") or "") == self._selected_pause_id
+        ]
+
+        return self.async_show_menu(
+            step_id="pause_detail",
+            menu_options=[
+                "pause_edit",
+                "pause_receipts",
+                "pause_selection",
+            ],
+            description_placeholders={
+                "date": str(pause.get("date") or "—"),
+                "start_time": str(pause.get("start_time") or "—"),
+                "location": str(pause.get("location") or "—"),
+                "title": str(pause.get("title") or "—"),
+                "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_pause_receipts(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show receipt actions for the selected pause."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        receipts = [
+            receipt
+            for receipt in await self._get_receipt_storage().async_list()
+            if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+            and str(receipt.get("target_id") or "") == self._selected_pause_id
+        ]
+        ui_text = await self._async_get_ui_translations()
+
+        if receipts:
+            lines = []
+            for receipt in receipts[:10]:
+                filename = str(
+                    receipt.get("original_filename")
+                    or receipt.get("filename")
+                    or ui_text["receipt"]
+                )
+                lines.append(
+                    f"{filename} · "
+                    f"{self._format_receipt_processing_status(receipt, ui_text)}"
+                )
+            receipt_summary = "\n".join(lines)
+            if len(receipts) > 10:
+                receipt_summary += (
+                    f"\n… +{len(receipts) - 10} {ui_text['receipt_more']}"
+                )
+        else:
+            receipt_summary = ui_text["receipt_none"]
+
+        return self.async_show_menu(
+            step_id="pause_receipts",
+            menu_options=[
+                "pause_receipt_upload",
+                "pause_receipt_list",
+                "pause_detail",
+            ],
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+                "receipt_summary": receipt_summary,
+                "ocr_status": (
+                    ui_text["ocr_enabled"]
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else ui_text["ocr_disabled"]
+                ),
+            },
+        )
+
+    async def async_step_pause_receipt_upload(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Attach a receipt directly to the currently selected pause."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            uploaded_file_id = user_input[CONF_RECEIPT_FILE]
+            pause_id = self._selected_pause_id
+            try:
+                with process_uploaded_file(
+                    self.hass,
+                    uploaded_file_id,
+                ) as uploaded_path:
+                    receipt = await self._get_receipt_storage().async_import(
+                        uploaded_path,
+                        target_type=RECEIPT_TARGET_PAUSE,
+                        target_id=pause_id,
+                        original_name=uploaded_path.name,
+                        note=str(user_input.get(CONF_RECEIPT_NOTE) or ""),
+                    )
+            except (HomeAssistantError, OSError, ValueError):
+                _LOGGER.exception(
+                    "Unable to attach receipt to pause: journey_id=%s pause_id=%s",
+                    self._selected_pause_journey_id,
+                    pause_id,
+                )
+                errors["base"] = "receipt_import_failed"
+            else:
+                receipt_id = str(receipt.get("receipt_id") or "")
+                self._selected_receipt_id = receipt_id or None
+
+                if (
+                    receipt_id
+                    and bool(self._options.get(CONF_OCR_ENABLED, False))
+                ):
+                    try:
+                        await self._get_receipt_storage().async_analyze(
+                            receipt_id,
+                            self._get_ocr_client(),
+                        )
+                    except Exception:
+                        # The receipt itself is already stored. OCR failure must
+                        # not turn a successful upload into a failed import.
+                        _LOGGER.exception(
+                            "Automatic OCR failed for pause receipt: receipt_id=%s",
+                            receipt_id,
+                        )
+
+                return await self.async_step_pause_receipts()
+
+        ui_text = await self._async_get_ui_translations()
+        return self.async_show_form(
+            step_id="pause_receipt_upload",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_FILE,
+                    ): selector.FileSelector(
+                        selector.FileSelectorConfig(
+                            accept=".pdf,.png,.jpg,.jpeg,.webp"
+                        )
+                    ),
+                    vol.Optional(
+                        CONF_RECEIPT_NOTE,
+                        default="",
+                    ): selector.TextSelector(
+                        selector.TextSelectorConfig(multiline=True)
+                    ),
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "date": str(pause.get("date") or "—"),
+                "location": str(pause.get("location") or "—"),
+                "pause_id": str(self._selected_pause_id or ""),
+                "ocr_status": (
+                    ui_text["receipt_upload_ocr_enabled"]
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else ui_text["receipt_upload_ocr_disabled"]
+                ),
+            },
+        )
+
+    async def async_step_pause_receipt_list(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select one receipt attached to the currently selected pause."""
+
+        if not self._selected_pause_id:
+            return await self.async_step_pause_selection()
+
+        errors: dict[str, str] = {}
+        try:
+            contexts = await self._async_receipt_contexts()
+            receipts = [
+                receipt
+                for receipt in contexts
+                if str(receipt.get("target_type") or "") == RECEIPT_TARGET_PAUSE
+                and str(receipt.get("target_id") or "") == self._selected_pause_id
+            ]
+        except (HomeAssistantError, OSError, ValueError):
+            receipts = []
+            errors["base"] = "receipt_load_failed"
+
+        options = [
+            selector.SelectOptionDict(
+                value=SELECTION_BACK,
+                label=await self._selection_back_label(),
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(receipt.get("receipt_id")),
+                    label=str(receipt.get("display_label")),
+                )
+                for receipt in receipts
+                if receipt.get("receipt_id")
+            ],
+        ]
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_RECEIPT_SELECTION) or ""
+            )
+            if selected == SELECTION_BACK:
+                return await self.async_step_pause_receipts()
+            if selected and not errors:
+                self._selected_receipt_id = selected
+                self._receipt_target_type = RECEIPT_TARGET_PAUSE
+                return await self.async_step_receipt_detail()
+
+        return self.async_show_form(
+            step_id="pause_receipt_list",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECEIPT_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "receipt_count": str(len(receipts)),
+            },
         )
 
     async def async_step_pause_edit(
@@ -2493,9 +2762,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             except (HomeAssistantError, ValueError):
                 errors["base"] = "pause_save_failed"
             else:
-                self._selected_pause_journey_id = None
-                self._selected_pause_id = None
-                return await self.async_step_pause_selection()
+                return await self.async_step_pause_detail()
 
         fields: dict[Any, Any] = {
             vol.Optional(
@@ -3103,6 +3370,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
             if action == RECEIPT_DETAIL_BACK:
                 self._selected_receipt_url = None
+                if (
+                    self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                    and self._selected_pause_id
+                ):
+                    return await self.async_step_pause_receipt_list()
                 return await self.async_step_receipt_list()
             return await self.async_step_receipt_open()
 
@@ -3220,6 +3492,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Open the signed receipt URL using a Home Assistant external step."""
 
         if not self._selected_receipt_url:
+            if (
+                self._receipt_target_type == RECEIPT_TARGET_PAUSE
+                and self._selected_pause_id
+            ):
+                return await self.async_step_pause_receipt_list()
             return await self.async_step_receipt_list()
 
         return self.async_external_step(
