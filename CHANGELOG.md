@@ -1,5 +1,53 @@
 # Changelog
 
+## 2.2.0
+
+### Added
+
+-   Added CSV export for stored Trips, Journeys and charging sessions.
+-   Added direct CSV download through the Home Assistant options flow so
+    exported files do not need to be retrieved manually from the Home
+    Assistant filesystem.
+-   Added configurable vehicle data-source entities in Ford Triplog
+    settings, allowing the tracked Ford entities to be changed without
+    reinstalling the integration.
+-   Added a guarded workflow for deleting clearly invalid charging
+    sessions, such as zero-energy or otherwise implausible sessions.
+-   Added pause-specific receipt management with direct receipt upload,
+    listing, opening and deletion.
+-   Added pause receipts to Journey History sensor attributes with signed
+    receipt URLs for dashboard access.
+
+### Improved
+
+-   Journey History now includes pause titles, notes, costs and receipt
+    data for the selected History date.
+-   Pause management keeps the newest pauses first.
+-   Pause receipt views now show pause-specific context instead of
+    charging-only fields.
+-   Multiple receipts can be linked to one pause and displayed together
+    in dashboards.
+-   Invalid charging-session deletion rebuilds dependent Journey and
+    statistics data and refreshes the stored last charging session when
+    required.
+-   Existing receipt files are preserved when an invalid charging
+    session is deleted.
+-   Export and deletion dialogs were cleaned up and synchronized across
+    German, English and Polish translations.
+
+### Fixed
+
+-   Fixed Journey History date-selection and display issues affecting
+    archived Journey data.
+-   Fixed thread-unsafe refresh scheduling in the History date selector.
+-   Fixed charging-session deletion compatibility with stored Charge
+    objects and the SQLite backend.
+-   Fixed missing charging-session delete formatting and translation
+    handlers in the options flow.
+-   Fixed translation placeholder validation for charging-site database
+    import.
+-   Fixed pause receipt detail navigation and delete-action handling.
+
 ## 2.1.1
 
 ### Fixed
