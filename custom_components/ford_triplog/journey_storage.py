@@ -6,7 +6,7 @@ Track your Ford.
 Separate storage for daily journeys.
 
 Version: 2.1.0
-Build: 15
+Build: 15a - Last Journey cache ordering fix
 """
 
 from __future__ import annotations
@@ -288,9 +288,28 @@ class FordTriplogJourneyStorage:
                 )
 
             await self._async_write_json(archive_path, data)
-            await self._async_write_json(self._last_journey_path, data)
             await self.database.save_journey(data)
-            await self.database.save_last_journey(data)
+
+            # Only replace the Last Journey cache when this record is
+            # chronologically newer than (or equal to) the cached Journey.
+            #
+            # save_completed_journey() is also used when older archived
+            # Journeys are edited (for example pause metadata/receipts).
+            # Unconditionally updating last_journey here would therefore make
+            # the Last Journey sensors jump back to the edited historical day.
+            cached_last = await self._async_load_json(self._last_journey_path)
+
+            def _journey_sort_key(value: dict[str, Any] | None) -> tuple[str, str]:
+                if not isinstance(value, dict):
+                    return ("", "")
+                return (
+                    str(value.get("end_time") or value.get("start_time") or ""),
+                    str(value.get("journey_id") or ""),
+                )
+
+            if cached_last is None or _journey_sort_key(data) >= _journey_sort_key(cached_last):
+                await self._async_write_json(self._last_journey_path, data)
+                await self.database.save_last_journey(data)
 
             for duplicate_path in matching_paths[1:]:
                 duplicate_data = await self._async_load_json(duplicate_path)
