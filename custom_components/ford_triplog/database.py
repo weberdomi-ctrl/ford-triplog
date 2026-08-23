@@ -601,7 +601,6 @@ class FordTriplogDatabase:
 
     async def is_migration_completed(self, migration_id: str) -> bool:
         """Return whether a persistent migration marker exists."""
-
         def _read() -> bool:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
@@ -609,34 +608,24 @@ class FordTriplogDatabase:
                     (str(migration_id),),
                 ).fetchone()
                 return row is not None
-
         return await self.hass.async_add_executor_job(_read)
 
     async def mark_migration_completed(self, migration_id: str) -> bool:
         """Persist a completed migration marker."""
-
         def _write() -> None:
             with sqlite3.connect(self.db_path) as db:
                 db.execute(
-                    """
-                    INSERT OR REPLACE INTO migration_state (
-                        migration_id,
-                        completed_at
-                    ) VALUES (?, datetime('now'))
-                    """,
+                    "INSERT OR REPLACE INTO migration_state "
+                    "(migration_id, completed_at) VALUES (?, datetime('now'))",
                     (str(migration_id),),
                 )
                 db.commit()
-
         try:
             await self.hass.async_add_executor_job(_write)
             _LOGGER.info("SQLite migration marked complete: %s", migration_id)
             return True
         except Exception:
-            _LOGGER.exception(
-                "Unable to mark SQLite migration complete: %s",
-                migration_id,
-            )
+            _LOGGER.exception("Unable to mark SQLite migration complete: %s", migration_id)
             return False
 
     async def save_route(

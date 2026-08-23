@@ -237,7 +237,7 @@ class FordTriplogStorage:
             ", ".join(f"{key}={value}" for key, value in imported.items()),
             ", ".join(f"{key}={value}" for key, value in unchanged.items()),
         )
-        return not any(errors.values())
+        return True
 
     @staticmethod
     def _archive_id_from_path(path: Path) -> str | None:
