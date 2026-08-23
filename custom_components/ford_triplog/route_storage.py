@@ -119,7 +119,7 @@ class FordTriplogRouteStorage:
             "Legacy Route JSON import completed: "
             "routes=%d imported=%d unchanged=%d failed=%d",
             len(routes),
-            mirrored,
+            imported,
             unchanged,
             failed,
         )
