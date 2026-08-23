@@ -68,7 +68,7 @@ async def async_setup_entry(
     history = data["history"]
     storage = data["storage"]
     database = storage.database
-    read_backend = storage.read_backend
+    read_backend = "sqlite"
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
@@ -2518,30 +2518,13 @@ class FordTriplogTopDaySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Aggregate Journeys by day and expose the record day."""
 
-        if self.read_backend == "sqlite":
-            _LOGGER.debug("Top Day sensor read backend: sqlite")
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Day SQLite read requested but database is unavailable"
-                )
-                journeys = []
-            else:
-                journeys = await self.database.load_top_day_journeys()
-                _LOGGER.debug(
-                    "Top Day sensor SQLite journeys loaded: %d",
-                    len(journeys),
-                )
+        _LOGGER.debug("Top Day sensor read backend: sqlite")
+        if self.database is None:
+            _LOGGER.error("Top Day SQLite database is unavailable")
+            journeys = []
         else:
-            _LOGGER.debug("Top Day sensor read backend: json")
-            journeys = (
-                await self.journey_storage.get_all_journeys()
-                if self.journey_storage is not None
-                else []
-            )
-            _LOGGER.debug(
-                "Top Day sensor JSON journeys loaded: %d",
-                len(journeys),
-            )
+            journeys = await self.database.load_top_day_journeys()
+            _LOGGER.debug("Top Day sensor SQLite journeys loaded: %d", len(journeys))
 
         if not journeys:
             self._attr_native_value = None
@@ -3343,16 +3326,11 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         total_started = time.perf_counter()
         load_started = time.perf_counter()
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Locations SQLite read requested but database is unavailable"
-                )
-                trips = []
-            else:
-                trips = await self.database.load_top_location_trips()
+        if self.database is None:
+            _LOGGER.error("Top Locations SQLite database is unavailable")
+            trips = []
         else:
-            trips = await self.history.get_all_trips()
+            trips = await self.database.load_top_location_trips()
 
         load_elapsed = time.perf_counter() - load_started
 
@@ -3623,16 +3601,11 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         total_started = time.perf_counter()
         load_started = time.perf_counter()
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Routes SQLite read requested but database is unavailable"
-                )
-                trips = []
-            else:
-                trips = await self.database.load_top_route_trips()
+        if self.database is None:
+            _LOGGER.error("Top Routes SQLite database is unavailable")
+            trips = []
         else:
-            trips = await self.history.get_all_trips()
+            trips = await self.database.load_top_route_trips()
 
         load_elapsed = time.perf_counter() - load_started
 
@@ -4385,16 +4358,11 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     async def _async_refresh_top_charging(self) -> None:
         """Aggregate archived charging sessions."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Charging SQLite read requested but database is unavailable"
-                )
-                charges = []
-            else:
-                charges = await self.database.load_top_charging_charges()
+        if self.database is None:
+            _LOGGER.error("Top Charging SQLite database is unavailable")
+            charges = []
         else:
-            charges = await self.history.get_all_charges()
+            charges = await self.database.load_top_charging_charges()
 
         valid_charges = [
             charge
@@ -4748,31 +4716,11 @@ class FordTriplogTopJourneySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Find and expose the longest archived Journey."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Journey SQLite read requested but database is unavailable"
-                )
-                journey = None
-            else:
-                journey = await self.database.load_top_journey()
+        if self.database is None:
+            _LOGGER.error("Top Journey SQLite database is unavailable")
+            journey = None
         else:
-            if self.storage is None:
-                journey = None
-            else:
-                journeys = await self.storage.get_all_journeys()
-
-                def journey_distance(item) -> float:
-                    try:
-                        return float(item.distance_km or 0)
-                    except (TypeError, ValueError):
-                        return 0.0
-
-                journey = (
-                    max(journeys, key=journey_distance)
-                    if journeys
-                    else None
-                )
+            journey = await self.database.load_top_journey()
 
         if journey is None:
             self._journey = None
@@ -4999,20 +4947,11 @@ class FordTriplogTopTripSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Load Top Trip from the selected backend."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Trip SQLite read requested but database is unavailable"
-                )
-                self._top_trip = None
-            else:
-                self._top_trip = await self.database.load_top_trip()
+        if self.database is None:
+            _LOGGER.error("Top Trip SQLite database is unavailable")
+            self._top_trip = None
         else:
-            statistics, _, _ = await self.history.get_sensor_data()
-            top_trip = statistics.get("top_trip") if statistics else None
-            self._top_trip = (
-                top_trip if isinstance(top_trip, dict) else None
-            )
+            self._top_trip = await self.database.load_top_trip()
 
         if not self._top_trip:
             self._value = None
