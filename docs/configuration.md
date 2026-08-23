@@ -28,6 +28,8 @@ Select **Configure**.
 
 Four vehicle entities are required.
 
+Important: Select entities from your vehicle data integration as Ford Triplog input sources. Do not select Ford Triplog's own output entities. For example, Last Charge should point to the corresponding FordPass/Ford Connect vehicle sensor, not to a sensor.ford_triplog_* entity.
+
 ## Vehicle Tracker
 
 The vehicle tracker is used to determine the current vehicle location.
