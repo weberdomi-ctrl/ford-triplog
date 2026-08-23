@@ -66,10 +66,13 @@ class FordTriplogRouteStorage:
             lambda: self.base_path.mkdir(parents=True, exist_ok=True)
         )
 
-        migration_key = "ford_triplog_route_legacy_json_import_done"
-        if not self.hass.data.get(migration_key, False):
-            self.hass.data[migration_key] = True
-            await self._import_legacy_routes()
+        migration_id = "legacy_route_import_v23"
+        if not await self.database.is_migration_completed(migration_id):
+            completed = await self._import_legacy_routes()
+            if completed:
+                await self.database.mark_migration_completed(migration_id)
+        else:
+            _LOGGER.debug("Legacy Route JSON import already completed")
 
     async def _import_legacy_routes(self) -> None:
         """Import missing completed legacy JSON routes into SQLite once."""
@@ -123,6 +126,7 @@ class FordTriplogRouteStorage:
             unchanged,
             failed,
         )
+        return failed == 0
 
     def _path_for_trip(self, trip_id: str) -> Path:
         """Return a safe route file path for one Trip ID."""

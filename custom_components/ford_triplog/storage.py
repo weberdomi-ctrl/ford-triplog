@@ -66,14 +66,13 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        migration_key = "ford_triplog_23_step1_legacy_storage_import_done"
-        if not self.hass.data.get(migration_key, False):
-            self.hass.data[migration_key] = True
-            await self._import_legacy_json_storage()
+        migration_id = "legacy_central_import_v23"
+        if not await self.database.is_migration_completed(migration_id):
+            completed = await self._import_legacy_json_storage()
+            if completed:
+                await self.database.mark_migration_completed(migration_id)
         else:
-            _LOGGER.debug(
-                "Legacy central-storage JSON import already completed in this HA runtime"
-            )
+            _LOGGER.debug("Legacy central-storage JSON import already completed")
 
         _LOGGER.info("Ford Triplog central storage backend: sqlite")
         _LOGGER.debug("Ford Triplog central storage initialized")
@@ -135,10 +134,10 @@ class FordTriplogStorage:
         return self.cache_path / "diagnostics.json"
 
     async def _import_legacy_json_storage(self) -> None:
-        """Import missing or changed legacy JSON records into SQLite.
+        """Import only missing legacy JSON records into SQLite.
 
-        The files are deliberately left untouched. This provides an upgrade
-        path and rollback safety while all normal reads/writes use SQLite.
+        SQLite is authoritative once a record exists. Legacy files are left
+        untouched for rollback safety, but they never overwrite SQLite.
         """
 
         imported = {
@@ -200,7 +199,7 @@ class FordTriplogStorage:
 
         sqlite_trips = snapshot.get("trips", {})
         for trip_id, data in trip_records:
-            if sqlite_trips.get(trip_id) == data:
+            if trip_id in sqlite_trips:
                 unchanged["trips"] += 1
                 continue
             if await self.database.save_trip(data):
@@ -208,7 +207,7 @@ class FordTriplogStorage:
 
         sqlite_charges = snapshot.get("charges", {})
         for charge_id, data in charge_records:
-            if sqlite_charges.get(charge_id) == data:
+            if charge_id in sqlite_charges:
                 unchanged["charges"] += 1
                 continue
             if await self.database.save_charge(data):
@@ -227,7 +226,7 @@ class FordTriplogStorage:
             data = single_sources.get(key)
             if data is None:
                 continue
-            if snapshot.get(key) == data:
+            if snapshot.get(key) is not None:
                 unchanged[key] += 1
                 continue
             if await saver(data):
@@ -238,6 +237,7 @@ class FordTriplogStorage:
             ", ".join(f"{key}={value}" for key, value in imported.items()),
             ", ".join(f"{key}={value}" for key, value in unchanged.items()),
         )
+        return not any(errors.values())
 
     @staticmethod
     def _archive_id_from_path(path: Path) -> str | None:

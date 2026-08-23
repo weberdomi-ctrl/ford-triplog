@@ -94,15 +94,14 @@ class FordTriplogJourneyStorage:
 
         # Import existing legacy Journey JSON files only once per Home Assistant runtime.
         # Multiple components may create their own JourneyStorage instance.
-        migration_key = "ford_triplog_legacy_journey_import_done"
+        migration_id = "legacy_journey_import_v23"
 
-        if not self.hass.data.get(migration_key, False):
-            self.hass.data[migration_key] = True
-            await self._import_legacy_journeys()
+        if not await self.database.is_migration_completed(migration_id):
+            completed = await self._import_legacy_journeys()
+            if completed:
+                await self.database.mark_migration_completed(migration_id)
         else:
-            _LOGGER.debug(
-                "Legacy Journey JSON import already completed in this HA runtime"
-            )
+            _LOGGER.debug("Legacy Journey JSON import already completed")
 
     async def _import_legacy_journeys(self) -> None:
         """Import legacy JSON journeys into SQLite without destructive cleanup.
@@ -186,6 +185,8 @@ class FordTriplogJourneyStorage:
             last = await self._async_load_json(self._last_journey_path)
             if isinstance(last, dict):
                 await self.database.save_last_journey(last)
+
+        return failed == 0 and skipped == 0
 
     async def save_current_journey(
         self,
