@@ -5,7 +5,7 @@ Route Tracker storage
 
 Version: 2.3.0
 Phase: SQLite-only Route Storage
-Build: 23005
+Build: 23006
 
 Changes:
 - Keeps the Ford Triplog 2.0.0 route storage format unchanged.
@@ -54,7 +54,11 @@ class FordTriplogRouteStorage:
             Path(hass.config.path(".storage", STORAGE_DIR)),
         )
 
-        # 2.3: SQLite is the only runtime route backend.\n        self.read_backend = "sqlite"\n
+        # 2.3: SQLite is the only runtime route backend.
+        # Compatibility attribute used by sensors/debug output.
+        self.read_backend = "sqlite"
+
+
     async def async_setup(self) -> None:
         """Ensure the route storage directory exists."""
 
