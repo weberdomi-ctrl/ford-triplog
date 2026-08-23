@@ -64,6 +64,8 @@ class FordTriplogJourneyStorage:
         self._archive_lock = asyncio.Lock()
 
         # 2.3: SQLite is the only runtime journey backend.
+        # Compatibility attribute used by sensors/diagnostics.
+        self.read_backend = "sqlite"
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
