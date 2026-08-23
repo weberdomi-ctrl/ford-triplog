@@ -1,7 +1,7 @@
 """
 Ford Triplog
 
-SQLite storage mirror.
+SQLite storage backend.
 
 Version: 2.3.0
 Build: 23001
@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class FordTriplogDatabase:
-    """SQLite mirror storage for Ford Triplog."""
+    """SQLite storage backend for Ford Triplog."""
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class FordTriplogDatabase:
         json_records: dict[str, dict[str, Any] | None],
         json_collections: dict[str, dict[str, dict[str, Any]]],
     ) -> dict[str, Any]:
-        """Compare JSON storage records with their SQLite mirror.
+        """Compare JSON storage records with their SQLite storage.
 
         This is a development-only validation helper. It never changes
         either backend and returns a structured comparison report.
@@ -578,7 +578,7 @@ class FordTriplogDatabase:
             )
         except Exception:
             _LOGGER.exception(
-                "Unable to read SQLite main storage mirror snapshot"
+                "Unable to read SQLite main storage storage snapshot"
             )
             return {
                 "trips": {},
@@ -632,7 +632,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Route mirrored to SQLite: %s",
+                "Route saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -647,7 +647,7 @@ class FordTriplogDatabase:
     async def load_route_mirror_index(
         self,
     ) -> dict[str, dict[str, Any]]:
-        """Load route payloads keyed by trip_id for mirror comparison."""
+        """Load route payloads keyed by trip_id for legacy import comparison."""
 
         self._log_read("route_mirror_index")
 
@@ -870,7 +870,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Trip mirrored to SQLite: %s",
+                "Trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1265,7 +1265,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Current trip mirrored to SQLite: %s",
+                "Current trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1304,7 +1304,7 @@ class FordTriplogDatabase:
             return None
 
     async def delete_current_trip(self) -> bool:
-        """Delete current trip mirror from SQLite."""
+        """Delete current trip storage from SQLite."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -1397,7 +1397,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Last trip mirrored to SQLite: %s",
+                "Last trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1451,7 +1451,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Current charge mirrored to SQLite: %s",
+                "Current charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1492,7 +1492,7 @@ class FordTriplogDatabase:
             return None
 
     async def delete_current_charge(self) -> bool:
-        """Delete current charging-session mirror from SQLite."""
+        """Delete current charging-session storage from SQLite."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -1585,7 +1585,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Charge mirrored to SQLite: %s",
+                "Charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1696,7 +1696,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Last charge mirrored to SQLite: %s",
+                "Last charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1739,7 +1739,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Statistics mirrored to SQLite"
+                "Statistics saved to SQLite"
             )
             return True
 
@@ -1806,7 +1806,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Diagnostics mirrored to SQLite"
+                "Diagnostics saved to SQLite"
             )
             return True
 
@@ -1961,7 +1961,7 @@ class FordTriplogDatabase:
 
             with sqlite3.connect(self.db_path) as db:
                 # async_save() represents the complete JSON site list,
-                # therefore replace the complete SQLite mirror as well.
+                # therefore replace the complete SQLite storage as well.
                 db.execute("DELETE FROM user_charging_sites")
 
                 if rows:
@@ -1984,7 +1984,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "User charging sites mirrored to SQLite: %s",
+                "User charging sites saved to SQLite: %s",
                 len(sites),
             )
             return True
@@ -2020,7 +2020,7 @@ class FordTriplogDatabase:
 
         try:
             await self.hass.async_add_executor_job(functools.partial(_write))
-            _LOGGER.debug("Journey mirrored to SQLite: %s", journey_id)
+            _LOGGER.debug("Journey saved to SQLite: %s", journey_id)
             return True
         except Exception:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
@@ -2029,7 +2029,7 @@ class FordTriplogDatabase:
     async def load_journey_mirror_index(
         self,
     ) -> dict[str, dict[str, Any]]:
-        """Load archived journey payloads keyed by journey_id for mirror comparison."""
+        """Load archived journey payloads keyed by journey_id for legacy import comparison."""
 
         self._log_read("journey_mirror_index")
 
@@ -2298,7 +2298,7 @@ class FordTriplogDatabase:
             return False
 
     async def delete_all_journeys(self) -> bool:
-        """Delete all archived journey mirrors."""
+        """Delete all archived journey records."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -2943,7 +2943,7 @@ class FordTriplogDatabase:
                 db.commit()
         try:
             await self.hass.async_add_executor_job(functools.partial(_write))
-            _LOGGER.debug("Metadata mirrored to SQLite")
+            _LOGGER.debug("Metadata saved to SQLite")
             return True
         except Exception:
             _LOGGER.exception("Unable to mirror metadata to SQLite")

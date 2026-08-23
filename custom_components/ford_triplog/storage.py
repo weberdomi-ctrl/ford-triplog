@@ -23,7 +23,7 @@ from typing import Any
 
 from homeassistant.core import HomeAssistant
 
-from .const import STORAGE_READ_BACKEND_SQLITE, VERSION
+from .const import VERSION
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -49,7 +49,7 @@ class FordTriplogStorage:
 
         # Step 1 of the 2.3 storage cleanup: this storage class is always
         # SQLite-backed. Other storage classes are migrated in later steps.
-        self.read_backend = STORAGE_READ_BACKEND_SQLITE
+        self.read_backend = "sqlite"
 
     async def async_setup(self) -> None:
         """Initialize SQLite and import legacy JSON once per HA runtime."""
@@ -66,9 +66,9 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        mirror_key = "ford_triplog_23_step1_legacy_storage_import_done"
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
+        migration_key = "ford_triplog_23_step1_legacy_storage_import_done"
+        if not self.hass.data.get(migration_key, False):
+            self.hass.data[migration_key] = True
             await self._import_legacy_json_storage()
         else:
             _LOGGER.debug(

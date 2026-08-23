@@ -94,10 +94,10 @@ class FordTriplogJourneyStorage:
 
         # Import existing legacy Journey JSON files only once per Home Assistant runtime.
         # Multiple components may create their own JourneyStorage instance.
-        mirror_key = "ford_triplog_legacy_journey_import_done"
+        migration_key = "ford_triplog_legacy_journey_import_done"
 
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
+        if not self.hass.data.get(migration_key, False):
+            self.hass.data[migration_key] = True
             await self._import_legacy_journeys()
         else:
             _LOGGER.debug(
@@ -111,7 +111,7 @@ class FordTriplogJourneyStorage:
         delete existing SQLite rows, and legacy files are left untouched.
         """
 
-        mirrored = 0
+        imported = 0
         unchanged = 0
         skipped = 0
         failed = 0
@@ -154,7 +154,7 @@ class FordTriplogJourneyStorage:
                 continue
 
             if await self.database.save_journey(data):
-                mirrored += 1
+                imported += 1
                 sqlite_journeys[journey_id] = data
             else:
                 failed += 1
@@ -166,7 +166,7 @@ class FordTriplogJourneyStorage:
 
         _LOGGER.info(
             "Legacy Journey JSON import completed: "
-            "json_files=%d mirrored=%d unchanged=%d skipped=%d failed=%d "
+            "json_files=%d imported=%d unchanged=%d skipped=%d failed=%d "
             "existing_sqlite_rows_preserved=true",
             len(json_paths),
             mirrored,

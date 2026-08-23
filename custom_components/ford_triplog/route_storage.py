@@ -66,9 +66,9 @@ class FordTriplogRouteStorage:
             lambda: self.base_path.mkdir(parents=True, exist_ok=True)
         )
 
-        mirror_key = "ford_triplog_route_legacy_json_import_done"
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
+        migration_key = "ford_triplog_route_legacy_json_import_done"
+        if not self.hass.data.get(migration_key, False):
+            self.hass.data[migration_key] = True
             await self._import_legacy_routes()
 
     async def _import_legacy_routes(self) -> None:
@@ -93,7 +93,7 @@ class FordTriplogRouteStorage:
 
         routes = await self.hass.async_add_executor_job(_list_and_read)
 
-        mirrored = 0
+        imported = 0
         unchanged = 0
         failed = 0
 
@@ -110,7 +110,7 @@ class FordTriplogRouteStorage:
                 continue
 
             if await self.database.save_route(route):
-                mirrored += 1
+                imported += 1
                 sqlite_routes[trip_id] = route
             else:
                 failed += 1
