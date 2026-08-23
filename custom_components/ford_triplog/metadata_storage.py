@@ -49,25 +49,14 @@ class FordTriplogMetadataStorage:
         await self.database.async_setup()
 
         if self.read_backend == "sqlite":
-            # Migration checks read the same metadata tables several times.
-            # They only need to run once per Home Assistant runtime, even when
-            # multiple FordTriplogMetadataStorage instances are created.
-            migration_key = "ford_triplog_metadata_table_migrations_done"
-
-            if not self.hass.data.get(migration_key, False):
-                self.hass.data[migration_key] = True
-                try:
-                    await self._migrate_charge_metadata_to_table()
-                    await self._migrate_receipts_to_table()
-                    await self._migrate_pause_metadata_to_table()
-                except Exception:
-                    # Allow a later setup attempt to retry if migration failed.
-                    self.hass.data.pop(migration_key, None)
-                    raise
+            migration_id = "metadata_table_migrations_v23"
+            if not await self.database.is_migration_completed(migration_id):
+                await self._migrate_charge_metadata_to_table()
+                await self._migrate_receipts_to_table()
+                await self._migrate_pause_metadata_to_table()
+                await self.database.mark_migration_completed(migration_id)
             else:
-                _LOGGER.debug(
-                    "SQLite metadata migrations already completed in this HA runtime"
-                )
+                _LOGGER.debug("SQLite metadata migrations already completed")
             return
 
         data = await self.async_load()

@@ -79,18 +79,15 @@ class FordTriplogJourneyStorage:
         await self._metadata_storage.async_setup()
         await self.database.async_setup()
 
-        # Legacy pause migration scans all Journey JSON files and metadata.
-        # Run it only once per Home Assistant runtime even when multiple
-        # JourneyStorage instances are created.
-        pause_migration_key = "ford_triplog_pause_metadata_migration_done"
+        # Legacy pause overrides are imported once and permanently marked
+        # in SQLite. Legacy Journey JSON files are not scanned on later starts.
+        pause_migration_id = "pause_override_import_v23"
 
-        if not self.hass.data.get(pause_migration_key, False):
-            self.hass.data[pause_migration_key] = True
+        if not await self.database.is_migration_completed(pause_migration_id):
             await self._migrate_pause_overrides_to_metadata()
+            await self.database.mark_migration_completed(pause_migration_id)
         else:
-            _LOGGER.debug(
-                "Pause metadata migration already completed in this HA runtime"
-            )
+            _LOGGER.debug("Pause metadata migration already completed")
 
         # Import existing legacy Journey JSON files only once per Home Assistant runtime.
         # Multiple components may create their own JourneyStorage instance.
