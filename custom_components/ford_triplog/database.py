@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage mirror.
 
-Version: 2.1.0
-Build: 17a - Charge delete support
-Changes: Add Top Locations SQL view read support
+Version: 2.3.0
+Build: 23001
+Changes: Step 1 - add missing SQLite diagnostics reader for central SQLite-only storage
 """
 
 from __future__ import annotations
@@ -1815,6 +1815,32 @@ class FordTriplogDatabase:
                 "Unable to mirror diagnostics to SQLite"
             )
             return False
+
+    async def load_diagnostics(self) -> dict[str, Any] | None:
+        """Load diagnostics cache from SQLite."""
+
+        self._log_read("diagnostics")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM diagnostics WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read diagnostics from SQLite"
+            )
+            return None
 
     async def load_user_charging_sites(self) -> list[dict[str, Any]]:
         """Load all user-defined charging sites from SQLite."""
