@@ -169,7 +169,7 @@ class FordTriplogJourneyStorage:
             "json_files=%d imported=%d unchanged=%d skipped=%d failed=%d "
             "existing_sqlite_rows_preserved=true",
             len(json_paths),
-            mirrored,
+            imported,
             unchanged,
             skipped,
             failed,
