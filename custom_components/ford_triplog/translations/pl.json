@@ -17,6 +17,9 @@
           "smart_trip_timeout": "Czas do ostatecznego zakończenia wstrzymanego przejazdu."
         }
       }
+    },
+    "error": {
+      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
     }
   },
   "options": {
@@ -830,7 +833,8 @@
       "export_invalid_date_range": "Data początkowa nie może być późniejsza niż data końcowa.",
       "export_failed": "Nie udało się utworzyć eksportu CSV. Sprawdź dziennik Home Assistant, aby uzyskać więcej informacji.",
       "charge_delete_failed": "Nie udało się całkowicie usunąć sesji ładowania.",
-      "charge_not_suspicious": "Ta sesja ładowania nie spełnia kryteriów bezpiecznego usunięcia."
+      "charge_not_suspicious": "Ta sesja ładowania nie spełnia kryteriów bezpiecznego usunięcia.",
+      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
     }
   },
   "entity": {

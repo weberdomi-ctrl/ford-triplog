@@ -37,6 +37,7 @@ from homeassistant.config_entries import (
 )
 from homeassistant.core import callback
 from homeassistant.exceptions import HomeAssistantError
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.network import NoURLAvailableError, get_url
@@ -202,6 +203,33 @@ CONF_EXPORT_END_DATE = "end_date"
 
 _LOGGER = logging.getLogger(__name__)
 
+def _ford_triplog_entities(hass, domains: set[str] | None = None) -> list[str]:
+    """Return Ford Triplog entities that must not be selectable as inputs."""
+    registry = er.async_get(hass)
+    return sorted(
+        entry.entity_id
+        for entry in registry.entities.values()
+        if entry.platform == DOMAIN
+        and (domains is None or entry.domain in domains)
+    )
+
+
+def _contains_ford_triplog_input(
+    hass,
+    values: dict[str, Any],
+    keys: tuple[str, ...],
+) -> bool:
+    """Return whether submitted input references a Ford Triplog entity."""
+    registry = er.async_get(hass)
+    for key in keys:
+        entity_id = values.get(key)
+        if not entity_id:
+            continue
+        entry = registry.async_get(str(entity_id))
+        if entry is not None and entry.platform == DOMAIN:
+            return True
+    return False
+
 class FordTriplogConfigFlow(
     config_entries.ConfigFlow,
     domain=DOMAIN,
@@ -225,41 +253,46 @@ class FordTriplogConfigFlow(
     ) -> ConfigFlowResult:
         """Handle the initial configuration."""
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-
-            await self.async_set_unique_id(DOMAIN)
-            self._abort_if_unique_id_configured()
-
-            return self.async_create_entry(
-                title=NAME,
-                data=user_input,
-            )
+            if _contains_ford_triplog_input(
+                self.hass,
+                user_input,
+                (CONF_IGNITION, CONF_ODOMETER, CONF_TRACKER, CONF_SOC, CONF_CHARGING),
+            ):
+                errors["base"] = "ford_triplog_entity_not_allowed"
+            else:
+                await self.async_set_unique_id(DOMAIN)
+                self._abort_if_unique_id_configured()
+                return self.async_create_entry(title=NAME, data=user_input)
 
         return self.async_show_form(
             step_id="user",
             data_schema=self._build_schema(),
+            errors=errors,
         )
 
-    @staticmethod
-    def _build_schema() -> vol.Schema:
+    def _build_schema(self) -> vol.Schema:
         """Return configuration schema."""
+        blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
+        blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
 
         return vol.Schema(
             {
                 vol.Required(CONF_IGNITION): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
                 vol.Required(CONF_ODOMETER): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
                 vol.Required(CONF_TRACKER): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="device_tracker")
+                    selector.EntitySelectorConfig(domain="device_tracker", exclude_entities=blocked_trackers)
                 ),
                 vol.Optional(CONF_SOC): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
                 vol.Optional(CONF_CHARGING): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
+                    selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
                 vol.Required(CONF_SMART_TRIP, default=True): selector.BooleanSelector(),
                 vol.Required(CONF_SMART_TRIP_TIMEOUT, default=300): selector.NumberSelector(
@@ -4859,48 +4892,67 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Configure vehicle source entities."""
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            updated_options = dict(self._config_entry.options)
-            updated_options.update(user_input)
+            if _contains_ford_triplog_input(
+                self.hass,
+                user_input,
+                (
+                    CONF_IGNITION,
+                    CONF_ODOMETER,
+                    CONF_TRACKER,
+                    CONF_SOC,
+                    CONF_CHARGING,
+                    CONF_LAST_CHARGE,
+                ),
+            ):
+                errors["base"] = "ford_triplog_entity_not_allowed"
+            else:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(user_input)
 
-            # Optional vehicle sources must explicitly override values from
-            # config_entry.data as well. Storing None makes it possible to
-            # disable a source that was selected during initial setup.
-            for key in (CONF_SOC, CONF_CHARGING, CONF_LAST_CHARGE):
-                updated_options[key] = user_input.get(key)
+                # Optional vehicle sources must explicitly override values from
+                # config_entry.data as well. Storing None makes it possible to
+                # disable a source that was selected during initial setup.
+                for key in (CONF_SOC, CONF_CHARGING, CONF_LAST_CHARGE):
+                    updated_options[key] = user_input.get(key)
 
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                options=updated_options,
-            )
-            self._options.update(updated_options)
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
 
-            return await self.async_step_settings()
+                return await self.async_step_settings()
+        blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
+        blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
 
         return self.async_show_form(
             step_id="vehicle_sensors",
+            errors=errors,
             data_schema=self.add_suggested_values_to_schema(
                 vol.Schema(
                     {
                         vol.Required(CONF_IGNITION): selector.EntitySelector(
-                            selector.EntitySelectorConfig(domain="sensor")
+                            selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                         ),
                         vol.Required(CONF_ODOMETER): selector.EntitySelector(
-                            selector.EntitySelectorConfig(domain="sensor")
+                            selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                         ),
                         vol.Required(CONF_TRACKER): selector.EntitySelector(
                             selector.EntitySelectorConfig(
-                                domain="device_tracker"
+                                domain="device_tracker",
+                                exclude_entities=blocked_trackers,
                             )
                         ),
                         vol.Optional(CONF_SOC): selector.EntitySelector(
-                            selector.EntitySelectorConfig(domain="sensor")
+                            selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                         ),
                         vol.Optional(CONF_CHARGING): selector.EntitySelector(
-                            selector.EntitySelectorConfig(domain="sensor")
+                            selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                         ),
                         vol.Optional(CONF_LAST_CHARGE): selector.EntitySelector(
-                            selector.EntitySelectorConfig(domain="sensor")
+                            selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                         ),
                     }
                 ),
@@ -5180,35 +5232,44 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
         )
 
+        errors: dict[str, str] = {}
         if user_input is not None:
-            updated_options = dict(self._config_entry.options)
-            updated_options.update(self._route_tracker_draft)
-
-            if source_type == ROUTE_SOURCE_ABRP:
-                updated_options[CONF_ROUTE_LATITUDE_ENTITY] = user_input[
-                    CONF_ROUTE_LATITUDE_ENTITY
-                ]
-                updated_options[CONF_ROUTE_LONGITUDE_ENTITY] = user_input[
-                    CONF_ROUTE_LONGITUDE_ENTITY
-                ]
-                updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
-
-            elif source_type == ROUTE_SOURCE_HA_GEOCODED:
-                updated_options[CONF_ROUTE_GEOCODED_ENTITY] = user_input[
-                    CONF_ROUTE_GEOCODED_ENTITY
-                ]
-                updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
-                updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
-
-            self.hass.config_entries.async_update_entry(
-                self._config_entry,
-                options=updated_options,
+            route_keys = (
+                (CONF_ROUTE_GEOCODED_ENTITY,)
+                if source_type == ROUTE_SOURCE_HA_GEOCODED
+                else (CONF_ROUTE_LATITUDE_ENTITY, CONF_ROUTE_LONGITUDE_ENTITY)
             )
-            self._options.update(updated_options)
-            self._route_tracker_draft = {}
+            if _contains_ford_triplog_input(self.hass, user_input, route_keys):
+                errors["base"] = "ford_triplog_entity_not_allowed"
+            else:
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(self._route_tracker_draft)
 
-            return await self.async_step_settings()
+                if source_type == ROUTE_SOURCE_ABRP:
+                    updated_options[CONF_ROUTE_LATITUDE_ENTITY] = user_input[
+                        CONF_ROUTE_LATITUDE_ENTITY
+                    ]
+                    updated_options[CONF_ROUTE_LONGITUDE_ENTITY] = user_input[
+                        CONF_ROUTE_LONGITUDE_ENTITY
+                    ]
+                    updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
 
+                elif source_type == ROUTE_SOURCE_HA_GEOCODED:
+                    updated_options[CONF_ROUTE_GEOCODED_ENTITY] = user_input[
+                        CONF_ROUTE_GEOCODED_ENTITY
+                    ]
+                    updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
+                self._route_tracker_draft = {}
+
+                return await self.async_step_settings()
+        blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
         if source_type == ROUTE_SOURCE_HA_GEOCODED:
             schema = vol.Schema(
                 {
@@ -5220,6 +5281,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(
                             domain="sensor",
+                            exclude_entities=blocked_sensors,
                         )
                     ),
                 }
@@ -5235,6 +5297,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(
                             domain="sensor",
+                            exclude_entities=blocked_sensors,
                         )
                     ),
                     vol.Required(
@@ -5245,6 +5308,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ): selector.EntitySelector(
                         selector.EntitySelectorConfig(
                             domain="sensor",
+                            exclude_entities=blocked_sensors,
                         )
                     ),
                 }
@@ -5253,6 +5317,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="route_tracker_source",
             data_schema=schema,
+            errors=errors,
             description_placeholders={
                 "source_type": source_type,
             },
