@@ -22,8 +22,9 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import VERSION
+from .const import SIGNAL_LAST_TRIP_UPDATED, VERSION
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -493,8 +494,16 @@ class FordTriplogStorage:
         return newest
 
     async def save_last_trip(self, data: dict[str, Any]) -> bool:
-        """Save latest trip cache to SQLite."""
-        return await self.database.save_last_trip(self._add_metadata(data))
+        """Save latest trip cache to SQLite and notify listeners."""
+        payload = self._add_metadata(data)
+        saved = await self.database.save_last_trip(payload)
+        if saved:
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_LAST_TRIP_UPDATED,
+                str(payload.get("trip_id") or ""),
+            )
+        return saved
 
     async def load_last_trip(self) -> dict[str, Any] | None:
         """Load latest trip cache from SQLite."""
