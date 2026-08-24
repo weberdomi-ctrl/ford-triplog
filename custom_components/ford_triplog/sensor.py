@@ -50,9 +50,10 @@ from .const import (
     DOMAIN,
     VERSION,
     SIGNAL_LAST_JOURNEY_UPDATED,
-    SIGNAL_LAST_ROUTE_UPDATED,
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
+
+SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection

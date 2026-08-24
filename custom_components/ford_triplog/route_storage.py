@@ -32,9 +32,10 @@ from .const import (
     ROUTE_SCHEMA_VERSION,
     ROUTES_DIR,
     STORAGE_DIR,
-    SIGNAL_LAST_ROUTE_UPDATED,
 )
 from .database import FordTriplogDatabase
+
+SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 
 _LOGGER = logging.getLogger(__name__)
 
