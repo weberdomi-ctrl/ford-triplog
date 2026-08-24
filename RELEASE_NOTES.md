@@ -1,3 +1,174 @@
+# Ford Triplog 2.3.0
+
+Ford Triplog 2.3 completes the SQLite storage migration and substantially
+improves GPS route recording, trip-end positioning and local OSRM route
+matching.
+
+The release keeps the local-first design: raw route data remains under
+the user's control, OSRM remains optional, and existing legacy JSON data
+is retained as a migration/import source rather than a continuously
+maintained production datastore.
+
+## 🗃️ SQLite Primary Storage
+
+Ford Triplog now uses SQLite as the sole productive storage backend.
+
+Changes include:
+
+-   new and changed Ford Triplog records are written to SQLite
+-   parallel JSON production writes are removed
+-   legacy JSON data can still be imported during migration
+-   persistent migration markers prevent already completed legacy
+    imports from being scanned repeatedly after each Home Assistant
+    restart
+-   Trips, charging sessions, Journeys, Routes, caches, metadata and
+    statistics continue to use the local Ford Triplog database
+-   receipt files remain on the Home Assistant filesystem and stay
+    linked through stored receipt metadata
+
+This reduces runtime complexity and completes the controlled migration
+that started with the parallel JSON/SQLite architecture in Ford Triplog
+2.1.
+
+## 🛰️ Direct Home Assistant Device Tracker GPS
+
+The Route Tracker can now use a Home Assistant `device_tracker` entity
+directly as a GPS source.
+
+This is especially useful with the Home Assistant Companion App and its
+high-accuracy location mode.
+
+Ford Triplog reads the GPS coordinates directly from the tracker
+attributes instead of depending on the slower Geocoded Location sensor.
+
+Existing Route Tracker source types remain available:
+
+-   ABRP latitude/longitude entities
+-   Home Assistant Companion App Geocoded Location
+-   Home Assistant `device_tracker` GPS
+
+The new source is optional and does not change the normal Ford vehicle
+tracker used for Trip detection.
+
+## 📍 Improved Trip-End GPS Selection
+
+Route completion now uses the newest available valid GPS point after the
+Smart Trip timeout.
+
+Ford Triplog compares:
+
+-   the latest point recorded by the Route Tracker source
+-   the latest fresh point from the configured vehicle tracker
+
+When both are valid, the point with the newer timestamp is used as the
+authoritative trip/route endpoint.
+
+This improves cases where the ignition-off position was still several
+hundred metres behind the actual stopping location.
+
+## 🗺️ Dense OSRM Route Matching
+
+High-accuracy Companion App tracking can produce hundreds of GPS points
+during a single trip. A common OSRM configuration accepts at most 100
+trace coordinates per map-matching request.
+
+Ford Triplog 2.3 therefore adds chunked OSRM matching:
+
+-   long traces are split into blocks below the OSRM trace limit
+-   neighbouring chunks overlap so road geometry can be stitched
+    continuously
+-   each block is matched separately
+-   matched geometries are merged back into one complete route
+-   the full original raw GPS trace is always preserved
+
+OSRM requests now use `tidy=false`, keeping returned tracepoints aligned
+with the submitted GPS points and preventing false unmatched-point
+diagnostics on dense traces.
+
+During real-world testing, a 685-point raw Companion App trace was
+successfully rebuilt into a detailed OSRM road geometry while retaining
+the complete original raw trace.
+
+## 🧹 Route Maintenance
+
+A new Route maintenance workflow can re-run stored GPS traces through the
+currently configured OSRM server.
+
+Available modes include:
+
+-   rebuild the latest route
+-   rebuild raw/failed routes
+-   rebuild all stored routes
+
+This is useful after:
+
+-   changing OSRM settings
+-   updating the local OSRM map dataset
+-   fixing route-matching logic
+-   switching from an earlier raw-only route to a matched road geometry
+
+Existing raw GPS points are never deleted by this maintenance action. A
+stored matched geometry is replaced only after the new result passes the
+route plausibility checks.
+
+## 🧭 Last Tour and Last Route Improvements
+
+The **Last Tour** view now represents the latest completed individual
+Trip rather than duplicating the Journey History aggregation.
+
+The **Last Route** sensor follows the latest completed stored route and
+continues to expose:
+
+-   route source
+-   raw point count
+-   geometry source (`raw` or `osrm`)
+-   matched route point count
+-   GeoJSON route geometry
+-   OSRM distance
+-   OSRM confidence
+-   matched and unmatched tracepoint diagnostics
+
+The route entity keeps a separate latitude/longitude reference point so
+map cards can centre the complete route while the actual line geometry
+remains in GeoJSON.
+
+## 🛡️ Safer Source Configuration
+
+Ford Triplog now prevents its own generated entities from being selected
+as vehicle or Route Tracker source entities.
+
+This avoids accidental feedback configurations such as selecting a Ford
+Triplog output sensor as the source for the same data it is meant to
+produce.
+
+## ⚙️ Reliability Fixes
+
+Ford Triplog 2.3 also includes fixes for:
+
+-   stale or early route endpoints
+-   Last Route thread-safety during refresh
+-   OSRM HTTP 400 `TooBig` errors for dense traces
+-   false unmatched-point rejection caused by OSRM trace tidying
+-   repeated legacy migration scans
+-   configuration-source self-selection
+
+## ⬆️ Upgrade Notes
+
+Ford Triplog 2.3 is designed to upgrade existing 2.1/2.2 installations
+without requiring manual database conversion.
+
+Existing legacy JSON data remains available as a migration/import source.
+After successful migration, normal Ford Triplog production storage uses
+SQLite.
+
+Existing raw GPS Routes remain compatible and can be rebuilt later
+through the new Route maintenance workflow.
+
+OSRM remains completely optional. Route recording continues to work
+without an OSRM server.
+
+------------------------------------------------------------------------
+
 # Ford Triplog 2.2.0
 
 Ford Triplog 2.2 focuses on practical data export, safer maintenance

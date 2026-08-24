@@ -30,6 +30,7 @@
         "menu_options": {
           "settings": "Settings",
           "journey_management": "Manage journeys",
+          "route_management": "Route maintenance",
           "pause_management": "Edit pauses",
           "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
@@ -39,6 +40,7 @@
         "menu_option_descriptions": {
           "settings": "Edit trip, charging and vehicle settings.",
           "journey_management": "Update, rebuild or delete journeys.",
+          "route_management": "Re-run OSRM map matching for stored routes while keeping raw GPS points unchanged.",
           "pause_management": "Add title, category, location, note and costs to pauses.",
           "charge_management": "Manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
@@ -207,6 +209,47 @@
       "journey_result": {
         "title": "Journey action completed",
         "description": "Mode: {mode}\n\nTrips: {source_trips} · Charging sessions: {source_charges} · Processed: {processed_records}\n\nJourneys created: {journeys_created} · Journeys deleted: {journeys_deleted}\n\nSource files skipped: {source_files_skipped}\n\nDate range: {start_date} to {end_date}\n\nAffected days: {affected_dates}"
+      },
+      "route_management": {
+        "title": "Route maintenance",
+        "description": "Recalculate stored route geometry with the currently configured OSRM service. Raw GPS points are never changed.",
+        "menu_options": {
+          "route_rebuild_last": "Recalculate latest route",
+          "route_rebuild_raw": "Recalculate raw routes",
+          "route_rebuild_all": "Recalculate all routes",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "route_rebuild_last": "Re-run OSRM matching only for the latest completed route.",
+          "route_rebuild_raw": "Re-run OSRM matching for routes that currently have no usable OSRM geometry.",
+          "route_rebuild_all": "Re-run OSRM matching for every completed stored route.",
+          "init": "Return to the Ford Triplog overview."
+        }
+      },
+      "route_rebuild_last": {
+        "title": "Recalculate latest route",
+        "description": "Re-run OSRM matching for the latest completed route. The stored raw GPS points remain unchanged.",
+        "data": {
+          "confirm": "Confirm action"
+        }
+      },
+      "route_rebuild_raw": {
+        "title": "Recalculate raw routes",
+        "description": "Re-run OSRM matching for all completed routes without usable OSRM geometry. Raw GPS points remain unchanged.",
+        "data": {
+          "confirm": "Confirm action"
+        }
+      },
+      "route_rebuild_all": {
+        "title": "Recalculate all routes",
+        "description": "Re-run OSRM matching for all completed routes. Existing OSRM geometry is replaced only after a successful new match; raw GPS points remain unchanged.",
+        "data": {
+          "confirm": "Confirm action"
+        }
+      },
+      "route_rebuild_result": {
+        "title": "Route maintenance completed",
+        "description": "Mode: {mode}\n\nStored routes: {routes_total} · Selected: {routes_selected} · Processed: {routes_processed}\n\nOSRM matches saved: {routes_matched} · Failed: {routes_failed} · Skipped: {routes_skipped}\n\nLatest route: {last_trip_id}"
       },
       "charge_management": {
         "title": "Charging sessions",
@@ -811,7 +854,10 @@
       "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
       "charge_delete_failed": "The charging session could not be deleted completely.",
       "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion.",
-      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
+      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
+      "route_rebuild_confirmation_required": "The action must be confirmed.",
+      "route_rebuild_failed": "The route maintenance action could not be completed. Check the Home Assistant log for details.",
+      "route_osrm_not_configured": "OSRM is not configured. Configure an OSRM address first."
     }
   },
   "entity": {
