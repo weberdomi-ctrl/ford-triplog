@@ -17,6 +17,9 @@
           "smart_trip_timeout": "Time until a paused trip is finally completed."
         }
       }
+    },
+    "error": {
+      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
     }
   },
   "options": {
@@ -807,7 +810,8 @@
       "export_invalid_date_range": "The start date must not be after the end date.",
       "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
       "charge_delete_failed": "The charging session could not be deleted completely.",
-      "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion."
+      "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion.",
+      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
     }
   },
   "entity": {

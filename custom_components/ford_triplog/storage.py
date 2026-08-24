@@ -5,31 +5,26 @@ Track your Ford.
 
 Storage layer for trips, charging, recovery data and cache.
 
-Version: 2.1.0
-Build: 20
-Changes: Add JSON/SQLite identity validation
+Version: 2.3.0
+Build: 23001
+Changes: Step 1 - central trip/charge storage runs SQLite-only.
+         Existing JSON data is imported during setup for upgrade safety.
+         Legacy JSON files are kept untouched and are no longer written.
 """
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
-import os
-import functools
-import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import (
-    CONF_STORAGE_READ_BACKEND,
-    DEFAULT_STORAGE_READ_BACKEND,
-    DOMAIN,
-    STORAGE_READ_BACKEND_SQLITE,
-    VERSION,
-)
+from .const import SIGNAL_LAST_TRIP_UPDATED, VERSION
 from .database import FordTriplogDatabase
 
 _LOGGER = logging.getLogger(__name__)
@@ -38,41 +33,30 @@ STORAGE_SCHEMA = 1
 
 
 class FordTriplogStorage:
-    """Persistent storage manager for Ford Triplog."""
+    """Persistent SQLite storage manager for Ford Triplog."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
-        self.base_path = Path(
-            hass.config.path(".storage", "ford_triplog")
-        )
+        self.base_path = Path(hass.config.path(".storage", "ford_triplog"))
 
+        # These directories are retained for legacy import/rollback only.
+        # FordTriplogStorage no longer writes runtime JSON data to them.
         self.recovery_path = self.base_path / "recovery"
         self.trips_path = self.base_path / "trips"
         self.charges_path = self.base_path / "charges"
         self.cache_path = self.base_path / "cache"
 
-        self.database = FordTriplogDatabase(
-            hass,
-            self.base_path,
-        )
+        self.database = FordTriplogDatabase(hass, self.base_path)
 
-        # Phase 2: selectable read backend.
-        # JSON remains the safe default. The active config entry is read
-        # here so existing callers do not need to change their constructor.
-        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
-        entries = hass.config_entries.async_entries(DOMAIN)
-        if len(entries) == 1:
-            self.read_backend = str(
-                entries[0].options.get(
-                    CONF_STORAGE_READ_BACKEND,
-                    DEFAULT_STORAGE_READ_BACKEND,
-                )
-            )
-
+        # Step 1 of the 2.3 storage cleanup: this storage class is always
+        # SQLite-backed. Other storage classes are migrated in later steps.
+        self.read_backend = "sqlite"
 
     async def async_setup(self) -> None:
-        """Initialize storage directories."""
+        """Initialize SQLite and import legacy JSON once per HA runtime."""
 
+        # Keep legacy directories available so existing installations can be
+        # imported safely. They are no longer used for runtime writes here.
         for path in (
             self.recovery_path,
             self.trips_path,
@@ -83,29 +67,81 @@ class FordTriplogStorage:
 
         await self.database.async_setup()
 
-        # Mirror existing JSON-backed storage only once per Home Assistant
-        # runtime. Multiple components may create their own Storage instance.
-        mirror_key = "ford_triplog_initial_storage_mirror_done"
-
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
-            await self._mirror_existing_storage()
+        migration_id = "legacy_central_import_v23"
+        if not await self.database.is_migration_completed(migration_id):
+            completed = await self._import_legacy_json_storage()
+            if completed:
+                await self.database.mark_migration_completed(migration_id)
         else:
-            _LOGGER.debug(
-                "Initial SQLite storage mirror already completed in this HA runtime"
+            _LOGGER.debug("Legacy central-storage JSON import already completed")
+
+        _LOGGER.info("Ford Triplog central storage backend: sqlite")
+        _LOGGER.debug("Ford Triplog central storage initialized")
+
+    def _add_metadata(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Add storage metadata."""
+
+        result = dict(data)
+        result.setdefault("schema", STORAGE_SCHEMA)
+        result.setdefault("generator", "Ford Triplog")
+        result.setdefault("version", VERSION)
+        result.setdefault("created", datetime.utcnow().isoformat() + "Z")
+        return result
+
+    async def _load_legacy_json(self, path: Path) -> dict[str, Any] | None:
+        """Load one legacy JSON record for upgrade import only."""
+
+        def _read() -> dict[str, Any] | None:
+            if not path.exists():
+                return None
+            with path.open("r", encoding="utf-8") as file:
+                value = json.load(file)
+            return value if isinstance(value, dict) else None
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
             )
+        except Exception:
+            _LOGGER.exception("Unable to load legacy JSON %s", path)
+            return None
 
-        _LOGGER.info(
-            "Ford Triplog read backend: %s",
-            self.read_backend,
-        )
+    async def _list_legacy_json(self, root: Path) -> list[Path]:
+        """Return legacy JSON files below one storage directory."""
 
-        _LOGGER.debug("Ford Triplog storage initialized")
+        def _list() -> list[Path]:
+            if not root.exists():
+                return []
+            return sorted(root.rglob("*.json"))
 
-    async def _mirror_existing_storage(self) -> None:
-        """Mirror only missing or changed JSON storage into SQLite."""
+        return await self.hass.async_add_executor_job(_list)
 
-        mirrored = {
+    def _current_trip_file(self) -> Path:
+        return self.recovery_path / "current_trip.json"
+
+    def _current_charge_file(self) -> Path:
+        return self.recovery_path / "current_charge.json"
+
+    def _last_trip_file(self) -> Path:
+        return self.cache_path / "last_trip.json"
+
+    def _last_charge_file(self) -> Path:
+        return self.cache_path / "last_charge.json"
+
+    def _statistics_file(self) -> Path:
+        return self.cache_path / "statistics.json"
+
+    def _diagnostics_file(self) -> Path:
+        return self.cache_path / "diagnostics.json"
+
+    async def _import_legacy_json_storage(self) -> None:
+        """Import only missing legacy JSON records into SQLite.
+
+        SQLite is authoritative once a record exists. Legacy files are left
+        untouched for rollback safety, but they never overwrite SQLite.
+        """
+
+        imported = {
             "trips": 0,
             "charges": 0,
             "current_trip": 0,
@@ -115,128 +151,68 @@ class FordTriplogStorage:
             "statistics": 0,
             "diagnostics": 0,
         }
-        unchanged = {
-            "trips": 0,
-            "charges": 0,
-            "current_trip": 0,
-            "current_charge": 0,
-            "last_trip": 0,
-            "last_charge": 0,
-            "statistics": 0,
-            "diagnostics": 0,
-        }
+        unchanged = {key: 0 for key in imported}
 
-        trip_records: list[tuple[Path, str, dict[str, Any]]] = []
-        for path in await self.list_trips():
-            data = await self._load_json(path)
-
+        trip_records: list[tuple[str, dict[str, Any]]] = []
+        for path in await self._list_legacy_json(self.trips_path):
+            data = await self._load_legacy_json(path)
             if not isinstance(data, dict):
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped trip: invalid JSON: %s",
-                    path,
-                )
                 continue
-
             trip_id = str(data.get("trip_id") or "").strip()
             if not trip_id:
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped trip: missing trip_id: %s",
-                    path,
+                _LOGGER.warning(
+                    "Legacy trip import skipped, missing trip_id: %s", path
                 )
                 continue
+            trip_records.append((trip_id, data))
 
-            trip_records.append((path, trip_id, data))
-
-        charge_records: list[tuple[Path, str, dict[str, Any]]] = []
-        for path in await self.list_charges():
-            data = await self._load_json(path)
-
+        charge_records: list[tuple[str, dict[str, Any]]] = []
+        for path in await self._list_legacy_json(self.charges_path):
+            data = await self._load_legacy_json(path)
             if not isinstance(data, dict):
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped charge: invalid JSON: %s",
-                    path,
-                )
                 continue
-
             charge_id = str(data.get("charge_id") or "").strip()
             if not charge_id:
-                _LOGGER.error(
-                    "Initial SQLite mirror skipped charge: missing charge_id: %s",
-                    path,
+                _LOGGER.warning(
+                    "Legacy charge import skipped, missing charge_id: %s", path
                 )
                 continue
-
-            charge_records.append((path, charge_id, data))
+            charge_records.append((charge_id, data))
 
         single_sources: dict[str, dict[str, Any] | None] = {}
-
-        cache_files = (
+        for key, path in (
             ("current_trip", self._current_trip_file()),
             ("current_charge", self._current_charge_file()),
             ("last_trip", self._last_trip_file()),
             ("last_charge", self._last_charge_file()),
-        )
-
-        for key, path in cache_files:
-            if not path.exists():
-                single_sources[key] = None
-                continue
-
-            data = await self._load_json(path)
+            ("statistics", self._statistics_file()),
+            ("diagnostics", self._diagnostics_file()),
+        ):
+            data = await self._load_legacy_json(path)
             single_sources[key] = (
-                self._add_metadata(data)
-                if isinstance(data, dict)
-                else None
+                self._add_metadata(data) if isinstance(data, dict) else None
             )
 
-        statistics = await self._load_json(self._statistics_file())
-        single_sources["statistics"] = (
-            self._add_metadata(statistics)
-            if isinstance(statistics, dict)
-            else None
-        )
-
-        diagnostics = await self._load_json(self._diagnostics_file())
-        single_sources["diagnostics"] = (
-            self._add_metadata(diagnostics)
-            if isinstance(diagnostics, dict)
-            else None
-        )
-
         snapshot = await self.database.load_storage_mirror_snapshot(
-            [trip_id for _, trip_id, _ in trip_records],
-            [charge_id for _, charge_id, _ in charge_records],
+            [trip_id for trip_id, _ in trip_records],
+            [charge_id for charge_id, _ in charge_records],
         )
 
         sqlite_trips = snapshot.get("trips", {})
-        for path, trip_id, data in trip_records:
-            if sqlite_trips.get(trip_id) == data:
+        for trip_id, data in trip_records:
+            if trip_id in sqlite_trips:
                 unchanged["trips"] += 1
                 continue
-
             if await self.database.save_trip(data):
-                mirrored["trips"] += 1
-            else:
-                _LOGGER.error(
-                    "Initial SQLite mirror failed for trip %s: %s",
-                    trip_id,
-                    path,
-                )
+                imported["trips"] += 1
 
         sqlite_charges = snapshot.get("charges", {})
-        for path, charge_id, data in charge_records:
-            if sqlite_charges.get(charge_id) == data:
+        for charge_id, data in charge_records:
+            if charge_id in sqlite_charges:
                 unchanged["charges"] += 1
                 continue
-
             if await self.database.save_charge(data):
-                mirrored["charges"] += 1
-            else:
-                _LOGGER.error(
-                    "Initial SQLite mirror failed for charge %s: %s",
-                    charge_id,
-                    path,
-                )
+                imported["charges"] += 1
 
         single_savers = {
             "current_trip": self.database.save_current_trip,
@@ -251,126 +227,22 @@ class FordTriplogStorage:
             data = single_sources.get(key)
             if data is None:
                 continue
-
-            if snapshot.get(key) == data:
+            if snapshot.get(key) is not None:
                 unchanged[key] += 1
                 continue
-
             if await saver(data):
-                mirrored[key] += 1
-            else:
-                _LOGGER.error(
-                    "Initial SQLite mirror failed for %s",
-                    key,
-                )
+                imported[key] += 1
 
         _LOGGER.info(
-            "Initial SQLite mirror completed: mirrored[%s] unchanged[%s]",
-            ", ".join(
-                f"{key}={value}"
-                for key, value in mirrored.items()
-            ),
-            ", ".join(
-                f"{key}={value}"
-                for key, value in unchanged.items()
-            ),
+            "Legacy central-storage JSON import completed: imported[%s] unchanged[%s]",
+            ", ".join(f"{key}={value}" for key, value in imported.items()),
+            ", ".join(f"{key}={value}" for key, value in unchanged.items()),
         )
-
-    def _add_metadata(
-        self,
-        data: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Add storage metadata."""
-
-        result = dict(data)
-
-        result.setdefault("schema", STORAGE_SCHEMA)
-        result.setdefault("generator", "Ford Triplog")
-        result.setdefault("version", VERSION)
-        result.setdefault(
-            "created",
-            datetime.utcnow().isoformat() + "Z",
-        )
-
-        return result
-
-    async def _save_json(
-        self,
-        path: Path,
-        data: dict[str, Any],
-    ) -> bool:
-        """Save JSON atomically."""
-
-        def _write():
-            path.parent.mkdir(
-                parents=True,
-                exist_ok=True,
-            )
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                dir=path.parent,
-                delete=False,
-            ) as file:
-                json.dump(
-                    self._add_metadata(data),
-                    file,
-                    indent=2,
-                    ensure_ascii=False,
-                )
-
-                file.flush()
-                os.fsync(file.fileno())
-
-                temp = Path(file.name)
-
-            os.replace(temp, path)
-
-           
-        try:
-            await self.hass.async_add_executor_job(
-                functools.partial(_write)
-            )
-            return True
-
-        except Exception:
-            _LOGGER.exception(
-                "Unable to save %s",
-                path,
-            )
-            return False
-
-    async def _load_json(
-        self,
-        path: Path,
-) -> dict[str, Any] | None:
-        """Load JSON."""
-
-        def _read():
-            if not path.exists():
-                return None
-
-            with path.open(
-                "r",
-                encoding="utf-8",
-            ) as file:
-                return json.load(file)
-
-        try:
-            return await self.hass.async_add_executor_job(
-                functools.partial(_read)
-            )
-
-        except Exception:
-            _LOGGER.exception(
-                "Unable to load %s",
-                path,
-            )
-            return None
+        return True
 
     @staticmethod
     def _archive_id_from_path(path: Path) -> str | None:
-        """Derive the timestamp-based archive ID from a JSON filename."""
+        """Derive the timestamp-based archive ID from a legacy filename."""
 
         stem = path.stem
         if len(stem) < 19:
@@ -396,544 +268,212 @@ class FordTriplogStorage:
             + timestamp[17:19]
         )
 
-    async def load_trip_file(
-        self,
-        path: Path,
-    ) -> dict[str, Any] | None:
-        """Load archived trip from the selected read backend."""
-
-        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
-            return await self._load_json(path)
+    async def load_trip_file(self, path: Path) -> dict[str, Any] | None:
+        """Load one trip from SQLite using a legacy archive path as ID hint."""
 
         trip_id = self._archive_id_from_path(path)
         if not trip_id:
-            _LOGGER.error(
-                "SQLite trip read skipped: unable to derive trip_id from %s",
-                path,
-            )
+            _LOGGER.error("Unable to derive trip_id from legacy path %s", path)
             return None
+        return await self.database.load_trip(trip_id)
 
-        data = await self.database.load_trip(trip_id)
-        if data is None:
-            _LOGGER.error(
-                "SQLite trip read failed: trip_id=%s path=%s",
-                trip_id,
-                path,
-            )
-            return None
-
-        return data
-    
-    async def load_charge_file(
-        self,
-        path: Path,
-    ) -> dict[str, Any] | None:
-        """Load archived charge from the selected read backend."""
-
-        if self.read_backend != STORAGE_READ_BACKEND_SQLITE:
-            return await self._load_json(path)
+    async def load_charge_file(self, path: Path) -> dict[str, Any] | None:
+        """Load one charge from SQLite using a legacy archive path as ID hint."""
 
         charge_id = self._archive_id_from_path(path)
         if not charge_id:
-            _LOGGER.error(
-                "SQLite charge read skipped: unable to derive charge_id from %s",
-                path,
-            )
+            _LOGGER.error("Unable to derive charge_id from legacy path %s", path)
             return None
-
-        data = await self.database.load_charge(charge_id)
-        if data is None:
-            _LOGGER.error(
-                "SQLite charge read failed: charge_id=%s path=%s",
-                charge_id,
-                path,
-            )
-            return None
-
-        return data
-
-
-    async def _delete_file(
-        self,
-        path: Path,
-    ) -> None:
-        """Delete file without blocking the event loop."""
-
-        def _delete() -> None:
-            # Idempotent deletion: another task may already have removed
-            # the recovery file between scheduling and execution.
-            path.unlink(missing_ok=True)
-
-        await self.hass.async_add_executor_job(_delete)
-
-    def _current_trip_file(self) -> Path:
-        return self.recovery_path / "current_trip.json"
-    
-    def _current_charge_file(self) -> Path:
-        return self.recovery_path / "current_charge.json"
-
-    def _last_trip_file(self) -> Path:
-        return self.cache_path / "last_trip.json"
-    
-    def _last_charge_file(self) -> Path:
-        return self.cache_path / "last_charge.json"
-
-    def _statistics_file(self) -> Path:
-        return self.cache_path / "statistics.json"
-
-    def _diagnostics_file(self) -> Path:
-        return self.cache_path / "diagnostics.json"
-
-
+        return await self.database.load_charge(charge_id)
 
     async def save_current_trip(self, data: dict[str, Any]) -> bool:
-        json_saved = await self._save_json(
-            self._current_trip_file(),
-            data,
-        )
-
-        if not json_saved:
-            return False
-
-        await self.database.save_current_trip(
-            self._add_metadata(data)
-        )
-
-        return True
+        """Save current trip to SQLite."""
+        return await self.database.save_current_trip(self._add_metadata(data))
 
     async def load_current_trip(self) -> dict[str, Any] | None:
-        """Load current trip from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            data = await self.database.load_current_trip()
-            if data is None:
-                _LOGGER.debug("SQLite current_trip read returned no data")
-            return data
-
-        return await self._load_json(
-            self._current_trip_file()
-        )
+        """Load current trip from SQLite."""
+        return await self.database.load_current_trip()
 
     async def delete_current_trip(self) -> None:
-        await self._delete_file(
-            self._current_trip_file()
-        )
-
+        """Delete current trip from SQLite."""
         await self.database.delete_current_trip()
 
-    async def save_current_charge(
-        self,
-        data: dict[str, Any],
-    ) -> bool:
-        json_saved = await self._save_json(
-            self._current_charge_file(),
-            data,
-        )
+    async def save_current_charge(self, data: dict[str, Any]) -> bool:
+        """Save current charge to SQLite."""
+        return await self.database.save_current_charge(self._add_metadata(data))
 
-        if not json_saved:
-            return False
+    async def load_current_charge(self) -> dict[str, Any] | None:
+        """Load current charge from SQLite."""
+        return await self.database.load_current_charge()
 
-        await self.database.save_current_charge(
-            self._add_metadata(data)
-        )
-
-        return True
-
-    async def load_current_charge(
-        self,
-    ) -> dict[str, Any] | None:
-        """Load current charge from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            data = await self.database.load_current_charge()
-            if data is None:
-                _LOGGER.debug("SQLite current_charge read returned no data")
-            return data
-
-        return await self._load_json(
-            self._current_charge_file()
-        )
-
-    async def delete_current_charge(
-        self,
-    ) -> None:
-        await self._delete_file(
-            self._current_charge_file()
-        )
-
+    async def delete_current_charge(self) -> None:
+        """Delete current charge from SQLite."""
         await self.database.delete_current_charge()
 
-
-
     async def save_trip(self, data: dict[str, Any]) -> bool:
-        """Archive completed trip."""
+        """Archive completed trip in SQLite."""
 
-        start = data.get("start_time")
-
-        if not start:
+        if not data.get("start_time"):
             _LOGGER.error("Trip without start_time")
             return False
 
-        timestamp = datetime.fromisoformat(
-            start.replace("Z", "+00:00")
-        )
-
-        folder = (
-            self.trips_path
-            / timestamp.strftime("%Y")
-            / timestamp.strftime("%m")
-        )
-
-        filename = timestamp.strftime(
-            "%Y-%m-%d_%H-%M-%S.json"
-        )
-
-        path = folder / filename
-        counter = 1
-
-        while path.exists():
-            path = folder / (
-                timestamp.strftime(
-                    "%Y-%m-%d_%H-%M-%S"
-                )
-                + f"_{counter}.json"
-            )
-            counter += 1
-
-        json_saved = await self._save_json(path, data)
-
-        if not json_saved:
-            return False
-
-        await self.database.save_trip(
-            self._add_metadata(data)
-        )
-
-        return True
+        return await self.database.save_trip(self._add_metadata(data))
 
     async def save_charge(self, data: dict[str, Any]) -> bool:
-        """Archive completed charging session."""
+        """Archive completed charging session in SQLite."""
 
-        start = data.get("start_time")
-
-        if not start:
+        if not data.get("start_time"):
             _LOGGER.error("Charge without start_time")
             return False
 
-        timestamp = datetime.fromisoformat(
-            start.replace("Z", "+00:00")
-        )
-
-        folder = (
-            self.charges_path
-            / timestamp.strftime("%Y")
-            / timestamp.strftime("%m")
-        )
-
-        filename = timestamp.strftime(
-            "%Y-%m-%d_%H-%M-%S.json"
-        )
-
-        path = folder / filename
-        counter = 1
-
-        while path.exists():
-            path = folder / (
-                timestamp.strftime(
-                    "%Y-%m-%d_%H-%M-%S"
-                )
-                + f"_{counter}.json"
-            )
-            counter += 1
-
-        json_saved = await self._save_json(path, data)
-
-        if not json_saved:
-            return False
-
-        await self.database.save_charge(
-            self._add_metadata(data)
-        )
-
-        return True
-
+        return await self.database.save_charge(self._add_metadata(data))
 
     async def list_trips(self) -> list[Path]:
-        """Return archived trips without blocking the event loop."""
+        """Return legacy trip paths for compatibility only.
 
-        def _list() -> list[Path]:
-            if not self.trips_path.exists():
-                return []
+        Runtime collection reads use ``load_archived_trips`` and therefore
+        SQLite. This helper remains temporarily for callers that still carry a
+        path-based API and will be removed in a later cleanup step.
+        """
+        return await self._list_legacy_json(self.trips_path)
 
-            return sorted(self.trips_path.rglob("*.json"))
-
-        return await self.hass.async_add_executor_job(_list)
-    
     async def list_charges(self) -> list[Path]:
-        """Return archived charging sessions without blocking the event loop."""
+        """Return legacy charge paths for compatibility only."""
+        return await self._list_legacy_json(self.charges_path)
 
-        def _list() -> list[Path]:
-            if not self.charges_path.exists():
-                return []
+    async def load_archived_trips(self) -> list[dict[str, Any]]:
+        """Load all archived trips from SQLite."""
+        return await self.database.load_all_trips()
 
-            return sorted(self.charges_path.rglob("*.json"))
+    async def load_archived_charges(self) -> list[dict[str, Any]]:
+        """Load all archived charging sessions from SQLite."""
+        return await self.database.load_all_charges()
 
-        return await self.hass.async_add_executor_job(_list)
+    async def find_charge_path(self, charge_id: str) -> Path | None:
+        """Return a legacy JSON path when one still exists.
 
+        The path is not used as a data source. It exists only for temporary
+        compatibility with the old path-based API.
+        """
 
-    async def load_archived_trips(
-        self,
-    ) -> list[dict[str, Any]]:
-        """Load all archived trips from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Trip archive collection read backend: sqlite")
-            return await self.database.load_all_trips()
-
-        _LOGGER.debug("Trip archive collection read backend: json")
-        trips: list[dict[str, Any]] = []
-
-        for path in await self.list_trips():
-            data = await self._load_json(path)
-            if isinstance(data, dict):
-                trips.append(data)
-
-        return trips
-
-    async def load_archived_charges(
-        self,
-    ) -> list[dict[str, Any]]:
-        """Load all archived charging sessions from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Charge archive collection read backend: sqlite")
-            return await self.database.load_all_charges()
-
-        _LOGGER.debug("Charge archive collection read backend: json")
-        charges: list[dict[str, Any]] = []
-
-        for path in await self.list_charges():
-            data = await self._load_json(path)
-            if isinstance(data, dict):
-                charges.append(data)
-
-        return charges
-
-    async def find_charge_path(
-        self,
-        charge_id: str,
-    ) -> Path | None:
-        """Return the archived file path matching one charge ID."""
-
-        normalized_id = str(charge_id).strip()
+        normalized_id = str(charge_id or "").strip()
         if not normalized_id:
             return None
 
-        for path in reversed(await self.list_charges()):
-            charge = await self.load_charge_file(path)
+        if await self.database.load_charge(normalized_id) is None:
+            return None
 
+        for path in reversed(await self._list_legacy_json(self.charges_path)):
+            data = await self._load_legacy_json(path)
             if (
-                isinstance(charge, dict)
-                and str(charge.get("charge_id", "")).strip()
-                == normalized_id
+                isinstance(data, dict)
+                and str(data.get("charge_id") or "").strip() == normalized_id
             ):
                 return path
 
-        return None
+        # No legacy file is required in 2.3. Return a stable virtual path for
+        # the temporary tuple API used by ChargeManager.
+        return self.charges_path / f"{normalized_id}.sqlite"
 
     async def load_charge_by_id(
         self,
         charge_id: str,
     ) -> tuple[Path, dict[str, Any]] | None:
-        """Return path and data for one archived charging session."""
+        """Return compatibility path and SQLite data for one charge."""
 
-        path = await self.find_charge_path(charge_id)
+        normalized_id = str(charge_id or "").strip()
+        if not normalized_id:
+            return None
+
+        data = await self.database.load_charge(normalized_id)
+        if not isinstance(data, dict):
+            return None
+
+        path = await self.find_charge_path(normalized_id)
         if path is None:
-            return None
+            path = self.charges_path / f"{normalized_id}.sqlite"
 
-        charge = await self.load_charge_file(path)
-        if not isinstance(charge, dict):
-            return None
+        return path, data
 
-        return path, charge
+    async def save_charge_file(self, path: Path, data: dict[str, Any]) -> bool:
+        """Compatibility wrapper: update one archived charge in SQLite."""
 
-    async def save_charge_file(
-        self,
-        path: Path,
-        data: dict[str, Any],
-    ) -> bool:
-        """Overwrite one existing archived charging-session file."""
+        charge_id = str(data.get("charge_id") or "").strip()
+        if not charge_id:
+            charge_id = self._archive_id_from_path(path) or ""
 
-        resolved_path = path.resolve()
-        charges_root = self.charges_path.resolve()
-
-        try:
-            resolved_path.relative_to(charges_root)
-        except ValueError:
-            _LOGGER.error(
-                "Refusing to write charge file outside charge storage: %s",
-                resolved_path,
-            )
+        if not charge_id:
+            _LOGGER.error("Unable to determine charge_id for SQLite update")
             return False
 
-        if resolved_path.suffix.lower() != ".json":
-            _LOGGER.error(
-                "Refusing to write non-JSON charge file: %s",
-                resolved_path,
-            )
-            return False
-
-        if not resolved_path.exists():
-            _LOGGER.error(
-                "Archived charge file does not exist: %s",
-                resolved_path,
-            )
-            return False
-
-        return await self._save_json(
-            resolved_path,
-            data,
-        )
+        updated = dict(data)
+        updated["charge_id"] = charge_id
+        return await self.database.save_charge(self._add_metadata(updated))
 
     async def update_charge(
         self,
         charge_id: str,
         data: dict[str, Any],
     ) -> bool:
-        """Update one existing archived charging session."""
-
-        normalized_id = str(charge_id).strip()
-        if not normalized_id:
-            return False
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            # SQLite-only mode: do not require an archived JSON file.
-            existing = await self.database.load_charge(normalized_id)
-            if existing is None:
-                _LOGGER.warning(
-                    "Unable to update missing SQLite charging session: %s",
-                    normalized_id,
-                )
-                return False
-
-            updated = dict(existing)
-            updated.update(data)
-            updated["charge_id"] = normalized_id
-
-            db_saved = await self.database.save_charge(
-                self._add_metadata(updated)
-            )
-            if not db_saved:
-                _LOGGER.error(
-                    "SQLite update failed for charge %s",
-                    normalized_id,
-                )
-                return False
-
-            last_charge = await self.database.load_last_charge()
-            if (
-                isinstance(last_charge, dict)
-                and str(last_charge.get("charge_id", "")).strip()
-                == normalized_id
-            ):
-                await self.database.save_last_charge(
-                    self._add_metadata(updated)
-                )
-
-            _LOGGER.debug(
-                "SQLite charge updated: %s",
-                normalized_id,
-            )
-            return True
-
-        loaded = await self.load_charge_by_id(charge_id)
-        if loaded is None:
-            _LOGGER.warning(
-                "Unable to update missing charging session: %s",
-                charge_id,
-            )
-            return False
-
-        path, existing = loaded
-        updated = dict(existing)
-        updated.update(data)
-        updated["charge_id"] = normalized_id
-
-        saved = await self.save_charge_file(
-            path,
-            updated,
-        )
-
-        if not saved:
-            return False
-
-        return True
-
-
-    async def delete_charge(
-        self,
-        charge_id: str,
-    ) -> bool:
-        """Delete one archived charging session from JSON and SQLite."""
+        """Update one existing archived charging session in SQLite."""
 
         normalized_id = str(charge_id or "").strip()
         if not normalized_id:
             return False
 
-        json_path: Path | None = None
-        for path in reversed(await self.list_charges()):
-            data = await self._load_json(path)
-            if (
-                isinstance(data, dict)
-                and str(data.get("charge_id") or "").strip()
-                == normalized_id
-            ):
-                json_path = path
-                break
+        existing = await self.database.load_charge(normalized_id)
+        if existing is None:
+            _LOGGER.warning(
+                "Unable to update missing SQLite charging session: %s",
+                normalized_id,
+            )
+            return False
 
-        sqlite_exists = (
-            await self.database.load_charge(normalized_id)
-        ) is not None
+        updated = dict(existing)
+        updated.update(data)
+        updated["charge_id"] = normalized_id
 
-        if json_path is None and not sqlite_exists:
+        if not await self.database.save_charge(self._add_metadata(updated)):
+            _LOGGER.error("SQLite update failed for charge %s", normalized_id)
+            return False
+
+        last_charge = await self.database.load_last_charge()
+        if (
+            isinstance(last_charge, dict)
+            and str(last_charge.get("charge_id") or "").strip() == normalized_id
+        ):
+            await self.database.save_last_charge(self._add_metadata(updated))
+
+        _LOGGER.debug("SQLite charge updated: %s", normalized_id)
+        return True
+
+    async def delete_charge(self, charge_id: str) -> bool:
+        """Delete one archived charging session from SQLite only."""
+
+        normalized_id = str(charge_id or "").strip()
+        if not normalized_id:
+            return False
+
+        if await self.database.load_charge(normalized_id) is None:
             _LOGGER.warning(
                 "Unable to delete missing charging session: %s",
                 normalized_id,
             )
             return False
 
-        if json_path is not None:
-            try:
-                await self._delete_file(json_path)
-            except Exception:
-                _LOGGER.exception(
-                    "Unable to remove archived charge JSON: %s",
-                    json_path,
-                )
-                return False
+        if not await self.database.delete_charge(normalized_id):
+            _LOGGER.error("SQLite deletion failed for charge %s", normalized_id)
+            return False
 
-        if sqlite_exists:
-            if not await self.database.delete_charge(normalized_id):
-                _LOGGER.error(
-                    "SQLite deletion failed for charge %s",
-                    normalized_id,
-                )
-                return False
-
-        _LOGGER.info(
-            "Archived charging session deleted: %s",
-            normalized_id,
-        )
+        _LOGGER.info("Archived charging session deleted: %s", normalized_id)
         return True
 
     async def clear_last_charge(self) -> None:
-        """Clear last-charge cache in both storage backends."""
-
-        await self._delete_file(self._last_charge_file())
+        """Clear last-charge cache in SQLite."""
         await self.database.delete_last_charge()
 
     async def synchronize_last_charge(self) -> dict[str, Any] | None:
-        """Rebuild last_charge from the newest remaining archived charge."""
+        """Rebuild last_charge from the newest remaining SQLite charge."""
 
         charges = await self.load_archived_charges()
         if not charges:
@@ -953,62 +493,39 @@ class FordTriplogStorage:
 
         return newest
 
-
     async def save_last_trip(self, data: dict[str, Any]) -> bool:
-        json_saved = await self._save_json(
-            self._last_trip_file(),
-            data,
-        )
-
-        if not json_saved:
-            return False
-
-        await self.database.save_last_trip(
-            self._add_metadata(data)
-        )
-
-        return True
+        """Save latest trip cache to SQLite and notify listeners."""
+        payload = self._add_metadata(data)
+        saved = await self.database.save_last_trip(payload)
+        if saved:
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_LAST_TRIP_UPDATED,
+                str(payload.get("trip_id") or ""),
+            )
+        return saved
 
     async def load_last_trip(self) -> dict[str, Any] | None:
-        """Load last trip from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            data = await self.database.load_last_trip()
-            if data is None:
-                _LOGGER.debug("SQLite last_trip read returned no data")
-            return data
-
-        return await self._load_json(
-            self._last_trip_file()
-        )
+        """Load latest trip cache from SQLite."""
+        return await self.database.load_last_trip()
 
     async def _load_archived_charge_by_id(
         self,
         charge_id: str | None,
     ) -> dict[str, Any] | None:
-        """Return the archived charging session matching ``charge_id``."""
+        """Return one archived charging session from SQLite."""
 
-        if not charge_id:
+        normalized_id = str(charge_id or "").strip()
+        if not normalized_id:
             return None
+        return await self.database.load_charge(normalized_id)
 
-        for path in reversed(await self.list_charges()):
-            charge = await self.load_charge_file(path)
+    async def save_last_charge(self, data: dict[str, Any]) -> bool:
+        """Save the latest charging-session cache to SQLite.
 
-            if charge and charge.get("charge_id") == charge_id:
-                return charge
-
-        return None
-
-    async def save_last_charge(
-        self,
-        data: dict[str, Any],
-    ) -> bool:
-        """Save the latest charging session cache.
-
-        The completed charging session is archived immediately before this
-        method is called. Use that archived record as a defensive source for
-        charging-site fields if the cache input unexpectedly contains empty
-        values.
+        The completed charging session is already archived. Use that SQLite
+        record as a defensive source for charging-site fields if the cache
+        input unexpectedly contains empty values.
         """
 
         last_charge = dict(data)
@@ -1030,12 +547,10 @@ class FordTriplogStorage:
         )
 
         recovered_fields: list[str] = []
-
         if archived_charge:
             for field in charging_site_fields:
                 current_value = last_charge.get(field)
                 archived_value = archived_charge.get(field)
-
                 if current_value in (None, [], "") and archived_value not in (
                     None,
                     [],
@@ -1046,134 +561,40 @@ class FordTriplogStorage:
 
         if recovered_fields:
             _LOGGER.warning(
-                "Recovered charging-site fields for last_charge %s from "
-                "archived charge: %s",
+                "Recovered charging-site fields for last_charge %s from archived charge: %s",
                 last_charge.get("charge_id"),
                 ", ".join(recovered_fields),
             )
 
-        _LOGGER.debug(
-            "Saving last_charge %s with charging site %s",
-            last_charge.get("charge_id"),
-            (
-                last_charge.get("charging_site_name")
-                or last_charge.get("charging_site_brand")
-                or last_charge.get("charging_site_operator")
-                or last_charge.get("charging_site_id")
-            ),
-        )
-
-        json_saved = await self._save_json(
-            self._last_charge_file(),
-            last_charge,
-        )
-
-        if not json_saved:
-            return False
-
-        await self.database.save_last_charge(
+        return await self.database.save_last_charge(
             self._add_metadata(last_charge)
         )
 
-        return True
-
-    async def load_last_charge(
-        self,
-    ) -> dict[str, Any] | None:
-        """Load last charge from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            data = await self.database.load_last_charge()
-            if data is None:
-                _LOGGER.debug("SQLite last_charge read returned no data")
-            return data
-
-        return await self._load_json(
-            self._last_charge_file()
-        )
-
+    async def load_last_charge(self) -> dict[str, Any] | None:
+        """Load latest charging-session cache from SQLite."""
+        return await self.database.load_last_charge()
 
     async def save_statistics(self, data: dict[str, Any]) -> bool:
-        json_saved = await self._save_json(
-            self._statistics_file(),
-            data,
-        )
-
-        if not json_saved:
-            return False
-
-        await self.database.save_statistics(
-            self._add_metadata(data)
-        )
-
-        return True
+        """Save statistics to SQLite."""
+        return await self.database.save_statistics(self._add_metadata(data))
 
     async def load_statistics(self) -> dict[str, Any] | None:
-        """Load statistics from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Statistics read backend: sqlite")
-            data = await self.database.load_statistics()
-            if data is None:
-                _LOGGER.debug("SQLite statistics read returned no data")
-            else:
-                _LOGGER.debug("SQLite statistics loaded")
-            return data
-
-        _LOGGER.debug("Statistics read backend: json")
-        return await self._load_json(
-            self._statistics_file()
-        )
+        """Load statistics from SQLite."""
+        return await self.database.load_statistics()
 
     async def save_diagnostics(self, data: dict[str, Any]) -> bool:
-        json_saved = await self._save_json(
-            self._diagnostics_file(),
-            data,
-        )
-
-        if not json_saved:
-            return False
-
-        await self.database.save_diagnostics(
-            self._add_metadata(data)
-        )
-
-        return True
+        """Save diagnostics to SQLite."""
+        return await self.database.save_diagnostics(self._add_metadata(data))
 
     async def load_diagnostics(self) -> dict[str, Any] | None:
-        """Load diagnostics from the selected read backend."""
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Diagnostics read backend: sqlite")
-            data = await self.database.load_diagnostics()
-            if data is None:
-                _LOGGER.debug("SQLite diagnostics read returned no data")
-            else:
-                _LOGGER.debug("SQLite diagnostics loaded")
-            return data
-
-        _LOGGER.debug("Diagnostics read backend: json")
-        return await self._load_json(
-            self._diagnostics_file()
-        )
+        """Load diagnostics from SQLite."""
+        return await self.database.load_diagnostics()
 
     async def validate_storage(self) -> bool:
-        """Validate storage structure."""
-
+        """Validate the central SQLite storage."""
         await self.async_setup()
-
-        return all(
-            path.exists()
-            for path in (
-                self.recovery_path,
-                self.trips_path,
-                self.cache_path,
-            )
-        )
+        return self.base_path.exists()
 
     async def rebuild_cache(self) -> None:
         """Rebuild cache placeholder."""
-
-        _LOGGER.info(
-            "Cache rebuild requested"
-        )
+        _LOGGER.info("Cache rebuild requested")

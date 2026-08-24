@@ -22,7 +22,6 @@ from .const import (
     RECEIPTS_DIR,
     RECEIPT_MAX_SIZE_BYTES,
     STORAGE_DIR,
-    STORAGE_READ_BACKEND_SQLITE,
 )
 from .metadata_storage import FordTriplogMetadataStorage
 from .receipt_parser import ReceiptParserEngine
@@ -57,7 +56,7 @@ class FordTriplogReceiptStorage:
             Path(__file__).parent / "receipt_parser_profiles",
             (
                 None
-                if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE
+                if self._metadata.read_backend == "sqlite"
                 else self._user_profile_directory
             ),
         )
@@ -68,7 +67,7 @@ class FordTriplogReceiptStorage:
         )
         await self._metadata.async_setup()
 
-        if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self._metadata.read_backend == "sqlite":
             profiles = (
                 await self._metadata.database.load_user_receipt_parser_profiles()
             )
@@ -274,7 +273,7 @@ class FordTriplogReceiptStorage:
         normalized_profile["profile_id"] = profile_id
         destination = self._user_profile_directory / f"{profile_id}.json"
 
-        if self._metadata.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self._metadata.read_backend == "sqlite":
             saved = await self._metadata.database.save_user_receipt_parser_profile(
                 normalized_profile
             )

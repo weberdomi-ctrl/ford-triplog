@@ -1,11 +1,11 @@
 """
 Ford Triplog
 
-SQLite storage mirror.
+SQLite storage backend.
 
-Version: 2.1.0
-Build: 17a - Charge delete support
-Changes: Add Top Locations SQL view read support
+Version: 2.3.0
+Build: 23001
+Changes: Step 1 - add missing SQLite diagnostics reader for central SQLite-only storage
 """
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 class FordTriplogDatabase:
-    """SQLite mirror storage for Ford Triplog."""
+    """SQLite storage backend for Ford Triplog."""
 
     def __init__(
         self,
@@ -44,7 +44,7 @@ class FordTriplogDatabase:
         json_records: dict[str, dict[str, Any] | None],
         json_collections: dict[str, dict[str, dict[str, Any]]],
     ) -> dict[str, Any]:
-        """Compare JSON storage records with their SQLite mirror.
+        """Compare JSON storage records with their SQLite storage.
 
         This is a development-only validation helper. It never changes
         either backend and returns a structured comparison report.
@@ -378,6 +378,14 @@ class FordTriplogDatabase:
                         )
                         """
                     )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS migration_state (
+                            migration_id TEXT PRIMARY KEY,
+                            completed_at TEXT NOT NULL
+                        )
+                        """
+                    )
 
                     db.execute(
                         """
@@ -578,7 +586,7 @@ class FordTriplogDatabase:
             )
         except Exception:
             _LOGGER.exception(
-                "Unable to read SQLite main storage mirror snapshot"
+                "Unable to read SQLite main storage storage snapshot"
             )
             return {
                 "trips": {},
@@ -590,6 +598,35 @@ class FordTriplogDatabase:
                 "statistics": None,
                 "diagnostics": None,
             }
+
+    async def is_migration_completed(self, migration_id: str) -> bool:
+        """Return whether a persistent migration marker exists."""
+        def _read() -> bool:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT 1 FROM migration_state WHERE migration_id = ? LIMIT 1",
+                    (str(migration_id),),
+                ).fetchone()
+                return row is not None
+        return await self.hass.async_add_executor_job(_read)
+
+    async def mark_migration_completed(self, migration_id: str) -> bool:
+        """Persist a completed migration marker."""
+        def _write() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO migration_state "
+                    "(migration_id, completed_at) VALUES (?, datetime('now'))",
+                    (str(migration_id),),
+                )
+                db.commit()
+        try:
+            await self.hass.async_add_executor_job(_write)
+            _LOGGER.info("SQLite migration marked complete: %s", migration_id)
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to mark SQLite migration complete: %s", migration_id)
+            return False
 
     async def save_route(
         self,
@@ -632,7 +669,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Route mirrored to SQLite: %s",
+                "Route saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -647,7 +684,7 @@ class FordTriplogDatabase:
     async def load_route_mirror_index(
         self,
     ) -> dict[str, dict[str, Any]]:
-        """Load route payloads keyed by trip_id for mirror comparison."""
+        """Load route payloads keyed by trip_id for legacy import comparison."""
 
         self._log_read("route_mirror_index")
 
@@ -775,6 +812,10 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM routes
+                    WHERE COALESCE(
+                        json_extract(data, '$.status'),
+                        'completed'
+                    ) = 'completed'
                     ORDER BY rowid DESC
                     LIMIT 1
                     """
@@ -870,7 +911,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Trip mirrored to SQLite: %s",
+                "Trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1265,7 +1306,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Current trip mirrored to SQLite: %s",
+                "Current trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1304,7 +1345,7 @@ class FordTriplogDatabase:
             return None
 
     async def delete_current_trip(self) -> bool:
-        """Delete current trip mirror from SQLite."""
+        """Delete current trip storage from SQLite."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -1397,7 +1438,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Last trip mirrored to SQLite: %s",
+                "Last trip saved to SQLite: %s",
                 trip_id,
             )
             return True
@@ -1451,7 +1492,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Current charge mirrored to SQLite: %s",
+                "Current charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1492,7 +1533,7 @@ class FordTriplogDatabase:
             return None
 
     async def delete_current_charge(self) -> bool:
-        """Delete current charging-session mirror from SQLite."""
+        """Delete current charging-session storage from SQLite."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -1585,7 +1626,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Charge mirrored to SQLite: %s",
+                "Charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1696,7 +1737,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Last charge mirrored to SQLite: %s",
+                "Last charge saved to SQLite: %s",
                 charge_id,
             )
             return True
@@ -1739,7 +1780,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Statistics mirrored to SQLite"
+                "Statistics saved to SQLite"
             )
             return True
 
@@ -1806,7 +1847,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "Diagnostics mirrored to SQLite"
+                "Diagnostics saved to SQLite"
             )
             return True
 
@@ -1815,6 +1856,32 @@ class FordTriplogDatabase:
                 "Unable to mirror diagnostics to SQLite"
             )
             return False
+
+    async def load_diagnostics(self) -> dict[str, Any] | None:
+        """Load diagnostics cache from SQLite."""
+
+        self._log_read("diagnostics")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM diagnostics WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            return json.loads(row[0])
+
+        try:
+            return await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read diagnostics from SQLite"
+            )
+            return None
 
     async def load_user_charging_sites(self) -> list[dict[str, Any]]:
         """Load all user-defined charging sites from SQLite."""
@@ -1935,7 +2002,7 @@ class FordTriplogDatabase:
 
             with sqlite3.connect(self.db_path) as db:
                 # async_save() represents the complete JSON site list,
-                # therefore replace the complete SQLite mirror as well.
+                # therefore replace the complete SQLite storage as well.
                 db.execute("DELETE FROM user_charging_sites")
 
                 if rows:
@@ -1958,7 +2025,7 @@ class FordTriplogDatabase:
             )
 
             _LOGGER.debug(
-                "User charging sites mirrored to SQLite: %s",
+                "User charging sites saved to SQLite: %s",
                 len(sites),
             )
             return True
@@ -1994,7 +2061,7 @@ class FordTriplogDatabase:
 
         try:
             await self.hass.async_add_executor_job(functools.partial(_write))
-            _LOGGER.debug("Journey mirrored to SQLite: %s", journey_id)
+            _LOGGER.debug("Journey saved to SQLite: %s", journey_id)
             return True
         except Exception:
             _LOGGER.exception("Unable to mirror journey to SQLite: %s", journey_id)
@@ -2003,7 +2070,7 @@ class FordTriplogDatabase:
     async def load_journey_mirror_index(
         self,
     ) -> dict[str, dict[str, Any]]:
-        """Load archived journey payloads keyed by journey_id for mirror comparison."""
+        """Load archived journey payloads keyed by journey_id for legacy import comparison."""
 
         self._log_read("journey_mirror_index")
 
@@ -2272,7 +2339,7 @@ class FordTriplogDatabase:
             return False
 
     async def delete_all_journeys(self) -> bool:
-        """Delete all archived journey mirrors."""
+        """Delete all archived journey records."""
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
@@ -2917,7 +2984,7 @@ class FordTriplogDatabase:
                 db.commit()
         try:
             await self.hass.async_add_executor_job(functools.partial(_write))
-            _LOGGER.debug("Metadata mirrored to SQLite")
+            _LOGGER.debug("Metadata saved to SQLite")
             return True
         except Exception:
             _LOGGER.exception("Unable to mirror metadata to SQLite")

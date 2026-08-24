@@ -5,8 +5,8 @@ Track your Ford.
 
 Separate storage for daily journeys.
 
-Version: 2.1.0
-Build: 15a - Last Journey cache ordering fix
+Version: 2.3.0
+Build: 23002
 """
 
 from __future__ import annotations
@@ -22,13 +22,10 @@ from homeassistant.core import HomeAssistant
 
 from .database import FordTriplogDatabase
 from .const import (
-    CONF_STORAGE_READ_BACKEND,
     CURRENT_JOURNEY_FILE,
-    DEFAULT_STORAGE_READ_BACKEND,
     JOURNEYS_DIR,
     LAST_JOURNEY_FILE,
     STORAGE_DIR,
-    STORAGE_READ_BACKEND_SQLITE,
 )
 from .journey import FordTriplogJourney, build_pause_id
 from .metadata_storage import FordTriplogMetadataStorage
@@ -66,17 +63,9 @@ class FordTriplogJourneyStorage:
         )
         self._archive_lock = asyncio.Lock()
 
-        # Phase 2: use the persistent read-backend option.
-        # JSON remains the safe default.
-        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
-        entries = hass.config_entries.async_entries("ford_triplog")
-        if len(entries) == 1:
-            self.read_backend = str(
-                entries[0].options.get(
-                    CONF_STORAGE_READ_BACKEND,
-                    DEFAULT_STORAGE_READ_BACKEND,
-                )
-            )
+        # 2.3: SQLite is the only runtime journey backend.
+        # Compatibility attribute used by sensors/diagnostics.
+        self.read_backend = "sqlite"
 
     async def async_setup(self) -> None:
         """Create the journey storage directories."""
@@ -90,40 +79,35 @@ class FordTriplogJourneyStorage:
         await self._metadata_storage.async_setup()
         await self.database.async_setup()
 
-        # Legacy pause migration scans all Journey JSON files and metadata.
-        # Run it only once per Home Assistant runtime even when multiple
-        # JourneyStorage instances are created.
-        pause_migration_key = "ford_triplog_pause_metadata_migration_done"
+        # Legacy pause overrides are imported once and permanently marked
+        # in SQLite. Legacy Journey JSON files are not scanned on later starts.
+        pause_migration_id = "pause_override_import_v23"
 
-        if not self.hass.data.get(pause_migration_key, False):
-            self.hass.data[pause_migration_key] = True
+        if not await self.database.is_migration_completed(pause_migration_id):
             await self._migrate_pause_overrides_to_metadata()
+            await self.database.mark_migration_completed(pause_migration_id)
         else:
-            _LOGGER.debug(
-                "Pause metadata migration already completed in this HA runtime"
-            )
+            _LOGGER.debug("Pause metadata migration already completed")
 
-        # Mirror existing JSON journeys only once per Home Assistant runtime.
+        # Import existing legacy Journey JSON files only once per Home Assistant runtime.
         # Multiple components may create their own JourneyStorage instance.
-        mirror_key = "ford_triplog_initial_journey_mirror_done"
+        migration_id = "legacy_journey_import_v23"
 
-        if not self.hass.data.get(mirror_key, False):
-            self.hass.data[mirror_key] = True
-            await self._mirror_existing_journeys()
+        if not await self.database.is_migration_completed(migration_id):
+            completed = await self._import_legacy_journeys()
+            if completed:
+                await self.database.mark_migration_completed(migration_id)
         else:
-            _LOGGER.debug(
-                "Initial SQLite journey mirror already completed in this HA runtime"
-            )
+            _LOGGER.debug("Legacy Journey JSON import already completed")
 
-    async def _mirror_existing_journeys(self) -> None:
-        """Mirror JSON journeys into SQLite without destructive cleanup.
+    async def _import_legacy_journeys(self) -> None:
+        """Import legacy JSON journeys into SQLite without destructive cleanup.
 
-        JSON and SQLite remain selectable read backends. The mirror is
-        deliberately additive/update-only: missing JSON files never delete
-        existing SQLite rows.
+        Legacy JSON is read only during migration. Missing JSON files never
+        delete existing SQLite rows, and legacy files are left untouched.
         """
 
-        mirrored = 0
+        imported = 0
         unchanged = 0
         skipped = 0
         failed = 0
@@ -132,7 +116,7 @@ class FordTriplogJourneyStorage:
 
         if not json_paths:
             _LOGGER.info(
-                "Initial SQLite journey mirror: no JSON files found; "
+                "Legacy Journey JSON import: no JSON files found; "
                 "existing SQLite journeys preserved"
             )
 
@@ -146,7 +130,7 @@ class FordTriplogJourneyStorage:
             if not isinstance(data, dict):
                 skipped += 1
                 _LOGGER.error(
-                    "Initial SQLite mirror skipped journey: invalid JSON: %s",
+                    "Legacy Journey JSON import skipped journey: invalid JSON: %s",
                     path,
                 )
                 continue
@@ -155,47 +139,51 @@ class FordTriplogJourneyStorage:
             if not journey_id:
                 skipped += 1
                 _LOGGER.error(
-                    "Initial SQLite mirror skipped journey: missing journey_id: %s",
+                    "Legacy Journey JSON import skipped journey: missing journey_id: %s",
                     path,
                 )
                 continue
 
             existing = sqlite_journeys.get(journey_id)
-            if existing == data:
+            if existing is not None:
                 unchanged += 1
                 continue
 
             if await self.database.save_journey(data):
-                mirrored += 1
+                imported += 1
                 sqlite_journeys[journey_id] = data
             else:
                 failed += 1
                 _LOGGER.error(
-                    "Initial SQLite mirror failed for journey %s: %s",
+                    "Legacy Journey JSON import failed for journey %s: %s",
                     journey_id,
                     path,
                 )
 
         _LOGGER.info(
-            "Initial SQLite journey mirror completed: "
-            "json_files=%d mirrored=%d unchanged=%d skipped=%d failed=%d "
+            "Legacy Journey JSON import completed: "
+            "json_files=%d imported=%d unchanged=%d skipped=%d failed=%d "
             "existing_sqlite_rows_preserved=true",
             len(json_paths),
-            mirrored,
+            imported,
             unchanged,
             skipped,
             failed,
         )
 
-        # Cache files are mirrored only when a JSON source exists.
+        # Legacy cache files are imported only when a JSON source exists.
         # Missing JSON must never delete the corresponding SQLite cache.
-        current = await self._async_load_json(self._current_journey_path)
-        if isinstance(current, dict):
-            await self.database.save_current_journey(current)
+        if await self.database.load_current_journey() is None:
+            current = await self._async_load_json(self._current_journey_path)
+            if isinstance(current, dict):
+                await self.database.save_current_journey(current)
 
-        last = await self._async_load_json(self._last_journey_path)
-        if isinstance(last, dict):
-            await self.database.save_last_journey(last)
+        if await self.database.load_last_journey() is None:
+            last = await self._async_load_json(self._last_journey_path)
+            if isinstance(last, dict):
+                await self.database.save_last_journey(last)
+
+        return failed == 0 and skipped == 0
 
     async def save_current_journey(
         self,
@@ -205,10 +193,6 @@ class FordTriplogJourneyStorage:
 
         data = self._normalize_journey_data(journey)
 
-        await self._async_write_json(
-            self._current_journey_path,
-            data,
-        )
         await self.database.save_current_journey(data)
 
     async def load_current_journey(
@@ -216,18 +200,12 @@ class FordTriplogJourneyStorage:
     ) -> FordTriplogJourney | None:
         """Load the currently active journey."""
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Journey read backend: sqlite")
-            data = await self.database.load_current_journey()
-            if data is not None:
-                _LOGGER.debug(
-                    "SQLite current journey loaded: %s",
-                    data.get("journey_id", "unknown"),
-                )
-        else:
-            _LOGGER.debug("Journey read backend: json")
-            data = await self._async_load_json(
-                self._current_journey_path
+        _LOGGER.debug("Journey read backend: sqlite")
+        data = await self.database.load_current_journey()
+        if data is not None:
+            _LOGGER.debug(
+                "SQLite current journey loaded: %s",
+                data.get("journey_id", "unknown"),
             )
 
         if data is None:
@@ -245,10 +223,6 @@ class FordTriplogJourneyStorage:
     async def clear_current_journey(self) -> None:
         """Remove the active journey file."""
 
-        await self.hass.async_add_executor_job(
-            self._unlink_file,
-            self._current_journey_path,
-        )
         await self.database.delete_current_journey()
 
     async def save_completed_journey(
@@ -257,7 +231,7 @@ class FordTriplogJourneyStorage:
         *,
         preserve_pause_overrides: bool = True,
     ) -> Path:
-        """Archive a completed journey without creating duplicates."""
+        """Archive a completed journey in SQLite without duplicates."""
 
         async with self._archive_lock:
             data = self._normalize_journey_data(journey)
@@ -265,93 +239,51 @@ class FordTriplogJourneyStorage:
             if preserve_pause_overrides:
                 data = await self._inherit_pause_overrides(data)
 
-            matching_paths = await self._find_matching_journey_paths(data)
+            matches = await self._find_matching_journeys(data)
+            if matches:
+                existing_data = matches[0]
+                existing_id = str(existing_data.get("journey_id", "")).strip()
+                if existing_id:
+                    data["journey_id"] = existing_id
+                if existing_data.get("created"):
+                    data["created"] = existing_data["created"]
 
-            if matching_paths:
-                archive_path = matching_paths[0]
-                existing_data = await self._async_load_json(archive_path)
-
-                if isinstance(existing_data, dict):
-                    existing_id = str(
-                        existing_data.get("journey_id", "")
-                    ).strip()
-                    if existing_id:
-                        data["journey_id"] = existing_id
-
-                    if existing_data.get("created"):
-                        data["created"] = existing_data["created"]
-            else:
-                journey_id = str(data["journey_id"]).strip()
-                archive_path = (
-                    self._journeys_directory
-                    / f"{self._safe_filename(journey_id)}.json"
-                )
-
-            await self._async_write_json(archive_path, data)
             await self.database.save_journey(data)
+            await self.database.save_last_journey(data)
 
-            # Only replace the Last Journey cache when this record is
-            # chronologically newer than (or equal to) the cached Journey.
-            #
-            # save_completed_journey() is also used when older archived
-            # Journeys are edited (for example pause metadata/receipts).
-            # Unconditionally updating last_journey here would therefore make
-            # the Last Journey sensors jump back to the edited historical day.
-            cached_last = await self._async_load_json(self._last_journey_path)
+            canonical_id = str(data["journey_id"]).strip()
+            for duplicate_data in matches[1:]:
+                duplicate_id = str(duplicate_data.get("journey_id", "")).strip()
+                if duplicate_id and duplicate_id != canonical_id:
+                    await self.database.delete_journey(duplicate_id)
+                    _LOGGER.warning(
+                        "Removed duplicate SQLite journey %s; canonical=%s",
+                        duplicate_id,
+                        canonical_id,
+                    )
 
-            def _journey_sort_key(value: dict[str, Any] | None) -> tuple[str, str]:
-                if not isinstance(value, dict):
-                    return ("", "")
-                return (
-                    str(value.get("end_time") or value.get("start_time") or ""),
-                    str(value.get("journey_id") or ""),
-                )
+            # Keep the historical Path return type for callers. No JSON file is written.
+            return self._journeys_directory / f"{self._safe_filename(canonical_id)}.json"
 
-            if cached_last is None or _journey_sort_key(data) >= _journey_sort_key(cached_last):
-                await self._async_write_json(self._last_journey_path, data)
-                await self.database.save_last_journey(data)
-
-            for duplicate_path in matching_paths[1:]:
-                duplicate_data = await self._async_load_json(duplicate_path)
-                await self.hass.async_add_executor_job(
-                    self._unlink_file,
-                    duplicate_path,
-                )
-                if isinstance(duplicate_data, dict):
-                    duplicate_id = str(
-                        duplicate_data.get("journey_id", "")
-                    ).strip()
-                    if duplicate_id:
-                        await self.database.delete_journey(duplicate_id)
-                _LOGGER.warning(
-                    "Removed duplicate journey archive %s; canonical=%s",
-                    duplicate_path.name,
-                    archive_path.name,
-                )
-
-            return archive_path
-
-    async def _find_matching_journey_paths(
+    async def _find_matching_journeys(
         self,
         data: dict[str, Any],
-    ) -> list[Path]:
-        """Return archived journeys with identical source references."""
+    ) -> list[dict[str, Any]]:
+        """Return SQLite journeys with identical source references."""
 
         signature = self._journey_signature(data)
         if signature is None:
             return []
 
-        matching: list[Path] = []
+        matching: list[dict[str, Any]] = []
+        for existing in await self.database.load_all_journeys():
+            if isinstance(existing, dict) and self._journey_signature(existing) == signature:
+                matching.append(existing)
 
-        for path in await self.list_journey_files():
-            existing = await self._async_load_json(path)
-            if (
-                isinstance(existing, dict)
-                and self._journey_signature(existing) == signature
-            ):
-                matching.append(path)
-
-        return sorted(matching)
+        return sorted(
+            matching,
+            key=lambda item: str(item.get("journey_id", "")),
+        )
 
     @staticmethod
     def _journey_signature(
@@ -388,18 +320,12 @@ class FordTriplogJourneyStorage:
     ) -> FordTriplogJourney | None:
         """Load the last completed journey."""
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Last Journey read backend: sqlite")
-            data = await self.database.load_last_journey()
-            if data is not None:
-                _LOGGER.debug(
-                    "SQLite last journey loaded: %s",
-                    data.get("journey_id", "unknown"),
-                )
-        else:
-            _LOGGER.debug("Last Journey read backend: json")
-            data = await self._async_load_json(
-                self._last_journey_path
+        _LOGGER.debug("Last Journey read backend: sqlite")
+        data = await self.database.load_last_journey()
+        if data is not None:
+            _LOGGER.debug(
+                "SQLite last journey loaded: %s",
+                data.get("journey_id", "unknown"),
             )
 
         if data is None:
@@ -441,19 +367,11 @@ class FordTriplogJourneyStorage:
 
         data = self._normalize_journey_data(journey)
 
-        await self._async_write_json(
-            self._last_journey_path,
-            data,
-        )
         await self.database.save_last_journey(data)
 
     async def clear_last_journey(self) -> None:
         """Remove the last completed journey cache."""
 
-        await self.hass.async_add_executor_job(
-            self._unlink_file,
-            self._last_journey_path,
-        )
         await self.database.delete_last_journey()
 
     async def list_journey_files(self) -> list[Path]:
@@ -482,21 +400,16 @@ class FordTriplogJourneyStorage:
             )
             return None
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Journey archive read backend: sqlite")
-            journey_id = resolved_path.stem
-            data = await self.database.load_journey(journey_id)
-            if data is None:
-                _LOGGER.error(
-                    "SQLite journey read failed: journey_id=%s path=%s",
-                    journey_id,
-                    resolved_path,
-                )
-                return None
-        else:
-            data = await self._async_load_json(
-                resolved_path
+        _LOGGER.debug("Journey archive read backend: sqlite")
+        journey_id = resolved_path.stem
+        data = await self.database.load_journey(journey_id)
+        if data is None:
+            _LOGGER.error(
+                "SQLite journey read failed: journey_id=%s path=%s",
+                journey_id,
+                resolved_path,
             )
+            return None
 
         if data is None:
             return None
@@ -513,55 +426,27 @@ class FordTriplogJourneyStorage:
     async def get_all_journeys(
         self,
     ) -> list[FordTriplogJourney]:
-        """Load all archived journeys in chronological order."""
+        """Load all archived journeys from SQLite in chronological order."""
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            _LOGGER.debug("Journey archive list read backend: sqlite")
-            data_list = await self.database.load_all_journeys()
+        _LOGGER.debug("Journey archive list read backend: sqlite")
+        data_list = await self.database.load_all_journeys()
 
-            journeys: list[FordTriplogJourney] = []
-            for data in data_list:
-                try:
-                    journey = FordTriplogJourney.from_dict(data)
-                except (TypeError, ValueError):
-                    _LOGGER.exception(
-                        "Unable to parse SQLite journey: %s",
-                        data.get("journey_id", "unknown")
-                        if isinstance(data, dict)
-                        else "unknown",
-                    )
-                    continue
-
-                journeys.append(journey)
-
-            journeys.sort(
-                key=lambda journey: (
-                    journey.start_time or "",
-                    journey.journey_id,
+        journeys: list[FordTriplogJourney] = []
+        for data in data_list:
+            try:
+                journey = FordTriplogJourney.from_dict(data)
+            except (TypeError, ValueError):
+                _LOGGER.exception(
+                    "Unable to parse SQLite journey: %s",
+                    data.get("journey_id", "unknown")
+                    if isinstance(data, dict)
+                    else "unknown",
                 )
-            )
+                continue
+            journeys.append(journey)
 
-            _LOGGER.debug(
-                "SQLite journey archive loaded: %d",
-                len(journeys),
-            )
-            return journeys
-
-        journeys = []
-
-        for path in await self.list_journey_files():
-            journey = await self.load_journey_file(path)
-
-            if journey is not None:
-                journeys.append(journey)
-
-        journeys.sort(
-            key=lambda journey: (
-                journey.start_time or "",
-                journey.journey_id,
-            )
-        )
-
+        journeys.sort(key=lambda journey: (journey.start_time or "", journey.journey_id))
+        _LOGGER.debug("SQLite journey archive loaded: %d", len(journeys))
         return journeys
 
     async def load_journey_by_id(
@@ -696,8 +581,7 @@ class FordTriplogJourneyStorage:
         if not journey_date:
             return
 
-        for path in await self.list_journey_files():
-            existing_data = await self._async_load_json(path)
+        for existing_data in await self.database.load_all_journeys():
             if not isinstance(existing_data, dict):
                 continue
             try:
@@ -734,7 +618,6 @@ class FordTriplogJourneyStorage:
 
             if changed:
                 synchronized_data = existing.to_dict()
-                await self._async_write_json(path, synchronized_data)
                 await self.database.save_journey(synchronized_data)
 
     @staticmethod
@@ -759,26 +642,12 @@ class FordTriplogJourneyStorage:
         self,
         journey_id: str,
     ) -> bool:
-        """Delete one archived journey without touching trips or charges."""
+        """Delete one archived journey from SQLite."""
 
         normalized_id = str(journey_id).strip()
         if not normalized_id:
             return False
-
-        path = (
-            self._journeys_directory
-            / f"{self._safe_filename(normalized_id)}.json"
-        )
-
-        deleted = await self.hass.async_add_executor_job(
-            self._unlink_file,
-            path,
-        )
-
-        if deleted:
-            await self.database.delete_journey(normalized_id)
-
-        return deleted
+        return await self.database.delete_journey(normalized_id)
 
     async def delete_all_journeys(
         self,
@@ -786,23 +655,17 @@ class FordTriplogJourneyStorage:
         clear_current: bool = True,
         clear_last: bool = True,
     ) -> int:
-        """Delete all archived journeys and optional cache files.
+        """Delete all archived SQLite journeys and optional caches."""
 
-        Trips and charging sessions are never changed.
-        """
-
-        deleted = await self.hass.async_add_executor_job(
-            self._delete_all_journey_files
-        )
-        await self.database.delete_all_journeys()
+        existing_count = len(await self.database.load_all_journeys())
+        deleted_ok = await self.database.delete_all_journeys()
 
         if clear_current:
             await self.clear_current_journey()
-
         if clear_last:
             await self.clear_last_journey()
 
-        return deleted
+        return existing_count if deleted_ok else 0
 
     def _normalize_journey_data(
         self,

@@ -18,12 +18,9 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    CONF_STORAGE_READ_BACKEND,
-    DEFAULT_STORAGE_READ_BACKEND,
     METADATA_FILE,
     METADATA_SCHEMA_VERSION,
     STORAGE_DIR,
-    STORAGE_READ_BACKEND_SQLITE,
 )
 from .database import FordTriplogDatabase
 
@@ -43,41 +40,23 @@ class FordTriplogMetadataStorage:
             hass,
             self._base_directory,
         )
-        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
-        entries = hass.config_entries.async_entries("ford_triplog")
-        if len(entries) == 1:
-            self.read_backend = str(
-                entries[0].options.get(
-                    CONF_STORAGE_READ_BACKEND,
-                    DEFAULT_STORAGE_READ_BACKEND,
-                )
-            )
+        # SQLite is the only runtime metadata backend.
+        self.read_backend = "sqlite"
 
     async def async_setup(self) -> None:
         """Initialize metadata storage."""
 
         await self.database.async_setup()
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            # Migration checks read the same metadata tables several times.
-            # They only need to run once per Home Assistant runtime, even when
-            # multiple FordTriplogMetadataStorage instances are created.
-            migration_key = "ford_triplog_metadata_table_migrations_done"
-
-            if not self.hass.data.get(migration_key, False):
-                self.hass.data[migration_key] = True
-                try:
-                    await self._migrate_charge_metadata_to_table()
-                    await self._migrate_receipts_to_table()
-                    await self._migrate_pause_metadata_to_table()
-                except Exception:
-                    # Allow a later setup attempt to retry if migration failed.
-                    self.hass.data.pop(migration_key, None)
-                    raise
+        if self.read_backend == "sqlite":
+            migration_id = "metadata_table_migrations_v23"
+            if not await self.database.is_migration_completed(migration_id):
+                await self._migrate_charge_metadata_to_table()
+                await self._migrate_receipts_to_table()
+                await self._migrate_pause_metadata_to_table()
+                await self.database.mark_migration_completed(migration_id)
             else:
-                _LOGGER.debug(
-                    "SQLite metadata migrations already completed in this HA runtime"
-                )
+                _LOGGER.debug("SQLite metadata migrations already completed")
             return
 
         data = await self.async_load()
@@ -266,7 +245,7 @@ class FordTriplogMetadataStorage:
         )
 
     async def async_load(self) -> dict[str, Any] | None:
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             data = await self.database.load_metadata()
             if data is None:
                 return None
@@ -285,7 +264,7 @@ class FordTriplogMetadataStorage:
     async def async_save(self, data: dict[str, Any]) -> None:
         normalized = self._normalize(data)
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             charge_metadata = normalized.get("charges", {})
             if not isinstance(charge_metadata, dict):
                 charge_metadata = {}
@@ -461,7 +440,7 @@ class FordTriplogMetadataStorage:
         if not receipt_id:
             raise ValueError("Receipt ID is required")
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             saved = await self.database.save_receipt(
                 target_type,
                 normalized_target_id,
@@ -497,7 +476,7 @@ class FordTriplogMetadataStorage:
     async def get_all_receipts(self) -> list[dict[str, Any]]:
         """Return receipts from all supported metadata sections."""
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             result = await self.database.load_all_receipts()
             result.sort(
                 key=lambda item: str(item.get("created_at") or ""),
@@ -542,7 +521,7 @@ class FordTriplogMetadataStorage:
         if not normalized_id:
             return None
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             receipt = await self.database.load_receipt(normalized_id)
             if receipt is None:
                 return None
@@ -584,7 +563,7 @@ class FordTriplogMetadataStorage:
         if not normalized_id:
             return None
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             return await self.database.load_receipt(normalized_id)
 
         data = await self.async_load() or self._empty_data()
@@ -624,7 +603,7 @@ class FordTriplogMetadataStorage:
         if not normalized_id:
             return None
 
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
+        if self.read_backend == "sqlite":
             current = await self.database.load_receipt(normalized_id)
             if current is None:
                 return None

@@ -26,12 +26,8 @@ from typing import Any
 from homeassistant.core import HomeAssistant
 
 from .const import (
-    CONF_STORAGE_READ_BACKEND,
-    DEFAULT_STORAGE_READ_BACKEND,
     DEFAULT_USER_CHARGING_SITE_RADIUS,
-    DOMAIN,
     STORAGE_DIR,
-    STORAGE_READ_BACKEND_SQLITE,
     USER_CHARGING_SITES_FILE,
     USER_CHARGING_SITES_SCHEMA_VERSION,
 )
@@ -54,112 +50,38 @@ class UserChargingSiteStorage:
             self.storage_directory,
         )
 
-        self.read_backend = DEFAULT_STORAGE_READ_BACKEND
+        # 2.3: SQLite is the only runtime backend.
+        self.read_backend = "sqlite"
         self._sites: list[dict[str, Any]] | None = None
-        entries = hass.config_entries.async_entries(DOMAIN)
-        if len(entries) == 1:
-            self.read_backend = str(
-                entries[0].options.get(
-                    CONF_STORAGE_READ_BACKEND,
-                    DEFAULT_STORAGE_READ_BACKEND,
-                )
-            )
 
     async def async_setup(self) -> None:
-        """Initialize user charging-site storage."""
-
+        """Initialize SQLite user charging-site storage and import legacy JSON if needed."""
         await self.database.async_setup()
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            # SQLite-only must never create an empty JSON file or clear an
-            # existing SQLite table merely because the JSON file is absent.
-            sqlite_sites = await self.database.load_user_charging_sites()
-
-            if sqlite_sites:
-                self._sites = self._normalize_sites(
-                    sqlite_sites,
-                    generate_id=False,
-                )
-                return
-
-            # Safe one-time recovery/mirror when a legacy JSON file still
-            # exists and SQLite is empty.
-            if self.storage_path.exists():
-                json_sites = await self.hass.async_add_executor_job(self._load)
-                if json_sites:
-                    await self.database.save_user_charging_sites(json_sites)
-                    _LOGGER.info(
-                        "Imported %d user charging sites from JSON into SQLite",
-                        len(json_sites),
-                    )
-                    self._sites = json_sites
-                    return
-
-            self._sites = []
+        sqlite_sites = await self.database.load_user_charging_sites()
+        if sqlite_sites:
+            self._sites = self._normalize_sites(sqlite_sites, generate_id=False)
             return
-
-        await self.hass.async_add_executor_job(self._setup)
-
-        # Keep SQLite populated while JSON is the selected read backend,
-        # but do not wipe an existing SQLite table because an old JSON file
-        # happens to be empty.
-        json_sites = await self.hass.async_add_executor_job(self._load)
-        self._sites = json_sites
-
-        if json_sites:
-            await self.database.save_user_charging_sites(json_sites)
+        if self.storage_path.exists():
+            json_sites = await self.hass.async_add_executor_job(self._load)
+            if json_sites:
+                await self.database.save_user_charging_sites(json_sites)
+                _LOGGER.info("Imported %d user charging sites from legacy JSON into SQLite", len(json_sites))
+                self._sites = json_sites
+                return
+        self._sites = []
 
     async def async_load(self) -> list[dict[str, Any]]:
-        """Load user charging sites from the selected backend."""
-
+        """Load user charging sites from SQLite."""
         if self._sites is None:
-            if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-                sites = await self.database.load_user_charging_sites()
-                self._sites = self._normalize_sites(
-                    sites,
-                    generate_id=False,
-                )
-            else:
-                self._sites = await self.hass.async_add_executor_job(
-                    self._load
-                )
-
+            sites = await self.database.load_user_charging_sites()
+            self._sites = self._normalize_sites(sites, generate_id=False)
         return list(self._sites)
 
     async def async_save(self, sites: list[dict[str, Any]]) -> None:
-        """Save user charging sites to the selected backend."""
-
-        normalized_sites = self._normalize_sites(
-            sites,
-            generate_id=True,
-        )
-
-        if self.read_backend == STORAGE_READ_BACKEND_SQLITE:
-            saved = await self.database.save_user_charging_sites(
-                normalized_sites
-            )
-            if not saved:
-                raise OSError(
-                    "Unable to save user charging sites to SQLite"
-                )
-
-            self._sites = normalized_sites
-            return
-
-        await self.hass.async_add_executor_job(
-            self._write_payload,
-            normalized_sites,
-        )
-
-        # JSON mode continues to maintain the SQLite mirror.
-        saved = await self.database.save_user_charging_sites(
-            normalized_sites
-        )
-        if not saved:
-            raise OSError(
-                "Unable to mirror user charging sites to SQLite"
-            )
-
+        """Save user charging sites to SQLite."""
+        normalized_sites = self._normalize_sites(sites, generate_id=True)
+        if not await self.database.save_user_charging_sites(normalized_sites):
+            raise OSError("Unable to save user charging sites to SQLite")
         self._sites = normalized_sites
 
     async def async_add(self, site: dict[str, Any]) -> dict[str, Any]:

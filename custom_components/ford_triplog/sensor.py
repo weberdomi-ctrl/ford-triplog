@@ -46,8 +46,15 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
+from .const import (
+    DOMAIN,
+    VERSION,
+    SIGNAL_LAST_JOURNEY_UPDATED,
+    SIGNAL_LAST_TRIP_UPDATED,
+)
 from .const import SIGNAL_CHARGE_DATA_UPDATED
+
+SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
@@ -68,7 +75,7 @@ async def async_setup_entry(
     history = data["history"]
     storage = data["storage"]
     database = storage.database
-    read_backend = storage.read_backend
+    read_backend = "sqlite"
     journey_storage = data.get("journey_storage")
     route_storage = data.get("route_storage")
     charge_manager = data.get("charge_manager")
@@ -107,7 +114,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             FordTriplogLastJourneySensor(
-                journey_storage,
+                storage,
                 common_translations,
             ),
             FordTriplogLastJourneyOverviewSensor(
@@ -230,7 +237,7 @@ async def async_setup_entry(
 
 
 class FordTriplogLastJourneySensor(SensorEntity):
-    """Expose the last completed Journey."""
+    """Expose the last completed individual trip as 'Last Tour'."""
 
     _attr_has_entity_name = True
     _attr_should_poll = False
@@ -241,28 +248,28 @@ class FordTriplogLastJourneySensor(SensorEntity):
 
     def __init__(
         self,
-        storage: FordTriplogJourneyStorage | None,
+        storage,
         translations: dict[str, str],
     ) -> None:
         self.storage = storage
         self.translations = translations
-        self._journey = None
+        self._trip: dict[str, Any] | None = None
         self._attr_native_value = None
 
     async def async_added_to_hass(self) -> None:
-        """Load state and subscribe to Journey updates."""
+        """Load state and subscribe to last-trip updates."""
 
         self.async_on_remove(
             async_dispatcher_connect(
                 self.hass,
-                SIGNAL_LAST_JOURNEY_UPDATED,
-                self._handle_journey_update,
+                SIGNAL_LAST_TRIP_UPDATED,
+                self._handle_trip_update,
             )
         )
         await self._async_refresh()
 
-    def _handle_journey_update(self, *_args: Any) -> None:
-        """Schedule a thread-safe refresh after a Journey update."""
+    def _handle_trip_update(self, *_args: Any) -> None:
+        """Refresh immediately after a completed trip was stored."""
 
         self.hass.add_job(self._async_refresh_and_write)
 
@@ -273,23 +280,21 @@ class FordTriplogLastJourneySensor(SensorEntity):
         self.async_write_ha_state()
 
     async def _async_refresh(self) -> None:
-        """Load the last completed Journey."""
+        """Load the last completed individual trip."""
 
-        if self.storage is None:
-            self._journey = None
+        self._trip = await self.storage.load_last_trip()
+
+        if not self._trip:
             self._attr_native_value = None
             return
 
-        self._journey = await self.storage.load_last_journey()
-
-        if self._journey is None or not self._journey.end_time:
+        end_time = self._trip.get("end_time")
+        if not end_time:
             self._attr_native_value = None
             return
 
         try:
-            timestamp = datetime.fromisoformat(
-                self._journey.end_time
-            )
+            timestamp = datetime.fromisoformat(str(end_time))
         except (TypeError, ValueError):
             self._attr_native_value = None
             return
@@ -301,106 +306,47 @@ class FordTriplogLastJourneySensor(SensorEntity):
 
     @property
     def available(self) -> bool:
-        """Return whether Journey data is available."""
+        """Return whether trip data is available."""
 
-        return self._journey is not None
+        return self._trip is not None
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        """Return details of the last completed Journey."""
+        """Return details of the last completed individual trip."""
 
-        if self._journey is None:
-            return {
-                "read_backend": (
-                    self.storage.read_backend
-                    if self.storage is not None
-                    else "unknown"
-                ),
-            }
+        if not self._trip:
+            return {"read_backend": "sqlite"}
 
-        journey = self._journey
-
+        trip = self._trip
+        end_time = str(trip.get("end_time") or "")
         return {
-            "read_backend": (
-                self.storage.read_backend
-                if self.storage is not None
-                else "unknown"
-            ),
-            "journey_id": journey.journey_id,
-            "date": journey.date,
-            "start_time": journey.start_time,
-            "end_time": journey.end_time,
-            "start_address": journey.start_address,
-            "end_address": journey.end_address,
+            "read_backend": "sqlite",
+            "trip_id": trip.get("trip_id"),
+            "date": end_time[:10] if len(end_time) >= 10 else None,
+            "start_time": trip.get("start_time"),
+            "end_time": trip.get("end_time"),
+            "start_address": trip.get("start_address"),
+            "end_address": trip.get("end_address"),
             "display_start_location": (
-                journey.items[0].start_location
-                if journey.items
-                and journey.items[0].item_type == "trip"
-                and journey.items[0].start_location
-                else journey.start_address
+                trip.get("start_location")
+                or trip.get("start_address")
             ),
             "display_end_location": (
-                journey.items[-1].end_location
-                if journey.items
-                and journey.items[-1].item_type == "trip"
-                and journey.items[-1].end_location
-                else journey.items[-1].location
-                if journey.items
-                and journey.items[-1].item_type == "charge"
-                and journey.items[-1].location
-                else journey.end_address
+                trip.get("end_location")
+                or trip.get("end_address")
             ),
-            "start_latitude": journey.start_latitude,
-            "start_longitude": journey.start_longitude,
-            "end_latitude": journey.end_latitude,
-            "end_longitude": journey.end_longitude,
-            "trip_count": journey.trip_count,
-            "charge_count": journey.charge_count,
-            "trip_ids": list(journey.trip_ids),
-            "charge_ids": list(journey.charge_ids),
-            "distance_km": journey.distance_km,
-            "driving_duration_seconds": (
-                journey.driving_duration_seconds
-            ),
-            "charging_duration_seconds": (
-                journey.charging_duration_seconds
-            ),
-            "total_duration_seconds": (
-                journey.total_duration_seconds
-            ),
-            "energy_used_kwh": journey.energy_used_kwh,
-            "energy_charged_kwh": journey.energy_charged_kwh,
-            "start_soc": journey.start_soc,
-            "end_soc": journey.end_soc,
-            "soc_delta": journey.soc_delta,
-            "soc_used": journey.soc_used,
-            "soc_charged": journey.soc_charged,
-            "soc_adjustment": journey.soc_adjustment,
-            "battery_capacity_kwh": journey.battery_capacity_kwh,
-            "battery_energy_delta_kwh": (
-                journey.battery_energy_delta_kwh
-            ),
-            "soc_adjustment_kwh": journey.soc_adjustment_kwh,
-            "battery_energy_balance_kwh": (
-                journey.battery_energy_balance_kwh
-            ),
-            "total_energy_flow_kwh": journey.total_energy_flow_kwh,
-            "average_consumption_kwh_100km": (
-                journey.average_consumption_kwh_100km
-            ),
-            "charging_cost_total": journey.charging_cost_total,
-            "charging_energy_cost": journey.charging_energy_cost,
-            "charging_additional_cost": (
-                journey.charging_additional_cost
-            ),
-            "average_charging_price_per_kwh": (
-                journey.average_charging_price_per_kwh
-            ),
-            "currency": journey.currency,
-            "items": [
-                item.to_dict()
-                for item in journey.items
-            ],
+            "start_latitude": trip.get("start_latitude"),
+            "start_longitude": trip.get("start_longitude"),
+            "end_latitude": trip.get("end_latitude"),
+            "end_longitude": trip.get("end_longitude"),
+            "distance_km": trip.get("distance_km"),
+            "duration_seconds": trip.get("duration_seconds"),
+            "energy_used_kwh": trip.get("energy_used_kwh"),
+            "consumption_kwh_100km": trip.get("consumption_kwh_100km"),
+            "average_speed_kmh": trip.get("average_speed_kmh"),
+            "start_soc": trip.get("start_soc"),
+            "end_soc": trip.get("end_soc"),
+            "soc_used": trip.get("soc_used"),
         }
 
     @property
@@ -1872,17 +1818,21 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._attributes: dict[str, Any] = {}
 
     async def async_added_to_hass(self) -> None:
-        """Load the latest route and refresh after coordinator updates."""
+        """Load the latest route and subscribe to completed-route updates."""
 
         self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_update)
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_ROUTE_UPDATED,
+                self._handle_update,
+            )
         )
         await self._async_refresh()
 
-    def _handle_update(self) -> None:
-        """Refresh the route sensor after coordinator activity."""
+    def _handle_update(self, *_args: Any) -> None:
+        """Refresh immediately after a completed route was stored."""
 
-        self.hass.async_create_task(self._async_refresh_and_write())
+        self.hass.add_job(self._async_refresh_and_write)
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write the current route state."""
@@ -2518,30 +2468,13 @@ class FordTriplogTopDaySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Aggregate Journeys by day and expose the record day."""
 
-        if self.read_backend == "sqlite":
-            _LOGGER.debug("Top Day sensor read backend: sqlite")
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Day SQLite read requested but database is unavailable"
-                )
-                journeys = []
-            else:
-                journeys = await self.database.load_top_day_journeys()
-                _LOGGER.debug(
-                    "Top Day sensor SQLite journeys loaded: %d",
-                    len(journeys),
-                )
+        _LOGGER.debug("Top Day sensor read backend: sqlite")
+        if self.database is None:
+            _LOGGER.error("Top Day SQLite database is unavailable")
+            journeys = []
         else:
-            _LOGGER.debug("Top Day sensor read backend: json")
-            journeys = (
-                await self.journey_storage.get_all_journeys()
-                if self.journey_storage is not None
-                else []
-            )
-            _LOGGER.debug(
-                "Top Day sensor JSON journeys loaded: %d",
-                len(journeys),
-            )
+            journeys = await self.database.load_top_day_journeys()
+            _LOGGER.debug("Top Day sensor SQLite journeys loaded: %d", len(journeys))
 
         if not journeys:
             self._attr_native_value = None
@@ -3343,16 +3276,11 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
         total_started = time.perf_counter()
         load_started = time.perf_counter()
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Locations SQLite read requested but database is unavailable"
-                )
-                trips = []
-            else:
-                trips = await self.database.load_top_location_trips()
+        if self.database is None:
+            _LOGGER.error("Top Locations SQLite database is unavailable")
+            trips = []
         else:
-            trips = await self.history.get_all_trips()
+            trips = await self.database.load_top_location_trips()
 
         load_elapsed = time.perf_counter() - load_started
 
@@ -3623,16 +3551,11 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
         total_started = time.perf_counter()
         load_started = time.perf_counter()
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Routes SQLite read requested but database is unavailable"
-                )
-                trips = []
-            else:
-                trips = await self.database.load_top_route_trips()
+        if self.database is None:
+            _LOGGER.error("Top Routes SQLite database is unavailable")
+            trips = []
         else:
-            trips = await self.history.get_all_trips()
+            trips = await self.database.load_top_route_trips()
 
         load_elapsed = time.perf_counter() - load_started
 
@@ -4385,16 +4308,11 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
     async def _async_refresh_top_charging(self) -> None:
         """Aggregate archived charging sessions."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Charging SQLite read requested but database is unavailable"
-                )
-                charges = []
-            else:
-                charges = await self.database.load_top_charging_charges()
+        if self.database is None:
+            _LOGGER.error("Top Charging SQLite database is unavailable")
+            charges = []
         else:
-            charges = await self.history.get_all_charges()
+            charges = await self.database.load_top_charging_charges()
 
         valid_charges = [
             charge
@@ -4748,31 +4666,11 @@ class FordTriplogTopJourneySensor(SensorEntity):
     async def _async_refresh(self) -> None:
         """Find and expose the longest archived Journey."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Journey SQLite read requested but database is unavailable"
-                )
-                journey = None
-            else:
-                journey = await self.database.load_top_journey()
+        if self.database is None:
+            _LOGGER.error("Top Journey SQLite database is unavailable")
+            journey = None
         else:
-            if self.storage is None:
-                journey = None
-            else:
-                journeys = await self.storage.get_all_journeys()
-
-                def journey_distance(item) -> float:
-                    try:
-                        return float(item.distance_km or 0)
-                    except (TypeError, ValueError):
-                        return 0.0
-
-                journey = (
-                    max(journeys, key=journey_distance)
-                    if journeys
-                    else None
-                )
+            journey = await self.database.load_top_journey()
 
         if journey is None:
             self._journey = None
@@ -4999,20 +4897,11 @@ class FordTriplogTopTripSensor(FordTriplogSensorBase):
     async def async_update(self) -> None:
         """Load Top Trip from the selected backend."""
 
-        if self.read_backend == "sqlite":
-            if self.database is None:
-                _LOGGER.error(
-                    "Top Trip SQLite read requested but database is unavailable"
-                )
-                self._top_trip = None
-            else:
-                self._top_trip = await self.database.load_top_trip()
+        if self.database is None:
+            _LOGGER.error("Top Trip SQLite database is unavailable")
+            self._top_trip = None
         else:
-            statistics, _, _ = await self.history.get_sensor_data()
-            top_trip = statistics.get("top_trip") if statistics else None
-            self._top_trip = (
-                top_trip if isinstance(top_trip, dict) else None
-            )
+            self._top_trip = await self.database.load_top_trip()
 
         if not self._top_trip:
             self._value = None

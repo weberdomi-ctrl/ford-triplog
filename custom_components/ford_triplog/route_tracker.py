@@ -8,7 +8,7 @@ Phase: Route Tracker Phase 1
 Build: 03 - Trip-end GPS validation
 
 Changes:
-- Persists the route JSON immediately when a Trip starts.
+- Persists the route record immediately when a Trip starts.
 - Persists every accepted GPS point while driving.
 - Persists Smart Trip pause/resume state.
 - Restores active or paused route points after HA/integration reload.

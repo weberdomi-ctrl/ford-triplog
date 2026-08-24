@@ -22,7 +22,7 @@ from typing import Any
 _LOGGER = logging.getLogger(__name__)
 
 # All sensor entities are updated almost simultaneously. Keep the compact
-# sensor snapshot briefly so only one entity performs the three JSON reads.
+# sensor snapshot briefly so only one entity performs the three SQLite reads.
 _SENSOR_CACHE_TTL_SECONDS = 1.0
 
 
@@ -49,8 +49,8 @@ class FordTriplogHistory:
         """Return the shared compact data snapshot used by all sensors.
 
         Unlike ``get_statistics()``, this does not scan the trip and charging
-        archives. It reads only statistics.json, last_trip.json and
-        last_charge.json. Concurrent sensor updates share the same snapshot.
+        archives. It reads only the SQLite statistics, last_trip and
+        last_charge records. Concurrent sensor updates share the same snapshot.
         """
         now = monotonic()
         if (

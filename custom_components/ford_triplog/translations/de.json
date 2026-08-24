@@ -17,6 +17,9 @@
           "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
         }
       }
+    },
+    "error": {
+      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
     }
   },
   "options": {
@@ -830,7 +833,8 @@
       "export_invalid_date_range": "Das Startdatum darf nicht nach dem Enddatum liegen.",
       "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
       "charge_delete_failed": "Der Ladevorgang konnte nicht vollständig gelöscht werden.",
-      "charge_not_suspicious": "Dieser Ladevorgang erfüllt die Kriterien für eine sichere Löschung nicht."
+      "charge_not_suspicious": "Dieser Ladevorgang erfüllt die Kriterien für eine sichere Löschung nicht.",
+      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
     }
   },
   "entity": {
