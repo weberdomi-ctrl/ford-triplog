@@ -812,6 +812,10 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM routes
+                    WHERE COALESCE(
+                        json_extract(data, '$.status'),
+                        'completed'
+                    ) = 'completed'
                     ORDER BY rowid DESC
                     LIMIT 1
                     """

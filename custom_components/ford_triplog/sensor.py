@@ -46,7 +46,12 @@ from .icons import (
     ICON_END_TIME,
 )
 
-from .const import DOMAIN, VERSION, SIGNAL_LAST_JOURNEY_UPDATED
+from .const import (
+    DOMAIN,
+    VERSION,
+    SIGNAL_LAST_JOURNEY_UPDATED,
+    SIGNAL_LAST_ROUTE_UPDATED,
+)
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
@@ -1872,15 +1877,19 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._attributes: dict[str, Any] = {}
 
     async def async_added_to_hass(self) -> None:
-        """Load the latest route and refresh after coordinator updates."""
+        """Load the latest route and subscribe to completed-route updates."""
 
         self.async_on_remove(
-            self.coordinator.async_add_listener(self._handle_update)
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_ROUTE_UPDATED,
+                self._handle_update,
+            )
         )
         await self._async_refresh()
 
-    def _handle_update(self) -> None:
-        """Refresh the route sensor after coordinator activity."""
+    def _handle_update(self, *_args: Any) -> None:
+        """Refresh immediately after a completed route was stored."""
 
         self.hass.async_create_task(self._async_refresh_and_write())
 

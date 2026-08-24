@@ -25,12 +25,14 @@ import logging
 from typing import Any
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.util import dt as dt_util
 
 from .const import (
     ROUTE_SCHEMA_VERSION,
     ROUTES_DIR,
     STORAGE_DIR,
+    SIGNAL_LAST_ROUTE_UPDATED,
 )
 from .database import FordTriplogDatabase
 
@@ -232,6 +234,13 @@ class FordTriplogRouteStorage:
 
         if not await self.database.save_route(payload):
             raise OSError(f"Unable to save route to SQLite: {trip_id}")
+
+        if str(status) == "completed":
+            async_dispatcher_send(
+                self.hass,
+                SIGNAL_LAST_ROUTE_UPDATED,
+                str(trip_id),
+            )
 
     async def async_load_route(
         self,
