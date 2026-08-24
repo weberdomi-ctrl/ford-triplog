@@ -1,6 +1,6 @@
 # Ford Triplog Roadmap
 
-This roadmap summarizes completed 2.0.x / 2.1 development and outlines the next planned Ford Triplog releases.
+This roadmap summarizes completed 2.0.x / 2.1 / 2.2 development, the current 2.3 test release and the next planned Ford Triplog releases.
 
 ---
 
@@ -187,54 +187,179 @@ internal JSON payloads directly.
 
 ---
 
-# Version 2.3
+# Version 2.3 – SQLite Primary Storage & Route Reliability
+
+Version 2.3 completes the storage migration started in 2.1 and expands
+the Route Tracker for dense Home Assistant Companion App GPS data.
+
+Status: **In testing**
+
+## Implemented – SQLite-only Production Storage
+
+- SQLite is the sole productive Ford Triplog storage backend
+- Parallel JSON production writes are removed
+- Existing JSON data remains available as a migration/import source
+- Persistent migration markers prevent already completed legacy imports
+  from being scanned again after every Home Assistant restart
+- Runtime complexity from maintaining two synchronized production
+  formats is removed
+- Receipts remain stored as files and linked through persistent metadata
+
+## Implemented – Safer Source Configuration
+
+- Vehicle source entities remain configurable
+- Ford Triplog's own output entities cannot be selected as their own
+  source
+- Route Tracker source selection uses the same self-reference protection
+- Obsolete configuration paths were removed during the 2.3 cleanup
+
+## Implemented – Home Assistant Device Tracker Route Source
+
+Route Tracker position sources now include:
+
+- ABRP latitude/longitude sensors
+- Home Assistant Companion App Geocoded Location
+- Direct Home Assistant `device_tracker` GPS
+
+The direct tracker source reads latitude/longitude from the entity
+attributes and uses the Home Assistant update timestamp.
+
+This enables dense high-accuracy Companion App traces without depending
+on the slower Geocoded Location sensor.
+
+## Implemented – Trip-end GPS Selection
+
+At Smart Trip timeout Ford Triplog compares the newest valid point from:
+
+- the configured Route Tracker source
+- the configured vehicle tracker
+
+The point with the newest timestamp is used as the authoritative route
+endpoint.
+
+This prevents an older route-source point from winning merely because it
+is geographically close to an earlier ignition-off snapshot.
+
+## Implemented – Dense OSRM Map Matching
+
+- Long traces are split into chunks below the common OSRM 100-coordinate
+  matching limit
+- Chunks overlap to preserve continuity
+- Matched chunk geometries are merged into one route
+- OSRM matching uses `tidy=false` to keep tracepoints aligned with the
+  submitted GPS points
+- Raw GPS points are always retained independently
+- Match diagnostics include raw/matched counts, unmatched tracepoints,
+  distance and confidence
+
+## Implemented – Route Maintenance
+
+Stored routes can be reprocessed through the configured OSRM server.
+
+Maintenance modes include:
+
+- latest route
+- raw/failed routes
+- all routes
+
+Existing raw data is preserved and matched geometry is replaced only
+after a successful plausibility check.
+
+## Implemented – Last Tour / Last Route Reliability
+
+- Last Tour represents the latest completed individual Trip
+- Last Route resolves the latest completed stored route
+- Last Route refresh scheduling follows Home Assistant thread-safety
+  requirements
+- Route map entities continue to expose a separate map-centre coordinate
+  and GeoJSON geometry
+
 ---
 
-# Version 2.3 – SQLite Primary Storage
+# Version 2.4 – Route Data Portability & GPS Enrichment
 
-Version 2.3 completes the storage migration started in 2.1.
+Version 2.4 is planned to make recorded routes more useful outside Home
+Assistant and to retain additional GPS information when a source can
+provide it.
 
-## Planned – SQLite-only Writes
+## Planned – Route Export for Third-party Applications
 
-- SQLite becomes the sole productive Ford Triplog storage backend
-- New data is written only to SQLite
-- Parallel JSON writes are removed
-- No user-selectable write backend is planned
-- Existing JSON data remains usable as a migration/import source
-- Compatibility mirror code is removed or reduced to dedicated migration/import paths
-- Runtime complexity from maintaining two synchronized storage formats is reduced
+Export stored route data through the Home Assistant options flow.
 
-## Data Access and Portability
+Candidate exports:
 
-Ford Triplog will continue to provide standard export functions for common use cases.
+- Raw GPS points as CSV
+- Raw GPS tracks as GPX
+- Raw or OSRM-matched geometry as GeoJSON
+- Direct Home Assistant download
+- Export of the latest route, selected routes or a date range
 
-Users requiring specialized queries, reporting or additional export formats can access the SQLite database directly with external SQLite tools.
+Raw and OSRM-matched data should remain clearly separated so external
+tools can choose between the original trace and the road-matched
+geometry.
 
-JSON may remain useful as an import/export format, but no longer as a continuously maintained parallel production database.
+## Planned – Enriched GPS Point Storage
 
-## Implemented – Runtime and Startup Optimization
+When the selected Route Tracker source provides additional attributes,
+Ford Triplog may store optional metadata together with each raw GPS
+point.
 
-- Incremental Trip and Charge compatibility mirror
-- Incremental Journey compatibility mirror
-- Incremental Route compatibility mirror
-- Existing identical records are skipped instead of rewritten
-- SQLite-only archive records remain untouched by the JSON compatibility mirror
-- Bulk mirror-index reads for Journey and Route comparison
-- Combined main-storage mirror snapshot for Trip, Charge and cache comparison
-- SQLite schema setup guarded to run only once per Home Assistant runtime
-- Parallel database initialization protected by an asynchronous lock
-- Metadata and legacy migration checks guarded against repeated execution
-- User-defined charging locations cached after initial load
-- Bulk Route reads for multiple Trip IDs
-- Shared Top Location / Top Route location cache
-- Coordinator update bursts coalesced before sensor publication
-- Redundant periodic polling disabled for push-driven Ford Triplog sensors
+Candidate fields:
+
+- altitude
+- GPS accuracy
+- speed
+- course / bearing
+
+Latitude, longitude and timestamp remain the required common route
+fields.
+
+Sources that do not expose the additional metadata remain fully
+compatible. Existing stored routes must continue to load without a data
+migration that requires those optional values.
+
+Possible later uses include:
+
+- elevation profiles
+- route-quality diagnostics
+- speed profiles
+- more detailed third-party exports
+
+## Planned – Charging Metadata Enrichment
+
+When FordPass/Ford Connect last-charge data exposes additional
+attributes, Ford Triplog may automatically generate a compact optional
+memo without changing the structured charging-session fields.
+
+Example information can include:
+
+- charger type
+- start/end SOC
+- SOC delta
+- average charging power
+- distance added
+- configured charge target
+
+Only attributes that are actually available from the configured source
+should be included.
 
 ---
 
-# Future Research
+# Version 3.x – Manufacturer-neutral Research
 
-Potential future development areas include:
+Longer-term research may separate the Triplog core from individual
+vehicle integrations.
+
+Potential direction:
+
+- Manufacturer-neutral Triplog core
+- Vehicle-specific read-only adapters
+- Ford adapter based on the current Ford data-source model
+- Research into additional vehicle backends where stable read-only data
+  access is technically feasible
+- Continued investigation of a possible JAC adapter/API source
+
+Additional future development areas include:
 
 - Multi-vehicle support and improvements
 - Maintenance tracking
@@ -258,5 +383,6 @@ Potential future development areas include:
 | 2.0.3 | Released | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
 | 2.1 | Released | SQLite storage backend, selectable JSON/SQLite reads, migration validation, SQL-based statistics and runtime optimization |
 | 2.2 | Released | CSV exports, maintenance tools, pause receipts, History reliability and continued JSON/SQLite validation |
-| 2.3 | Planned | SQLite-only production storage, end of parallel JSON writes |
-| Future | Research | Multi-vehicle support, maintenance tracking, long-term history and additional reporting |
+| 2.3 | In testing | SQLite-only storage, direct device-tracker GPS, improved trip-end GPS, dense OSRM matching and Route maintenance |
+| 2.4 | Planned | Route export, enriched GPS point metadata and charging metadata enrichment |
+| 3.x | Research | Manufacturer-neutral Triplog core and vehicle adapters |
