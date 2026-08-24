@@ -12,7 +12,7 @@ Purpose:
 - Test OSRM availability.
 - Match Ford Triplog raw route points to the OSM road network.
 - Defaults agreed for Ford Triplog:
-  radius=15 m, gaps=ignore, tidy=true.
+  radius=15 m, gaps=ignore, tidy=false.
 - No cloud/API-key dependency.
 
 This module does not replace raw route storage. It only produces an
@@ -324,7 +324,7 @@ class FordTriplogOSRMClient:
             "&geometries=geojson"
             "&overview=full"
             "&gaps=ignore"
-            "&tidy=true"
+            "&tidy=false"
         )
 
         payload = await self._async_get_json(url)
