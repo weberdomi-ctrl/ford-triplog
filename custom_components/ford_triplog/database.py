@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.3.0
-Build: 23001
-Changes: Step 1 - add missing SQLite diagnostics reader for central SQLite-only storage
+Build: 23026
+Changes: Preserve route rowid when updating stored routes.
 """
 
 from __future__ import annotations
@@ -650,11 +650,13 @@ class FordTriplogDatabase:
             with sqlite3.connect(self.db_path) as db:
                 db.execute(
                     """
-                    INSERT OR REPLACE INTO routes (
+                    INSERT INTO routes (
                         trip_id,
                         data
                     )
                     VALUES (?, ?)
+                    ON CONFLICT(trip_id) DO UPDATE SET
+                        data = excluded.data
                     """,
                     (
                         str(trip_id),

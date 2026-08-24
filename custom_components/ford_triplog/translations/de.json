@@ -30,6 +30,7 @@
         "menu_options": {
           "settings": "Einstellungen",
           "journey_management": "Touren verwalten",
+          "route_management": "Routen-Wartung",
           "pause_management": "Pausen verwalten",
           "charge_management": "Ladevorgänge verwalten",
           "user_charging_sites": "Eigene Ladeorte",
@@ -39,6 +40,7 @@
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
+          "route_management": "Gespeicherte Routen erneut mit OSRM berechnen, ohne die Raw-GPS-Punkte zu verändern.",
           "pause_management": "Pausen mit Titel, Kategorie, Ort, Notiz und Kosten ergänzen.",
           "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
@@ -207,6 +209,47 @@
       "journey_result": {
         "title": "Tour-Aktion abgeschlossen",
         "description": "Modus: {mode}\n\nFahrten: {source_trips} · Ladevorgänge: {source_charges} · Verarbeitet: {processed_records}\n\nTouren erstellt: {journeys_created} · Touren gelöscht: {journeys_deleted}\n\nQuelldateien übersprungen: {source_files_skipped}\n\nZeitraum: {start_date} bis {end_date}\n\nBetroffene Tage: {affected_dates}"
+      },
+      "route_management": {
+        "title": "Routen-Wartung",
+        "description": "Gespeicherte Routengeometrien mit dem aktuell konfigurierten OSRM-Dienst neu berechnen. Die Raw-GPS-Punkte werden niemals verändert.",
+        "menu_options": {
+          "route_rebuild_last": "Letzte Route neu berechnen",
+          "route_rebuild_raw": "Raw-Routen neu berechnen",
+          "route_rebuild_all": "Alle Routen neu berechnen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "route_rebuild_last": "Nur die zuletzt abgeschlossene Route erneut durch OSRM berechnen lassen.",
+          "route_rebuild_raw": "Routen ohne verwendbare OSRM-Geometrie erneut durch OSRM berechnen lassen.",
+          "route_rebuild_all": "Alle abgeschlossenen gespeicherten Routen erneut durch OSRM berechnen lassen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "route_rebuild_last": {
+        "title": "Letzte Route neu berechnen",
+        "description": "Die zuletzt abgeschlossene Route erneut durch OSRM berechnen. Die gespeicherten Raw-GPS-Punkte bleiben unverändert.",
+        "data": {
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "route_rebuild_raw": {
+        "title": "Raw-Routen neu berechnen",
+        "description": "Alle abgeschlossenen Routen ohne verwendbare OSRM-Geometrie neu berechnen. Die Raw-GPS-Punkte bleiben unverändert.",
+        "data": {
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "route_rebuild_all": {
+        "title": "Alle Routen neu berechnen",
+        "description": "Alle abgeschlossenen Routen neu berechnen. Eine vorhandene OSRM-Geometrie wird nur nach einem erfolgreichen neuen Match ersetzt; die Raw-GPS-Punkte bleiben unverändert.",
+        "data": {
+          "confirm": "Aktion bestätigen"
+        }
+      },
+      "route_rebuild_result": {
+        "title": "Routen-Wartung abgeschlossen",
+        "description": "Modus: {mode}\n\nGespeicherte Routen: {routes_total} · Ausgewählt: {routes_selected} · Verarbeitet: {routes_processed}\n\nOSRM-Matches gespeichert: {routes_matched} · Fehlgeschlagen: {routes_failed} · Übersprungen: {routes_skipped}\n\nLetzte Route: {last_trip_id}"
       },
       "charge_management": {
         "title": "Ladevorgänge",
@@ -834,7 +877,10 @@
       "export_failed": "Der CSV-Export konnte nicht erstellt werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
       "charge_delete_failed": "Der Ladevorgang konnte nicht vollständig gelöscht werden.",
       "charge_not_suspicious": "Dieser Ladevorgang erfüllt die Kriterien für eine sichere Löschung nicht.",
-      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
+      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
+      "route_rebuild_confirmation_required": "Die Aktion muss bestätigt werden.",
+      "route_rebuild_failed": "Die Routen-Wartung konnte nicht abgeschlossen werden. Prüfe das Home-Assistant-Protokoll für Details.",
+      "route_osrm_not_configured": "OSRM ist nicht konfiguriert. Konfiguriere zuerst eine OSRM-Adresse."
     }
   },
   "entity": {
