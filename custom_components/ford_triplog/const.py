@@ -89,9 +89,11 @@ CONF_ROUTE_SOURCE_TYPE: Final = "route_source_type"
 CONF_ROUTE_LATITUDE_ENTITY: Final = "route_latitude_entity"
 CONF_ROUTE_LONGITUDE_ENTITY: Final = "route_longitude_entity"
 CONF_ROUTE_GEOCODED_ENTITY: Final = "route_geocoded_entity"
+CONF_ROUTE_DEVICE_TRACKER_ENTITY: Final = "route_device_tracker_entity"
 
 ROUTE_SOURCE_ABRP: Final = "abrp"
 ROUTE_SOURCE_HA_GEOCODED: Final = "ha_geocoded"
+ROUTE_SOURCE_HA_DEVICE_TRACKER: Final = "ha_device_tracker"
 
 # Optional local OSRM map matching
 CONF_OSRM_ENABLED: Final = "osrm_enabled"

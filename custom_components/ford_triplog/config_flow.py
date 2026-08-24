@@ -82,8 +82,10 @@ from .const import (
     CONF_ROUTE_LATITUDE_ENTITY,
     CONF_ROUTE_LONGITUDE_ENTITY,
     CONF_ROUTE_GEOCODED_ENTITY,
+    CONF_ROUTE_DEVICE_TRACKER_ENTITY,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
+    ROUTE_SOURCE_HA_DEVICE_TRACKER,
     CONF_OSRM_ENABLED,
     CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
@@ -5194,6 +5196,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                         "(Geocoded Location)"
                                     ),
                                 ),
+                                selector.SelectOptionDict(
+                                    value=ROUTE_SOURCE_HA_DEVICE_TRACKER,
+                                    label="Home Assistant Device Tracker (GPS)",
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -5234,11 +5240,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            route_keys = (
-                (CONF_ROUTE_GEOCODED_ENTITY,)
-                if source_type == ROUTE_SOURCE_HA_GEOCODED
-                else (CONF_ROUTE_LATITUDE_ENTITY, CONF_ROUTE_LONGITUDE_ENTITY)
-            )
+            if source_type == ROUTE_SOURCE_HA_GEOCODED:
+                route_keys = (CONF_ROUTE_GEOCODED_ENTITY,)
+            elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+                route_keys = (CONF_ROUTE_DEVICE_TRACKER_ENTITY,)
+            else:
+                route_keys = (
+                    CONF_ROUTE_LATITUDE_ENTITY,
+                    CONF_ROUTE_LONGITUDE_ENTITY,
+                )
             if _contains_ford_triplog_input(self.hass, user_input, route_keys):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
@@ -5253,6 +5263,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         CONF_ROUTE_LONGITUDE_ENTITY
                     ]
                     updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_DEVICE_TRACKER_ENTITY, None)
 
                 elif source_type == ROUTE_SOURCE_HA_GEOCODED:
                     updated_options[CONF_ROUTE_GEOCODED_ENTITY] = user_input[
@@ -5260,6 +5271,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ]
                     updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
                     updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_DEVICE_TRACKER_ENTITY, None)
+
+                elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+                    updated_options[CONF_ROUTE_DEVICE_TRACKER_ENTITY] = user_input[
+                        CONF_ROUTE_DEVICE_TRACKER_ENTITY
+                    ]
+                    updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
 
                 self.hass.config_entries.async_update_entry(
                     self._config_entry,
@@ -5270,6 +5290,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 return await self.async_step_settings()
         blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
+        blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
+
         if source_type == ROUTE_SOURCE_HA_GEOCODED:
             schema = vol.Schema(
                 {
@@ -5282,6 +5304,22 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         selector.EntitySelectorConfig(
                             domain="sensor",
                             exclude_entities=blocked_sensors,
+                        )
+                    ),
+                }
+            )
+        elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_DEVICE_TRACKER_ENTITY,
+                        default=self._options.get(
+                            CONF_ROUTE_DEVICE_TRACKER_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="device_tracker",
+                            exclude_entities=blocked_trackers,
                         )
                     ),
                 }

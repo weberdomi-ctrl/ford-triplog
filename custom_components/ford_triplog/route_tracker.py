@@ -30,6 +30,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ROUTE_GEOCODED_ENTITY,
+    CONF_ROUTE_DEVICE_TRACKER_ENTITY,
     CONF_ROUTE_LATITUDE_ENTITY,
     CONF_ROUTE_LONGITUDE_ENTITY,
     CONF_ROUTE_SOURCE_TYPE,
@@ -42,6 +43,7 @@ from .const import (
     DEFAULT_OSRM_MATCH_RADIUS,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
+    ROUTE_SOURCE_HA_DEVICE_TRACKER,
 )
 from .route_storage import FordTriplogRouteStorage
 from .osrm_client import (
@@ -88,6 +90,9 @@ class FordTriplogRouteTracker:
         )
         self.geocoded_entity = config.get(
             CONF_ROUTE_GEOCODED_ENTITY
+        )
+        self.device_tracker_entity = config.get(
+            CONF_ROUTE_DEVICE_TRACKER_ENTITY
         )
 
         self.osrm_enabled = bool(
@@ -162,6 +167,13 @@ class FordTriplogRouteTracker:
             return [
                 entity_id
                 for entity_id in (self.geocoded_entity,)
+                if entity_id
+            ]
+
+        if self.source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            return [
+                entity_id
+                for entity_id in (self.device_tracker_entity,)
                 if entity_id
             ]
 
@@ -689,6 +701,37 @@ class FordTriplogRouteTracker:
         changed_state: State | None = None,
     ) -> tuple[float, float, str] | None:
         """Return normalized coordinates from the configured source."""
+
+        if self.source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            state = (
+                changed_state
+                if changed_state is not None
+                and changed_state.entity_id == self.device_tracker_entity
+                else self.hass.states.get(self.device_tracker_entity)
+                if self.device_tracker_entity
+                else None
+            )
+
+            if state is None:
+                return None
+
+            latitude_value = state.attributes.get("latitude")
+            longitude_value = state.attributes.get("longitude")
+
+            if latitude_value is None or longitude_value is None:
+                return None
+
+            try:
+                latitude = float(latitude_value)
+                longitude = float(longitude_value)
+            except (TypeError, ValueError):
+                return None
+
+            return (
+                latitude,
+                longitude,
+                state.last_updated.isoformat(),
+            )
 
         if self.source_type == ROUTE_SOURCE_HA_GEOCODED:
             state = (
