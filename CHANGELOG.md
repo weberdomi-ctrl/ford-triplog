@@ -1,5 +1,69 @@
 # Changelog
 
+## 2.3.0
+
+### Added
+
+-   SQLite is now the sole productive Ford Triplog storage backend.
+-   Added one-time legacy JSON import paths with persistent migration
+    markers so already migrated legacy data is not scanned again on every
+    Home Assistant restart.
+-   Added direct Home Assistant `device_tracker` support as a Route
+    Tracker GPS source.
+-   Added Route maintenance actions for rebuilding the latest route,
+    raw/failed routes or all stored routes through the configured OSRM
+    server.
+-   Added OSRM chunked map matching for dense GPS traces that exceed the
+    common OSRM limit of 100 trace coordinates per request.
+
+### Improved
+
+-   Trip-end GPS selection now compares the latest valid point from the
+    configured Route Tracker source with the vehicle tracker and uses the
+    point with the newest timestamp after the Smart Trip timeout.
+-   Home Assistant Companion App high-accuracy `device_tracker` data can
+    be recorded directly without going through the slower Geocoded
+    Location sensor.
+-   OSRM matching now processes long traces in overlapping chunks while
+    preserving the original raw GPS points.
+-   OSRM requests use `tidy=false` so returned tracepoints stay aligned
+    with the submitted GPS points and matching diagnostics remain
+    meaningful.
+-   The Last Route sensor now follows the latest completed stored route
+    and refreshes safely through Home Assistant's event loop.
+-   The public **Last Tour** view now represents the latest completed
+    individual Trip rather than a complete Journey/day aggregation.
+-   Route rebuilds preserve the original raw trace and replace matched
+    route geometry only after a successful plausibility check.
+-   Source selectors now prevent Ford Triplog's own entities from being
+    selected as vehicle or Route Tracker input sources.
+-   Removed remaining normal-runtime dependency on parallel JSON/SQLite
+    production storage.
+
+### Fixed
+
+-   Fixed stale or early route endpoints when the vehicle tracker
+    received a newer GPS fix after ignition-off.
+-   Fixed OSRM `TooBig` failures for dense Route Tracker traces with more
+    than 100 GPS points.
+-   Fixed false OSRM rejection caused by `tidy=true` changing the
+    tracepoint/input alignment.
+-   Fixed thread-unsafe Last Route refresh scheduling.
+-   Fixed repeated legacy migration scans after successful SQLite
+    migration.
+-   Fixed configuration paths that could allow Ford Triplog output
+    entities to be selected as their own input source.
+
+### Storage Notes
+
+-   Existing JSON data remains usable as a migration/import source and
+    backup, but it is no longer maintained as a parallel production
+    datastore.
+-   Receipts remain stored as files and their metadata remains linked
+    through Ford Triplog storage.
+-   Raw GPS route points remain preserved independently from OSRM-matched
+    route geometry.
+
 ## 2.2.0
 
 ### Added
