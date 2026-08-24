@@ -1832,7 +1832,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
     def _handle_update(self, *_args: Any) -> None:
         """Refresh immediately after a completed route was stored."""
 
-        self.hass.async_create_task(self._async_refresh_and_write())
+        self.hass.add_job(self._async_refresh_and_write)
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write the current route state."""
