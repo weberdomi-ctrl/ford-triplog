@@ -37,6 +37,10 @@ DEFAULT_OSRM_RADIUS_METERS = 15.0
 DEFAULT_OSRM_TIMEOUT_SECONDS = 15
 DEFAULT_OSRM_PROFILE = "driving"
 
+# Keep below the common OSRM --max-matching-size default of 100.
+OSRM_MATCH_CHUNK_SIZE = 90
+OSRM_MATCH_CHUNK_OVERLAP = 5
+
 
 class FordTriplogOSRMError(Exception):
     """Base exception for local OSRM errors."""
@@ -60,6 +64,8 @@ class FordTriplogOSRMMatchResult:
     confidence: float | None
     matched_tracepoints: int
     unmatched_tracepoints: int
+    tracepoint_matched: tuple[bool, ...] = ()
+    tracepoint_locations: tuple[tuple[float, float] | None, ...] = ()
 
     @property
     def geojson_feature(self) -> dict[str, Any]:
@@ -135,7 +141,13 @@ class FordTriplogOSRMClient:
         self,
         points: list[dict[str, Any]],
     ) -> FordTriplogOSRMMatchResult:
-        """Map-match raw Ford Triplog points to the local OSM road network."""
+        """Map-match raw Ford Triplog points to the local OSM road network.
+
+        Long traces are split into overlapping chunks so Ford Triplog works
+        with the common OSRM default ``--max-matching-size=100``. Raw route
+        storage remains untouched; this method only returns one merged matched
+        geometry.
+        """
 
         normalized = self._normalize_points(points)
 
@@ -143,6 +155,154 @@ class FordTriplogOSRMClient:
             raise FordTriplogOSRMResponseError(
                 "At least two valid route points are required"
             )
+
+        if len(normalized) <= OSRM_MATCH_CHUNK_SIZE:
+            return await self._async_match_normalized(normalized)
+
+        chunks = self._build_match_chunks(len(normalized))
+        _LOGGER.info(
+            "OSRM matching long trace in %s chunks: points=%s "
+            "chunk_size=%s overlap=%s",
+            len(chunks),
+            len(normalized),
+            OSRM_MATCH_CHUNK_SIZE,
+            OSRM_MATCH_CHUNK_OVERLAP,
+        )
+
+        merged_coordinates: list[list[float]] = []
+        matched_flags = [False] * len(normalized)
+        weighted_confidence = 0.0
+        confidence_weight = 0
+        previous_end = 0
+
+        for chunk_number, (chunk_start, chunk_end) in enumerate(chunks, 1):
+            chunk_points = normalized[chunk_start:chunk_end]
+            _LOGGER.info(
+                "OSRM matching chunk %s/%s: points=%s range=%s-%s",
+                chunk_number,
+                len(chunks),
+                len(chunk_points),
+                chunk_start + 1,
+                chunk_end,
+            )
+
+            result = await self._async_match_normalized(chunk_points)
+
+            chunk_coordinates = result.geometry.get("coordinates", [])
+            if not isinstance(chunk_coordinates, list) or len(chunk_coordinates) < 2:
+                raise FordTriplogOSRMResponseError(
+                    f"OSRM chunk {chunk_number}/{len(chunks)} "
+                    "returned no usable geometry"
+                )
+
+            for local_index, is_matched in enumerate(result.tracepoint_matched):
+                global_index = chunk_start + local_index
+                if global_index < len(matched_flags) and is_matched:
+                    matched_flags[global_index] = True
+
+            overlap_count = max(0, previous_end - chunk_start)
+            unique_weight = len(chunk_points) - overlap_count
+            if result.confidence is not None and unique_weight > 0:
+                weighted_confidence += result.confidence * unique_weight
+                confidence_weight += unique_weight
+
+            normalized_chunk_geometry = self._normalize_geometry_coordinates(
+                chunk_coordinates
+            )
+
+            if not merged_coordinates:
+                merged_coordinates.extend(normalized_chunk_geometry)
+            else:
+                stitch_location = None
+                if overlap_count > 0:
+                    boundary_index = min(
+                        overlap_count - 1,
+                        len(result.tracepoint_locations) - 1,
+                    )
+                    if boundary_index >= 0:
+                        stitch_location = result.tracepoint_locations[boundary_index]
+
+                stitch_index = self._find_stitch_index(
+                    normalized_chunk_geometry,
+                    stitch_location,
+                    merged_coordinates[-1] if merged_coordinates else None,
+                )
+
+                # The previous chunk already contains the overlap through the
+                # boundary point. Append only geometry after that point.
+                append_from = min(stitch_index + 1, len(normalized_chunk_geometry))
+                for coordinate in normalized_chunk_geometry[append_from:]:
+                    if (
+                        not merged_coordinates
+                        or not self._coordinates_equal(
+                            merged_coordinates[-1],
+                            coordinate,
+                        )
+                    ):
+                        merged_coordinates.append(coordinate)
+
+            previous_end = chunk_end
+
+            _LOGGER.info(
+                "OSRM matched chunk %s/%s: geometry_points=%s "
+                "matched_tracepoints=%s unmatched_tracepoints=%s "
+                "distance=%.1fm confidence=%s",
+                chunk_number,
+                len(chunks),
+                len(chunk_coordinates),
+                result.matched_tracepoints,
+                result.unmatched_tracepoints,
+                result.distance_m,
+                result.confidence,
+            )
+
+        if len(merged_coordinates) < 2:
+            raise FordTriplogOSRMResponseError(
+                "OSRM chunk merge returned no usable LineString geometry"
+            )
+
+        matched_count = sum(1 for value in matched_flags if value)
+        unmatched_count = len(matched_flags) - matched_count
+        confidence = (
+            weighted_confidence / confidence_weight
+            if confidence_weight > 0
+            else None
+        )
+
+        distance_m = self._geometry_distance_m(merged_coordinates)
+        duration_s = float(max(0, normalized[-1][2] - normalized[0][2]))
+
+        _LOGGER.info(
+            "OSRM chunk merge completed: input_points=%s geometry_points=%s "
+            "matched_tracepoints=%s unmatched_tracepoints=%s "
+            "distance=%.1fm confidence=%s",
+            len(normalized),
+            len(merged_coordinates),
+            matched_count,
+            unmatched_count,
+            distance_m,
+            confidence,
+        )
+
+        return FordTriplogOSRMMatchResult(
+            geometry={
+                "type": "LineString",
+                "coordinates": merged_coordinates,
+            },
+            distance_m=distance_m,
+            duration_s=duration_s,
+            confidence=confidence,
+            matched_tracepoints=matched_count,
+            unmatched_tracepoints=unmatched_count,
+            tracepoint_matched=tuple(matched_flags),
+            tracepoint_locations=(),
+        )
+
+    async def _async_match_normalized(
+        self,
+        normalized: list[tuple[float, float, int]],
+    ) -> FordTriplogOSRMMatchResult:
+        """Perform one OSRM match request for an already normalized chunk."""
 
         coordinates = ";".join(
             f"{lon:.7f},{lat:.7f}"
@@ -184,9 +344,6 @@ class FordTriplogOSRMClient:
                 "OSRM returned no matching"
             )
 
-        # Ford Triplog currently requests gaps=ignore and expects one route.
-        # If OSRM nevertheless returns more than one matching, merge only
-        # when all geometries are LineStrings.
         matching = matchings[0]
         geometry = matching.get("geometry")
 
@@ -203,12 +360,30 @@ class FordTriplogOSRMClient:
         if not isinstance(tracepoints, list):
             tracepoints = []
 
-        matched_count = sum(
-            1 for point in tracepoints if isinstance(point, dict)
-        )
-        unmatched_count = sum(
-            1 for point in tracepoints if point is None
-        )
+        tracepoint_matched: list[bool] = []
+        tracepoint_locations: list[tuple[float, float] | None] = []
+
+        for index in range(len(normalized)):
+            point = tracepoints[index] if index < len(tracepoints) else None
+            is_matched = isinstance(point, dict)
+            tracepoint_matched.append(is_matched)
+
+            location = point.get("location") if is_matched else None
+            if (
+                isinstance(location, (list, tuple))
+                and len(location) >= 2
+            ):
+                try:
+                    tracepoint_locations.append(
+                        (float(location[0]), float(location[1]))
+                    )
+                except (TypeError, ValueError):
+                    tracepoint_locations.append(None)
+            else:
+                tracepoint_locations.append(None)
+
+        matched_count = sum(1 for value in tracepoint_matched if value)
+        unmatched_count = len(tracepoint_matched) - matched_count
 
         return FordTriplogOSRMMatchResult(
             geometry=geometry,
@@ -221,7 +396,116 @@ class FordTriplogOSRMClient:
             ),
             matched_tracepoints=matched_count,
             unmatched_tracepoints=unmatched_count,
+            tracepoint_matched=tuple(tracepoint_matched),
+            tracepoint_locations=tuple(tracepoint_locations),
         )
+
+    @staticmethod
+    def _build_match_chunks(point_count: int) -> list[tuple[int, int]]:
+        """Return overlapping [start, end) slices for an OSRM trace."""
+
+        if point_count <= OSRM_MATCH_CHUNK_SIZE:
+            return [(0, point_count)]
+
+        chunks: list[tuple[int, int]] = []
+        start = 0
+
+        while start < point_count:
+            end = min(start + OSRM_MATCH_CHUNK_SIZE, point_count)
+            chunks.append((start, end))
+            if end >= point_count:
+                break
+
+            next_start = end - OSRM_MATCH_CHUNK_OVERLAP
+            if next_start <= start:
+                raise FordTriplogOSRMResponseError(
+                    "Invalid OSRM chunk configuration"
+                )
+            start = next_start
+
+        return chunks
+
+    @staticmethod
+    def _normalize_geometry_coordinates(
+        coordinates: list[Any],
+    ) -> list[list[float]]:
+        """Normalize GeoJSON coordinates to mutable [lon, lat] pairs."""
+
+        normalized: list[list[float]] = []
+        for coordinate in coordinates:
+            if not isinstance(coordinate, (list, tuple)) or len(coordinate) < 2:
+                continue
+            try:
+                normalized.append(
+                    [float(coordinate[0]), float(coordinate[1])]
+                )
+            except (TypeError, ValueError):
+                continue
+        return normalized
+
+    @staticmethod
+    def _coordinates_equal(
+        first: list[float],
+        second: list[float],
+    ) -> bool:
+        """Return True for effectively identical GeoJSON coordinates."""
+
+        return (
+            abs(first[0] - second[0]) <= 1e-7
+            and abs(first[1] - second[1]) <= 1e-7
+        )
+
+    @staticmethod
+    def _find_stitch_index(
+        coordinates: list[list[float]],
+        stitch_location: tuple[float, float] | None,
+        fallback_location: list[float] | None,
+    ) -> int:
+        """Find the geometry point nearest the overlap boundary."""
+
+        if not coordinates:
+            return 0
+
+        target: tuple[float, float] | None = stitch_location
+        if target is None and fallback_location is not None:
+            target = (fallback_location[0], fallback_location[1])
+
+        if target is None:
+            return 0
+
+        target_lon, target_lat = target
+        return min(
+            range(len(coordinates)),
+            key=lambda index: (
+                (coordinates[index][0] - target_lon) ** 2
+                + (coordinates[index][1] - target_lat) ** 2
+            ),
+        )
+
+    @staticmethod
+    def _geometry_distance_m(
+        coordinates: list[list[float]],
+    ) -> float:
+        """Calculate the length of a merged GeoJSON LineString."""
+
+        from math import asin, cos, radians, sin, sqrt
+
+        total = 0.0
+        for first, second in zip(coordinates, coordinates[1:]):
+            lon1 = radians(first[0])
+            lat1 = radians(first[1])
+            lon2 = radians(second[0])
+            lat2 = radians(second[1])
+
+            dlat = lat2 - lat1
+            dlon = lon2 - lon1
+            value = (
+                sin(dlat / 2) ** 2
+                + cos(lat1) * cos(lat2) * sin(dlon / 2) ** 2
+            )
+            total += 6371000.0 * 2 * asin(min(1.0, sqrt(value)))
+
+        return total
 
     async def _async_get_json(self, url: str) -> dict[str, Any]:
         """Perform one local OSRM HTTP request."""
