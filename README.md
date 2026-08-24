@@ -125,7 +125,9 @@ Features include:
 
 - Automatic start and stop together with the Trip
 - Support for ABRP latitude/longitude entities
-- Support for Home Assistant Companion App position data
+- Support for Home Assistant Companion App Geocoded Location
+- Direct Home Assistant `device_tracker` GPS support
+- High-accuracy Companion App route recording when the selected tracker provides frequent updates
 - Persistent route storage
 - Smart Trip pause and resume support
 - Automatic recovery after Home Assistant restart or integration reload
@@ -151,9 +153,11 @@ Features include:
 - Configurable local OSRM server
 - Configurable matching radius
 - Automatic matching after trip completion
+- Automatic chunking of dense traces that exceed common OSRM trace limits
+- Overlapping chunk merge for continuous road geometry
 - Raw and matched route data stored separately
 - Matching diagnostics
-- Manual rebuild of the latest route
+- Route maintenance for rebuilding the latest, raw/failed or all stored routes
 - No dependency on a public routing service
 
 OSRM is completely optional. Without OSRM, Ford Triplog continues to store and display the recorded raw GPS route.
@@ -280,30 +284,33 @@ Ford Triplog includes guarded maintenance functions for stored history.
 - The stored last charging session is refreshed when required
 - Existing receipt files are preserved when an invalid charging session
   is removed
+- Stored GPS routes can be rebuilt through the configured OSRM server
+- Route maintenance can rebuild the latest route, raw/failed routes or all routes
+- Raw GPS points are preserved when matched route geometry is rebuilt
 
 ------------------------------------------------------------------------
 
 ## 🗃️ Local SQLite Storage
 
-Ford Triplog 2.1 introduced an optional local SQLite read backend while retaining the existing JSON storage for compatibility. Ford Triplog 2.2 continues this transition.
+Ford Triplog 2.3 completes the storage migration started in 2.1.
 
-During the 2.1/2.2 transition:
+SQLite is now the sole productive Ford Triplog datastore.
 
-- New and changed data continues to be written to JSON and SQLite
-- Existing JSON data is migrated or mirrored into SQLite
-- Initial mirrors are incremental and skip records that are already identical in SQLite
-- SQLite-only archive records are preserved during compatibility mirroring
-- JSON remains the default read backend after an upgrade
-- Users who want to use SQLite must enable it explicitly in Ford Triplog settings
-- Switching the read backend reloads the integration
-- Derived statistics are recalculated from the selected backend after setup/reload
-- Journey rebuild uses the selected backend directly
-- SQLite-backed historical reads avoid dependency on archived JSON files
-- Frequently used Top Statistics use SQLite views and optimized bulk reads where appropriate
-- Runtime guards prevent repeated schema initialization and repeated migration work during one Home Assistant runtime
-- JSON remains available as a fallback during the migration period
+- New and changed Triplog records are written to SQLite
+- Parallel JSON production writes are removed
+- Existing JSON data remains available as a migration/import source
+- Persistent migration markers prevent completed legacy imports from
+  being scanned repeatedly after every Home Assistant restart
+- Trips, charging sessions, Journeys, Routes, metadata, caches and
+  statistics are read from the local SQLite database
+- Raw GPS route points and OSRM-matched route geometry remain stored
+  separately
+- Receipt files remain on the Home Assistant filesystem and their
+  metadata remains linked through Ford Triplog storage
+- No external database service is required
 
-The SQLite database is stored locally inside the Ford Triplog Home Assistant storage directory. No external database service is required.
+The SQLite database is stored locally inside the Ford Triplog Home
+Assistant storage directory.
 
 ------------------------------------------------------------------------
 
@@ -379,37 +386,35 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 # Roadmap
 
-## Version 2.0.x
+## Version 2.3 – In testing
 
-- Top statistics and dashboard refinements
-- Location and charging-site recognition improvements
-- Maintenance and stability fixes
+- SQLite-only productive storage
+- One-time legacy JSON migration/import with persistent migration markers
+- Direct Home Assistant `device_tracker` GPS Route Tracker source
+- Newest-timestamp trip-end GPS selection
+- Dense-trace OSRM matching through overlapping chunks
+- Route maintenance for rebuilding stored routes
+- Last Tour / Last Route reliability improvements
+- Source-selection guards against Ford Triplog self-references
 
-## Version 2.1
+## Version 2.4 – Planned
 
-- Local SQLite storage backend
-- Existing JSON storage mirrored into corresponding SQLite tables
-- Parallel JSON and SQLite writes for compatibility and validation
-- Selectable JSON or SQLite read backend
-- JSON remains the default read backend after upgrade
-- SQLite can be enabled explicitly in Ford Triplog settings
-- Database-backed Trips, Charges, Journeys, Routes, receipts and metadata
-- SQL-backed Top Statistics and historical archive reads
-- Incremental JSON → SQLite startup mirroring for Trips, Charges, Journeys and Routes
-- Runtime guards and caching reduce repeated database reads and initialization work
-- Journey rebuild and statistics recalculation work with the selected backend
-- JSON retained for compatibility, fallback and migration safety
+- Route-point export for third-party applications
+- Raw GPS export with timestamps
+- Matched OSRM geometry export
+- Candidate formats: CSV, GPX and GeoJSON
+- Optional storage of additional GPS metadata when provided by the
+  selected source, including altitude, GPS accuracy, speed and course
+- Backward-compatible route storage when a source provides only
+  latitude/longitude
+- Charging-session metadata enrichment from available Ford last-charge
+  attributes, including an optional automatically generated memo
 
-## Version 2.2
+## 3.x – Research
 
-- CSV export for Trips, Journeys and charging sessions
-- Direct CSV download through Home Assistant
-- Configurable vehicle data-source entities
-- Guarded deletion of invalid charging sessions
-- Pause receipt upload, viewing and deletion
-- Pause receipts available in Journey History dashboards
-- Additional History reliability and translation fixes
-- Parallel JSON/SQLite storage continues for validation
+- Manufacturer-neutral Triplog core with vehicle-specific adapters
+- Read-only vehicle data adapters beyond Ford where technically feasible
+- Further research into a possible JAC vehicle-data adapter
 
 Complete roadmap:
 
