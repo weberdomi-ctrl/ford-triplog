@@ -3,17 +3,14 @@ Ford Triplog
 
 Route Tracker
 
-Version: 2.2.0
-Phase: Route Tracker Phase 1
-Build: 03 - Trip-end GPS validation
+Version: 2.3.0
+Build: 23029 - 60 second active-route persistence
 
 Changes:
-- Persists the route record immediately when a Trip starts.
-- Persists every accepted GPS point while driving.
-- Persists Smart Trip pause/resume state.
+- Captures every accepted GPS point immediately in memory.
+- Persists active route snapshots to SQLite at most once per minute.
+- Persists start, pause/resume, shutdown and final route state immediately.
 - Restores active or paused route points after HA/integration reload.
-- Keeps Trip start/end GPS endpoint logic from Fix 05.
-- Keeps ABRP coordinate debounce/synchronization from Fix 04.
 - Raw route points remain independent from Trip/Journey storage.
 """
 
@@ -21,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import time
 from datetime import datetime
 from typing import Any
 
@@ -30,6 +28,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     CONF_ROUTE_GEOCODED_ENTITY,
+    CONF_ROUTE_DEVICE_TRACKER_ENTITY,
     CONF_ROUTE_LATITUDE_ENTITY,
     CONF_ROUTE_LONGITUDE_ENTITY,
     CONF_ROUTE_SOURCE_TYPE,
@@ -42,6 +41,7 @@ from .const import (
     DEFAULT_OSRM_MATCH_RADIUS,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
+    ROUTE_SOURCE_HA_DEVICE_TRACKER,
 )
 from .route_storage import FordTriplogRouteStorage
 from .osrm_client import (
@@ -53,6 +53,7 @@ _LOGGER = logging.getLogger(__name__)
 
 ABRP_DEBOUNCE_SECONDS = 0.75
 ABRP_MAX_PAIR_DELTA_SECONDS = 2.0
+ROUTE_PERSIST_INTERVAL_SECONDS = 60.0
 
 
 class FordTriplogRouteTracker:
@@ -89,6 +90,9 @@ class FordTriplogRouteTracker:
         self.geocoded_entity = config.get(
             CONF_ROUTE_GEOCODED_ENTITY
         )
+        self.device_tracker_entity = config.get(
+            CONF_ROUTE_DEVICE_TRACKER_ENTITY
+        )
 
         self.osrm_enabled = bool(
             config.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)
@@ -111,6 +115,7 @@ class FordTriplogRouteTracker:
         self._last_coordinate: tuple[float, float] | None = None
         self._debounce_task: asyncio.Task | None = None
         self._persist_lock = asyncio.Lock()
+        self._last_persist_monotonic: float | None = None
         self._route_created_at: str | None = None
 
     async def async_setup(self) -> None:
@@ -162,6 +167,13 @@ class FordTriplogRouteTracker:
             return [
                 entity_id
                 for entity_id in (self.geocoded_entity,)
+                if entity_id
+            ]
+
+        if self.source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            return [
+                entity_id
+                for entity_id in (self.device_tracker_entity,)
                 if entity_id
             ]
 
@@ -468,6 +480,7 @@ class FordTriplogRouteTracker:
         self.points = []
         self._last_coordinate = None
         self._route_created_at = None
+        self._last_persist_monotonic = None
         self.route_source_type = self.source_type
 
         _LOGGER.info(
@@ -655,27 +668,53 @@ class FordTriplogRouteTracker:
         )
         self._last_coordinate = coordinate_key
 
-        # Fix 06: one ~60 s ABRP point means one small atomic JSON write.
-        # This is intentionally simple and makes crash/reload recovery robust.
-        await self._persist_current_route("active")
-
-        _LOGGER.debug(
-            "Route Tracker point persisted: trip=%s points=%s",
-            self.active_trip_id,
-            len(self.points),
+        # Dense sources such as the Home Assistant Companion App can update
+        # every few seconds. Keep every point in memory, but avoid rewriting the
+        # growing SQLite route payload on every coordinate update.
+        persisted = await self._persist_current_route(
+            "active",
+            force=False,
         )
+
+        if persisted:
+            _LOGGER.debug(
+                "Route Tracker snapshot persisted: trip=%s points=%s "
+                "interval=%ss",
+                self.active_trip_id,
+                len(self.points),
+                int(ROUTE_PERSIST_INTERVAL_SECONDS),
+            )
 
     async def _persist_current_route(
         self,
         status: str,
-    ) -> None:
-        """Persist the current route snapshot atomically."""
+        *,
+        force: bool = True,
+    ) -> bool:
+        """Persist the current route snapshot atomically.
+
+        Active GPS capture uses ``force=False`` so the growing route payload is
+        written at most once per minute. Lifecycle transitions continue to use
+        the default ``force=True`` and are therefore saved immediately.
+        """
 
         trip_id = self.active_trip_id or self.paused_trip_id
         if trip_id is None:
-            return
+            return False
 
         async with self._persist_lock:
+            now_monotonic = time.monotonic()
+
+            if (
+                not force
+                and self._last_persist_monotonic is not None
+                and (
+                    now_monotonic - self._last_persist_monotonic
+                    < ROUTE_PERSIST_INTERVAL_SECONDS
+                )
+            ):
+                return False
+
             await self.storage.async_save_route(
                 trip_id=trip_id,
                 source_type=self.route_source_type,
@@ -683,12 +722,46 @@ class FordTriplogRouteTracker:
                 status=status,
                 created_at=self._route_created_at,
             )
+            self._last_persist_monotonic = time.monotonic()
+
+        return True
 
     def _read_coordinates(
         self,
         changed_state: State | None = None,
     ) -> tuple[float, float, str] | None:
         """Return normalized coordinates from the configured source."""
+
+        if self.source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            state = (
+                changed_state
+                if changed_state is not None
+                and changed_state.entity_id == self.device_tracker_entity
+                else self.hass.states.get(self.device_tracker_entity)
+                if self.device_tracker_entity
+                else None
+            )
+
+            if state is None:
+                return None
+
+            latitude_value = state.attributes.get("latitude")
+            longitude_value = state.attributes.get("longitude")
+
+            if latitude_value is None or longitude_value is None:
+                return None
+
+            try:
+                latitude = float(latitude_value)
+                longitude = float(longitude_value)
+            except (TypeError, ValueError):
+                return None
+
+            return (
+                latitude,
+                longitude,
+                state.last_updated.isoformat(),
+            )
 
         if self.source_type == ROUTE_SOURCE_HA_GEOCODED:
             state = (

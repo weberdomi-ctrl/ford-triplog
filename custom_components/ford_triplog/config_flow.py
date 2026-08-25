@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.2.0
-Phase: 
-Build: 09g - Pause receipt datetime fix
-Release: 2.2.0
+Version: 2.3.0
+Phase: Route maintenance
+Build: 23026
+Release: 2.3.0
 
 
 """
@@ -61,6 +61,7 @@ from .osrm_client import (
 )
 
 from .export import FordTriplogExporter
+from .route_rebuilder import FordTriplogRouteRebuilder
 
 from .services import (
     async_download_charging_database,
@@ -82,8 +83,10 @@ from .const import (
     CONF_ROUTE_LATITUDE_ENTITY,
     CONF_ROUTE_LONGITUDE_ENTITY,
     CONF_ROUTE_GEOCODED_ENTITY,
+    CONF_ROUTE_DEVICE_TRACKER_ENTITY,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
+    ROUTE_SOURCE_HA_DEVICE_TRACKER,
     CONF_OSRM_ENABLED,
     CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
@@ -330,6 +333,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_pending_charging_site: dict[str, Any] | None = None
         self._charging_site_translations: dict[str, str] | None = None
         self._journey_result: dict[str, str] = {}
+        self._route_result: dict[str, str] = {}
         self._selected_charge_id: str | None = None
         self._charge_result: dict[str, str] = {}
         self._charge_translations: dict[str, str] | None = None
@@ -364,6 +368,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=[
                 "settings",
                 "journey_management",
+                "route_management",
                 "pause_management",
                 "charge_management",
                 "export",
@@ -4271,6 +4276,41 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return rebuilder
 
+    def _get_route_rebuilder(self) -> FordTriplogRouteRebuilder:
+        """Return an OSRM route rebuilder for the current options."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+
+        route_storage = runtime_data.get("route_storage")
+        if route_storage is None:
+            raise HomeAssistantError(
+                "Route storage is not initialized"
+            )
+
+        return FordTriplogRouteRebuilder(
+            self.hass,
+            route_storage,
+            osrm_url=str(
+                self._options.get(
+                    CONF_OSRM_URL,
+                    DEFAULT_OSRM_URL,
+                )
+                or ""
+            ),
+            radius_meters=float(
+                self._options.get(
+                    CONF_OSRM_MATCH_RADIUS,
+                    DEFAULT_OSRM_MATCH_RADIUS,
+                )
+            ),
+        )
+
     @staticmethod
     def _journey_date_schema(
         *,
@@ -4444,6 +4484,122 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "affected_dates": ", ".join(affected_dates) or "—",
         }
 
+
+    async def async_step_route_management(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show route/OSRM maintenance actions."""
+
+        return self.async_show_menu(
+            step_id="route_management",
+            menu_options=[
+                "route_rebuild_last",
+                "route_rebuild_raw",
+                "route_rebuild_all",
+                "init",
+            ],
+        )
+
+    async def _async_route_rebuild_step(
+        self,
+        *,
+        step_id: str,
+        mode: str,
+        user_input: dict[str, Any] | None,
+    ) -> ConfigFlowResult:
+        """Run one confirmed route rebuild maintenance action."""
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            if not user_input.get("confirm"):
+                errors["base"] = "route_rebuild_confirmation_required"
+            else:
+                try:
+                    result = await self._get_route_rebuilder().async_rebuild(
+                        mode  # type: ignore[arg-type]
+                    )
+                except ValueError as err:
+                    if "OSRM is not configured" in str(err):
+                        errors["base"] = "route_osrm_not_configured"
+                    else:
+                        errors["base"] = "route_rebuild_failed"
+                except HomeAssistantError:
+                    errors["base"] = "route_rebuild_failed"
+                else:
+                    self._route_result = {
+                        key: str(value)
+                        for key, value in result.to_dict().items()
+                    }
+                    self._route_result["last_trip_id"] = (
+                        self._route_result.get("last_trip_id") or "—"
+                    )
+                    return await self.async_step_route_rebuild_result()
+
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        "confirm",
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_route_rebuild_last(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Re-run OSRM matching for the latest completed route."""
+
+        return await self._async_route_rebuild_step(
+            step_id="route_rebuild_last",
+            mode="last",
+            user_input=user_input,
+        )
+
+    async def async_step_route_rebuild_raw(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Re-run OSRM matching for raw/unmatched routes."""
+
+        return await self._async_route_rebuild_step(
+            step_id="route_rebuild_raw",
+            mode="raw",
+            user_input=user_input,
+        )
+
+    async def async_step_route_rebuild_all(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Re-run OSRM matching for all completed routes."""
+
+        return await self._async_route_rebuild_step(
+            step_id="route_rebuild_all",
+            mode="all",
+            user_input=user_input,
+        )
+
+    async def async_step_route_rebuild_result(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show route rebuild result."""
+
+        if user_input is not None:
+            return await self.async_step_route_management()
+
+        return self.async_show_form(
+            step_id="route_rebuild_result",
+            data_schema=vol.Schema({}),
+            description_placeholders=self._route_result,
+        )
 
     async def _format_export_period(
         self,
@@ -5194,6 +5350,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                                         "(Geocoded Location)"
                                     ),
                                 ),
+                                selector.SelectOptionDict(
+                                    value=ROUTE_SOURCE_HA_DEVICE_TRACKER,
+                                    label="Home Assistant Device Tracker (GPS)",
+                                ),
                             ],
                             mode=selector.SelectSelectorMode.DROPDOWN,
                         )
@@ -5234,11 +5394,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
         if user_input is not None:
-            route_keys = (
-                (CONF_ROUTE_GEOCODED_ENTITY,)
-                if source_type == ROUTE_SOURCE_HA_GEOCODED
-                else (CONF_ROUTE_LATITUDE_ENTITY, CONF_ROUTE_LONGITUDE_ENTITY)
-            )
+            if source_type == ROUTE_SOURCE_HA_GEOCODED:
+                route_keys = (CONF_ROUTE_GEOCODED_ENTITY,)
+            elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+                route_keys = (CONF_ROUTE_DEVICE_TRACKER_ENTITY,)
+            else:
+                route_keys = (
+                    CONF_ROUTE_LATITUDE_ENTITY,
+                    CONF_ROUTE_LONGITUDE_ENTITY,
+                )
             if _contains_ford_triplog_input(self.hass, user_input, route_keys):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
@@ -5253,6 +5417,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         CONF_ROUTE_LONGITUDE_ENTITY
                     ]
                     updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_DEVICE_TRACKER_ENTITY, None)
 
                 elif source_type == ROUTE_SOURCE_HA_GEOCODED:
                     updated_options[CONF_ROUTE_GEOCODED_ENTITY] = user_input[
@@ -5260,6 +5425,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ]
                     updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
                     updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_DEVICE_TRACKER_ENTITY, None)
+
+                elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+                    updated_options[CONF_ROUTE_DEVICE_TRACKER_ENTITY] = user_input[
+                        CONF_ROUTE_DEVICE_TRACKER_ENTITY
+                    ]
+                    updated_options.pop(CONF_ROUTE_LATITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_LONGITUDE_ENTITY, None)
+                    updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
 
                 self.hass.config_entries.async_update_entry(
                     self._config_entry,
@@ -5270,6 +5444,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 return await self.async_step_settings()
         blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
+        blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
+
         if source_type == ROUTE_SOURCE_HA_GEOCODED:
             schema = vol.Schema(
                 {
@@ -5282,6 +5458,22 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         selector.EntitySelectorConfig(
                             domain="sensor",
                             exclude_entities=blocked_sensors,
+                        )
+                    ),
+                }
+            )
+        elif source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
+            schema = vol.Schema(
+                {
+                    vol.Required(
+                        CONF_ROUTE_DEVICE_TRACKER_ENTITY,
+                        default=self._options.get(
+                            CONF_ROUTE_DEVICE_TRACKER_ENTITY,
+                        ),
+                    ): selector.EntitySelector(
+                        selector.EntitySelectorConfig(
+                            domain="device_tracker",
+                            exclude_entities=blocked_trackers,
                         )
                     ),
                 }

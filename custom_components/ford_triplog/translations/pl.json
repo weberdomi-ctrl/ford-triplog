@@ -30,6 +30,7 @@
         "menu_options": {
           "settings": "Ustawienia",
           "journey_management": "Zarządzaj podróżami",
+          "route_management": "Konserwacja tras",
           "pause_management": "Zarządzaj postojami",
           "charge_management": "Zarządzaj sesjami ładowania",
           "user_charging_sites": "Własne lokalizacje ładowania",
@@ -39,6 +40,7 @@
         "menu_option_descriptions": {
           "settings": "Edytuj ustawienia przejazdów, ładowania, pojazdu i taryf.",
           "journey_management": "Aktualizuj, przeliczaj lub usuwaj podróże.",
+          "route_management": "Ponownie dopasuj zapisane trasy przez OSRM bez zmiany surowych punktów GPS.",
           "pause_management": "Uzupełniaj postoje o tytuł, kategorię, miejsce, notatkę i koszty.",
           "charge_management": "Zarządzaj sesjami ładowania, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Wyświetlaj i zarządzaj własnymi lokalizacjami ładowania.",
@@ -207,6 +209,47 @@
       "journey_result": {
         "title": "Operacja na podróżach zakończona",
         "description": "Tryb: {mode}\n\nPrzejazdy: {source_trips} · Sesje ładowania: {source_charges} · Przetworzono: {processed_records}\n\nUtworzono podróży: {journeys_created} · Usunięto podróży: {journeys_deleted}\n\nPominięte pliki źródłowe: {source_files_skipped}\n\nZakres dat: {start_date}–{end_date}\n\nDotknięte dni: {affected_dates}"
+      },
+      "route_management": {
+        "title": "Konserwacja tras",
+        "description": "Ponownie oblicz geometrię zapisanych tras przy użyciu aktualnie skonfigurowanej usługi OSRM. Surowe punkty GPS nigdy nie są zmieniane.",
+        "menu_options": {
+          "route_rebuild_last": "Przelicz ostatnią trasę",
+          "route_rebuild_raw": "Przelicz surowe trasy",
+          "route_rebuild_all": "Przelicz wszystkie trasy",
+          "init": "Wróć do menu głównego"
+        },
+        "menu_option_descriptions": {
+          "route_rebuild_last": "Ponownie uruchom dopasowanie OSRM tylko dla ostatniej zakończonej trasy.",
+          "route_rebuild_raw": "Ponownie uruchom OSRM dla tras bez użytecznej geometrii OSRM.",
+          "route_rebuild_all": "Ponownie uruchom OSRM dla wszystkich zakończonych zapisanych tras.",
+          "init": "Wróć do przeglądu Ford Triplog."
+        }
+      },
+      "route_rebuild_last": {
+        "title": "Przelicz ostatnią trasę",
+        "description": "Ponownie dopasuj ostatnią zakończoną trasę przez OSRM. Zapisane surowe punkty GPS pozostaną bez zmian.",
+        "data": {
+          "confirm": "Potwierdź działanie"
+        }
+      },
+      "route_rebuild_raw": {
+        "title": "Przelicz surowe trasy",
+        "description": "Ponownie dopasuj przez OSRM wszystkie zakończone trasy bez użytecznej geometrii OSRM. Surowe punkty GPS pozostaną bez zmian.",
+        "data": {
+          "confirm": "Potwierdź działanie"
+        }
+      },
+      "route_rebuild_all": {
+        "title": "Przelicz wszystkie trasy",
+        "description": "Ponownie dopasuj przez OSRM wszystkie zakończone trasy. Istniejąca geometria OSRM jest zastępowana tylko po udanym nowym dopasowaniu; surowe punkty GPS pozostają bez zmian.",
+        "data": {
+          "confirm": "Potwierdź działanie"
+        }
+      },
+      "route_rebuild_result": {
+        "title": "Konserwacja tras zakończona",
+        "description": "Tryb: {mode}\n\nZapisane trasy: {routes_total} · Wybrane: {routes_selected} · Przetworzone: {routes_processed}\n\nZapisane dopasowania OSRM: {routes_matched} · Nieudane: {routes_failed} · Pominięte: {routes_skipped}\n\nOstatnia trasa: {last_trip_id}"
       },
       "charge_management": {
         "title": "Sesje ładowania",
@@ -834,7 +877,10 @@
       "export_failed": "Nie udało się utworzyć eksportu CSV. Sprawdź dziennik Home Assistant, aby uzyskać więcej informacji.",
       "charge_delete_failed": "Nie udało się całkowicie usunąć sesji ładowania.",
       "charge_not_suspicious": "Ta sesja ładowania nie spełnia kryteriów bezpiecznego usunięcia.",
-      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
+      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych.",
+      "route_rebuild_confirmation_required": "Działanie musi zostać potwierdzone.",
+      "route_rebuild_failed": "Nie udało się zakończyć konserwacji tras. Sprawdź dziennik Home Assistant, aby uzyskać szczegóły.",
+      "route_osrm_not_configured": "OSRM nie jest skonfigurowany. Najpierw skonfiguruj adres OSRM."
     }
   },
   "entity": {

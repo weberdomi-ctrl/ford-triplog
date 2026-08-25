@@ -5,7 +5,7 @@ Route Tracker storage
 
 Version: 2.3.0
 Phase: SQLite-only Route Storage
-Build: 23006
+Build: 23026
 
 Changes:
 - Keeps the Ford Triplog 2.0.0 route storage format unchanged.
@@ -14,6 +14,7 @@ Changes:
 - Adds loading of routes for a supplied list of Trip IDs.
 - Legacy route files without a status field remain compatible.
 - Active and paused recovery files are excluded from history queries.
+- Maintenance writes can suppress repeated Last Route update signals.
 """
 
 from __future__ import annotations
@@ -213,6 +214,7 @@ class FordTriplogRouteStorage:
         status: str = "completed",
         created_at: str | None = None,
         matched_route: dict[str, Any] | None = None,
+        notify: bool = True,
     ) -> None:
         """Atomically save one route file."""
 
@@ -236,7 +238,7 @@ class FordTriplogRouteStorage:
         if not await self.database.save_route(payload):
             raise OSError(f"Unable to save route to SQLite: {trip_id}")
 
-        if str(status) == "completed":
+        if str(status) == "completed" and notify:
             async_dispatcher_send(
                 self.hass,
                 SIGNAL_LAST_ROUTE_UPDATED,
