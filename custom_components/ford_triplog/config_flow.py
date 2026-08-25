@@ -1530,6 +1530,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         menu_options = ["charge_receipt_open"]
         if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("charge_receipt_ocr")
+        if str(receipt.get("parse_status") or "") == "parsed":
+            menu_options.append("charge_receipt_apply")
         if (
             str(receipt.get("ocr_status") or "") == "completed"
             and str(receipt.get("parse_status") or "") != "parsed"
@@ -1547,6 +1549,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=menu_options,
             description_placeholders=placeholders,
         )
+
+    async def async_step_charge_receipt_apply(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Review and apply parser values for the selected charge receipt."""
+
+        if not self._selected_receipt_id:
+            return await self.async_step_charge_receipt_list()
+
+        self._selected_apply_receipt_id = self._selected_receipt_id
+        return await self.async_step_receipt_apply_edit()
 
     async def async_step_charge_receipt_open(
         self,
@@ -2937,6 +2951,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             [
                 "receipt_import_type",
                 "receipt_list",
+                "receipt_apply",
                 "receipt_delete",
             ]
         )

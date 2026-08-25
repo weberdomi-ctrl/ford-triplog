@@ -506,14 +506,16 @@
           "charge_receipt_ocr": "OCR erneut ausführen",
           "charge_receipt_delete": "Beleg löschen",
           "charge_receipt_list": "Zurück zu den Belegen",
-          "charge_receipt_parser_create": "Parserprofil erstellen"
+          "charge_receipt_parser_create": "Parserprofil erstellen",
+          "charge_receipt_apply": "Belegwerte prüfen"
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Originaldatei im Browser anzeigen.",
           "charge_receipt_ocr": "Beleg erneut analysieren und Parserwerte aktualisieren.",
           "charge_receipt_delete": "Belegdatei und gespeicherte Metadaten löschen.",
           "charge_receipt_list": "Zur Belegliste dieses Ladevorgangs zurückkehren.",
-          "charge_receipt_parser_create": "Aus dem vorhandenen OCR-Text ein eigenes Parserprofil anlegen."
+          "charge_receipt_parser_create": "Aus dem vorhandenen OCR-Text ein eigenes Parserprofil anlegen.",
+          "charge_receipt_apply": "Erkannte Abrechnungswerte prüfen, korrigieren und auf diesen Ladevorgang übernehmen."
         }
       },
       "charge_receipt_ocr": {

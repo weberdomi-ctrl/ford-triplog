@@ -506,14 +506,16 @@
           "charge_receipt_ocr": "Uruchom OCR ponownie",
           "charge_receipt_delete": "Usuń paragon",
           "charge_receipt_list": "Wróć do paragonów",
-          "charge_receipt_parser_create": "Utwórz profil parsera"
+          "charge_receipt_parser_create": "Utwórz profil parsera",
+          "charge_receipt_apply": "Sprawdź wartości paragonu"
         },
         "menu_option_descriptions": {
           "charge_receipt_open": "Wyświetl oryginalny plik w przeglądarce.",
           "charge_receipt_ocr": "Ponownie przeanalizuj paragon i zaktualizuj wartości parsera.",
           "charge_receipt_delete": "Usuń plik paragonu i zapisane metadane.",
           "charge_receipt_list": "Wróć do listy paragonów tej sesji ładowania.",
-          "charge_receipt_parser_create": "Utwórz własny profil parsera na podstawie istniejącego tekstu OCR."
+          "charge_receipt_parser_create": "Utwórz własny profil parsera na podstawie istniejącego tekstu OCR.",
+          "charge_receipt_apply": "Sprawdź, popraw i zastosuj wykryte wartości rozliczeniowe do tej sesji ładowania."
         }
       },
       "charge_receipt_ocr": {
