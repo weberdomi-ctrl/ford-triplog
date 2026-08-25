@@ -1146,9 +1146,25 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         return f"route_history_selected_date_{self.entry_id}"
 
     async def async_added_to_hass(self) -> None:
+        """Load state and subscribe to Journey rebuild/update notifications."""
+
         data = self.hass.data[DOMAIN][self.entry_id]
         data["journey_history_sensor"] = self
         self._selected_date = data.get(self._selection_key)
+
+        # This subclass overrides the parent lifecycle hook, so it must
+        # explicitly retain the parent Journey update subscription. Without
+        # this, a rebuilt Journey is written to SQLite but the selected-date
+        # History sensor keeps its stale attributes until the date is changed
+        # or the integration is reloaded.
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_journey_update,
+            )
+        )
+
         await self._async_refresh()
 
     async def async_will_remove_from_hass(self) -> None:
