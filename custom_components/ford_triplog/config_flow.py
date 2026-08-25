@@ -946,6 +946,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "receipt_count": str(len(receipts)),
                 "receipt_summary": receipt_summary,
+                "ocr_status": (
+                    ui_text["ocr_enabled"]
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else ui_text["ocr_disabled"]
+                ),
             },
         )
 
