@@ -2103,6 +2103,43 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             await self.history.refresh_statistics()
 
+            # Keep the daily Journey archive synchronized with completed
+            # charging sessions, including late FordPass Last Charge recovery.
+            # This mirrors the existing automatic Journey rebuild after a trip.
+            if self.journey_rebuilder is not None:
+                try:
+                    start_time = dt_util.parse_datetime(
+                        str(charge.get("start_time") or "")
+                    )
+
+                    if start_time is None:
+                        raise ValueError(
+                            "Saved charge has no valid start_time"
+                        )
+
+                    if start_time.tzinfo is None:
+                        start_time = start_time.replace(
+                            tzinfo=dt_util.UTC
+                        )
+
+                    journey_date = dt_util.as_local(start_time).date()
+
+                    await self.journey_rebuilder.async_rebuild_journeys(
+                        start_date=journey_date,
+                        end_date=journey_date,
+                    )
+
+                    _LOGGER.info(
+                        "Journey rebuilt automatically for %s after charge %s",
+                        journey_date,
+                        charge.get("charge_id"),
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception(
+                        "Automatic Journey rebuild failed after charge %s",
+                        charge.get("charge_id"),
+                    )
+
             if self.current_charge is charge_obj:
                 await self.storage.delete_current_charge()
                 self.current_charge = None
