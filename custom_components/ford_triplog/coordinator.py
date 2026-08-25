@@ -3,19 +3,14 @@ Ford Triplog
 
 Coordinator
 
-Version: 2.2.0
-Phase: 
-Build: 03
+Version: 2.3.0
+Build: 23030 - Trip transition race guard
 
 Changes:
-- Route Tracker uses Trip start GPS as first route point and finalized fresh Trip end GPS as last route point.
-- Smart Trip pauses route capture without discarding collected ABRP points.
-- Persists Smart Trip pause recovery data inside current_trip.json.
-- Restores the paused Trip, captured end state and remaining timeout after
-  a Home Assistant or integration reload.
-- Finalizes immediately when the original Smart Trip timeout has already
-  expired during the reload.
-- Keeps the existing Trip, Journey and Route Tracker flow unchanged.
+- Claims ignition and charging state transitions before awaiting handlers.
+- Prevents concurrent Home Assistant state events from starting/ending the same trip twice.
+- Sets the trip-finalization guard before pausing the Route Tracker.
+- Keeps Smart Trip, Route Tracker and charging behavior otherwise unchanged.
 """
 
 from __future__ import annotations
@@ -668,22 +663,29 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 event.data.get("new_state")
             )
 
-        # Trip handling
-        if not self.last_ignition and ignition:
-            await self.start_trip()
-
-        elif self.last_ignition and not ignition:
-            await self.finish_trip()
-
-        # Charge handling
-        if not self.last_charging and charging:
-            await self.start_charge()
-
-        elif self.last_charging and not charging:
-            await self.finish_charge()
+        # Claim state transitions before awaiting any handler. Multiple watched
+        # Home Assistant entities can update within a few milliseconds. If the
+        # previous state were updated only after an await, a second callback
+        # could observe the same edge and start/finish the same Trip twice.
+        trip_started = not self.last_ignition and ignition
+        trip_stopped = self.last_ignition and not ignition
+        charge_started = not self.last_charging and charging
+        charge_stopped = self.last_charging and not charging
 
         self.last_ignition = ignition
         self.last_charging = charging
+
+        # Trip handling
+        if trip_started:
+            await self.start_trip()
+        elif trip_stopped:
+            await self.finish_trip()
+
+        # Charge handling
+        if charge_started:
+            await self.start_charge()
+        elif charge_stopped:
+            await self.finish_charge()
 
         self._schedule_coordinator_update(self.vehicle_state)
 
@@ -1338,12 +1340,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if trip is None:
             return
 
-        if self.route_tracker is not None:
-            await self.route_tracker.async_pause()
-
+        # Claim finalization before the first await. Route Tracker pause itself
+        # performs I/O, so setting this guard afterwards left a small window
+        # where a duplicate ignition-off callback could enter as well.
         self._trip_finishing = True
 
         try:
+            if self.route_tracker is not None:
+                await self.route_tracker.async_pause()
+
             if self.smart_trip_timer:
                 self.smart_trip_timer.cancel()
                 self.smart_trip_timer = None
