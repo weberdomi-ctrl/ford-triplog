@@ -4,13 +4,16 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23030 - Trip transition race guard
+Build: 23031 - Charging recovery and Last Charge guard
 
 Changes:
-- Claims ignition and charging state transitions before awaiting handlers.
-- Prevents concurrent Home Assistant state events from starting/ending the same trip twice.
-- Sets the trip-finalization guard before pausing the Route Tracker.
-- Keeps Smart Trip, Route Tracker and charging behavior otherwise unchanged.
+- Discards stale current_charge recovery records that are already archived.
+- Prevents an archived charge ID from blocking a newly started charging session.
+- Requires FordPass Last Charge end timestamps to match the local charge end.
+- Recovers a very recent missing FordPass Last Charge after restart when safe.
+- Repairs grossly corrupted archived charge end data from its embedded FordPass snapshot.
+- Removes a duplicate pending-charge timeout resume call.
+- Keeps the Build 23030 trip transition race guard.
 """
 
 from __future__ import annotations
@@ -272,7 +275,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
           
         data = await self.storage.load_current_charge()
         if data:
-            self.current_charge = Charge.from_dict(data)        
+            recovered_charge = Charge.from_dict(data)
+            if await self._charge_id_is_archived(recovered_charge.charge_id):
+                _LOGGER.warning(
+                    "Discarding stale current charge recovery %s because "
+                    "the same charge is already archived",
+                    recovered_charge.charge_id,
+                )
+                await self.storage.delete_current_charge()
+            else:
+                self.current_charge = recovered_charge
 
 
         entities = [
@@ -298,6 +310,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.last_charge_signature = self._last_charge_to_signature(
                 last_charge
             )
+
+        # Repair one stale archived session if its embedded FordPass dataset
+        # proves that the local end data was accidentally extended. Then
+        # recover a very recent FordPass Last Charge that is not represented
+        # in SQLite (for example after a stale current_charge blocked start).
+        await self._async_reconcile_last_charge_archive()
 
         # Resume a pending completed charging session from recovery. The
         # timeout is measured from the recorded charge end time, so a Home
@@ -929,6 +947,345 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         return parsed
 
+    async def _charge_id_is_archived(self, charge_id: Any) -> bool:
+        """Return whether a charge ID already exists in the SQLite archive."""
+
+        normalized = str(charge_id or "").strip()
+        if not normalized:
+            return False
+
+        archived = await self.storage.load_archived_charges()
+        return any(
+            str(item.get("charge_id") or "").strip() == normalized
+            for item in archived
+            if isinstance(item, dict)
+        )
+
+    @classmethod
+    def _fordpass_snapshot_times(
+        cls,
+        snapshot: dict[str, Any] | None,
+    ) -> tuple[datetime | None, datetime | None]:
+        """Return FordPass charge begin/end timestamps from a snapshot."""
+
+        if not isinstance(snapshot, dict):
+            return None, None
+
+        ford_start = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "begin",
+            )
+            or cls._snapshot_attribute(
+                snapshot,
+                "plugDetails",
+                "plugInTime",
+            )
+        )
+        ford_end = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "end",
+            )
+            or cls._snapshot_attribute(
+                snapshot,
+                "plugDetails",
+                "plugOutTime",
+            )
+            or cls._snapshot_attribute(snapshot, "timeStamp")
+        )
+        return ford_start, ford_end
+
+    @classmethod
+    def _archived_charge_represents_snapshot(
+        cls,
+        charge: dict[str, Any],
+        snapshot: dict[str, Any],
+    ) -> bool:
+        """Return whether an archived charge already represents FordPass data."""
+
+        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
+        if ford_end is None:
+            return False
+
+        embedded = charge.get("fordpass_last_charge")
+        if isinstance(embedded, dict):
+            embedded_start, embedded_end = cls._fordpass_snapshot_times(
+                embedded
+            )
+            if (
+                embedded_end is not None
+                and abs((embedded_end - ford_end).total_seconds()) <= 60
+                and (
+                    ford_start is None
+                    or embedded_start is None
+                    or abs(
+                        (embedded_start - ford_start).total_seconds()
+                    ) <= 60
+                )
+            ):
+                return True
+
+        local_start = cls._parse_fordpass_datetime(charge.get("start_time"))
+        local_end = cls._parse_fordpass_datetime(charge.get("end_time"))
+        if local_end is None:
+            return False
+
+        end_matches = abs((local_end - ford_end).total_seconds()) <= 900
+        if ford_start is None or local_start is None:
+            return end_matches
+
+        return (
+            end_matches
+            and abs((local_start - ford_start).total_seconds()) <= 900
+        )
+
+    @classmethod
+    def _charge_from_fordpass_snapshot(
+        cls,
+        snapshot: dict[str, Any],
+    ) -> Charge | None:
+        """Build a completed Charge from one FordPass Last Charge dataset."""
+
+        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
+        if ford_start is None or ford_end is None:
+            return None
+
+        attributes = snapshot.get("attributes")
+        if not isinstance(attributes, dict):
+            return None
+
+        local_start = dt_util.as_local(ford_start)
+        local_end = dt_util.as_local(ford_end)
+
+        charge = Charge()
+        charge.charge_id = local_start.strftime("%Y%m%dT%H%M%S")
+        charge.created = local_start.isoformat()
+        charge.start_time = local_start.isoformat()
+        charge.end_time = local_end.isoformat()
+        charge.start_soc = Charge._optional_float(
+            cls._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
+        )
+        charge.end_soc = Charge._optional_float(
+            cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
+        )
+
+        location = attributes.get("location")
+        if isinstance(location, dict):
+            latitude = Charge._optional_float(location.get("latitude"))
+            longitude = Charge._optional_float(location.get("longitude"))
+            charge.start_latitude = latitude
+            charge.start_longitude = longitude
+            charge.end_latitude = latitude
+            charge.end_longitude = longitude
+
+            raw_address = location.get("address")
+            if isinstance(raw_address, dict):
+                address_1 = str(raw_address.get("address1") or "").strip()
+                postcode = str(raw_address.get("postalCode") or "").strip()
+                city = str(raw_address.get("city") or "").strip()
+                state = str(raw_address.get("state") or "").strip()
+                country = str(raw_address.get("country") or "").strip()
+                display = ", ".join(
+                    part
+                    for part in (
+                        address_1,
+                        " ".join(part for part in (postcode, city) if part),
+                        state,
+                        country,
+                    )
+                    if part
+                )
+                normalized_address = {
+                    "display": display or None,
+                    "road": address_1 or None,
+                    "house_number": None,
+                    "postcode": postcode or None,
+                    "city": city or None,
+                    "state": state or None,
+                    "country": country or None,
+                    "latitude": latitude,
+                    "longitude": longitude,
+                    "source": "fordpass",
+                }
+                charge.start_address = dict(normalized_address)
+                charge.end_address = dict(normalized_address)
+
+        charge.fordpass_last_charge = dict(snapshot)
+        charge.fordpass_pending = False
+        charge.data_source = "fordpass"
+        return charge
+
+    async def _async_repair_archived_charge_from_snapshot(
+        self,
+        data: dict[str, Any],
+    ) -> bool:
+        """Repair a charge whose end was grossly extended past FordPass."""
+
+        snapshot = data.get("fordpass_last_charge")
+        if not isinstance(snapshot, dict):
+            return False
+
+        ford_start, ford_end = self._fordpass_snapshot_times(snapshot)
+        local_start = self._parse_fordpass_datetime(data.get("start_time"))
+        local_end = self._parse_fordpass_datetime(data.get("end_time"))
+
+        if (
+            ford_start is None
+            or ford_end is None
+            or local_start is None
+            or local_end is None
+        ):
+            return False
+
+        # Only heal a clear corruption: the original start still matches the
+        # FordPass session, but the stored end drifted by more than one hour.
+        if abs((local_start - ford_start).total_seconds()) > 900:
+            return False
+        if abs((local_end - ford_end).total_seconds()) <= 24 * 3600:
+            return False
+
+        charge = Charge.from_dict(data)
+        charge.end_time = dt_util.as_local(ford_end).isoformat()
+        charge.start_soc = Charge._optional_float(
+            self._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
+        )
+        charge.end_soc = Charge._optional_float(
+            self._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
+        )
+
+        attributes = snapshot.get("attributes")
+        location = attributes.get("location") if isinstance(attributes, dict) else None
+        if isinstance(location, dict):
+            latitude = Charge._optional_float(location.get("latitude"))
+            longitude = Charge._optional_float(location.get("longitude"))
+            if latitude is not None and longitude is not None:
+                charge.end_latitude = latitude
+                charge.end_longitude = longitude
+                if charge.start_latitude is None or charge.start_longitude is None:
+                    charge.start_latitude = latitude
+                    charge.start_longitude = longitude
+                # The start address belongs to the original session and is a
+                # safer fallback than the accidentally captured later address.
+                if charge.start_address is not None:
+                    charge.end_address = charge.start_address
+
+        # Drop the wrongly resolved site and resolve it again from repaired GPS.
+        charge.charging_site_id = None
+        charge.charging_site_name = None
+        charge.charging_site_brand = None
+        charge.charging_site_operator = None
+        charge.charging_site_network = None
+        charge.charging_site_power_kw = []
+        charge.charging_site_capacity = []
+        charge.charging_site_connectors = []
+        charge.charging_site_quality = None
+        charge.charging_site_distance_m = None
+
+        charge = await self.charging_location_resolver.async_resolve(charge)
+
+        start_soc = float(charge.start_soc or 0)
+        end_soc = float(charge.end_soc or 0)
+        energy_calculated = round(
+            (max(0.0, end_soc - start_soc) / 100) * self.battery_capacity,
+            2,
+        )
+        raw_energy = self._snapshot_attribute(snapshot, "energyConsumed")
+        try:
+            energy_fordpass = (
+                round(float(raw_energy), 2)
+                if raw_energy is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            energy_fordpass = None
+
+        charge.energy_added_kwh_calculated = energy_calculated
+        charge.energy_added_kwh_fordpass = energy_fordpass
+        charge.energy_added_kwh = energy_calculated
+        charge.energy_source = "calculated"
+        await self._apply_home_charging_costs(charge)
+
+        repaired_data = charge.to_dict()
+        saved = await self.storage.save_charge(repaired_data)
+        if saved:
+            cached_last = await self.storage.load_last_charge()
+            if (
+                isinstance(cached_last, dict)
+                and str(cached_last.get("charge_id") or "").strip()
+                == str(charge.charge_id or "").strip()
+            ):
+                await self.storage.save_last_charge(repaired_data)
+
+            _LOGGER.warning(
+                "Repaired archived charging session %s from embedded "
+                "FordPass timestamps",
+                charge.charge_id,
+            )
+        return saved
+
+    async def _async_reconcile_last_charge_archive(self) -> None:
+        """Repair stale charge data and backfill a recent missing Last Charge."""
+
+        archived = await self.storage.load_archived_charges()
+        repaired = False
+        for item in archived:
+            if isinstance(item, dict):
+                repaired = (
+                    await self._async_repair_archived_charge_from_snapshot(item)
+                    or repaired
+                )
+
+        if repaired:
+            archived = await self.storage.load_archived_charges()
+            await self.history.refresh_statistics()
+
+        if self.current_charge is not None:
+            return
+
+        snapshot = self.last_charge_snapshot
+        if not isinstance(snapshot, dict):
+            return
+
+        # Never synthesize a completed charge while the vehicle is currently
+        # reporting an active charging session.
+        if str(self._read_vehicle_state().get("charging") or "").upper() == "IN_PROGRESS":
+            return
+
+        ford_start, ford_end = self._fordpass_snapshot_times(snapshot)
+        if ford_start is None or ford_end is None:
+            return
+
+        # Startup backfill is intentionally narrow: only a very recent final
+        # FordPass dataset can be imported automatically.
+        age_seconds = (dt_util.now() - ford_end).total_seconds()
+        if age_seconds < -300 or age_seconds > 6 * 3600:
+            return
+
+        if any(
+            self._archived_charge_represents_snapshot(item, snapshot)
+            for item in archived
+            if isinstance(item, dict)
+        ):
+            return
+
+        recovered = self._charge_from_fordpass_snapshot(snapshot)
+        if recovered is None:
+            return
+
+        if await self._charge_id_is_archived(recovered.charge_id):
+            return
+
+        _LOGGER.warning(
+            "Recovering recent FordPass Last Charge missing from archive: %s",
+            recovered.charge_id,
+        )
+        self.current_charge = recovered
+        await self.storage.save_current_charge(recovered.to_dict())
+        await self._finalize_charge(self._read_vehicle_state())
+
     def _last_charge_matches_current_charge(
         self,
         snapshot: dict[str, Any] | None,
@@ -987,17 +1344,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return True
 
         tolerance_seconds = 900
-        tolerance = timedelta(seconds=tolerance_seconds)
 
         if ford_start is None:
             ford_start = ford_end
         if ford_end is None:
             ford_end = ford_start
 
-        matches = (
-            ford_start <= local_end + tolerance
-            and ford_end >= local_start - tolerance
-        )
+        # The previous interval-overlap check could accept an old FordPass
+        # dataset when a stale recovered charge accidentally spanned multiple
+        # days. The charge end is the strongest correlation point and must be
+        # close to FordPass. When both starts are available, validate those as
+        # well.
+        end_matches = abs(
+            (ford_end - local_end).total_seconds()
+        ) <= tolerance_seconds
+        start_matches = abs(
+            (ford_start - local_start).total_seconds()
+        ) <= tolerance_seconds
+
+        matches = end_matches and start_matches
 
         if not matches:
             _LOGGER.debug(
@@ -1412,6 +1777,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         """Start charging session."""
 
         async with self._charge_lock:
+            # A recovered current_charge must never block a new real charging
+            # edge when that exact charge already exists in the archive.
+            if (
+                self.current_charge is not None
+                and await self._charge_id_is_archived(
+                    self.current_charge.charge_id
+                )
+            ):
+                stale_charge_id = self.current_charge.charge_id
+                self._stop_waiting_for_last_charge()
+                await self.storage.delete_current_charge()
+                self.current_charge = None
+                _LOGGER.warning(
+                    "Discarded stale archived current charge %s before "
+                    "starting a new charging session",
+                    stale_charge_id,
+                )
+
             # A new IN_PROGRESS event permanently closes a previous session
             # that was still waiting for delayed FordPass data.
             if self.waiting_for_last_charge and self.current_charge:
