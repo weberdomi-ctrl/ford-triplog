@@ -4,7 +4,7 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23031 - Charging recovery and Last Charge guard
+Build: 23032 - Late Last Charge backfill
 
 Changes:
 - Discards stale current_charge recovery records that are already archived.
@@ -14,6 +14,8 @@ Changes:
 - Repairs grossly corrupted archived charge end data from its embedded FordPass snapshot.
 - Removes a duplicate pending-charge timeout resume call.
 - Keeps the Build 23030 trip transition race guard.
+- Re-runs recent Last Charge archive reconciliation when FordPass publishes
+  the completed ChargeData only after Ford Triplog startup.
 """
 
 from __future__ import annotations
@@ -759,6 +761,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         if not self.waiting_for_last_charge:
+            # FordPass commonly restores/publishes its Last Charge entity a few
+            # seconds after Ford Triplog has completed async_setup(). Build
+            # 23031 only reconciled once during startup, so a recent missing
+            # charge could still be skipped if the fresh ChargeData arrived
+            # afterwards. Re-run the guarded reconciliation for this late
+            # dataset. The archive/time/active-charging checks inside the
+            # reconcile method keep this idempotent and safe.
+            if (
+                self.current_charge is None
+                and self.last_charge_snapshot is not None
+            ):
+                self.hass.async_create_task(
+                    self._async_reconcile_late_last_charge()
+                )
             return
 
         if self.current_charge is None:
@@ -771,6 +787,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         self._restart_last_charge_timer()
+
+    async def _async_reconcile_late_last_charge(self) -> None:
+        """Backfill a recent Last Charge that arrived after integration setup."""
+
+        async with self._charge_lock:
+            if self.waiting_for_last_charge or self.current_charge is not None:
+                return
+
+            _LOGGER.debug(
+                "Late FordPass Last Charge update received; "
+                "checking for missing archived charging session"
+            )
+            await self._async_reconcile_last_charge_archive()
 
     def _start_waiting_for_last_charge(
         self,
