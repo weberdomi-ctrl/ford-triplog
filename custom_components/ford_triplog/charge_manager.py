@@ -483,11 +483,19 @@ class FordTriplogChargeManager:
         parking_fee: float | None = None,
         other_cost: float | None = None,
         energy_billed_source: str = "manual",
+        cost_source: str = "manual",
     ) -> ChargeManagerResult:
-        """Set and verify detailed manual costs for one charging session."""
+        """Set and verify detailed costs for one charging session."""
 
         normalized_id = self._normalize_charge_id(charge_id)
         normalized_currency = self._normalize_currency(currency)
+        normalized_cost_source = str(
+            cost_source or "manual"
+        ).strip().lower()
+        if normalized_cost_source not in {"manual", "ocr"}:
+            raise ValueError(
+                f"Unsupported charging cost source: {normalized_cost_source}"
+            )
 
         normalized_cost = self._normalize_optional_cost(cost_total)
         normalized_energy_billed = self._normalize_optional_cost(
@@ -550,9 +558,10 @@ class FordTriplogChargeManager:
         )
 
         charge.currency = normalized_currency
-        charge.cost_source = "manual"
+        charge.cost_source = normalized_cost_source
         charge.cost_verified = True
-        # Keep an existing receipt filename when manually updating costs.
+        # Keep an existing receipt filename when updating costs manually or
+        # from OCR/parser data.
         charge.recalculate_costs()
 
         saved = await self.storage.update_charge(
