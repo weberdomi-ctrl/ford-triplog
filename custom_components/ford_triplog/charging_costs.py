@@ -104,15 +104,18 @@ class FordTriplogChargingCostCalculator:
         if zone_state is None:
             return False
 
+        # A completed charging session should be classified by the newest
+        # known charging position. Start GPS can still be stale from the trip
+        # immediately before plugging in.
         latitude = (
-            charge.start_latitude
-            if charge.start_latitude is not None
-            else charge.end_latitude
+            charge.end_latitude
+            if charge.end_latitude is not None
+            else charge.start_latitude
         )
         longitude = (
-            charge.start_longitude
-            if charge.start_longitude is not None
-            else charge.end_longitude
+            charge.end_longitude
+            if charge.end_longitude is not None
+            else charge.start_longitude
         )
 
         try:
@@ -185,11 +188,34 @@ class FordTriplogChargingCostCalculator:
             getattr(charge, "cost_source", "none") or "none"
         ).strip().lower()
 
+        is_home_charge = self._is_home_charge(charge)
+
+        # Remove an earlier automatic Home tariff when repaired/newer GPS
+        # proves that the charging session was not at Home. Never touch manual
+        # or OCR costs.
+        if cost_source == "home_tariff" and (
+            not allow_automatic_tariff
+            or not self.home_tariff_enabled
+            or not is_home_charge
+        ):
+            charge.energy_cost = None
+            charge.session_fee = None
+            charge.time_fee = None
+            charge.blocking_fee = None
+            charge.parking_fee = None
+            charge.other_cost = None
+            charge.cost_total = None
+            charge.currency = None
+            charge.cost_source = "none"
+            charge.cost_verified = False
+            charge.recalculate_costs()
+            cost_source = "none"
+
         if (
             allow_automatic_tariff
             and cost_source not in _PROTECTED_COST_SOURCES
             and self.home_tariff_enabled
-            and self._is_home_charge(charge)
+            and is_home_charge
         ):
             start_time = self._parse_datetime(charge.start_time)
             energy, energy_source = self._pricing_energy(charge)
