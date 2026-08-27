@@ -1550,11 +1550,31 @@ class FordTriplogChargingHistorySensor(SensorEntity):
         return f"route_history_selected_date_{self.entry_id}"
 
     async def async_added_to_hass(self) -> None:
-        """Register for direct updates from the shared History date select."""
+        """Register for History date selection and charge archive updates."""
         data = self.hass.data[DOMAIN][self.entry_id]
         data["charging_history_sensor"] = self
         self._selected_date = data.get(self._selection_key)
+
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_CHARGE_DATA_UPDATED,
+                self._handle_charge_data_updated,
+            )
+        )
+
         await self._async_refresh()
+
+    def _handle_charge_data_updated(self, *_args: Any) -> None:
+        """Refresh the selected charging History date thread-safely."""
+
+        self.hass.add_job(self._async_refresh_and_write)
+
+    async def _async_refresh_and_write(self) -> None:
+        """Reload charging History and publish the new sensor state."""
+
+        await self._async_refresh()
+        self.async_write_ha_state()
 
     async def async_will_remove_from_hass(self) -> None:
         data = self.hass.data.get(DOMAIN, {}).get(self.entry_id, {})
@@ -4303,12 +4323,10 @@ class FordTriplogTopChargingSensor(FordTriplogSensorBase):
             )
         )
 
-    def _handle_charge_data_updated(self) -> None:
-        """Schedule an immediate Top Charging archive refresh."""
+    def _handle_charge_data_updated(self, *_args: Any) -> None:
+        """Schedule an immediate Top Charging archive refresh thread-safely."""
 
-        self.hass.async_create_task(
-            self._async_handle_charge_data_updated()
-        )
+        self.hass.add_job(self._async_handle_charge_data_updated)
 
     async def _async_handle_charge_data_updated(self) -> None:
         """Reload charge archive and publish the new Top Charging state."""
