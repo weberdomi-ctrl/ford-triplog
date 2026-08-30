@@ -4,9 +4,10 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23038 - Canonical Last Charge timestamps
+Build: 23040 - Shared optional-float runtime fix
 
 Changes:
+- Uses shared optional_float() after Charge helper refactor; fixes startup AttributeError.
 - Discards stale current_charge recovery records that are already archived.
 - Prevents an archived charge ID from blocking a newly started charging session.
 - Requires FordPass Last Charge end timestamps to match the local charge end.
@@ -43,6 +44,7 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .utils import optional_float
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
 from .pending_charging_site_storage import PendingChargingSiteStorage
@@ -1124,10 +1126,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             charge.end_time = canonical_end
             changed = True
 
-        first_soc = Charge._optional_float(
+        first_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
         )
-        last_soc = Charge._optional_float(
+        last_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
         )
 
@@ -1174,17 +1176,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         charge.created = local_start.isoformat()
         charge.start_time = local_start.isoformat()
         charge.end_time = local_end.isoformat()
-        charge.start_soc = Charge._optional_float(
+        charge.start_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
         )
-        charge.end_soc = Charge._optional_float(
+        charge.end_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
         )
 
         location = attributes.get("location")
         if isinstance(location, dict):
-            latitude = Charge._optional_float(location.get("latitude"))
-            longitude = Charge._optional_float(location.get("longitude"))
+            latitude = optional_float(location.get("latitude"))
+            longitude = optional_float(location.get("longitude"))
             charge.start_latitude = latitude
             charge.start_longitude = longitude
             charge.end_latitude = latitude
@@ -1275,8 +1277,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 else None
             )
             if isinstance(location, dict):
-                latitude = Charge._optional_float(location.get("latitude"))
-                longitude = Charge._optional_float(location.get("longitude"))
+                latitude = optional_float(location.get("latitude"))
+                longitude = optional_float(location.get("longitude"))
                 if latitude is not None and longitude is not None:
                     charge.end_latitude = latitude
                     charge.end_longitude = longitude
