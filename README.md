@@ -25,10 +25,13 @@
 Ford Triplog is a Home Assistant custom integration that automatically
 records every trip and charging session of your Ford electric vehicle.
 
-Built on top of the community-maintained FordPass integration, it
-creates a permanent local driving history including detailed trip
-statistics, charging history, GPS routes, energy calculations and
-charging location recognition.
+Ford Triplog reads configurable Ford vehicle entities from Home Assistant
+and creates a permanent local driving history including detailed trip
+statistics, charging history, GPS routes, energy calculations and charging
+location recognition.
+
+For Ford Triplog 2.3, Ford Connect is the recommended vehicle data source.
+Compatible FordPass entities can still be used where available.
 
 All data is stored locally inside Home Assistant.
 
@@ -222,7 +225,7 @@ Charging locations are resolved automatically using multiple sources.
 Priority order:
 
 1. Home Assistant zones
-2. FordPass charging information
+2. Ford charging-session information, when available
 3. Local OpenStreetMap charging database
 4. Address fallback
 
@@ -312,13 +315,21 @@ SQLite is now the sole productive Ford Triplog datastore.
 The SQLite database is stored locally inside the Ford Triplog Home
 Assistant storage directory.
 
+Ford Triplog 2.3 also persists active Route Tracker data periodically while a
+Trip is running and force-saves it on important lifecycle transitions. This
+reduces route loss after an unexpected Home Assistant interruption without
+writing every individual GPS point directly to SQLite.
+
 ------------------------------------------------------------------------
 
 # Requirements
 
 - Home Assistant 2026.6 or newer
 - HACS
-- FordPass Home Assistant integration
+- A compatible Ford vehicle data integration exposing the required Home
+  Assistant entities
+  - Ford Connect is recommended for Ford Triplog 2.3
+  - FordPass can be used where compatible entities are available
 - Python 3.12+
 
 ------------------------------------------------------------------------
@@ -334,17 +345,17 @@ See the complete installation guide:
 ## First Setup Notes
 
 After installation, it is possible that vehicle or trip data is not
-available immediately. Some sensors may temporarily show `0` or
-`unavailable`.
+available immediately. Some source entities may temporarily show `0`,
+`unknown` or `unavailable` while the configured vehicle integration is
+starting.
 
-FordPass does not necessarily provide current vehicle data immediately
-after the integration is configured. Drive the vehicle once after setup
-and wait briefly for the next update.
+Ford Triplog waits for valid numeric source values and ignores temporary
+`unknown` / `unavailable` states. Drive the vehicle once after setup if the
+vehicle integration has not yet published current telemetry.
 
-Once FordPass provides new vehicle data, Ford Triplog can import the
-initial driving data and start recording trips.
-
-A second user in the FordPass app is not required for this.
+Ford Connect is the recommended source for Ford Triplog 2.3. FordPass can
+still be used where available, but it is a community-maintained unofficial
+integration and can be affected by Ford backend changes.
 
 ------------------------------------------------------------------------
 
@@ -386,16 +397,25 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 # Roadmap
 
-## Version 2.3 – In testing
+## Version 2.3 – Pre-release testing
 
 - SQLite-only productive storage
 - One-time legacy JSON migration/import with persistent migration markers
 - Direct Home Assistant `device_tracker` GPS Route Tracker source
+- Active-route SQLite snapshots with forced lifecycle saves
 - Newest-timestamp trip-end GPS selection
 - Dense-trace OSRM matching through overlapping chunks
 - Route maintenance for rebuilding stored routes
 - Last Tour / Last Route reliability improvements
+- Duplicate Trip start/end protection
+- Improved delayed Last Charge recovery and archived-session reconciliation
+- Journey/Charging History refresh and charge-to-trip timestamp fixes
+- Robust handling of `unknown` / `unavailable` numeric source states
+- Configured usable battery capacity used for Trip energy calculations
+- Home Assistant review fixes for translations, event-loop safety, entity
+  lifecycle and service metadata
 - Source-selection guards against Ford Triplog self-references
+- Ford Connect recommended as the primary Ford vehicle data source
 
 ## Version 2.4 – Planned
 
@@ -407,8 +427,12 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
   selected source, including altitude, GPS accuracy, speed and course
 - Backward-compatible route storage when a source provides only
   latitude/longitude
-- Charging-session metadata enrichment from available Ford last-charge
-  attributes, including an optional automatically generated memo
+- More source-independent charging-session completion using available live
+  Ford charging data, including final session energy and charging type
+- Later Last Charge data can enrich or correct an already completed charging
+  session when available
+- Charging-session metadata enrichment and an optional automatically
+  generated memo
 
 ## 3.x – Research
 
