@@ -10,11 +10,15 @@
     Home Assistant restart.
 -   Added direct Home Assistant `device_tracker` support as a Route
     Tracker GPS source.
+-   Added active-route SQLite snapshots while a trip is running. Dense
+    route data is persisted at most once per 60 seconds and is force-saved
+    on trip start, Smart Trip pause/resume, shutdown and trip completion.
 -   Added Route maintenance actions for rebuilding the latest route,
     raw/failed routes or all stored routes through the configured OSRM
     server.
 -   Added OSRM chunked map matching for dense GPS traces that exceed the
     common OSRM limit of 100 trace coordinates per request.
+-   Added service metadata for `ford_triplog.rebuild_last_route`.
 
 ### Improved
 
@@ -37,22 +41,80 @@
     route geometry only after a successful plausibility check.
 -   Source selectors now prevent Ford Triplog's own entities from being
     selected as vehicle or Route Tracker input sources.
+-   Charging-session recovery now handles stale/current charging records
+    more robustly during startup and can reconcile delayed Ford Last Charge
+    data after the session has already been archived.
+-   Matching Last Charge data can repair archived charging sessions with
+    the exact Ford `plugInTime`, `plugOutTime`, start/end SOC and available
+    session energy data.
+-   Journey rebuilding and History sensors refresh more reliably after
+    completed trips, charging sessions and charging-cost changes.
+-   Charging History now refreshes directly when stored charging data is
+    updated.
+-   Receipt/OCR retry handling and OCR-derived charging-cost metadata were
+    improved.
+-   Numeric vehicle states are normalized consistently, including
+    `unknown` and `unavailable` values.
+-   Trip energy calculations now use the configured usable battery
+    capacity instead of a fixed battery value.
+-   English configuration strings were completed to match the German and
+    Polish translation coverage.
+-   Remaining filesystem work and entity listener handling were aligned
+    with current Home Assistant event-loop and lifecycle requirements.
 -   Removed remaining normal-runtime dependency on parallel JSON/SQLite
     production storage.
 
 ### Fixed
 
--   Fixed stale or early route endpoints when the vehicle tracker
-    received a newer GPS fix after ignition-off.
+-   Fixed duplicate Trip start/end processing caused by closely spaced
+    vehicle state changes.
+-   Fixed stale or early route endpoints when the vehicle tracker received
+    a newer GPS fix after ignition-off.
 -   Fixed OSRM `TooBig` failures for dense Route Tracker traces with more
     than 100 GPS points.
 -   Fixed false OSRM rejection caused by `tidy=true` changing the
     tracepoint/input alignment.
--   Fixed thread-unsafe Last Route refresh scheduling.
+-   Fixed thread-unsafe Last Route, Charging History and Top Charging
+    refresh scheduling.
+-   Fixed OCR handling when a synchronous parser raised an exception.
+-   Fixed delayed Last Charge publication not updating the matching
+    archived charging session.
+-   Fixed Journey loss caused by small timestamp overlaps between the end
+    of a charging session and the following Trip by using exact charging
+    timestamps where available and a small reconciliation tolerance.
+-   Fixed Trip finalization failures when SOC or odometer entities were
+    temporarily `unavailable`.
+-   Fixed the Build 23039 runtime regression where Last Charge
+    reconciliation still referenced the removed `Charge._optional_float()`
+    helper. Build 23040 uses the shared numeric normalization helper
+    consistently.
 -   Fixed repeated legacy migration scans after successful SQLite
     migration.
 -   Fixed configuration paths that could allow Ford Triplog output
     entities to be selected as their own input source.
+-   Fixed binary-sensor listener cleanup and coordinator-based availability
+    handling.
+-   Fixed sensor documentation that listed entities not provided by Ford
+    Triplog.
+
+### Cleanup
+
+-   Removed obsolete `trip_energy.py`; Trip energy uses the configured
+    battery capacity directly.
+-   Removed the obsolete component-side `build_charging_database.py`; the
+    maintained charging-database build workflow remains in `tools/`.
+-   Replaced the external `async_timeout` usage with Python's built-in
+    `asyncio.timeout()`.
+
+### Vehicle Data Sources
+
+-   Ford Triplog remains entity-based and can use compatible Ford vehicle
+    entities supplied by Home Assistant integrations.
+-   Ford Connect is the recommended vehicle data source for Ford Triplog
+    2.3.
+-   FordPass remains usable where available, but it is an unofficial
+    integration and was temporarily affected by Ford backend changes in
+    late August 2026.
 
 ### Storage Notes
 
