@@ -149,7 +149,7 @@ by dashboard maps and history views.
 # Last Trip
 
 The Last Trip sensors provide information about the most recently
-completed journey.
+completed individual Trip.
 
 ## Distance
 
@@ -299,7 +299,10 @@ Example:
 
     Last Charged Energy
 
-Estimated using the configured usable battery capacity.
+Displays the stored energy added during the latest completed charging
+session. Depending on the available vehicle source data, this can come from
+final Ford charging-session information or from Ford Triplog's stored
+charging calculation.
 
 Example:
 
@@ -389,35 +392,26 @@ Example:
 
 ## Total Charging Sessions
 
+    Total Charging Sessions
+
 Displays the number of recorded charging sessions.
-
-------------------------------------------------------------------------
-
-## Total Charged Energy
-
-Estimated total charged energy.
-
-------------------------------------------------------------------------
-
-## Total Charging Time
-
-Accumulated charging duration.
 
 ------------------------------------------------------------------------
 
 # Status Sensors
 
-Additional sensors provide information about the integration itself.
+Ford Triplog provides a status entity for active Trip detection.
 
-Examples include:
+## Current Trip Active
 
--   Current Trip Active
--   Current Charging Active
--   Smart Trip Active
--   Charging Database Status
--   Charging Database Country
+    Current Trip Active
 
-The available sensors may vary depending on the configured options. Ford Triplog 2.2 also allows supported vehicle source entities to be changed through the integration options.
+Indicates whether Ford Triplog currently considers a Trip active. The entity
+availability follows the Ford Triplog coordinator and its listener is
+registered and removed with the Home Assistant entity lifecycle.
+
+Additional operational information is exposed through the relevant Trip,
+Journey, Route and charging sensors rather than separate status entities.
 
 ------------------------------------------------------------------------
 
@@ -480,7 +474,7 @@ Examples:
 -   Notify when arriving home.
 -   Display the last trip on a dashboard.
 -   Track monthly driving distance.
--   Calculate energy costs (future versions).
+-   Use stored charging and Journey cost data in automations.
 
 Example automations are provided in:
 
@@ -490,14 +484,13 @@ Example automations are provided in:
 
 # Availability
 
-Sensors remain available after:
+Previously recorded Trips, charging sessions, Journeys and Routes remain
+accessible after Home Assistant or integration restarts because persistent
+Ford Triplog data is stored locally in SQLite.
 
--   Home Assistant restart
--   Integration restart
--   HACS update
-
-Previously recorded trips and charging sessions remain accessible
-because all data is stored locally.
+During startup, source integrations can temporarily expose `unknown` or
+`unavailable` values. Ford Triplog normalizes these states instead of
+treating them as numeric values.
 
 ------------------------------------------------------------------------
 
