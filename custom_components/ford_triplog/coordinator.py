@@ -4,9 +4,10 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23032 - Late Last Charge backfill
+Build: 23040 - Shared optional-float runtime fix
 
 Changes:
+- Uses shared optional_float() after Charge helper refactor; fixes startup AttributeError.
 - Discards stale current_charge recovery records that are already archived.
 - Prevents an archived charge ID from blocking a newly started charging session.
 - Requires FordPass Last Charge end timestamps to match the local charge end.
@@ -16,6 +17,10 @@ Changes:
 - Keeps the Build 23030 trip transition race guard.
 - Re-runs recent Last Charge archive reconciliation when FordPass publishes
   the completed ChargeData only after Ford Triplog startup.
+- Uses matching FordPass Last Charge begin/end timestamps as the canonical
+  charging-session timestamps before the session is archived.
+- Repairs archived charges whose embedded Last Charge proves a timestamp drift,
+  including small end-time races that could break Journey chronology.
 """
 
 from __future__ import annotations
@@ -39,6 +44,7 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .utils import optional_float
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
 from .pending_charging_site_storage import PendingChargingSiteStorage
@@ -269,7 +275,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         data = await self.storage.load_current_trip()
         if data:
             recovery = data.pop("_smart_trip_recovery", None)
-            self.current_trip = Trip.from_dict(data)
+            self.current_trip = Trip.from_dict(
+                data,
+                battery_capacity_kwh=self.battery_capacity,
+            )
 
             if isinstance(recovery, dict) and recovery.get("paused"):
                 self._restore_smart_trip_recovery(recovery)
@@ -1072,6 +1081,79 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
     @classmethod
+    def _apply_fordpass_snapshot_session_values(
+        cls,
+        charge: Charge,
+        snapshot: dict[str, Any] | None,
+    ) -> bool:
+        """Apply canonical FordPass session timestamps and SOC values.
+
+        The local charging state is intentionally used to detect the session
+        quickly.  FordPass Last Charge, however, contains the vehicle's final
+        plug/energy-transfer timestamps and is therefore the better source for
+        Journey chronology once a matching dataset is available.
+        """
+
+        if not isinstance(snapshot, dict):
+            return False
+
+        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
+        if ford_start is None or ford_end is None or ford_end < ford_start:
+            return False
+
+        local_start = cls._parse_fordpass_datetime(charge.start_time)
+        local_end = cls._parse_fordpass_datetime(charge.end_time)
+
+        # The charge ID is created from the locally detected start.  Require
+        # the precise Ford start to remain close to it before trusting the
+        # embedded dataset.  The end may be much further away because earlier
+        # builds could keep a stale charge open for hours/days.
+        if (
+            local_start is not None
+            and abs((local_start - ford_start).total_seconds()) > 900
+        ):
+            return False
+
+        changed = False
+        canonical_start = dt_util.as_local(ford_start).isoformat()
+        canonical_end = dt_util.as_local(ford_end).isoformat()
+
+        if charge.start_time != canonical_start:
+            charge.start_time = canonical_start
+            changed = True
+
+        if charge.end_time != canonical_end:
+            charge.end_time = canonical_end
+            changed = True
+
+        first_soc = optional_float(
+            cls._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
+        )
+        last_soc = optional_float(
+            cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
+        )
+
+        if first_soc is not None and charge.start_soc != first_soc:
+            charge.start_soc = first_soc
+            changed = True
+
+        if last_soc is not None and charge.end_soc != last_soc:
+            charge.end_soc = last_soc
+            changed = True
+
+        if changed:
+            _LOGGER.info(
+                "Applied canonical Last Charge session values: charge=%s "
+                "start=%s end=%s local_end_before=%s",
+                charge.charge_id,
+                canonical_start,
+                canonical_end,
+                local_end.isoformat() if local_end is not None else None,
+            )
+
+        return changed
+
+    @classmethod
     def _charge_from_fordpass_snapshot(
         cls,
         snapshot: dict[str, Any],
@@ -1094,17 +1176,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         charge.created = local_start.isoformat()
         charge.start_time = local_start.isoformat()
         charge.end_time = local_end.isoformat()
-        charge.start_soc = Charge._optional_float(
+        charge.start_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
         )
-        charge.end_soc = Charge._optional_float(
+        charge.end_soc = optional_float(
             cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
         )
 
         location = attributes.get("location")
         if isinstance(location, dict):
-            latitude = Charge._optional_float(location.get("latitude"))
-            longitude = Charge._optional_float(location.get("longitude"))
+            latitude = optional_float(location.get("latitude"))
+            longitude = optional_float(location.get("longitude"))
             charge.start_latitude = latitude
             charge.start_longitude = longitude
             charge.end_latitude = latitude
@@ -1151,7 +1233,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self,
         data: dict[str, Any],
     ) -> bool:
-        """Repair a charge whose end was grossly extended past FordPass."""
+        """Repair archived charge timing from its embedded Last Charge.
+
+        A matching Last Charge snapshot is authoritative for the real charging
+        begin/end timestamps.  Even a drift of only a few seconds matters for
+        Journey chronology when the next trip starts immediately after unplug.
+        """
 
         snapshot = data.get("fordpass_last_charge")
         if not isinstance(snapshot, dict):
@@ -1161,59 +1248,60 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         local_start = self._parse_fordpass_datetime(data.get("start_time"))
         local_end = self._parse_fordpass_datetime(data.get("end_time"))
 
-        if (
-            ford_start is None
-            or ford_end is None
-            or local_start is None
-            or local_end is None
-        ):
+        if ford_start is None or ford_end is None or local_start is None:
             return False
 
-        # Only heal a clear corruption: the original start still matches the
-        # FordPass session, but the stored end drifted by more than one hour.
+        # Embedded Last Charge is only trusted when the local session start
+        # identifies the same charging event.
         if abs((local_start - ford_start).total_seconds()) > 900:
             return False
-        if abs((local_end - ford_end).total_seconds()) <= 24 * 3600:
-            return False
+
+        original_end_drift = (
+            abs((local_end - ford_end).total_seconds())
+            if local_end is not None
+            else None
+        )
 
         charge = Charge.from_dict(data)
-        charge.end_time = dt_util.as_local(ford_end).isoformat()
-        charge.start_soc = Charge._optional_float(
-            self._snapshot_attribute(snapshot, "stateOfCharge", "firstSOC")
-        )
-        charge.end_soc = Charge._optional_float(
-            self._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
-        )
+        if not self._apply_fordpass_snapshot_session_values(charge, snapshot):
+            return False
 
-        attributes = snapshot.get("attributes")
-        location = attributes.get("location") if isinstance(attributes, dict) else None
-        if isinstance(location, dict):
-            latitude = Charge._optional_float(location.get("latitude"))
-            longitude = Charge._optional_float(location.get("longitude"))
-            if latitude is not None and longitude is not None:
-                charge.end_latitude = latitude
-                charge.end_longitude = longitude
-                if charge.start_latitude is None or charge.start_longitude is None:
-                    charge.start_latitude = latitude
-                    charge.start_longitude = longitude
-                # The start address belongs to the original session and is a
-                # safer fallback than the accidentally captured later address.
-                if charge.start_address is not None:
-                    charge.end_address = charge.start_address
+        # If an old build captured the end location far after the actual charge
+        # ended, repair location/site as well.  Small timestamp races keep the
+        # already resolved charging-site metadata untouched.
+        if original_end_drift is not None and original_end_drift > 3600:
+            attributes = snapshot.get("attributes")
+            location = (
+                attributes.get("location")
+                if isinstance(attributes, dict)
+                else None
+            )
+            if isinstance(location, dict):
+                latitude = optional_float(location.get("latitude"))
+                longitude = optional_float(location.get("longitude"))
+                if latitude is not None and longitude is not None:
+                    charge.end_latitude = latitude
+                    charge.end_longitude = longitude
+                    if (
+                        charge.start_latitude is None
+                        or charge.start_longitude is None
+                    ):
+                        charge.start_latitude = latitude
+                        charge.start_longitude = longitude
+                    if charge.start_address is not None:
+                        charge.end_address = charge.start_address
 
-        # Drop the wrongly resolved site and resolve it again from repaired GPS.
-        charge.charging_site_id = None
-        charge.charging_site_name = None
-        charge.charging_site_brand = None
-        charge.charging_site_operator = None
-        charge.charging_site_network = None
-        charge.charging_site_power_kw = []
-        charge.charging_site_capacity = []
-        charge.charging_site_connectors = []
-        charge.charging_site_quality = None
-        charge.charging_site_distance_m = None
-
-        charge = await self.charging_location_resolver.async_resolve(charge)
+            charge.charging_site_id = None
+            charge.charging_site_name = None
+            charge.charging_site_brand = None
+            charge.charging_site_operator = None
+            charge.charging_site_network = None
+            charge.charging_site_power_kw = []
+            charge.charging_site_capacity = []
+            charge.charging_site_connectors = []
+            charge.charging_site_quality = None
+            charge.charging_site_distance_m = None
+            charge = await self.charging_location_resolver.async_resolve(charge)
 
         start_soc = float(charge.start_soc or 0)
         end_soc = float(charge.end_soc or 0)
@@ -1250,8 +1338,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.warning(
                 "Repaired archived charging session %s from embedded "
-                "FordPass timestamps",
+                "Last Charge timestamps (end drift=%ss)",
                 charge.charge_id,
+                round(original_end_drift, 3)
+                if original_end_drift is not None
+                else None,
             )
         return saved
 
@@ -1704,7 +1795,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         state = self._read_vehicle_state()
         addr = await self._get_address(state)
 
-        self.current_trip = Trip()
+        self.current_trip = Trip(
+            battery_capacity_kwh=self.battery_capacity,
+        )
         self.current_trip.start(
             odometer=state.get("odometer"),
             soc=state.get("soc"),
@@ -2041,6 +2134,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         charge_obj = self.current_charge
 
         try:
+            # Once a matching Last Charge dataset is available, use its
+            # precise begin/end timestamps before archiving.  This avoids a
+            # false Journey overlap when the next trip starts immediately
+            # after unplugging while the local finish handler is still waiting
+            # for a stable vehicle state.
+            if isinstance(charge_obj.fordpass_last_charge, dict):
+                self._apply_fordpass_snapshot_session_values(
+                    charge_obj,
+                    charge_obj.fordpass_last_charge,
+                )
+
             charge_obj = await self.charging_location_resolver.async_resolve(
                 charge_obj
             )

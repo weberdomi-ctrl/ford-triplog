@@ -207,3 +207,14 @@ clear_pause_edit:
       required: true
       selector:
         text:
+
+rebuild_last_route:
+  name: Rebuild last route
+  description: Re-run OSRM map matching for the most recently stored route using the configured local OSRM service.
+  fields:
+    entry_id:
+      name: Config entry
+      description: Optional when multiple Ford Triplog instances are active.
+      required: false
+      selector:
+        text:

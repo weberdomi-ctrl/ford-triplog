@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urljoin
 
-import async_timeout
 from aiohttp import (
     ClientError,
     ClientResponseError,
@@ -103,7 +103,7 @@ class FordTriplogOCRClient:
             headers["X-API-Key"] = self._api_key
 
         try:
-            async with async_timeout.timeout(self._timeout_seconds):
+            async with asyncio.timeout(self._timeout_seconds):
                 response = await self._session.get(url, headers=headers)
                 if response.status in (401, 403):
                     raise FordTriplogOCRAuthenticationError(
@@ -153,7 +153,7 @@ class FordTriplogOCRClient:
         )
 
         try:
-            async with async_timeout.timeout(self._timeout_seconds):
+            async with asyncio.timeout(self._timeout_seconds):
                 response = await self._session.post(
                     url,
                     headers=headers,

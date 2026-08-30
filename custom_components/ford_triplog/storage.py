@@ -57,13 +57,9 @@ class FordTriplogStorage:
 
         # Keep legacy directories available so existing installations can be
         # imported safely. They are no longer used for runtime writes here.
-        for path in (
-            self.recovery_path,
-            self.trips_path,
-            self.charges_path,
-            self.cache_path,
-        ):
-            path.mkdir(parents=True, exist_ok=True)
+        await self.hass.async_add_executor_job(
+            self._ensure_legacy_directories
+        )
 
         await self.database.async_setup()
 
@@ -77,6 +73,17 @@ class FordTriplogStorage:
 
         _LOGGER.info("Ford Triplog central storage backend: sqlite")
         _LOGGER.debug("Ford Triplog central storage initialized")
+
+    def _ensure_legacy_directories(self) -> None:
+        """Create legacy import directories outside the event loop."""
+
+        for path in (
+            self.recovery_path,
+            self.trips_path,
+            self.charges_path,
+            self.cache_path,
+        ):
+            path.mkdir(parents=True, exist_ok=True)
 
     def _add_metadata(self, data: dict[str, Any]) -> dict[str, Any]:
         """Add storage metadata."""

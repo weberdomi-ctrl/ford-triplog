@@ -59,8 +59,13 @@ class FordTriplogActiveTripBinarySensor(
 
         self.coordinator = coordinator
 
-        self.coordinator.async_add_listener(
-            self._handle_coordinator_update
+    async def async_added_to_hass(self) -> None:
+        """Subscribe to coordinator updates when the entity is active."""
+
+        self.async_on_remove(
+            self.coordinator.async_add_listener(
+                self._handle_coordinator_update
+            )
         )
 
     @callback
@@ -79,9 +84,9 @@ class FordTriplogActiveTripBinarySensor(
 
     @property
     def available(self) -> bool:
-        """Return availability."""
+        """Return coordinator availability."""
 
-        return True
+        return self.coordinator.last_update_success
 
     @property
     def device_info(self) -> dict[str, Any]:

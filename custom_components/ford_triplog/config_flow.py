@@ -7030,8 +7030,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     default=self._options.get(CONF_BATTERY_CAPACITY, 77),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
-                        min=40,
-                        max=120,
+                        min=1,
+                        max=250,
                         step=1,
                         mode=selector.NumberSelectorMode.BOX,
                     )

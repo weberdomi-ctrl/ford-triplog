@@ -15,11 +15,12 @@ from homeassistant.util import dt as dt_util
 from typing import Any
 
 from .const import GENERATOR, VERSION, TRIP_SCHEMA_VERSION
+from .utils import optional_float
 
-BATTERY_CAPACITY_KWH = 77.0
+DEFAULT_BATTERY_CAPACITY_KWH = 77.0
 
 class Trip:
-    def __init__(self, **data):
+    def __init__(self, *, battery_capacity_kwh=None, **data):
         self.schema=data.get("schema",TRIP_SCHEMA_VERSION)
         self.trip_id=data.get("trip_id")
         self.created=data.get("created")
@@ -45,14 +46,25 @@ class Trip:
         self.consumption_kwh_100km=data.get("consumption_kwh_100km")
         self.notes=data.get("notes")
         self.tags=data.get("tags",[])
+        configured_capacity = (
+            battery_capacity_kwh
+            if battery_capacity_kwh is not None
+            else data.get("battery_capacity_kwh", DEFAULT_BATTERY_CAPACITY_KWH)
+        )
+        normalized_capacity = optional_float(configured_capacity)
+        self.battery_capacity_kwh = (
+            normalized_capacity
+            if normalized_capacity is not None and normalized_capacity > 0
+            else DEFAULT_BATTERY_CAPACITY_KWH
+        )
 
     def start(self, odometer=None, soc=None, latitude=None, longitude=None, address=None):
         now = dt_util.now()
         self.trip_id=now.strftime("%Y%m%dT%H%M%S")
         self.created = now.isoformat()
         self.start_time=now.isoformat()
-        self.start_odometer=float(odometer) if odometer not in (None,"","unknown") else None
-        self.start_soc=float(soc) if soc not in (None,"","unknown") else None
+        self.start_odometer=optional_float(odometer)
+        self.start_soc=optional_float(soc)
         self.start_latitude=latitude
         self.start_longitude=longitude
         self.start_address=address
@@ -61,8 +73,8 @@ class Trip:
     def finish(self, odometer=None, soc=None, latitude=None, longitude=None, address=None, end_time=None):
         now = end_time or dt_util.now()    
         self.end_time=now.isoformat()
-        self.end_odometer=float(odometer) if odometer not in (None,"","unknown") else None
-        self.end_soc=float(soc) if soc not in (None,"","unknown") else None
+        self.end_odometer=optional_float(odometer)
+        self.end_soc=optional_float(soc)
         self.end_latitude=latitude
         self.end_longitude=longitude
         self.end_address=address
@@ -82,7 +94,7 @@ class Trip:
                 self.average_speed_kmh=round(self.distance_km/h,1)
         if self.start_soc is not None and self.end_soc is not None:
             self.soc_used=round(self.start_soc-self.end_soc,1)
-            self.energy_used_kwh=round(self.soc_used*BATTERY_CAPACITY_KWH/100,2)
+            self.energy_used_kwh=round(self.soc_used*self.battery_capacity_kwh/100,2)
             if self.distance_km and self.distance_km>0:
                 self.consumption_kwh_100km=round(self.energy_used_kwh/self.distance_km*100,1)
 
@@ -113,10 +125,20 @@ class Trip:
             "consumption_kwh_100km":self.consumption_kwh_100km,
             "notes":self.notes,
             "tags":self.tags,
+            "battery_capacity_kwh":self.battery_capacity_kwh,
             "generator": GENERATOR,
             "version": VERSION
         }
 
     @classmethod
-    def from_dict(cls,data):
-        return cls(**data)
+    def from_dict(cls, data, *, battery_capacity_kwh=None):
+        restored = dict(data)
+        stored_capacity = restored.pop("battery_capacity_kwh", None)
+        return cls(
+            battery_capacity_kwh=(
+                battery_capacity_kwh
+                if battery_capacity_kwh is not None
+                else stored_capacity
+            ),
+            **restored,
+        )
