@@ -14,6 +14,7 @@ from typing import Any
 from homeassistant.util import dt as dt_util
 
 from .const import CHARGE_SCHEMA_VERSION, GENERATOR, VERSION
+from .utils import optional_float
 
 
 class Charge:
@@ -98,29 +99,6 @@ class Charge:
         self.exclusion_reason: str | None = None
 
 
-    @staticmethod
-    def _optional_float(value: Any) -> float | None:
-        """Return a float or None for unavailable/invalid sensor values."""
-
-        if value is None or isinstance(value, bool):
-            return None
-
-        normalized = str(value).strip().lower()
-        if normalized in {
-            "",
-            "unknown",
-            "unavailable",
-            "none",
-            "null",
-            "nan",
-        }:
-            return None
-
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
-
     def start(
         self,
         soc,
@@ -134,7 +112,7 @@ class Charge:
         self.created = now.isoformat()
         self.start_time = now.isoformat()
 
-        self.start_soc = self._optional_float(soc)
+        self.start_soc = optional_float(soc)
 
         self.start_latitude = latitude
         self.start_longitude = longitude
@@ -150,7 +128,7 @@ class Charge:
     ) -> None:
         self.end_time = dt_util.now().isoformat()
 
-        self.end_soc = self._optional_float(soc)
+        self.end_soc = optional_float(soc)
 
         self.end_latitude = latitude
         self.end_longitude = longitude

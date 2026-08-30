@@ -12,6 +12,40 @@ from homeassistant.util import dt as dt_util
 
 from typing import Any
 
+
+def optional_float(value: Any) -> float | None:
+    """Return a finite float or None for unavailable/invalid sensor values."""
+
+    if value is None or isinstance(value, bool):
+        return None
+
+    normalized = str(value).strip().lower()
+    if normalized in {
+        "",
+        "unknown",
+        "unavailable",
+        "none",
+        "null",
+        "nan",
+        "inf",
+        "+inf",
+        "-inf",
+        "infinity",
+        "+infinity",
+        "-infinity",
+    }:
+        return None
+
+    try:
+        result = float(value)
+    except (TypeError, ValueError):
+        return None
+
+    if result != result or result in (float("inf"), float("-inf")):
+        return None
+
+    return result
+
 def format_address(address: dict[str, Any] | None) -> str | None:
     """Format an address for display."""
 

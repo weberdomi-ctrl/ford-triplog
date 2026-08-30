@@ -5,8 +5,8 @@ Track your Ford.
 
 Daily journey lifecycle and matching manager.
 
-Version: 2.0.1
-Release: 2.0.1 - Reduce Journey diagnostic log noise
+Version: 2.3.0
+Build: 23038 - Charge-to-trip chronology tolerance
 """
 
 from __future__ import annotations
@@ -36,6 +36,7 @@ DEFAULT_TRIP_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
 DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
+CHARGE_TO_TRIP_CHRONOLOGY_TOLERANCE_SECONDS = 5.0
 
 
 @dataclass(slots=True, frozen=True)
@@ -1253,8 +1254,22 @@ class FordTriplogJourneyManager:
 
         gap = (trip_start - charge_end).total_seconds()
 
-        if gap < 0:
+        # Charging completion and the following ignition transition are
+        # handled asynchronously.  A very small negative gap can therefore be
+        # caused purely by local handler timing even though the physical order
+        # is correct.  Ford Last Charge timestamps normally remove this drift;
+        # keep a narrow tolerance as a defensive fallback.
+        if gap < -CHARGE_TO_TRIP_CHRONOLOGY_TOLERANCE_SECONDS:
             return False, "trip_starts_before_charge_ends"
+
+        if gap < 0:
+            _LOGGER.debug(
+                "Journey chronology tolerance accepted %.3fs overlap "
+                "between charge %s and trip %s",
+                abs(gap),
+                charge.get("charge_id"),
+                trip.get("trip_id"),
+            )
 
         if gap > self.journey_max_gap_seconds:
             return False, "journey_max_gap_exceeded"
