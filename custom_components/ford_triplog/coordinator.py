@@ -4,9 +4,13 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23040 - Shared optional-float runtime fix
+Build: 23041 - Late Last Charge duplicate recovery fix
 
 Changes:
+- Prevents late FordPass Last Charge recovery from creating a duplicate when
+  Ford reports an inconsistent energyTransferDuration.end timestamp.
+- Correlates Last Charge timing against the local completed charge and uses the
+  energy-transfer duration as a fallback when Ford end timestamps are implausible.
 - Uses shared optional_float() after Charge helper refactor; fixes startup AttributeError.
 - Discards stale current_charge recovery records that are already archived.
 - Prevents an archived charge ID from blocking a newly started charging session.
@@ -1003,37 +1007,107 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _fordpass_snapshot_times(
         cls,
         snapshot: dict[str, Any] | None,
+        *,
+        reference_end: datetime | None = None,
     ) -> tuple[datetime | None, datetime | None]:
-        """Return FordPass charge begin/end timestamps from a snapshot."""
+        """Return robust FordPass charge begin/end timestamps.
+
+        Some Ford Last Charge datasets keep ``energyTransferDuration.end`` at a
+        much later timestamp while ``totalTime`` still contains the real energy
+        transfer duration.  This happens, for example, when the vehicle remains
+        plugged in for hours after charging has completed.  Treating that stale
+        end timestamp as authoritative can make a locally archived session look
+        unrelated and trigger a duplicate late-recovery charge.
+
+        When a local reference end is available, choose the Ford end candidate
+        closest to that completed charge.  Without a local reference, prefer the
+        duration-derived end if the explicit transfer end disagrees with it by
+        more than 15 minutes.
+        """
 
         if not isinstance(snapshot, dict):
             return None, None
 
-        ford_start = cls._parse_fordpass_datetime(
+        transfer_begin = cls._parse_fordpass_datetime(
             cls._snapshot_attribute(
                 snapshot,
                 "energyTransferDuration",
                 "begin",
             )
-            or cls._snapshot_attribute(
+        )
+        plug_in = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
                 snapshot,
                 "plugDetails",
                 "plugInTime",
             )
         )
-        ford_end = cls._parse_fordpass_datetime(
+        ford_start = transfer_begin or plug_in
+
+        transfer_end = cls._parse_fordpass_datetime(
             cls._snapshot_attribute(
                 snapshot,
                 "energyTransferDuration",
                 "end",
             )
-            or cls._snapshot_attribute(
+        )
+        plug_out = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
                 snapshot,
                 "plugDetails",
                 "plugOutTime",
             )
-            or cls._snapshot_attribute(snapshot, "timeStamp")
         )
+        timestamp = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(snapshot, "timeStamp")
+        )
+
+        derived_end: datetime | None = None
+        total_time = optional_float(
+            cls._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "totalTime",
+            )
+        )
+        if (
+            transfer_begin is not None
+            and total_time is not None
+            and 0 < total_time <= 7 * 24 * 3600
+        ):
+            derived_end = transfer_begin + timedelta(seconds=total_time)
+
+        transfer_candidates = [
+            candidate
+            for candidate in (transfer_end, derived_end)
+            if candidate is not None
+        ]
+
+        if reference_end is not None and transfer_candidates:
+            ford_end = min(
+                transfer_candidates,
+                key=lambda candidate: abs(
+                    (candidate - reference_end).total_seconds()
+                ),
+            )
+        elif transfer_end is not None and derived_end is not None:
+            drift_seconds = abs(
+                (transfer_end - derived_end).total_seconds()
+            )
+            ford_end = (
+                derived_end
+                if drift_seconds > 900
+                else transfer_end
+            )
+        else:
+            ford_end = transfer_end or derived_end
+
+        # Only fall back to plug-out/publication timestamps when Ford supplied
+        # no usable energy-transfer end information at all.  Plug-out can be
+        # many hours after the actual charging completion.
+        if ford_end is None:
+            ford_end = plug_out or timestamp
+
         return ford_start, ford_end
 
     @classmethod
@@ -1044,7 +1118,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     ) -> bool:
         """Return whether an archived charge already represents FordPass data."""
 
-        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
+        local_start = cls._parse_fordpass_datetime(charge.get("start_time"))
+        local_end = cls._parse_fordpass_datetime(charge.get("end_time"))
+
+        ford_start, ford_end = cls._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
         if ford_end is None:
             return False
 
@@ -1066,8 +1146,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             ):
                 return True
 
-        local_start = cls._parse_fordpass_datetime(charge.get("start_time"))
-        local_end = cls._parse_fordpass_datetime(charge.get("end_time"))
         if local_end is None:
             return False
 
@@ -1097,12 +1175,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not isinstance(snapshot, dict):
             return False
 
-        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
-        if ford_start is None or ford_end is None or ford_end < ford_start:
-            return False
-
         local_start = cls._parse_fordpass_datetime(charge.start_time)
         local_end = cls._parse_fordpass_datetime(charge.end_time)
+        ford_start, ford_end = cls._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
+        if ford_start is None or ford_end is None or ford_end < ford_start:
+            return False
 
         # The charge ID is created from the locally detected start.  Require
         # the precise Ford start to remain close to it before trusting the
@@ -1244,9 +1324,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not isinstance(snapshot, dict):
             return False
 
-        ford_start, ford_end = self._fordpass_snapshot_times(snapshot)
         local_start = self._parse_fordpass_datetime(data.get("start_time"))
         local_end = self._parse_fordpass_datetime(data.get("end_time"))
+        ford_start, ford_end = self._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
 
         if ford_start is None or ford_end is None or local_start is None:
             return False
@@ -1432,30 +1515,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             return False
 
-        ford_start = self._parse_fordpass_datetime(
-            self._snapshot_attribute(
-                snapshot,
-                "energyTransferDuration",
-                "begin",
-            )
-            or self._snapshot_attribute(
-                snapshot,
-                "plugDetails",
-                "plugInTime",
-            )
-        )
-        ford_end = self._parse_fordpass_datetime(
-            self._snapshot_attribute(
-                snapshot,
-                "energyTransferDuration",
-                "end",
-            )
-            or self._snapshot_attribute(
-                snapshot,
-                "plugDetails",
-                "plugOutTime",
-            )
-            or self._snapshot_attribute(snapshot, "timeStamp")
+        ford_start, ford_end = self._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
         )
 
         # If FordPass does not expose usable times, the new signature remains
