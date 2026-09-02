@@ -4,9 +4,12 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23041 - Late Last Charge duplicate recovery fix
+Build: 23042 - Ford Connect outage transition guard
 
 Changes:
+- Ignores temporary unknown/unavailable/Unsupported ignition and charging states
+  for transition detection so Ford Connect API gaps cannot split trips or charges.
+- Gives user-defined charging locations priority over OSM already at charge start.
 - Prevents late FordPass Last Charge recovery from creating a duplicate when
   Ford reports an inconsistent energyTransferDuration.end timestamp.
 - Correlates Last Charge timing against the local completed charge and uses the
@@ -678,15 +681,28 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
-        ignition = str(self.vehicle_state.get("ignition")).lower() in (
-            "on", "true", "1", "running"
+
+        ignition_raw = self.vehicle_state.get("ignition")
+        ignition_state = str(ignition_raw or "").strip().lower()
+        ignition_unknown = ignition_state in (
+            "", "unknown", "unavailable", "unsupported", "none", "null"
+        )
+        ignition = (
+            None
+            if ignition_unknown
+            else ignition_state in ("on", "true", "1", "running")
         )
 
-        charging_state = str(
-            self.vehicle_state.get("charging")
-        ).upper()
-
-        charging = charging_state == "IN_PROGRESS"
+        charging_raw = self.vehicle_state.get("charging")
+        charging_state = str(charging_raw or "").strip().upper()
+        charging_unknown = charging_state in (
+            "", "UNKNOWN", "UNAVAILABLE", "UNSUPPORTED", "NONE", "NULL"
+        )
+        charging = (
+            None
+            if charging_unknown
+            else charging_state == "IN_PROGRESS"
+        )
 
         if (
             self.last_charge_entity
@@ -700,13 +716,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Home Assistant entities can update within a few milliseconds. If the
         # previous state were updated only after an await, a second callback
         # could observe the same edge and start/finish the same Trip twice.
-        trip_started = not self.last_ignition and ignition
-        trip_stopped = self.last_ignition and not ignition
-        charge_started = not self.last_charging and charging
-        charge_stopped = self.last_charging and not charging
+        # Unknown/unavailable source states are not transitions.  Ford Connect
+        # can briefly publish unavailable/Unsupported when its API request
+        # fails.  Keeping the last known boolean state prevents a running trip
+        # or charging session from being split by that temporary data gap.
+        trip_started = ignition is True and not self.last_ignition
+        trip_stopped = ignition is False and self.last_ignition
+        charge_started = charging is True and not self.last_charging
+        charge_stopped = charging is False and self.last_charging
 
-        self.last_ignition = ignition
-        self.last_charging = charging
+        if ignition is not None:
+            self.last_ignition = ignition
+        else:
+            _LOGGER.debug(
+                "Ignoring unavailable ignition state for transition handling: %r",
+                ignition_raw,
+            )
+
+        if charging is not None:
+            self.last_charging = charging
+        else:
+            _LOGGER.debug(
+                "Ignoring unavailable charging state for transition handling: %r",
+                charging_raw,
+            )
 
         # Trip handling
         if trip_started:
@@ -2014,8 +2047,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 address=address,
             )
 
-            charging_site = await self._get_charging_site(state)
-            self._apply_charging_site(charging_site)
+            # A user-defined charging location is authoritative and must win
+            # over the bundled/generated OSM database.  Resolve it first at
+            # charge start; only fall back to OSM when no user site matches.
+            user_site_applied = (
+                await self.charging_location_resolver.async_apply_user_location(
+                    self.current_charge
+                )
+            )
+            if not user_site_applied:
+                charging_site = await self._get_charging_site(state)
+                self._apply_charging_site(charging_site)
 
             await self._try_link_charge_to_trip(state)
 
