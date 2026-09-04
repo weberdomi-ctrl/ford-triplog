@@ -72,6 +72,7 @@ CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
+DEFAULT_BATTERY_CAPACITY_KWH: Final = 77.0
 
 # Storage read backend (Phase 2)
 

@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.3.0
 Phase: Route maintenance
-Build: 23026
+Build: 23048 - Persist battery capacity default
 Release: 2.3.0
 
 
@@ -78,6 +78,7 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_ROUTE_TRACKER_ENABLED,
     CONF_ROUTE_SOURCE_TYPE,
     CONF_ROUTE_LATITUDE_ENTITY,
@@ -267,7 +268,12 @@ class FordTriplogConfigFlow(
             else:
                 await self.async_set_unique_id(DOMAIN)
                 self._abort_if_unique_id_configured()
-                return self.async_create_entry(title=NAME, data=user_input)
+                entry_data = dict(user_input)
+                entry_data.setdefault(
+                    CONF_BATTERY_CAPACITY,
+                    DEFAULT_BATTERY_CAPACITY_KWH,
+                )
+                return self.async_create_entry(title=NAME, data=entry_data)
 
         return self.async_show_form(
             step_id="user",
@@ -7027,7 +7033,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 vol.Optional(
                     CONF_BATTERY_CAPACITY,
-                    default=self._options.get(CONF_BATTERY_CAPACITY, 77),
+                    default=self._options.get(
+                        CONF_BATTERY_CAPACITY,
+                        DEFAULT_BATTERY_CAPACITY_KWH,
+                    ),
                 ): selector.NumberSelector(
                     selector.NumberSelectorConfig(
                         min=1,

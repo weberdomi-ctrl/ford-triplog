@@ -4,7 +4,7 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23047 - Net trip energy / recuperation statistics fix
+Build: 23048 - Battery capacity default hardening
 
 Changes:
 - Preserves signed trip energy so net recuperation reduces consumption totals.
@@ -70,6 +70,8 @@ from .charging_site_lookup import (
 )
 
 from .const import (
+    CONF_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
@@ -125,7 +127,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.storage = storage
         self.config = config
         self.battery_capacity = float(
-            config.get("battery_capacity_kwh", 77)
+            config.get(
+                CONF_BATTERY_CAPACITY,
+                DEFAULT_BATTERY_CAPACITY_KWH,
+            )
+        )
+        _LOGGER.debug(
+            "Battery capacity: %.1f kWh",
+            self.battery_capacity,
         )
         self.history = FordTriplogHistory(
             storage,
