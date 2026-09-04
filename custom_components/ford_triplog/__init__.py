@@ -5,9 +5,9 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.1.0
-Phase: 
-Build: 
+Version: 2.3.0
+Phase: Final hardening
+Build: 23048
 
 Changes:
 
@@ -30,6 +30,7 @@ PLATFORMS: list[Platform] = [
 
 from .const import (
     CONF_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -61,10 +62,15 @@ def _build_config(
 ) -> dict[str, Any]:
     """Return merged configuration."""
 
-    return {
+    config = {
         **entry.data,
         **entry.options,
     }
+    config.setdefault(
+        CONF_BATTERY_CAPACITY,
+        DEFAULT_BATTERY_CAPACITY_KWH,
+    )
+    return config
 
 
 async def async_setup_entry(
@@ -158,7 +164,8 @@ async def async_setup_entry(
             )
         ),
         battery_capacity_kwh=config.get(
-            CONF_BATTERY_CAPACITY
+            CONF_BATTERY_CAPACITY,
+            DEFAULT_BATTERY_CAPACITY_KWH,
         ),
     )
 
@@ -182,7 +189,8 @@ async def async_setup_entry(
         source_storage=storage,
         journey_storage=journey_storage,
         battery_capacity_kwh=config.get(
-            CONF_BATTERY_CAPACITY
+            CONF_BATTERY_CAPACITY,
+            DEFAULT_BATTERY_CAPACITY_KWH,
         ),
     )
 

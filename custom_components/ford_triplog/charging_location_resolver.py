@@ -5,9 +5,10 @@ Charging location resolver.
 
 Version: 1.6.0
 Phase: 3.5
-Build: 10
+Build: 23042
 
 Changes:
+- Exposes user-site-only resolution so custom locations can override OSM at charge start.
 - Uses the same stable charging-site fields for user and OSM records.
 - Applies power, capacity and connector lists from user locations.
 - Keeps resolver priority FordPass, user database, OSM.
@@ -89,6 +90,16 @@ class ChargingLocationResolver:
                 )
 
         return charge
+
+    async def async_apply_user_location(self, charge: Charge) -> bool:
+        """Apply a matching user-defined charging site, if available.
+
+        This is intentionally exposed separately so the coordinator can give
+        custom locations priority before performing the OSM lookup at charge
+        start.
+        """
+
+        return await self._apply_user_location(charge)
 
     async def _apply_user_location(self, charge: Charge) -> bool:
         """Apply the nearest matching user-defined charging site."""

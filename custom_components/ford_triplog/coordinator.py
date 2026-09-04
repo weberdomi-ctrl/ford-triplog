@@ -4,9 +4,24 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23040 - Shared optional-float runtime fix
+Build: 23048 - Battery capacity default hardening
 
 Changes:
+- Preserves signed trip energy so net recuperation reduces consumption totals.
+- Passes configured battery capacity to History for legacy-trip correction.
+- Corrects an already archived local charging session when FordPass Last Charge
+  arrives only after the normal 300s wait has expired (for example on unplug).
+- Matches the late FordPass dataset primarily by charge end, end SOC and
+  location, so a Ford Connect outage may have delayed the locally detected start.
+- Keeps the existing charge_id stable, recalculates energy/cost values and
+  rebuilds affected Journey days after the correction.
+- Ignores temporary unknown/unavailable/Unsupported ignition and charging states
+  for transition detection so Ford Connect API gaps cannot split trips or charges.
+- Gives user-defined charging locations priority over OSM already at charge start.
+- Prevents late FordPass Last Charge recovery from creating a duplicate when
+  Ford reports an inconsistent energyTransferDuration.end timestamp.
+- Correlates Last Charge timing against the local completed charge and uses the
+  energy-transfer duration as a fallback when Ford end timestamps are implausible.
 - Uses shared optional_float() after Charge helper refactor; fixes startup AttributeError.
 - Discards stale current_charge recovery records that are already archived.
 - Prevents an archived charge ID from blocking a newly started charging session.
@@ -55,6 +70,8 @@ from .charging_site_lookup import (
 )
 
 from .const import (
+    CONF_BATTERY_CAPACITY,
+    DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
@@ -72,6 +89,16 @@ TRIP_END_ROUTE_MAX_AGE_SECONDS = 20
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
+
+# A late FordPass Last Charge update is safer to correlate by the completed
+# charging end than by the locally detected start. Ford Connect outages can
+# delay the local start by a long time while the final COMPLETED edge is still
+# accurate.
+LATE_LAST_CHARGE_END_TOLERANCE_SECONDS = 900
+LATE_LAST_CHARGE_MAX_START_DELAY_SECONDS = 6 * 3600
+LATE_LAST_CHARGE_MAX_AGE_SECONDS = 7 * 24 * 3600
+LATE_LAST_CHARGE_SOC_TOLERANCE = 5.0
+LATE_LAST_CHARGE_LOCATION_TOLERANCE_METERS = 1000.0
 
 DEFAULT_CHARGING_SITE_RADIUS_METERS = 10
 CHARGING_SITE_DATABASE_DIRECTORY = "charging_sites"
@@ -98,8 +125,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name="Ford Triplog")
         self.hass = hass
         self.storage = storage
-        self.history = FordTriplogHistory(storage)
         self.config = config
+        self.battery_capacity = float(
+            config.get(
+                CONF_BATTERY_CAPACITY,
+                DEFAULT_BATTERY_CAPACITY_KWH,
+            )
+        )
+        _LOGGER.debug(
+            "Battery capacity: %.1f kWh",
+            self.battery_capacity,
+        )
+        self.history = FordTriplogHistory(
+            storage,
+            battery_capacity_kwh=self.battery_capacity,
+        )
         self.geo = geo
         self.charging_cost_calculator = FordTriplogChargingCostCalculator(
             hass,
@@ -123,9 +163,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
         )
         self.charging_site_lookup: ChargingSiteLookup | None = None
-
-        # Battery capacity (kWh)
-        self.battery_capacity = float(config.get("battery_capacity_kwh", 77))
 
         # Automatic home charging cost infrastructure.
         self.home_tariff_enabled = bool(
@@ -674,15 +711,28 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
-        ignition = str(self.vehicle_state.get("ignition")).lower() in (
-            "on", "true", "1", "running"
+
+        ignition_raw = self.vehicle_state.get("ignition")
+        ignition_state = str(ignition_raw or "").strip().lower()
+        ignition_unknown = ignition_state in (
+            "", "unknown", "unavailable", "unsupported", "none", "null"
+        )
+        ignition = (
+            None
+            if ignition_unknown
+            else ignition_state in ("on", "true", "1", "running")
         )
 
-        charging_state = str(
-            self.vehicle_state.get("charging")
-        ).upper()
-
-        charging = charging_state == "IN_PROGRESS"
+        charging_raw = self.vehicle_state.get("charging")
+        charging_state = str(charging_raw or "").strip().upper()
+        charging_unknown = charging_state in (
+            "", "UNKNOWN", "UNAVAILABLE", "UNSUPPORTED", "NONE", "NULL"
+        )
+        charging = (
+            None
+            if charging_unknown
+            else charging_state == "IN_PROGRESS"
+        )
 
         if (
             self.last_charge_entity
@@ -696,13 +746,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Home Assistant entities can update within a few milliseconds. If the
         # previous state were updated only after an await, a second callback
         # could observe the same edge and start/finish the same Trip twice.
-        trip_started = not self.last_ignition and ignition
-        trip_stopped = self.last_ignition and not ignition
-        charge_started = not self.last_charging and charging
-        charge_stopped = self.last_charging and not charging
+        # Unknown/unavailable source states are not transitions.  Ford Connect
+        # can briefly publish unavailable/Unsupported when its API request
+        # fails.  Keeping the last known boolean state prevents a running trip
+        # or charging session from being split by that temporary data gap.
+        trip_started = ignition is True and not self.last_ignition
+        trip_stopped = ignition is False and self.last_ignition
+        charge_started = charging is True and not self.last_charging
+        charge_stopped = charging is False and self.last_charging
 
-        self.last_ignition = ignition
-        self.last_charging = charging
+        if ignition is not None:
+            self.last_ignition = ignition
+        else:
+            _LOGGER.debug(
+                "Ignoring unavailable ignition state for transition handling: %r",
+                ignition_raw,
+            )
+
+        if charging is not None:
+            self.last_charging = charging
+        else:
+            _LOGGER.debug(
+                "Ignoring unavailable charging state for transition handling: %r",
+                charging_raw,
+            )
 
         # Trip handling
         if trip_started:
@@ -806,7 +873,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug(
                 "Late FordPass Last Charge update received; "
-                "checking for missing archived charging session"
+                "checking for matching archived charging session"
             )
             await self._async_reconcile_last_charge_archive()
 
@@ -1003,37 +1070,107 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _fordpass_snapshot_times(
         cls,
         snapshot: dict[str, Any] | None,
+        *,
+        reference_end: datetime | None = None,
     ) -> tuple[datetime | None, datetime | None]:
-        """Return FordPass charge begin/end timestamps from a snapshot."""
+        """Return robust FordPass charge begin/end timestamps.
+
+        Some Ford Last Charge datasets keep ``energyTransferDuration.end`` at a
+        much later timestamp while ``totalTime`` still contains the real energy
+        transfer duration.  This happens, for example, when the vehicle remains
+        plugged in for hours after charging has completed.  Treating that stale
+        end timestamp as authoritative can make a locally archived session look
+        unrelated and trigger a duplicate late-recovery charge.
+
+        When a local reference end is available, choose the Ford end candidate
+        closest to that completed charge.  Without a local reference, prefer the
+        duration-derived end if the explicit transfer end disagrees with it by
+        more than 15 minutes.
+        """
 
         if not isinstance(snapshot, dict):
             return None, None
 
-        ford_start = cls._parse_fordpass_datetime(
+        transfer_begin = cls._parse_fordpass_datetime(
             cls._snapshot_attribute(
                 snapshot,
                 "energyTransferDuration",
                 "begin",
             )
-            or cls._snapshot_attribute(
+        )
+        plug_in = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
                 snapshot,
                 "plugDetails",
                 "plugInTime",
             )
         )
-        ford_end = cls._parse_fordpass_datetime(
+        ford_start = transfer_begin or plug_in
+
+        transfer_end = cls._parse_fordpass_datetime(
             cls._snapshot_attribute(
                 snapshot,
                 "energyTransferDuration",
                 "end",
             )
-            or cls._snapshot_attribute(
+        )
+        plug_out = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(
                 snapshot,
                 "plugDetails",
                 "plugOutTime",
             )
-            or cls._snapshot_attribute(snapshot, "timeStamp")
         )
+        timestamp = cls._parse_fordpass_datetime(
+            cls._snapshot_attribute(snapshot, "timeStamp")
+        )
+
+        derived_end: datetime | None = None
+        total_time = optional_float(
+            cls._snapshot_attribute(
+                snapshot,
+                "energyTransferDuration",
+                "totalTime",
+            )
+        )
+        if (
+            transfer_begin is not None
+            and total_time is not None
+            and 0 < total_time <= 7 * 24 * 3600
+        ):
+            derived_end = transfer_begin + timedelta(seconds=total_time)
+
+        transfer_candidates = [
+            candidate
+            for candidate in (transfer_end, derived_end)
+            if candidate is not None
+        ]
+
+        if reference_end is not None and transfer_candidates:
+            ford_end = min(
+                transfer_candidates,
+                key=lambda candidate: abs(
+                    (candidate - reference_end).total_seconds()
+                ),
+            )
+        elif transfer_end is not None and derived_end is not None:
+            drift_seconds = abs(
+                (transfer_end - derived_end).total_seconds()
+            )
+            ford_end = (
+                derived_end
+                if drift_seconds > 900
+                else transfer_end
+            )
+        else:
+            ford_end = transfer_end or derived_end
+
+        # Only fall back to plug-out/publication timestamps when Ford supplied
+        # no usable energy-transfer end information at all.  Plug-out can be
+        # many hours after the actual charging completion.
+        if ford_end is None:
+            ford_end = plug_out or timestamp
+
         return ford_start, ford_end
 
     @classmethod
@@ -1044,7 +1181,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     ) -> bool:
         """Return whether an archived charge already represents FordPass data."""
 
-        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
+        local_start = cls._parse_fordpass_datetime(charge.get("start_time"))
+        local_end = cls._parse_fordpass_datetime(charge.get("end_time"))
+
+        ford_start, ford_end = cls._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
         if ford_end is None:
             return False
 
@@ -1066,8 +1209,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             ):
                 return True
 
-        local_start = cls._parse_fordpass_datetime(charge.get("start_time"))
-        local_end = cls._parse_fordpass_datetime(charge.get("end_time"))
         if local_end is None:
             return False
 
@@ -1085,6 +1226,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         cls,
         charge: Charge,
         snapshot: dict[str, Any] | None,
+        *,
+        allow_start_drift: bool = False,
     ) -> bool:
         """Apply canonical FordPass session timestamps and SOC values.
 
@@ -1097,18 +1240,22 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not isinstance(snapshot, dict):
             return False
 
-        ford_start, ford_end = cls._fordpass_snapshot_times(snapshot)
-        if ford_start is None or ford_end is None or ford_end < ford_start:
-            return False
-
         local_start = cls._parse_fordpass_datetime(charge.start_time)
         local_end = cls._parse_fordpass_datetime(charge.end_time)
+        ford_start, ford_end = cls._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
+        if ford_start is None or ford_end is None or ford_end < ford_start:
+            return False
 
         # The charge ID is created from the locally detected start.  Require
         # the precise Ford start to remain close to it before trusting the
         # embedded dataset.  The end may be much further away because earlier
         # builds could keep a stale charge open for hours/days.
         if (
+            not allow_start_drift
+            and
             local_start is not None
             and abs((local_start - ford_start).total_seconds()) > 900
         ):
@@ -1244,9 +1391,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if not isinstance(snapshot, dict):
             return False
 
-        ford_start, ford_end = self._fordpass_snapshot_times(snapshot)
         local_start = self._parse_fordpass_datetime(data.get("start_time"))
         local_end = self._parse_fordpass_datetime(data.get("end_time"))
+        ford_start, ford_end = self._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
+        )
 
         if ford_start is None or ford_end is None or local_start is None:
             return False
@@ -1346,6 +1496,282 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
         return saved
 
+    def _find_late_last_charge_archive_candidate(
+        self,
+        archived: list[dict[str, Any]],
+        snapshot: dict[str, Any],
+    ) -> dict[str, Any] | None:
+        """Find one archived local charge represented by a late FordPass dataset.
+
+        During a Ford Connect outage the locally detected start can be much too
+        late. Therefore the normal +/-15 minute start-time correlation is not
+        suitable here. The completed charge end is the strongest anchor; end
+        SOC and charging location are used as additional guards.
+
+        Only archived records without an embedded FordPass snapshot are
+        considered. This keeps the operation idempotent and prevents replacing
+        a charge that was already enriched from another Last Charge dataset.
+        """
+
+        if not isinstance(snapshot, dict):
+            return None
+
+        ford_start, _ = self._fordpass_snapshot_times(snapshot)
+        if ford_start is None:
+            return None
+
+        ford_last_soc = optional_float(
+            self._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
+        )
+
+        attributes = snapshot.get("attributes")
+        location = (
+            attributes.get("location")
+            if isinstance(attributes, dict)
+            else None
+        )
+        ford_latitude = (
+            optional_float(location.get("latitude"))
+            if isinstance(location, dict)
+            else None
+        )
+        ford_longitude = (
+            optional_float(location.get("longitude"))
+            if isinstance(location, dict)
+            else None
+        )
+
+        candidates: list[tuple[float, dict[str, Any]]] = []
+
+        for item in archived:
+            if not isinstance(item, dict):
+                continue
+
+            # Existing FordPass-enriched records are handled by the normal
+            # embedded-snapshot repair path above.
+            if isinstance(item.get("fordpass_last_charge"), dict):
+                continue
+
+            local_start = self._parse_fordpass_datetime(
+                item.get("start_time")
+            )
+            local_end = self._parse_fordpass_datetime(
+                item.get("end_time")
+            )
+            if local_end is None:
+                continue
+
+            _, ford_end = self._fordpass_snapshot_times(
+                snapshot,
+                reference_end=local_end,
+            )
+            if ford_end is None or ford_end < ford_start:
+                continue
+
+            age_seconds = (dt_util.now() - ford_end).total_seconds()
+            if (
+                age_seconds < -300
+                or age_seconds > LATE_LAST_CHARGE_MAX_AGE_SECONDS
+            ):
+                continue
+
+            end_drift = abs((local_end - ford_end).total_seconds())
+            if end_drift > LATE_LAST_CHARGE_END_TOLERANCE_SECONDS:
+                continue
+
+            # A Ford Connect outage may make the local start later than the
+            # real FordPass start. A local start far before FordPass, however,
+            # is a strong sign that this is a different charging session.
+            if local_start is not None:
+                start_delay = (local_start - ford_start).total_seconds()
+                if (
+                    start_delay < -LATE_LAST_CHARGE_END_TOLERANCE_SECONDS
+                    or start_delay
+                    > LATE_LAST_CHARGE_MAX_START_DELAY_SECONDS
+                ):
+                    continue
+
+                if (
+                    local_start
+                    > ford_end
+                    + timedelta(
+                        seconds=LATE_LAST_CHARGE_END_TOLERANCE_SECONDS
+                    )
+                ):
+                    continue
+
+            local_end_soc = optional_float(item.get("end_soc"))
+            soc_drift = 0.0
+            if ford_last_soc is not None and local_end_soc is not None:
+                soc_drift = abs(ford_last_soc - local_end_soc)
+                if soc_drift > LATE_LAST_CHARGE_SOC_TOLERANCE:
+                    continue
+
+            local_latitude = optional_float(item.get("end_latitude"))
+            local_longitude = optional_float(item.get("end_longitude"))
+            if local_latitude is None or local_longitude is None:
+                local_latitude = optional_float(item.get("start_latitude"))
+                local_longitude = optional_float(item.get("start_longitude"))
+
+            location_distance = 0.0
+            if (
+                ford_latitude is not None
+                and ford_longitude is not None
+                and local_latitude is not None
+                and local_longitude is not None
+            ):
+                location_distance = self._distance_meters(
+                    ford_latitude,
+                    ford_longitude,
+                    local_latitude,
+                    local_longitude,
+                )
+                if (
+                    location_distance
+                    > LATE_LAST_CHARGE_LOCATION_TOLERANCE_METERS
+                ):
+                    continue
+
+            # End time is intentionally dominant. SOC and location only make
+            # otherwise plausible candidates less attractive.
+            score = (
+                end_drift
+                + soc_drift * 60.0
+                + location_distance / 10.0
+            )
+            candidates.append((score, item))
+
+        if not candidates:
+            return None
+
+        candidates.sort(key=lambda candidate: candidate[0])
+        best_score, best = candidates[0]
+
+        _LOGGER.debug(
+            "Late Last Charge archive candidate: charge=%s score=%.1f",
+            best.get("charge_id"),
+            best_score,
+        )
+        return best
+
+    async def _async_correct_archived_charge_from_late_snapshot(
+        self,
+        archived: list[dict[str, Any]],
+        snapshot: dict[str, Any],
+    ) -> bool:
+        """Correct an existing local archive row from a late Last Charge."""
+
+        candidate = self._find_late_last_charge_archive_candidate(
+            archived,
+            snapshot,
+        )
+        if candidate is None:
+            return False
+
+        charge = Charge.from_dict(candidate)
+        if not charge.charge_id:
+            return False
+
+        original_start = self._parse_fordpass_datetime(charge.start_time)
+        original_end = self._parse_fordpass_datetime(charge.end_time)
+        original_start_soc = charge.start_soc
+        original_end_soc = charge.end_soc
+
+        # Keep the existing charge_id. Other stored objects may already refer
+        # to this archive row, while start_time itself may safely be corrected.
+        charge.fordpass_last_charge = dict(snapshot)
+        charge.fordpass_pending = False
+        charge.data_source = "fordpass"
+
+        self._apply_fordpass_snapshot_session_values(
+            charge,
+            snapshot,
+            allow_start_drift=True,
+        )
+
+        start_soc = float(charge.start_soc or 0)
+        end_soc = float(charge.end_soc or 0)
+        energy_calculated = round(
+            (max(0.0, end_soc - start_soc) / 100) * self.battery_capacity,
+            2,
+        )
+
+        raw_energy = self._snapshot_attribute(snapshot, "energyConsumed")
+        try:
+            energy_fordpass = (
+                round(float(raw_energy), 2)
+                if raw_energy is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            energy_fordpass = None
+
+        charge.energy_added_kwh_calculated = energy_calculated
+        charge.energy_added_kwh_fordpass = energy_fordpass
+
+        # Keep the existing 2.3 energy policy: SOC/battery-capacity remains
+        # the primary value; FordPass energyConsumed is retained separately.
+        charge.energy_added_kwh = energy_calculated
+        charge.energy_source = "calculated"
+
+        # Automatic Home tariff values must follow the corrected SOC/energy.
+        # Manual/OCR costs remain protected by the central calculator.
+        await self._apply_home_charging_costs(charge)
+
+        corrected = charge.to_dict()
+        saved = await self.storage.update_charge(
+            charge.charge_id,
+            corrected,
+        )
+        if not saved:
+            _LOGGER.error(
+                "Late FordPass Last Charge correction could not update %s",
+                charge.charge_id,
+            )
+            return False
+
+        await self.history.refresh_statistics()
+
+        # If FordPass moves the real start across midnight, rebuild both the
+        # old and the corrected Journey day so the charge is removed/added in
+        # the right archive.
+        affected_dates = set()
+        for value in (original_start, charge.start_time):
+            parsed = self._parse_fordpass_datetime(value)
+            if parsed is not None:
+                affected_dates.add(dt_util.as_local(parsed).date())
+
+        if self.journey_rebuilder is not None:
+            for journey_date in sorted(affected_dates):
+                try:
+                    await self.journey_rebuilder.async_rebuild_journeys(
+                        start_date=journey_date,
+                        end_date=journey_date,
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception(
+                        "Journey rebuild failed after late Last Charge "
+                        "correction for %s",
+                        journey_date,
+                    )
+
+        self._schedule_coordinator_update(self._read_vehicle_state())
+
+        _LOGGER.warning(
+            "Late FordPass Last Charge corrected archived session %s: "
+            "start %s -> %s, end %s -> %s, SOC %s->%s -> %s->%s",
+            charge.charge_id,
+            original_start.isoformat() if original_start else None,
+            charge.start_time,
+            original_end.isoformat() if original_end else None,
+            charge.end_time,
+            original_start_soc,
+            original_end_soc,
+            charge.start_soc,
+            charge.end_soc,
+        )
+        return True
+
     async def _async_reconcile_last_charge_archive(self) -> None:
         """Repair stale charge data and backfill a recent missing Last Charge."""
 
@@ -1367,6 +1793,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         snapshot = self.last_charge_snapshot
         if not isinstance(snapshot, dict):
+            return
+
+        # First try to enrich/correct an already archived local session. This
+        # is intentionally before the 6h missing-charge backfill gate: FordPass
+        # may not publish the final Last Charge object until the cable is
+        # unplugged many hours after charging itself completed.
+        if await self._async_correct_archived_charge_from_late_snapshot(
+            archived,
+            snapshot,
+        ):
             return
 
         # Never synthesize a completed charge while the vehicle is currently
@@ -1432,30 +1868,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             return False
 
-        ford_start = self._parse_fordpass_datetime(
-            self._snapshot_attribute(
-                snapshot,
-                "energyTransferDuration",
-                "begin",
-            )
-            or self._snapshot_attribute(
-                snapshot,
-                "plugDetails",
-                "plugInTime",
-            )
-        )
-        ford_end = self._parse_fordpass_datetime(
-            self._snapshot_attribute(
-                snapshot,
-                "energyTransferDuration",
-                "end",
-            )
-            or self._snapshot_attribute(
-                snapshot,
-                "plugDetails",
-                "plugOutTime",
-            )
-            or self._snapshot_attribute(snapshot, "timeStamp")
+        ford_start, ford_end = self._fordpass_snapshot_times(
+            snapshot,
+            reference_end=local_end,
         )
 
         # If FordPass does not expose usable times, the new signature remains
@@ -1952,8 +2367,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 address=address,
             )
 
-            charging_site = await self._get_charging_site(state)
-            self._apply_charging_site(charging_site)
+            # A user-defined charging location is authoritative and must win
+            # over the bundled/generated OSM database.  Resolve it first at
+            # charge start; only fall back to OSM when no user site matches.
+            user_site_applied = (
+                await self.charging_location_resolver.async_apply_user_location(
+                    self.current_charge
+                )
+            )
+            if not user_site_applied:
+                charging_site = await self._get_charging_site(state)
+                self._apply_charging_site(charging_site)
 
             await self._try_link_charge_to_trip(state)
 
@@ -2038,14 +2462,51 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         trip_obj = self.current_trip
         trip = trip_obj.to_dict()
 
-        # Energy calculation
-        start_soc = float(trip.get("start_soc") or 0)
-        end_soc = float(trip.get("end_soc") or 0)
-        soc_delta = max(0, start_soc - end_soc)
+        # Net battery-energy calculation. A negative value is intentional:
+        # the trip ended with more SOC than it started with, so recuperation
+        # must reduce aggregate consumption instead of being clipped to zero.
+        start_soc_raw = trip.get("start_soc")
+        end_soc_raw = trip.get("end_soc")
 
-        trip["energy_used_kwh"] = round(
-            (soc_delta / 100) * self.battery_capacity,
-            2,
+        try:
+            start_soc = (
+                float(start_soc_raw)
+                if start_soc_raw is not None
+                else None
+            )
+            end_soc = (
+                float(end_soc_raw)
+                if end_soc_raw is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            start_soc = None
+            end_soc = None
+
+        if start_soc is not None and end_soc is not None:
+            soc_delta = start_soc - end_soc
+            trip["energy_used_kwh"] = round(
+                (soc_delta / 100) * self.battery_capacity,
+                2,
+            )
+        else:
+            trip["energy_used_kwh"] = None
+
+        try:
+            distance_km = float(trip.get("distance_km") or 0)
+        except (TypeError, ValueError):
+            distance_km = 0.0
+
+        trip["consumption_kwh_100km"] = (
+            round(
+                float(trip["energy_used_kwh"])
+                / distance_km
+                * 100,
+                1,
+            )
+            if distance_km > 0
+            and trip.get("energy_used_kwh") is not None
+            else None
         )
 
         await self.storage.save_trip(trip)

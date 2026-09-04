@@ -1,6 +1,6 @@
 # Ford Triplog 2.3.0
 
-**Current pre-release baseline: Build 23040**
+**Final release: Build 23048**
 
 Ford Triplog 2.3 completes the SQLite storage migration and significantly
 improves route recording, Journey reliability, charging-session recovery
@@ -176,8 +176,8 @@ Receipt handling received additional runtime fixes:
 
 ## 🛡️ Home Assistant review fixes
 
-The current 2.3 pre-release also incorporates fixes identified during Home
-Assistant review:
+Ford Triplog 2.3 also incorporates fixes identified during Home Assistant
+review:
 
 -   replaced external `async_timeout` usage with Python's built-in
     `asyncio.timeout()`
@@ -196,18 +196,36 @@ Assistant review:
 -   removed obsolete component-side `build_charging_database.py`; the
     maintained build utility remains under `tools/`
 
-## 🐛 Build 23040 runtime fix
+## 🐛 Final pre-release fixes through Build 23048
 
-Build 23040 fixes a startup regression introduced while consolidating numeric
-state handling during the review work.
+The final 2.3 testing cycle added several fixes discovered under real-world
+Ford Connect, charging and receipt workflows.
 
-Last Charge reconciliation still contained references to the removed
-`Charge._optional_float()` method. All remaining calls now use the shared
-numeric normalization helper.
+-   Build 23040 fixed the Last Charge startup regression caused by remaining
+    references to the removed `Charge._optional_float()` helper.
+-   Temporary charging/ignition source states such as `unknown`,
+    `unavailable`, `Unsupported` or missing values are ignored for transition
+    handling so short Ford Connect outages do not fragment Trips or charging
+    sessions.
+-   Delayed Ford Last Charge data can correct the matching archived charging
+    session even when it becomes available only after the normal completion
+    reconciliation timeout.
+-   Current German and English Electroverse receipts are parsed with a
+    dedicated profile, including charging location, timestamps, billed energy
+    and gross charging-session cost. Applied credit is retained separately
+    from the actual charging cost.
+-   Net recuperation is now included in Trip and lifetime energy statistics.
+    A Trip whose SOC increases produces negative net battery energy instead of
+    being clipped to 0 kWh, preventing systematic overstatement of average
+    consumption.
+-   Zero-distance Trips are excluded from distance-based energy/consumption
+    statistics.
+-   The default usable battery capacity is centralized at 77 kWh and written
+    explicitly for new installations. Existing configured capacities are
+    preserved.
 
-The integration has been verified to initialize successfully with an existing
-SQLite database containing Trips, charging sessions, Journeys, Routes and
-receipt metadata.
+The final release build is **23048**.
+
 
 ## 🧪 Real-world testing
 
@@ -222,8 +240,8 @@ including:
 -   chunked OSRM matching
 -   Home Assistant restarts with existing SQLite data
 
-The current build remains a **pre-release** while final everyday testing is
-completed.
+The final Build 23048 completed everyday and real-world regression testing
+before release.
 
 ## ⬆️ Upgrade notes
 
@@ -238,6 +256,12 @@ the Route maintenance workflow.
 
 OSRM remains optional. Route recording continues to work without an OSRM
 server.
+
+Trip energy is calculated from SOC change and the configured **usable battery
+capacity**. New installations default to 77 kWh. Existing installations keep
+their configured value, so users upgrading from earlier versions should verify
+that the stored capacity matches their vehicle if calculated kWh/100 km values
+look implausible.
 
 ------------------------------------------------------------------------
 

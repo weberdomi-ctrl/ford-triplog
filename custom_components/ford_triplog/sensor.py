@@ -3650,8 +3650,6 @@ class FordTriplogTopRoutesSensor(FordTriplogTopLocationsSensor):
             consumption = trip.get("consumption_kwh_100km")
             try:
                 consumption = float(consumption)
-                if consumption <= 0:
-                    consumption = None
             except (TypeError, ValueError):
                 consumption = None
 
@@ -5021,13 +5019,14 @@ class FordTriplogDistanceSensor(FordTriplogSensorBase):
 
 
 class FordTriplogTotalEnergySensor(FordTriplogSensorBase):
-    """Total energy used."""
+    """Total net energy used, including recuperation."""
 
     _attr_translation_key = "total_energy_used"
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_total_energy"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.TOTAL_INCREASING
+    # Net trip energy can decrease after a recuperation-heavy trip.
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:lightning-bolt"
 

@@ -1,4 +1,16 @@
-"""Rule-based parser profiles for OCR receipt text."""
+"""Rule-based parser profiles for OCR receipt text.
+
+Ford Triplog
+Version: 2.3.0
+Build: 23046 - Electroverse multiline OCR compatibility
+
+Changes:
+- Accept common abbreviated month names such as Sep., Sept., Oct. and Dez.
+  in date_ordinal_month and datetime_ordinal_month transforms.
+- Restores SQLite-backed user parser profile injection via set_user_profiles().
+- Keeps bundled and user profiles deduplicated by profile_id, with user profiles winning.
+- Parser logic unchanged from 23045; build synchronized with Electroverse profile v1.3.
+"""
 
 from __future__ import annotations
 
@@ -12,6 +24,47 @@ from typing import Any
 
 
 _LOGGER = logging.getLogger(__name__)
+
+_ORDINAL_MONTH_MAP = {
+    "jan": 1,
+    "januar": 1,
+    "january": 1,
+    "feb": 2,
+    "februar": 2,
+    "february": 2,
+    "mär": 3,
+    "maer": 3,
+    "mar": 3,
+    "märz": 3,
+    "maerz": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "mai": 5,
+    "may": 5,
+    "jun": 6,
+    "juni": 6,
+    "june": 6,
+    "jul": 7,
+    "juli": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "okt": 10,
+    "oct": 10,
+    "oktober": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dez": 12,
+    "dec": 12,
+    "dezember": 12,
+    "december": 12,
+}
+
 
 @dataclass(slots=True)
 class ReceiptParseResult:
@@ -464,36 +517,15 @@ class ReceiptParserEngine:
                     str(result).strip(),
                     flags=re.IGNORECASE,
                 )
-                month_map = {
-                    "januar": 1,
-                    "january": 1,
-                    "februar": 2,
-                    "february": 2,
-                    "märz": 3,
-                    "maerz": 3,
-                    "march": 3,
-                    "april": 4,
-                    "mai": 5,
-                    "may": 5,
-                    "juni": 6,
-                    "june": 6,
-                    "juli": 7,
-                    "july": 7,
-                    "august": 8,
-                    "september": 9,
-                    "oktober": 10,
-                    "october": 10,
-                    "november": 11,
-                    "dezember": 12,
-                    "december": 12,
-                }
+                normalized = re.sub(r"^(\d{1,2})\.", r"\1", normalized)
                 parts = normalized.split()
                 if len(parts) != 3:
                     raise ValueError(
                         f"Unsupported ordinal date: {normalized}"
                     )
                 day = int(parts[0])
-                month = month_map.get(parts[1].casefold())
+                month_token = parts[1].casefold().rstrip(".")
+                month = _ORDINAL_MONTH_MAP.get(month_token)
                 if month is None:
                     raise ValueError(
                         f"Unsupported month: {parts[1]}"
@@ -510,26 +542,14 @@ class ReceiptParserEngine:
                     str(result).strip(),
                     flags=re.IGNORECASE,
                 )
+                normalized = re.sub(r"^(\d{1,2})\.", r"\1", normalized)
                 parts = normalized.split()
                 if len(parts) != 4:
                     raise ValueError(
                         f"Unsupported ordinal datetime: {normalized}"
                     )
-                month_map = {
-                    "januar": 1, "january": 1,
-                    "februar": 2, "february": 2,
-                    "märz": 3, "maerz": 3, "march": 3,
-                    "april": 4,
-                    "mai": 5, "may": 5,
-                    "juni": 6, "june": 6,
-                    "juli": 7, "july": 7,
-                    "august": 8,
-                    "september": 9,
-                    "oktober": 10, "october": 10,
-                    "november": 11,
-                    "dezember": 12, "december": 12,
-                }
-                month = month_map.get(parts[1].casefold())
+                month_token = parts[1].casefold().rstrip(".")
+                month = _ORDINAL_MONTH_MAP.get(month_token)
                 if month is None:
                     raise ValueError(
                         f"Unsupported month: {parts[1]}"
