@@ -5,8 +5,8 @@ Track your Ford.
 
 Journey data model.
 
-Version: 1.8.6
-Release: 1.8.6 - Journey billed-energy price fix
+Version: 2.3.0
+Build: 23047 - Net trip energy / recuperation journey fix
 """
 
 from __future__ import annotations
@@ -387,10 +387,9 @@ class FordTriplogJourney:
             0,
             _as_int(self.charging_duration_seconds),
         )
-        self.energy_used_kwh = max(
-            0.0,
-            _as_float(self.energy_used_kwh),
-        )
+        # Signed net trip energy: positive = battery discharge,
+        # negative = net recuperation.
+        self.energy_used_kwh = _as_float(self.energy_used_kwh)
         self.energy_charged_kwh = max(
             0.0,
             _as_float(self.energy_charged_kwh),
@@ -507,7 +506,7 @@ class FordTriplogJourney:
             end_time=end_time,
             distance_km=max(0.0, _as_float(distance_km)),
             duration_seconds=max(0, _as_int(duration_seconds)),
-            energy_kwh=max(0.0, _as_float(energy_used_kwh)),
+            energy_kwh=_as_float(energy_used_kwh),
             start_soc=start_soc,
             end_soc=end_soc,
             start_location=start_location,
@@ -528,10 +527,7 @@ class FordTriplogJourney:
             0,
             _as_int(duration_seconds),
         )
-        self.energy_used_kwh += max(
-            0.0,
-            _as_float(energy_used_kwh),
-        )
+        self.energy_used_kwh += _as_float(energy_used_kwh)
 
         self._apply_boundary_data(
             item=item,
@@ -637,6 +633,7 @@ class FordTriplogJourney:
         self.date = self.date or _date_from_datetime(self.start_time)
 
         self._recalculate_soc_values()
+        self._recalculate_trip_energy()
         self._recalculate_charging_costs()
         self._recalculate_energy_balance()
         self._recalculate_capacity_energy_values()
@@ -965,6 +962,52 @@ class FordTriplogJourney:
         else:
             self.soc_delta = 0.0
 
+    def _recalculate_trip_energy(self) -> None:
+        """Recalculate signed net driving energy from trip items.
+
+        SOC is preferred because older 2.2/early-2.3 journey items may have
+        stored recuperation trips with ``energy_kwh = 0``.  A zero-distance
+        trip is intentionally excluded from journey energy statistics.
+        """
+
+        total_energy = 0.0
+
+        for item in self.items:
+            if item.item_type != _ITEM_TRIP:
+                continue
+
+            distance_km = _as_float(item.distance_km)
+            if distance_km <= 0:
+                item.energy_kwh = 0.0
+                continue
+
+            stored_energy = _as_float(item.energy_kwh)
+            if abs(stored_energy) > 1e-9:
+                total_energy += stored_energy
+                continue
+
+            # Preserve historical positive energy values as stored. Only the
+            # old recuperation case needs reconstruction: it was clipped to
+            # zero while the item's end SOC is higher than its start SOC.
+            if (
+                self.battery_capacity_kwh is not None
+                and item.start_soc is not None
+                and item.end_soc is not None
+                and item.end_soc > item.start_soc
+            ):
+                corrected_energy = (
+                    (item.start_soc - item.end_soc)
+                    * self.battery_capacity_kwh
+                    / 100.0
+                )
+                item.energy_kwh = corrected_energy
+                total_energy += corrected_energy
+                continue
+
+            total_energy += stored_energy
+
+        self.energy_used_kwh = total_energy
+
     def _recalculate_charging_costs(self) -> None:
         """Recalculate journey-wide charging cost values."""
 
@@ -1022,7 +1065,7 @@ class FordTriplogJourney:
             self.energy_charged_kwh - self.energy_used_kwh
         )
         self.total_energy_flow_kwh = (
-            self.energy_charged_kwh + self.energy_used_kwh
+            self.energy_charged_kwh + abs(self.energy_used_kwh)
         )
 
     def _recalculate_capacity_energy_values(self) -> None:

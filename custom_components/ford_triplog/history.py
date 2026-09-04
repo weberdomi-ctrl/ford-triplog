@@ -3,12 +3,12 @@ Ford Triplog
 
 History and statistics.
 
-Version: 1.6.4
-Phase: 2.0.2 - Top Statistics / Phase 1 - Top Trip
+Version: 2.3.0
+Build: 23047 - Net trip energy / recuperation statistics fix
 Changes:
-- Add longest-trip record to persisted statistics.
-- Store distance, duration, start/end, energy and consumption for Top Trip.
-- Reuse the existing archive scan performed by refresh_statistics().
+- Use signed SOC-derived trip energy so recuperation reduces net consumption.
+- Recalculate legacy trips from SOC and configured battery capacity.
+- Exclude zero-distance trips from energy/consumption statistics.
 """
 
 from __future__ import annotations
@@ -29,8 +29,13 @@ _SENSOR_CACHE_TTL_SECONDS = 1.0
 class FordTriplogHistory:
     """Manage trip history and statistics."""
 
-    def __init__(self, storage):
+    def __init__(self, storage, battery_capacity_kwh: float | None = None):
         self.storage = storage
+        try:
+            capacity = float(battery_capacity_kwh)
+        except (TypeError, ValueError):
+            capacity = 77.0
+        self.battery_capacity_kwh = capacity if capacity > 0 else 77.0
         self._sensor_data_lock = asyncio.Lock()
         self._sensor_data_cache: tuple[
             dict[str, Any],
@@ -96,6 +101,62 @@ class FordTriplogHistory:
         """Load all archived charges from the selected storage backend."""
         return await self.storage.load_archived_charges()
 
+
+    def _trip_net_energy_kwh(
+        self,
+        trip: dict[str, Any],
+        distance_km: float,
+    ) -> float:
+        """Return signed net battery energy for one trip.
+
+        Positive values mean net battery discharge. Negative values mean the
+        trip ended with more SOC than it started with (net recuperation).
+        Legacy 2.2/early-2.3 rows may contain ``energy_used_kwh = 0`` for
+        recuperation trips, so SOC remains the authoritative fallback.
+        Zero-distance records are excluded from energy statistics.
+        """
+
+        if distance_km <= 0:
+            return 0.0
+
+        try:
+            stored_energy = float(trip.get("energy_used_kwh") or 0.0)
+        except (TypeError, ValueError):
+            stored_energy = 0.0
+
+        # Preserve already calculated historical consumption. Older releases
+        # may have used a different configured battery capacity, so blindly
+        # recalculating every trip with today's setting would rewrite history.
+        # Signed values from Build 23047 are preserved here as well.
+        if abs(stored_energy) > 1e-9:
+            return stored_energy
+
+        start_soc = trip.get("start_soc")
+        end_soc = trip.get("end_soc")
+
+        try:
+            start_soc_value = float(start_soc)
+            end_soc_value = float(end_soc)
+        except (TypeError, ValueError):
+            return stored_energy
+
+        # The legacy clipping bug affected only net-recuperation trips:
+        # ``energy_used_kwh`` was overwritten with 0 although end SOC was
+        # higher. Reconstruct exactly those rows.
+        if end_soc_value <= start_soc_value:
+            return stored_energy
+
+        capacity_value = trip.get("battery_capacity_kwh")
+        try:
+            capacity = float(capacity_value)
+        except (TypeError, ValueError):
+            capacity = self.battery_capacity_kwh
+
+        if capacity <= 0:
+            capacity = self.battery_capacity_kwh
+
+        return (start_soc_value - end_soc_value) * capacity / 100.0
+
     async def get_statistics(self):
         """Recalculate statistics from all archived records."""
         trips = await self.get_all_trips()
@@ -111,6 +172,7 @@ class FordTriplogHistory:
         total_start_soc = 0.0
         total_end_soc = 0.0
         trip_count = 0
+        energy_trip_count = 0
         top_trip: dict[str, Any] | None = None
         top_trip_distance = -1.0
 
@@ -150,11 +212,13 @@ class FordTriplogHistory:
 
             distance = float(trip.get("distance_km") or 0)
             duration_seconds = int(trip.get("duration_seconds") or 0)
-            energy_used = float(trip.get("energy_used_kwh") or 0)
+            energy_used = self._trip_net_energy_kwh(trip, distance)
 
             total_distance += distance
             total_duration += duration_seconds
-            total_energy += energy_used
+            if distance > 0:
+                total_energy += energy_used
+                energy_trip_count += 1
 
             if distance > top_trip_distance:
                 top_trip_distance = distance
@@ -180,7 +244,11 @@ class FordTriplogHistory:
             start_soc = trip.get("start_soc")
             end_soc = trip.get("end_soc")
 
-            if start_soc is not None and end_soc is not None:
+            if (
+                distance > 0
+                and start_soc is not None
+                and end_soc is not None
+            ):
                 total_trip_soc_used += start_soc - end_soc
 
         average_charge_duration = (
@@ -214,13 +282,13 @@ class FordTriplogHistory:
             else 0
         )
         average_trip_energy = (
-            total_energy / trip_count
-            if trip_count
+            total_energy / energy_trip_count
+            if energy_trip_count
             else 0
         )
         average_trip_soc_used = (
-            total_trip_soc_used / trip_count
-            if trip_count
+            total_trip_soc_used / energy_trip_count
+            if energy_trip_count
             else 0
         )
         average_trip_consumption = (

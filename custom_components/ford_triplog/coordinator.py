@@ -4,9 +4,11 @@ Ford Triplog
 Coordinator
 
 Version: 2.3.0
-Build: 23043 - Late Last Charge archive correction
+Build: 23047 - Net trip energy / recuperation statistics fix
 
 Changes:
+- Preserves signed trip energy so net recuperation reduces consumption totals.
+- Passes configured battery capacity to History for legacy-trip correction.
 - Corrects an already archived local charging session when FordPass Last Charge
   arrives only after the normal 300s wait has expired (for example on unplug).
 - Matches the late FordPass dataset primarily by charge end, end SOC and
@@ -121,8 +123,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         super().__init__(hass, _LOGGER, name="Ford Triplog")
         self.hass = hass
         self.storage = storage
-        self.history = FordTriplogHistory(storage)
         self.config = config
+        self.battery_capacity = float(
+            config.get("battery_capacity_kwh", 77)
+        )
+        self.history = FordTriplogHistory(
+            storage,
+            battery_capacity_kwh=self.battery_capacity,
+        )
         self.geo = geo
         self.charging_cost_calculator = FordTriplogChargingCostCalculator(
             hass,
@@ -146,9 +154,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
         )
         self.charging_site_lookup: ChargingSiteLookup | None = None
-
-        # Battery capacity (kWh)
-        self.battery_capacity = float(config.get("battery_capacity_kwh", 77))
 
         # Automatic home charging cost infrastructure.
         self.home_tariff_enabled = bool(
@@ -2448,14 +2453,51 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         trip_obj = self.current_trip
         trip = trip_obj.to_dict()
 
-        # Energy calculation
-        start_soc = float(trip.get("start_soc") or 0)
-        end_soc = float(trip.get("end_soc") or 0)
-        soc_delta = max(0, start_soc - end_soc)
+        # Net battery-energy calculation. A negative value is intentional:
+        # the trip ended with more SOC than it started with, so recuperation
+        # must reduce aggregate consumption instead of being clipped to zero.
+        start_soc_raw = trip.get("start_soc")
+        end_soc_raw = trip.get("end_soc")
 
-        trip["energy_used_kwh"] = round(
-            (soc_delta / 100) * self.battery_capacity,
-            2,
+        try:
+            start_soc = (
+                float(start_soc_raw)
+                if start_soc_raw is not None
+                else None
+            )
+            end_soc = (
+                float(end_soc_raw)
+                if end_soc_raw is not None
+                else None
+            )
+        except (TypeError, ValueError):
+            start_soc = None
+            end_soc = None
+
+        if start_soc is not None and end_soc is not None:
+            soc_delta = start_soc - end_soc
+            trip["energy_used_kwh"] = round(
+                (soc_delta / 100) * self.battery_capacity,
+                2,
+            )
+        else:
+            trip["energy_used_kwh"] = None
+
+        try:
+            distance_km = float(trip.get("distance_km") or 0)
+        except (TypeError, ValueError):
+            distance_km = 0.0
+
+        trip["consumption_kwh_100km"] = (
+            round(
+                float(trip["energy_used_kwh"])
+                / distance_km
+                * 100,
+                1,
+            )
+            if distance_km > 0
+            and trip.get("energy_used_kwh") is not None
+            else None
         )
 
         await self.storage.save_trip(trip)
