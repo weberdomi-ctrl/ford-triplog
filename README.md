@@ -357,6 +357,12 @@ Ford Connect is the recommended source for Ford Triplog 2.3. FordPass can
 still be used where available, but it is a community-maintained unofficial
 integration and can be affected by Ford backend changes.
 
+Ford Triplog estimates Trip energy from the vehicle SOC change and the
+configured **usable battery capacity**. New installations default to 77 kWh.
+Verify this value in the integration settings for the actual vehicle/battery
+variant, because an incorrect capacity directly scales the calculated kWh and
+average kWh/100 km values.
+
 ------------------------------------------------------------------------
 
 ## Dashboard Examples
@@ -397,7 +403,7 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 # Roadmap
 
-## Version 2.3 – Pre-release testing
+## Version 2.3 – Released
 
 - SQLite-only productive storage
 - One-time legacy JSON migration/import with persistent migration markers
@@ -412,6 +418,14 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - Journey/Charging History refresh and charge-to-trip timestamp fixes
 - Robust handling of `unknown` / `unavailable` numeric source states
 - Configured usable battery capacity used for Trip energy calculations
+- Signed net Trip energy for consumption statistics, including net
+  recuperation
+- Temporary unavailable/unknown vehicle and charging states ignored for
+  transition handling
+- Delayed Last Charge correction for already archived charging sessions
+- German/English Electroverse receipt parsing and gross charging-cost import
+- Explicit 77 kWh default for new installations while preserving existing
+  configured battery capacities
 - Home Assistant review fixes for translations, event-loop safety, entity
   lifecycle and service metadata
 - Source-selection guards against Ford Triplog self-references
@@ -433,6 +447,12 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
   session when available
 - Charging-session metadata enrichment and an optional automatically
   generated memo
+- Separate recuperation fields such as recovered SOC and regenerated energy
+  while retaining the signed net-energy calculation introduced in 2.3
+- Home Assistant notification when the configured vehicle data source is
+  unavailable or authorization has expired for an extended period
+- Optional EVCC charging-status entity as an additional source-independent
+  charging-state signal
 
 ## 3.x – Research
 

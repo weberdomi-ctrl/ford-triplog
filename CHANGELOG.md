@@ -57,6 +57,23 @@
     `unknown` and `unavailable` values.
 -   Trip energy calculations now use the configured usable battery
     capacity instead of a fixed battery value.
+-   Charging and ignition transition handling now ignores temporary
+    `unknown`, `unavailable`, `Unsupported` and missing source states instead
+    of interpreting them as real start/stop transitions.
+-   Completed charging sessions can be corrected later when delayed Ford
+    Last Charge data becomes available after the local session was already
+    archived.
+-   Electroverse receipt parsing now supports current German and English
+    receipt layouts, including provider, charging location, start/end time,
+    billed energy, gross session cost and applied credit.
+-   Trip and lifetime consumption statistics now use the signed net battery
+    energy derived from SOC change so Trips with net recuperation reduce the
+    calculated energy balance instead of being clipped to zero.
+-   Zero-distance Trips no longer contribute energy to distance-based
+    consumption statistics.
+-   The usable battery-capacity default is centralized at 77 kWh and is
+    written explicitly for new installations; existing configured values
+    remain unchanged.
 -   English configuration strings were completed to match the German and
     Polish translation coverage.
 -   Remaining filesystem work and entity listener handling were aligned
@@ -96,6 +113,19 @@
     handling.
 -   Fixed sensor documentation that listed entities not provided by Ford
     Triplog.
+-   Fixed temporary Ford Connect outages fragmenting charging sessions or
+    producing false charging/ignition transitions.
+-   Fixed delayed Last Charge data not correcting an already archived
+    charging session after the reconciliation timeout.
+-   Fixed Electroverse receipts being matched by a generic MOVE profile or
+    returning missing charging location/start/end values.
+-   Fixed Electroverse receipt costs so the gross charging-session amount is
+    used while applied credit remains separate.
+-   Fixed average consumption being overstated because Trips with net SOC
+    gain from recuperation were previously stored as 0 kWh instead of
+    negative net battery energy.
+-   Fixed distance-based consumption statistics being distorted by
+    zero-distance Trips carrying energy values.
 
 ### Cleanup
 
@@ -125,6 +155,7 @@
     through Ford Triplog storage.
 -   Raw GPS route points remain preserved independently from OSRM-matched
     route geometry.
+-   Ford Triplog 2.3.0 final is released as Build 23048.
 
 ## 2.2.0
 
