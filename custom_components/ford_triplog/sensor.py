@@ -160,6 +160,7 @@ async def async_setup_entry(
             FordTriplogLastChargeSocAddedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeDurationSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySourceSensor(coordinator, history, common_translations),
             FordTriplogLastChargeStartAddressSensor(coordinator, history, common_translations),
@@ -1755,7 +1756,27 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "start_longitude": data.get("start_longitude"),
                 "start_soc": data.get("start_soc"),
                 "end_soc": data.get("end_soc"),
+                "initial_start_soc": data.get("initial_start_soc"),
+                "stabilized_start_soc": data.get("stabilized_start_soc"),
+                "start_soc_source": data.get("start_soc_source"),
+                "completion_soc": data.get("completion_soc"),
+                "end_soc_source": data.get("end_soc_source"),
+                "fordpass_start_soc": data.get("fordpass_start_soc"),
+                "fordpass_end_soc": data.get("fordpass_end_soc"),
+                "charging_type": data.get("charging_type"),
                 "energy_added_kwh": data.get("energy_added_kwh"),
+                "energy_added_kwh_fordpass": data.get(
+                    "energy_added_kwh_fordpass"
+                ),
+                "energy_added_kwh_charging_status": data.get(
+                    "energy_added_kwh_charging_status"
+                ),
+                "energy_added_kwh_calculated": data.get(
+                    "energy_added_kwh_calculated"
+                ),
+                "charger_energy_output_kwh": data.get(
+                    "charger_energy_output_kwh"
+                ),
                 "energy_billed_kwh": data.get("energy_billed_kwh"),
                 "energy_source": data.get("energy_source"),
                 "energy_billed_source": data.get("energy_billed_source"),
@@ -1774,6 +1795,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "cost_source": data.get("cost_source"),
                 "cost_verified": data.get("cost_verified"),
                 "receipt_filename": data.get("receipt_filename"),
+                "auto_memo": data.get("auto_memo"),
                 "receipts": receipts_by_charge.get(
                     str(data.get("charge_id") or ""),
                     [],
@@ -5413,6 +5435,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         attributes = {
             "start_time": last_charge.get("start_time"),
             "end_time": last_charge.get("end_time"),
+            "detected_start_time": last_charge.get("detected_start_time"),
+            "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
             "duration": (
                 format_duration(duration_seconds)
@@ -5421,10 +5445,28 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             ),
             "start_soc": last_charge.get("start_soc"),
             "end_soc": last_charge.get("end_soc"),
+            "initial_start_soc": last_charge.get("initial_start_soc"),
+            "stabilized_start_soc": last_charge.get("stabilized_start_soc"),
+            "stabilized_start_soc_time": last_charge.get(
+                "stabilized_start_soc_time"
+            ),
+            "start_soc_source": last_charge.get("start_soc_source"),
+            "completion_soc": last_charge.get("completion_soc"),
+            "completion_time": last_charge.get("completion_time"),
+            "end_soc_source": last_charge.get("end_soc_source"),
+            "fordpass_start_soc": last_charge.get("fordpass_start_soc"),
+            "fordpass_end_soc": last_charge.get("fordpass_end_soc"),
+            "charging_type": last_charge.get("charging_type"),
+            "charger_energy_output_kwh": last_charge.get(
+                "charger_energy_output_kwh"
+            ),
             "soc_added": soc_added,
             "energy_added_kwh": last_charge.get("energy_added_kwh"),
             "energy_added_kwh_fordpass": last_charge.get(
                 "energy_added_kwh_fordpass"
+            ),
+            "energy_added_kwh_charging_status": last_charge.get(
+                "energy_added_kwh_charging_status"
             ),
             "energy_added_kwh_calculated": last_charge.get(
                 "energy_added_kwh_calculated"
@@ -5461,6 +5503,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             "receipt_filename": last_charge.get(
                 "receipt_filename"
             ),
+            "auto_memo": last_charge.get("auto_memo"),
             "display_location": display_location,
             "zone_name": zone_name,
             "charging_location": charging_location,
@@ -5671,6 +5714,29 @@ class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     ):
         self._value = (
             last_charge.get("energy_added_kwh")
+            if last_charge
+            else None
+        )
+
+
+class FordTriplogLastChargeEnergyFordPassSensor(FordTriplogSensorBase):
+    """Ford Last Charge vehicle-energy value."""
+
+    _attr_translation_key = "last_charge_energy_fordpass"
+    _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:car-electric"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_added_kwh_fordpass")
             if last_charge
             else None
         )

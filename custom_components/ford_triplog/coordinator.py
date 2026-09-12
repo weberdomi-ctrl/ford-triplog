@@ -3,8 +3,8 @@ Ford Triplog
 
 Coordinator
 
-Version: 2.3.0
-Build: 23048 - Battery capacity default hardening
+Version: 2.4.1
+Build: 24101 - Charging source reconciliation
 
 Changes:
 - Preserves signed trip energy so net recuperation reduces consumption totals.
@@ -84,6 +84,15 @@ _LOGGER = logging.getLogger(__name__)
 STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
 GPS_UPDATE_TIMEOUT = 60
+
+# The MEB battery-management system can revise SOC shortly after charging
+# actually begins. AC can safely use a later value after two minutes because
+# little real energy has entered the battery. DC is sampled much earlier and
+# retained as a comparison candidate because real SOC rises quickly.
+CHARGE_START_SOC_RECHECK_AC_SECONDS = 120
+CHARGE_START_SOC_RECHECK_DC_SECONDS = 30
+CHARGE_START_SOC_TYPE_WAIT_SECONDS = 30
+CHARGE_START_SOC_TYPE_POLL_SECONDS = 5
 TRIP_END_GPS_MAX_DISTANCE_METERS = 250
 TRIP_END_ROUTE_MAX_AGE_SECONDS = 20
 
@@ -248,6 +257,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Defensive guard against finalizing the same charging session twice.
         self._charge_finalizing = False
         self._trip_finishing = False
+        self._charge_start_soc_task: asyncio.Task | None = None
 
         # Coalesce rapid coordinator publishes. FordPass/Home Assistant can
         # update several watched entities within a few milliseconds. The
@@ -487,6 +497,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._cancel_last_charge_timer()
         self._cancel_last_charge_timeout_timer()
+        self._cancel_charge_start_soc_recheck()
 
         if self._publish_handle is not None:
             self._publish_handle.cancel()
@@ -678,6 +689,39 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_charge.charging_site_distance_m or 0.0,
         )
 
+    @staticmethod
+    def _charging_attribute(
+        attributes: dict[str, Any],
+        *names: str,
+    ) -> Any:
+        """Return a charging attribute independent of Ford key casing."""
+
+        if not attributes:
+            return None
+
+        normalized = {
+            "".join(
+                char for char in str(key).lower() if char.isalnum()
+            ): value
+            for key, value in attributes.items()
+        }
+        for name in names:
+            key = "".join(
+                char for char in str(name).lower() if char.isalnum()
+            )
+            if key in normalized:
+                return normalized[key]
+        return None
+
+    @staticmethod
+    def _normalize_charging_type(value: Any) -> str | None:
+        """Return one useful normalized charging type."""
+
+        normalized = str(value or "").strip().upper()
+        if normalized in {"", "UNKNOWN", "UNAVAILABLE", "NONE", "NULL"}:
+            return None
+        return normalized
+
     def _read_vehicle_state(self):
         data = {}
 
@@ -692,8 +736,44 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             st = self.hass.states.get(entity_id) if entity_id else None
             data[key] = st.state if st else None
 
+        charging_entity_id = self.config.get("charging")
+        charging_entity = (
+            self.hass.states.get(charging_entity_id)
+            if charging_entity_id
+            else None
+        )
+        charging_attributes = (
+            dict(charging_entity.attributes)
+            if charging_entity is not None
+            else {}
+        )
 
-
+        data["charging_type"] = self._normalize_charging_type(
+            self._charging_attribute(
+                charging_attributes,
+                "ChargingType",
+                "chargerType",
+            )
+        )
+        data["charging_soc"] = optional_float(
+            self._charging_attribute(
+                charging_attributes,
+                "StateOfCharge",
+                "soc",
+            )
+        )
+        data["charger_energy_output_kwh"] = optional_float(
+            self._charging_attribute(
+                charging_attributes,
+                "ChargerEnergyOutput",
+                "energyConsumed",
+            )
+        )
+        data["charging_updated_at"] = (
+            charging_entity.last_updated.isoformat()
+            if charging_entity is not None
+            else None
+        )
 
         tracker = self.hass.states.get(self.config.get("tracker"))
         data["latitude"] = tracker.attributes.get("latitude") if tracker else None
@@ -1280,13 +1360,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             cls._snapshot_attribute(snapshot, "stateOfCharge", "lastSOC")
         )
 
-        if first_soc is not None and charge.start_soc != first_soc:
-            charge.start_soc = first_soc
-            changed = True
+        if first_soc is not None:
+            charge.fordpass_start_soc = first_soc
+            if charge.start_soc != first_soc:
+                charge.start_soc = first_soc
+                changed = True
+            charge.start_soc_source = "ford_last_charge"
 
-        if last_soc is not None and charge.end_soc != last_soc:
-            charge.end_soc = last_soc
-            changed = True
+        if last_soc is not None:
+            charge.fordpass_end_soc = last_soc
+            if charge.end_soc != last_soc:
+                charge.end_soc = last_soc
+                changed = True
+            charge.end_soc_source = "ford_last_charge"
+
+        ford_charging_type = cls._normalize_charging_type(
+            cls._snapshot_attribute(snapshot, "chargerType")
+        )
+        if ford_charging_type is not None:
+            charge.charging_type = ford_charging_type
 
         if changed:
             _LOGGER.info(
@@ -1453,26 +1545,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             charge.charging_site_distance_m = None
             charge = await self.charging_location_resolver.async_resolve(charge)
 
-        start_soc = float(charge.start_soc or 0)
-        end_soc = float(charge.end_soc or 0)
-        energy_calculated = round(
-            (max(0.0, end_soc - start_soc) / 100) * self.battery_capacity,
-            2,
-        )
-        raw_energy = self._snapshot_attribute(snapshot, "energyConsumed")
-        try:
-            energy_fordpass = (
-                round(float(raw_energy), 2)
-                if raw_energy is not None
-                else None
-            )
-        except (TypeError, ValueError):
-            energy_fordpass = None
-
-        charge.energy_added_kwh_calculated = energy_calculated
-        charge.energy_added_kwh_fordpass = energy_fordpass
-        charge.energy_added_kwh = energy_calculated
-        charge.energy_source = "calculated"
+        self._update_charge_energy_values(charge)
         await self._apply_home_charging_costs(charge)
 
         repaired_data = charge.to_dict()
@@ -1689,33 +1762,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             allow_start_drift=True,
         )
 
-        start_soc = float(charge.start_soc or 0)
-        end_soc = float(charge.end_soc or 0)
-        energy_calculated = round(
-            (max(0.0, end_soc - start_soc) / 100) * self.battery_capacity,
-            2,
-        )
+        self._update_charge_energy_values(charge)
 
-        raw_energy = self._snapshot_attribute(snapshot, "energyConsumed")
-        try:
-            energy_fordpass = (
-                round(float(raw_energy), 2)
-                if raw_energy is not None
-                else None
-            )
-        except (TypeError, ValueError):
-            energy_fordpass = None
-
-        charge.energy_added_kwh_calculated = energy_calculated
-        charge.energy_added_kwh_fordpass = energy_fordpass
-
-        # Keep the existing 2.3 energy policy: SOC/battery-capacity remains
-        # the primary value; FordPass energyConsumed is retained separately.
-        charge.energy_added_kwh = energy_calculated
-        charge.energy_source = "calculated"
-
-        # Automatic Home tariff values must follow the corrected SOC/energy.
-        # Manual/OCR costs remain protected by the central calculator.
+        # Automatic Home tariff values must follow the corrected vehicle
+        # energy. Manual/OCR costs remain protected by the central calculator.
         await self._apply_home_charging_costs(charge)
 
         corrected = charge.to_dict()
@@ -1757,7 +1807,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._schedule_coordinator_update(self._read_vehicle_state())
 
-        _LOGGER.warning(
+        _LOGGER.info(
             "Late FordPass Last Charge corrected archived session %s: "
             "start %s -> %s, end %s -> %s, SOC %s->%s -> %s->%s",
             charge.charge_id,
@@ -2310,6 +2360,218 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         finally:
             self._trip_finishing = False
 
+    def _cancel_charge_start_soc_recheck(self) -> None:
+        """Cancel a pending charging-start SOC recheck."""
+
+        task = self._charge_start_soc_task
+        if task is not None and not task.done():
+            task.cancel()
+        self._charge_start_soc_task = None
+
+    def _schedule_charge_start_soc_recheck(
+        self,
+        charge_id: str | None,
+    ) -> None:
+        """Schedule the post-start SOC check for one charging session."""
+
+        if not charge_id:
+            return
+
+        self._cancel_charge_start_soc_recheck()
+        self._charge_start_soc_task = self.hass.async_create_task(
+            self._async_recheck_charge_start_soc(str(charge_id)),
+            name=f"ford_triplog_charge_soc_recheck_{charge_id}",
+        )
+
+    async def _async_recheck_charge_start_soc(
+        self,
+        charge_id: str,
+    ) -> None:
+        """Recheck SOC after charging has actually entered IN_PROGRESS."""
+
+        task = asyncio.current_task()
+        started_monotonic = self.hass.loop.time()
+
+        try:
+            charging_type = None
+
+            # Ford may publish IN_PROGRESS before ChargingType. Give the same
+            # charging entity a short window to expose AC_BASIC/DC_FAST first.
+            while True:
+                charge = self.current_charge
+                if charge is None or str(charge.charge_id) != charge_id:
+                    return
+
+                state = self._read_vehicle_state()
+                if str(state.get("charging") or "").strip().upper() != "IN_PROGRESS":
+                    return
+
+                charging_type = self._normalize_charging_type(
+                    state.get("charging_type")
+                )
+                if charging_type in {"AC_BASIC", "DC_FAST"}:
+                    charge.charging_type = charging_type
+                    break
+
+                elapsed = self.hass.loop.time() - started_monotonic
+                if elapsed >= CHARGE_START_SOC_TYPE_WAIT_SECONDS:
+                    break
+
+                await asyncio.sleep(CHARGE_START_SOC_TYPE_POLL_SECONDS)
+
+            if charging_type == "AC_BASIC":
+                target_delay = CHARGE_START_SOC_RECHECK_AC_SECONDS
+            elif charging_type == "DC_FAST":
+                target_delay = CHARGE_START_SOC_RECHECK_DC_SECONDS
+            else:
+                # Without a reliable type we still retain one later SOC value
+                # for diagnostics, but do not replace the primary start SOC.
+                target_delay = CHARGE_START_SOC_RECHECK_AC_SECONDS
+
+            elapsed = self.hass.loop.time() - started_monotonic
+            if elapsed < target_delay:
+                await asyncio.sleep(target_delay - elapsed)
+
+            charge = self.current_charge
+            if charge is None or str(charge.charge_id) != charge_id:
+                return
+
+            state = self._read_vehicle_state()
+            if str(state.get("charging") or "").strip().upper() != "IN_PROGRESS":
+                return
+
+            charging_type = (
+                self._normalize_charging_type(state.get("charging_type"))
+                or charging_type
+                or charge.charging_type
+            )
+            if charging_type:
+                charge.charging_type = charging_type
+
+            observed_soc = optional_float(state.get("charging_soc"))
+            if observed_soc is None:
+                observed_soc = optional_float(state.get("soc"))
+            if observed_soc is None:
+                return
+
+            charge.stabilized_start_soc = observed_soc
+            charge.stabilized_start_soc_time = dt_util.now().isoformat()
+
+            # AC_BASIC can use the two-minute value as the local start SOC.
+            # At 11 kW only about 0.37 kWh is transferred in two minutes, so
+            # multi-percent changes are dominated by the BMS SOC correction.
+            # DC_FAST rises too quickly to distinguish correction from real
+            # charging, therefore its later SOC is retained only as evidence;
+            # Ford Last Charge will decide the final firstSOC when available.
+            if charging_type == "AC_BASIC":
+                charge.start_soc = observed_soc
+                charge.start_soc_source = "live_stabilized_ac"
+
+            await self.storage.save_current_charge(charge.to_dict())
+
+            _LOGGER.info(
+                "Charging start SOC recheck: charge=%s type=%s "
+                "initial=%s observed=%s selected=%s source=%s",
+                charge_id,
+                charging_type or "UNKNOWN",
+                charge.initial_start_soc,
+                observed_soc,
+                charge.start_soc,
+                charge.start_soc_source,
+            )
+        except asyncio.CancelledError:
+            return
+        finally:
+            if self._charge_start_soc_task is task:
+                self._charge_start_soc_task = None
+
+    @staticmethod
+    def _capture_charging_completion_snapshot(
+        charge: Charge,
+        state: dict[str, Any],
+    ) -> None:
+        """Capture the charging entity while it still reports COMPLETED."""
+
+        charging_status = str(state.get("charging") or "").strip().upper()
+        if charging_status != "COMPLETED":
+            return
+
+        if charge.completion_time is None:
+            charge.completion_time = (
+                state.get("charging_updated_at")
+                or dt_util.now().isoformat()
+            )
+
+        charging_type = FordTriplogCoordinator._normalize_charging_type(
+            state.get("charging_type")
+        )
+        if charging_type:
+            charge.charging_type = charging_type
+
+        completion_soc = optional_float(state.get("charging_soc"))
+        if completion_soc is None:
+            completion_soc = optional_float(state.get("soc"))
+        charge.completion_soc = completion_soc
+
+        charger_energy = optional_float(
+            state.get("charger_energy_output_kwh")
+        )
+        if charger_energy is not None and charger_energy >= 0:
+            charge.charger_energy_output_kwh = charger_energy
+            charge.energy_added_kwh_charging_status = charger_energy
+
+    def _update_charge_energy_values(self, charge: Charge) -> None:
+        """Reconcile vehicle-energy sources without discarding provenance."""
+
+        start_soc = optional_float(charge.start_soc)
+        end_soc = optional_float(charge.end_soc)
+        energy_calculated = None
+        if start_soc is not None and end_soc is not None:
+            energy_calculated = round(
+                (max(0.0, end_soc - start_soc) / 100)
+                * self.battery_capacity,
+                2,
+            )
+
+        energy_fordpass = None
+        snapshot = charge.fordpass_last_charge
+        if isinstance(snapshot, dict):
+            raw_energy = self._snapshot_attribute(snapshot, "energyConsumed")
+            try:
+                if raw_energy is not None:
+                    energy_fordpass = round(float(raw_energy), 2)
+            except (TypeError, ValueError):
+                _LOGGER.debug(
+                    "FordPass energyConsumed is not numeric: %r",
+                    raw_energy,
+                )
+
+        energy_charging_status = optional_float(
+            charge.charger_energy_output_kwh
+        )
+        if energy_charging_status is not None:
+            energy_charging_status = round(energy_charging_status, 2)
+
+        charge.energy_added_kwh_calculated = energy_calculated
+        charge.energy_added_kwh_fordpass = energy_fordpass
+        charge.energy_added_kwh_charging_status = energy_charging_status
+
+        # Primary *vehicle* energy. Billed/metered energy stays separate and is
+        # already preferred by the cost calculator, which also allows charging
+        # losses to be derived from billed minus vehicle energy.
+        if energy_fordpass is not None and energy_fordpass > 0:
+            charge.energy_added_kwh = energy_fordpass
+            charge.energy_source = "ford_last_charge"
+        elif (
+            energy_charging_status is not None
+            and energy_charging_status > 0
+        ):
+            charge.energy_added_kwh = energy_charging_status
+            charge.energy_source = "charging_status"
+        else:
+            charge.energy_added_kwh = energy_calculated
+            charge.energy_source = "soc_calculated"
+
     async def start_charge(self):
         """Start charging session."""
 
@@ -2366,6 +2628,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 longitude=state.get("longitude"),
                 address=address,
             )
+            self.current_charge.charging_type = self._normalize_charging_type(
+                state.get("charging_type")
+            )
 
             # A user-defined charging location is authoritative and must win
             # over the bundled/generated OSM database.  Resolve it first at
@@ -2386,10 +2651,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
 
             _LOGGER.info(
-                "Charging started at %s%%",
+                "Charging started at %s%% (type=%s)",
                 state.get("soc"),
+                self.current_charge.charging_type or "UNKNOWN",
             )
 
+            self._schedule_charge_start_soc_recheck(
+                self.current_charge.charge_id
+            )
             self._schedule_coordinator_update(state)
 
     async def finish_charge(self):
@@ -2403,12 +2672,28 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
 
             charge = self.current_charge
+            self._cancel_charge_start_soc_recheck()
+
+            # Capture COMPLETED immediately. Ford may switch the same entity to
+            # NOT_PLUGGED_IN/UNKNOWN before the normal stable-state wait ends.
+            completion_state = self._read_vehicle_state()
+            self._capture_charging_completion_snapshot(
+                charge,
+                completion_state,
+            )
 
             state = await self._wait_for_stable_vehicle_state()
+            # Ford can publish ChargerEnergyOutput a few seconds after the
+            # first COMPLETED edge. Refresh the snapshot once more while
+            # preserving the timestamp of the first completion event.
+            self._capture_charging_completion_snapshot(charge, state)
             _LOGGER.info(
-                "Charge end: soc=%s charging=%s lat=%s lon=%s",
+                "Charge end: soc=%s charging=%s type=%s "
+                "charger_energy=%s lat=%s lon=%s",
                 state.get("soc"),
                 state.get("charging"),
+                charge.charging_type,
+                charge.charger_energy_output_kwh,
                 state.get("latitude"),
                 state.get("longitude"),
             )
@@ -2422,12 +2707,22 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             address = await self._get_address(state)
 
+            end_soc = (
+                charge.completion_soc
+                if charge.completion_soc is not None
+                else state.get("soc")
+            )
             charge.finish(
-                soc=state.get("soc"),
+                soc=end_soc,
                 latitude=state.get("latitude"),
                 longitude=state.get("longitude"),
                 address=address,
             )
+            if charge.completion_time is not None:
+                charge.end_time = charge.completion_time
+                charge.detected_end_time = charge.completion_time
+            if charge.completion_soc is not None:
+                charge.end_soc_source = "charging_completed"
 
             # Retry charging-site detection at the end of the session if the
             # start coordinates did not produce a match.
@@ -2609,48 +2904,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             charge_obj = await self.charging_location_resolver.async_resolve(
                 charge_obj
             )
-            charge = charge_obj.to_dict()
+            self._update_charge_energy_values(charge_obj)
 
-            start_soc = float(charge.get("start_soc") or 0)
-            end_soc = float(charge.get("end_soc") or 0)
-            soc_delta = max(0, end_soc - start_soc)
-
-            energy_calculated = round(
-                (soc_delta / 100) * self.battery_capacity,
-                2,
+            _LOGGER.info(
+                "Charging energy reconciled: charge=%s source=%s "
+                "primary=%s ford_last_charge=%s charging_status=%s "
+                "soc_calculated=%s billed=%s",
+                charge_obj.charge_id,
+                charge_obj.energy_source,
+                charge_obj.energy_added_kwh,
+                charge_obj.energy_added_kwh_fordpass,
+                charge_obj.energy_added_kwh_charging_status,
+                charge_obj.energy_added_kwh_calculated,
+                charge_obj.energy_billed_kwh,
             )
-
-            energy_fordpass = None
-            fordpass_snapshot = charge.get("fordpass_last_charge")
-
-            if isinstance(fordpass_snapshot, dict):
-                attributes = fordpass_snapshot.get("attributes")
-
-                if isinstance(attributes, dict):
-                    raw_energy = attributes.get("energyConsumed")
-
-                    try:
-                        if raw_energy is not None:
-                            energy_fordpass = round(float(raw_energy), 2)
-                    except (TypeError, ValueError):
-                        _LOGGER.debug(
-                            "FordPass energyConsumed is not numeric: %r",
-                            raw_energy,
-                        )
-
-            charge["energy_added_kwh_calculated"] = energy_calculated
-            charge["energy_added_kwh_fordpass"] = energy_fordpass
-
-            # FordPass energyConsumed is strongly rounded and may differ
-            # from the value shown in the FordPass app.
-            charge["energy_added_kwh"] = energy_calculated
-            charge["energy_source"] = "calculated"
-
-            # Keep the Charge object synchronized for automatic cost logic.
-            charge_obj.energy_added_kwh_calculated = energy_calculated
-            charge_obj.energy_added_kwh_fordpass = energy_fordpass
-            charge_obj.energy_added_kwh = energy_calculated
-            charge_obj.energy_source = "calculated"
 
             await self._apply_home_charging_costs(charge_obj)
             charge = charge_obj.to_dict()

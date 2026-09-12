@@ -3,8 +3,8 @@ Ford Triplog
 
 Charge object.
 
-Version: 1.8.4
-Release: 1.8.4 - Detailed charging costs and losses
+Version: 2.4.1
+Release: 2.4.1 - Charging source reconciliation
 """
 
 from __future__ import annotations
@@ -28,8 +28,32 @@ class Charge:
         self.start_time: str | None = None
         self.end_time: str | None = None
 
+        # Locally detected timestamps are retained even when Ford Last Charge
+        # later supplies the canonical session timestamps.
+        self.detected_start_time: str | None = None
+        self.detected_end_time: str | None = None
+
         self.start_soc: float | None = None
         self.end_soc: float | None = None
+
+        # Charging-SOC provenance. The first live value is never discarded; a
+        # later stable value may be preferred locally and Ford Last Charge may
+        # still become the canonical session SOC after completion.
+        self.initial_start_soc: float | None = None
+        self.stabilized_start_soc: float | None = None
+        self.stabilized_start_soc_time: str | None = None
+        self.start_soc_source: str = "live_initial"
+        self.completion_soc: float | None = None
+        self.completion_time: str | None = None
+        self.end_soc_source: str = "live"
+        self.fordpass_start_soc: float | None = None
+        self.fordpass_end_soc: float | None = None
+
+        # Snapshot values from the configured charging-status entity. These
+        # are deliberately separate from Ford Last Charge because Ford Connect
+        # can publish them at different times.
+        self.charging_type: str | None = None
+        self.charger_energy_output_kwh: float | None = None
 
         self.start_latitude: float | None = None
         self.start_longitude: float | None = None
@@ -42,6 +66,7 @@ class Charge:
 
         self.notes: str | None = None
         self.tags: list[str] = []
+        self.auto_memo: str | None = None
 
         self.trip_id: str | None = None
         self.previous_trip_id: str | None = None
@@ -66,8 +91,9 @@ class Charge:
 
         self.energy_added_kwh: float | None = None
         self.energy_added_kwh_fordpass: float | None = None
+        self.energy_added_kwh_charging_status: float | None = None
         self.energy_added_kwh_calculated: float | None = None
-        self.energy_source: str = "calculated"
+        self.energy_source: str = "soc_calculated"
 
         # Billed energy and charging losses
         self.energy_billed_kwh: float | None = None
@@ -111,8 +137,11 @@ class Charge:
         self.charge_id = now.strftime("%Y%m%dT%H%M%S")
         self.created = now.isoformat()
         self.start_time = now.isoformat()
+        self.detected_start_time = self.start_time
 
         self.start_soc = optional_float(soc)
+        self.initial_start_soc = self.start_soc
+        self.start_soc_source = "live_initial"
 
         self.start_latitude = latitude
         self.start_longitude = longitude
@@ -127,8 +156,10 @@ class Charge:
         address,
     ) -> None:
         self.end_time = dt_util.now().isoformat()
+        self.detected_end_time = self.end_time
 
         self.end_soc = optional_float(soc)
+        self.end_soc_source = "live"
 
         self.end_latitude = latitude
         self.end_longitude = longitude
@@ -269,6 +300,30 @@ class Charge:
                 )
                 self.price_per_kwh = self.effective_price_per_kwh
 
+        memo_parts: list[str] = []
+        if self.charging_type:
+            memo_parts.append(str(self.charging_type))
+        if self.start_soc is not None and self.end_soc is not None:
+            try:
+                start_soc = float(self.start_soc)
+                end_soc = float(self.end_soc)
+                memo_parts.append(
+                    f"SOC {start_soc:g} → {end_soc:g} % "
+                    f"({end_soc - start_soc:+g} %)"
+                )
+            except (TypeError, ValueError):
+                pass
+        if added_energy is not None:
+            memo_parts.append(f"vehicle {added_energy:.2f} kWh")
+        if self.energy_billed_kwh is not None:
+            memo_parts.append(f"billed {self.energy_billed_kwh:.2f} kWh")
+        if self.charging_loss_kwh is not None:
+            loss_text = f"loss {self.charging_loss_kwh:.2f} kWh"
+            if self.charging_loss_percent is not None:
+                loss_text += f" ({self.charging_loss_percent:.1f} %)"
+            memo_parts.append(loss_text)
+        self.auto_memo = " · ".join(memo_parts) or None
+
     @staticmethod
     def _optional_non_negative_float(
         value: Any,
@@ -296,8 +351,21 @@ class Charge:
             "created": self.created,
             "start_time": self.start_time,
             "end_time": self.end_time,
+            "detected_start_time": self.detected_start_time,
+            "detected_end_time": self.detected_end_time,
             "start_soc": self.start_soc,
             "end_soc": self.end_soc,
+            "initial_start_soc": self.initial_start_soc,
+            "stabilized_start_soc": self.stabilized_start_soc,
+            "stabilized_start_soc_time": self.stabilized_start_soc_time,
+            "start_soc_source": self.start_soc_source,
+            "completion_soc": self.completion_soc,
+            "completion_time": self.completion_time,
+            "end_soc_source": self.end_soc_source,
+            "fordpass_start_soc": self.fordpass_start_soc,
+            "fordpass_end_soc": self.fordpass_end_soc,
+            "charging_type": self.charging_type,
+            "charger_energy_output_kwh": self.charger_energy_output_kwh,
             "start_latitude": self.start_latitude,
             "start_longitude": self.start_longitude,
             "end_latitude": self.end_latitude,
@@ -306,6 +374,7 @@ class Charge:
             "end_address": self.end_address,
             "notes": self.notes,
             "tags": self.tags,
+            "auto_memo": self.auto_memo,
             "trip_id": self.trip_id,
             "previous_trip_id": self.previous_trip_id,
             "charging_site_id": self.charging_site_id,
@@ -326,6 +395,9 @@ class Charge:
             "data_source": self.data_source,
             "energy_added_kwh": self.energy_added_kwh,
             "energy_added_kwh_fordpass": self.energy_added_kwh_fordpass,
+            "energy_added_kwh_charging_status": (
+                self.energy_added_kwh_charging_status
+            ),
             "energy_added_kwh_calculated": (
                 self.energy_added_kwh_calculated
             ),
@@ -359,15 +431,56 @@ class Charge:
         """Create a charging session from stored data."""
         charge = cls()
 
-        charge.schema = data.get("schema", CHARGE_SCHEMA_VERSION)
+        try:
+            charge.schema = max(
+                int(data.get("schema", CHARGE_SCHEMA_VERSION)),
+                CHARGE_SCHEMA_VERSION,
+            )
+        except (TypeError, ValueError):
+            charge.schema = CHARGE_SCHEMA_VERSION
         charge.charge_id = data.get("charge_id")
         charge.created = data.get("created")
 
         charge.start_time = data.get("start_time")
         charge.end_time = data.get("end_time")
+        charge.detected_start_time = data.get(
+            "detected_start_time",
+            charge.start_time,
+        )
+        charge.detected_end_time = data.get(
+            "detected_end_time",
+            charge.end_time,
+        )
 
         charge.start_soc = data.get("start_soc")
         charge.end_soc = data.get("end_soc")
+        charge.initial_start_soc = data.get(
+            "initial_start_soc",
+            charge.start_soc,
+        )
+        charge.stabilized_start_soc = data.get("stabilized_start_soc")
+        charge.stabilized_start_soc_time = data.get(
+            "stabilized_start_soc_time"
+        )
+        charge.start_soc_source = data.get(
+            "start_soc_source",
+            "live_initial",
+        )
+        charge.completion_soc = data.get(
+            "completion_soc",
+            charge.end_soc,
+        )
+        charge.completion_time = data.get("completion_time")
+        charge.end_soc_source = data.get(
+            "end_soc_source",
+            "live",
+        )
+        charge.fordpass_start_soc = data.get("fordpass_start_soc")
+        charge.fordpass_end_soc = data.get("fordpass_end_soc")
+        charge.charging_type = data.get("charging_type")
+        charge.charger_energy_output_kwh = data.get(
+            "charger_energy_output_kwh"
+        )
 
         charge.start_latitude = data.get("start_latitude")
         charge.start_longitude = data.get("start_longitude")
@@ -380,6 +493,7 @@ class Charge:
 
         charge.notes = data.get("notes")
         charge.tags = data.get("tags", [])
+        charge.auto_memo = data.get("auto_memo")
 
         charge.trip_id = data.get("trip_id")
         charge.previous_trip_id = data.get("previous_trip_id")
@@ -408,15 +522,21 @@ class Charge:
         charge.energy_added_kwh_fordpass = data.get(
             "energy_added_kwh_fordpass"
         )
+        charge.energy_added_kwh_charging_status = data.get(
+            "energy_added_kwh_charging_status",
+            charge.charger_energy_output_kwh,
+        )
         charge.energy_added_kwh_calculated = data.get(
             "energy_added_kwh_calculated"
         )
         charge.energy_source = data.get(
             "energy_source",
             (
-                "fordpass"
+                "ford_last_charge"
                 if charge.energy_added_kwh_fordpass is not None
-                else "calculated"
+                else "charging_status"
+                if charge.energy_added_kwh_charging_status is not None
+                else "soc_calculated"
             ),
         )
 

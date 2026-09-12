@@ -93,10 +93,26 @@ CHARGE_EXPORT_FIELDS = (
     "charge_id",
     "start_time",
     "end_time",
+    "detected_start_time",
+    "detected_end_time",
     "duration_seconds",
     "start_soc",
     "end_soc",
+    "initial_start_soc",
+    "stabilized_start_soc",
+    "stabilized_start_soc_time",
+    "start_soc_source",
+    "completion_soc",
+    "completion_time",
+    "end_soc_source",
+    "fordpass_start_soc",
+    "fordpass_end_soc",
+    "charging_type",
     "energy_added_kwh",
+    "energy_added_kwh_fordpass",
+    "energy_added_kwh_charging_status",
+    "energy_added_kwh_calculated",
+    "charger_energy_output_kwh",
     "energy_billed_kwh",
     "energy_source",
     "energy_billed_source",
@@ -114,6 +130,7 @@ CHARGE_EXPORT_FIELDS = (
     "effective_price_per_kwh",
     "cost_source",
     "cost_verified",
+    "auto_memo",
     "start_address",
     "end_address",
     "start_latitude",
@@ -338,6 +355,8 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         "charge_id": _csv_value(data.get("charge_id")),
         "start_time": _csv_value(data.get("start_time")),
         "end_time": _csv_value(data.get("end_time")),
+        "detected_start_time": _csv_value(data.get("detected_start_time")),
+        "detected_end_time": _csv_value(data.get("detected_end_time")),
         "duration_seconds": _csv_value(
             _duration_seconds(
                 data.get("start_time"),
@@ -346,7 +365,33 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         ),
         "start_soc": _csv_value(data.get("start_soc")),
         "end_soc": _csv_value(data.get("end_soc")),
+        "initial_start_soc": _csv_value(data.get("initial_start_soc")),
+        "stabilized_start_soc": _csv_value(
+            data.get("stabilized_start_soc")
+        ),
+        "stabilized_start_soc_time": _csv_value(
+            data.get("stabilized_start_soc_time")
+        ),
+        "start_soc_source": _csv_value(data.get("start_soc_source")),
+        "completion_soc": _csv_value(data.get("completion_soc")),
+        "completion_time": _csv_value(data.get("completion_time")),
+        "end_soc_source": _csv_value(data.get("end_soc_source")),
+        "fordpass_start_soc": _csv_value(data.get("fordpass_start_soc")),
+        "fordpass_end_soc": _csv_value(data.get("fordpass_end_soc")),
+        "charging_type": _csv_value(data.get("charging_type")),
         "energy_added_kwh": _csv_value(data.get("energy_added_kwh")),
+        "energy_added_kwh_fordpass": _csv_value(
+            data.get("energy_added_kwh_fordpass")
+        ),
+        "energy_added_kwh_charging_status": _csv_value(
+            data.get("energy_added_kwh_charging_status")
+        ),
+        "energy_added_kwh_calculated": _csv_value(
+            data.get("energy_added_kwh_calculated")
+        ),
+        "charger_energy_output_kwh": _csv_value(
+            data.get("charger_energy_output_kwh")
+        ),
         "energy_billed_kwh": _csv_value(data.get("energy_billed_kwh")),
         "energy_source": _csv_value(data.get("energy_source")),
         "energy_billed_source": _csv_value(
