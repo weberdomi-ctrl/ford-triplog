@@ -1,0 +1,138 @@
+{
+  "schema": 1,
+  "profile_id": "mobilecharge_ch_receipt_v1",
+  "name": "MobileCharge Schweiz Beleg",
+  "version": "1.0",
+  "country": "CH",
+  "status": "candidate",
+  "tested_with_real_receipt": true,
+  "priority": 500,
+  "match_threshold": 0.75,
+  "match": {
+    "required_contains": [
+      "Startdatum",
+      "Angepasster Gesamtbetrag"
+    ],
+    "optional_contains": [
+      "Ladesession Elektrofahrzeug",
+      "Enddatum",
+      "Startgebühr",
+      "Parkgebühren",
+      "Zurückerstattet"
+    ]
+  },
+  "fields": {
+    "merchant": {
+      "method": "fixed",
+      "value": "MobileCharge"
+    },
+    "provider": {
+      "method": "fixed",
+      "value": "MobileCharge"
+    },
+    "billing_platform": {
+      "method": "fixed",
+      "value": "MobileCharge"
+    },
+    "station": {
+      "patterns": [
+        "Standort:\\s*([^\\r\\n]+)"
+      ],
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ],
+      "required": true
+    },
+    "charging_start": {
+      "patterns": [
+        "Startdatum:\\s*(\\d{1,2}/\\d{1,2}/\\d{4})\\s*[\\r\\n ]+\\s*(\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "join_groups": true,
+      "join_separator": " ",
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ],
+      "required": true
+    },
+    "charging_end": {
+      "patterns": [
+        "Enddatum:\\s*(\\d{1,2}/\\d{1,2}/\\d{4})\\s*[\\r\\n ]+\\s*(\\d{2}:\\d{2}:\\d{2})"
+      ],
+      "join_groups": true,
+      "join_separator": " ",
+      "transform": [
+        "strip",
+        "collapse_whitespace"
+      ]
+    },
+    "energy_kwh": {
+      "patterns": [
+        "Energie\\s*\\(\\s*([\\d.,]+)\\s*kWh\\s*\\)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "energy_cost": {
+      "patterns": [
+        "Energie\\s*\\(\\s*[\\d.,]+\\s*kWh\\s*\\)\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "parking_fee": {
+      "patterns": [
+        "Parkgebühren\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "session_fee": {
+      "patterns": [
+        "Startgebühr\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "subtotal": {
+      "patterns": [
+        "(?:^|\\n)\\s*Total\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "vat_rate": {
+      "patterns": [
+        "MWST\\s*:\\s*([\\d.,]+)%"
+      ],
+      "transform": "decimal"
+    },
+    "gross_total": {
+      "patterns": [
+        "Total\\s+inkl\\.\\s*MWST\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal"
+    },
+    "preauthorization": {
+      "patterns": [
+        "(?:^|\\n)\\s*Summe\\s+([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "refunded_amount": {
+      "patterns": [
+        "Zurückerstattet\\s+am\\s+\\d{2}\\.\\d{2}\\.\\d{4},?\\s*\\d{2}:\\d{2}:\\d{2}\\s+([\\d.,]+)\\s*CHF"
+      ],
+      "transform": "decimal"
+    },
+    "total": {
+      "patterns": [
+        "Angepasster Gesamtbetrag\\s+([\\d.,]+)\\s*CHF",
+        "Total\\s+inkl\\.\\s*MWST\\s*:\\s*CHF\\s*([\\d.,]+)"
+      ],
+      "transform": "decimal",
+      "required": true
+    },
+    "currency": {
+      "method": "fixed",
+      "value": "CHF"
+    }
+  }
+}
