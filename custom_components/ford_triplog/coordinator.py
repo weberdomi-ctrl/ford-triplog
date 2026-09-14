@@ -815,6 +815,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         if (
+            self.current_charge is not None
+            and charging_state == "IN_PROGRESS"
+            and self._capture_live_charging_snapshot(
+                self.current_charge,
+                self.vehicle_state,
+            )
+        ):
+            await self.storage.save_current_charge(
+                self.current_charge.to_dict()
+            )
+
+        if (
             self.last_charge_entity
             and event.data.get("entity_id") == self.last_charge_entity
         ):
@@ -2448,6 +2460,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             if charging_type:
                 charge.charging_type = charging_type
 
+            self._capture_live_charging_snapshot(charge, state)
+
             observed_soc = optional_float(state.get("charging_soc"))
             if observed_soc is None:
                 observed_soc = optional_float(state.get("soc"))
@@ -2485,6 +2499,72 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             if self._charge_start_soc_task is task:
                 self._charge_start_soc_task = None
 
+    def _capture_live_charging_snapshot(
+        self,
+        charge: Charge,
+        state: dict[str, Any],
+        *,
+        include_energy: bool = True,
+    ) -> bool:
+        """Retain the last valid values while charging is IN_PROGRESS."""
+
+        charging_status = str(state.get("charging") or "").strip().upper()
+        if charging_status != "IN_PROGRESS":
+            return False
+
+        changed = False
+
+        charging_type = self._normalize_charging_type(
+            state.get("charging_type")
+        )
+        if charging_type and charging_type != charge.charging_type:
+            charge.charging_type = charging_type
+            changed = True
+
+        live_soc = optional_float(state.get("charging_soc"))
+        if live_soc is None:
+            live_soc = optional_float(state.get("soc"))
+        if (
+            live_soc is not None
+            and live_soc != charge.last_live_charging_soc
+        ):
+            charge.last_live_charging_soc = live_soc
+            changed = True
+
+        if include_energy:
+            charger_energy = optional_float(
+                state.get("charger_energy_output_kwh")
+            )
+            if (
+                charger_energy is not None
+                and charger_energy >= 0
+                and charger_energy != charge.charger_energy_output_kwh
+            ):
+                # ChargerEnergyOutput is session-based but can reset late at
+                # the start of a new charge. Keep the newest valid observation
+                # rather than the maximum so a stale previous-session value
+                # can be replaced by the current session value.
+                charge.charger_energy_output_kwh = charger_energy
+                charge.energy_added_kwh_charging_status = charger_energy
+                changed = True
+
+        if changed:
+            charge.last_live_charging_status = "IN_PROGRESS"
+            charge.last_live_charging_updated_at = (
+                state.get("charging_updated_at")
+                or dt_util.now().isoformat()
+            )
+            _LOGGER.debug(
+                "Charging live snapshot: charge=%s type=%s soc=%s "
+                "charger_energy=%s",
+                charge.charge_id,
+                charge.charging_type or "UNKNOWN",
+                charge.last_live_charging_soc,
+                charge.charger_energy_output_kwh,
+            )
+
+        return changed
+
     @staticmethod
     def _capture_charging_completion_snapshot(
         charge: Charge,
@@ -2511,6 +2591,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         completion_soc = optional_float(state.get("charging_soc"))
         if completion_soc is None:
             completion_soc = optional_float(state.get("soc"))
+        if completion_soc is None:
+            completion_soc = optional_float(charge.last_live_charging_soc)
         charge.completion_soc = completion_soc
 
         charger_energy = optional_float(
@@ -2631,6 +2713,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.current_charge.charging_type = self._normalize_charging_type(
                 state.get("charging_type")
             )
+            self._capture_live_charging_snapshot(
+                self.current_charge,
+                state,
+                include_energy=False,
+            )
 
             # A user-defined charging location is authoritative and must win
             # over the bundled/generated OSM database.  Resolve it first at
@@ -2707,11 +2794,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             address = await self._get_address(state)
 
-            end_soc = (
-                charge.completion_soc
-                if charge.completion_soc is not None
-                else state.get("soc")
-            )
+            end_soc = charge.completion_soc
+            if end_soc is None:
+                end_soc = optional_float(state.get("charging_soc"))
+            if end_soc is None:
+                end_soc = optional_float(state.get("soc"))
+            if end_soc is None:
+                end_soc = optional_float(charge.last_live_charging_soc)
+
             charge.finish(
                 soc=end_soc,
                 latitude=state.get("latitude"),

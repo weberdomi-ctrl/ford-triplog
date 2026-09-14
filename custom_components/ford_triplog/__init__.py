@@ -7,7 +7,7 @@ Home Assistant integration setup.
 
 Version: 2.4.1
 Phase: Charging reconciliation
-Build: 24101
+Build: 24102
 
 Changes:
 
@@ -38,6 +38,8 @@ from .const import (
     DEFAULT_JOURNEY_HOME_ZONE,
     DEFAULT_JOURNEY_MAX_GAP_HOURS,
     DOMAIN,
+    VERSION,
+    BUILD,
 )
 from .coordinator import FordTriplogCoordinator
 from .geo import FordTriplogGeo
@@ -236,8 +238,10 @@ async def async_setup_entry(
         PLATFORMS,
     )
 
-    _LOGGER.debug(
-        "Ford Triplog initialized",
+    _LOGGER.info(
+        "Ford Triplog %s (build %s) initialized",
+        VERSION,
+        BUILD,
     )
 
     return True

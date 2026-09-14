@@ -1777,6 +1777,15 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "charger_energy_output_kwh": data.get(
                     "charger_energy_output_kwh"
                 ),
+                "last_live_charging_soc": data.get(
+                    "last_live_charging_soc"
+                ),
+                "last_live_charging_status": data.get(
+                    "last_live_charging_status"
+                ),
+                "last_live_charging_updated_at": data.get(
+                    "last_live_charging_updated_at"
+                ),
                 "energy_billed_kwh": data.get("energy_billed_kwh"),
                 "energy_source": data.get("energy_source"),
                 "energy_billed_source": data.get("energy_billed_source"),
@@ -5459,6 +5468,15 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             "charging_type": last_charge.get("charging_type"),
             "charger_energy_output_kwh": last_charge.get(
                 "charger_energy_output_kwh"
+            ),
+            "last_live_charging_soc": last_charge.get(
+                "last_live_charging_soc"
+            ),
+            "last_live_charging_status": last_charge.get(
+                "last_live_charging_status"
+            ),
+            "last_live_charging_updated_at": last_charge.get(
+                "last_live_charging_updated_at"
             ),
             "soc_added": soc_added,
             "energy_added_kwh": last_charge.get("energy_added_kwh"),

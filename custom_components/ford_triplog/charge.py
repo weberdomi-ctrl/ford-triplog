@@ -54,6 +54,9 @@ class Charge:
         # can publish them at different times.
         self.charging_type: str | None = None
         self.charger_energy_output_kwh: float | None = None
+        self.last_live_charging_soc: float | None = None
+        self.last_live_charging_status: str | None = None
+        self.last_live_charging_updated_at: str | None = None
 
         self.start_latitude: float | None = None
         self.start_longitude: float | None = None
@@ -366,6 +369,11 @@ class Charge:
             "fordpass_end_soc": self.fordpass_end_soc,
             "charging_type": self.charging_type,
             "charger_energy_output_kwh": self.charger_energy_output_kwh,
+            "last_live_charging_soc": self.last_live_charging_soc,
+            "last_live_charging_status": self.last_live_charging_status,
+            "last_live_charging_updated_at": (
+                self.last_live_charging_updated_at
+            ),
             "start_latitude": self.start_latitude,
             "start_longitude": self.start_longitude,
             "end_latitude": self.end_latitude,
@@ -480,6 +488,15 @@ class Charge:
         charge.charging_type = data.get("charging_type")
         charge.charger_energy_output_kwh = data.get(
             "charger_energy_output_kwh"
+        )
+        charge.last_live_charging_soc = data.get(
+            "last_live_charging_soc"
+        )
+        charge.last_live_charging_status = data.get(
+            "last_live_charging_status"
+        )
+        charge.last_live_charging_updated_at = data.get(
+            "last_live_charging_updated_at"
         )
 
         charge.start_latitude = data.get("start_latitude")

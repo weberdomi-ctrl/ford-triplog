@@ -113,6 +113,9 @@ CHARGE_EXPORT_FIELDS = (
     "energy_added_kwh_charging_status",
     "energy_added_kwh_calculated",
     "charger_energy_output_kwh",
+    "last_live_charging_soc",
+    "last_live_charging_status",
+    "last_live_charging_updated_at",
     "energy_billed_kwh",
     "energy_source",
     "energy_billed_source",
@@ -391,6 +394,15 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         ),
         "charger_energy_output_kwh": _csv_value(
             data.get("charger_energy_output_kwh")
+        ),
+        "last_live_charging_soc": _csv_value(
+            data.get("last_live_charging_soc")
+        ),
+        "last_live_charging_status": _csv_value(
+            data.get("last_live_charging_status")
+        ),
+        "last_live_charging_updated_at": _csv_value(
+            data.get("last_live_charging_updated_at")
         ),
         "energy_billed_kwh": _csv_value(data.get("energy_billed_kwh")),
         "energy_source": _csv_value(data.get("energy_source")),
