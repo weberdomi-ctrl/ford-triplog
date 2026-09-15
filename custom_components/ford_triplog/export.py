@@ -169,6 +169,25 @@ def _parse_local_date(value: Any) -> date | None:
     return dt_util.as_local(timestamp).date()
 
 
+def _normalize_filter_date(value: Any) -> date | None:
+    """Normalize config-flow date values before export comparisons."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text)
+        except ValueError as error:
+            raise ValueError(f"Invalid export date: {value!r}") from error
+    raise ValueError(f"Unsupported export date type: {type(value).__name__}")
+
+
 def _address_text(value: Any) -> str:
     if value is None:
         return ""
@@ -525,9 +544,12 @@ class FordTriplogExporter:
     async def async_export_trips(
         self,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
+
         if start_date is not None and end_date is not None and start_date > end_date:
             raise ValueError("start_date must not be after end_date")
 
@@ -570,10 +592,13 @@ class FordTriplogExporter:
         self,
         journey_storage: Any,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
         """Export archived Journeys to one CSV file."""
+
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
 
         if (
             start_date is not None
@@ -659,10 +684,13 @@ class FordTriplogExporter:
         self,
         charge_manager: Any,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
         """Export archived charging sessions to one CSV file."""
+
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
 
         if (
             start_date is not None
