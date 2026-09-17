@@ -6427,21 +6427,45 @@ class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
             sites = []
 
         now = dt_util.now()
-        month_key = now.strftime("%Y-%m")
+        current_month_key = now.strftime("%Y-%m")
         work_defined = any(
             str(site.get("type") or "").strip().lower() == "work"
             for site in sites
         )
-        buckets = {
-            "home": {"energy": 0.0, "cost": 0.0, "count": 0},
-            "work": {"energy": 0.0, "cost": 0.0, "count": 0},
-            "external": {"energy": 0.0, "cost": 0.0, "count": 0},
-        }
-        total_energy = 0.0
-        total_cost = 0.0
-        total_count = 0
+
+        def empty_period() -> dict[str, dict[str, float | int]]:
+            return {
+                "home": {"energy": 0.0, "cost": 0.0, "count": 0},
+                "work": {"energy": 0.0, "cost": 0.0, "count": 0},
+                "external": {"energy": 0.0, "cost": 0.0, "count": 0},
+            }
+
+        def month_key_offset(offset: int) -> str:
+            month_index = now.year * 12 + (now.month - 1) + offset
+            year, month_zero = divmod(month_index, 12)
+            return f"{year:04d}-{month_zero + 1:02d}"
+
+        # Keep a stable rolling window including the current month.
+        month_keys = [month_key_offset(offset) for offset in range(-11, 1)]
+        monthly_periods = {key: empty_period() for key in month_keys}
+
+        # Older history remains compact: only the two preceding calendar years.
+        yearly_keys = [str(now.year - 1), str(now.year - 2)]
+        yearly_periods = {key: empty_period() for key in yearly_keys}
+
         currencies: set[str] = set()
         energy_sources: dict[str, int] = {}
+
+        def add_to_period(
+            period: dict[str, dict[str, float | int]],
+            category: str,
+            energy: float,
+            cost: float,
+        ) -> None:
+            row = period[category]
+            row["energy"] = float(row["energy"]) + energy
+            row["cost"] = float(row["cost"]) + cost
+            row["count"] = int(row["count"]) + 1
 
         for charge in charges:
             if not charge.get("include_in_statistics", True):
@@ -6456,47 +6480,109 @@ class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
                 local_start = dt_util.as_local(parsed)
             except (TypeError, ValueError):
                 continue
-            if local_start.strftime("%Y-%m") != month_key:
+
+            charge_month_key = local_start.strftime("%Y-%m")
+            charge_year_key = local_start.strftime("%Y")
+            if (
+                charge_month_key not in monthly_periods
+                and charge_year_key not in yearly_periods
+            ):
                 continue
 
             category = self._site_type_for_charge(charge, sites)
             energy, energy_source = self._energy_for_charge(charge)
             cost = self._optional_float(charge.get("cost_total")) or 0.0
-            currency = str(charge.get("currency") or "").strip().upper()
-            if currency:
-                currencies.add(currency)
 
-            row = buckets[category]
-            row["energy"] += energy
-            row["cost"] += cost
-            row["count"] += 1
-            total_energy += energy
-            total_cost += cost
-            total_count += 1
-            energy_sources[energy_source] = energy_sources.get(energy_source, 0) + 1
+            if charge_month_key in monthly_periods:
+                add_to_period(
+                    monthly_periods[charge_month_key], category, energy, cost
+                )
 
-        self._value = round(total_energy, 2)
+            if charge_year_key in yearly_periods:
+                add_to_period(
+                    yearly_periods[charge_year_key], category, energy, cost
+                )
+
+            if charge_month_key == current_month_key:
+                currency = str(charge.get("currency") or "").strip().upper()
+                if currency:
+                    currencies.add(currency)
+                energy_sources[energy_source] = (
+                    energy_sources.get(energy_source, 0) + 1
+                )
+
+        def serialize_period(
+            period: dict[str, dict[str, float | int]]
+        ) -> dict[str, Any]:
+            home = period["home"]
+            work = period["work"]
+            external = period["external"]
+            total_energy = (
+                float(home["energy"])
+                + float(work["energy"])
+                + float(external["energy"])
+            )
+            total_cost = (
+                float(home["cost"])
+                + float(work["cost"])
+                + float(external["cost"])
+            )
+            total_count = (
+                int(home["count"])
+                + int(work["count"])
+                + int(external["count"])
+            )
+            result: dict[str, Any] = {
+                "home_energy_kwh": round(float(home["energy"]), 2),
+                "home_cost": round(float(home["cost"]), 2),
+                "home_charge_count": int(home["count"]),
+                "external_energy_kwh": round(float(external["energy"]), 2),
+                "external_cost": round(float(external["cost"]), 2),
+                "external_charge_count": int(external["count"]),
+                "total_energy_kwh": round(total_energy, 2),
+                "total_cost": round(total_cost, 2),
+                "total_charge_count": total_count,
+            }
+            if work_defined or int(work["count"]) > 0:
+                result.update({
+                    "work_energy_kwh": round(float(work["energy"]), 2),
+                    "work_cost": round(float(work["cost"]), 2),
+                    "work_charge_count": int(work["count"]),
+                })
+            return result
+
+        monthly_breakdown = {
+            key: serialize_period(monthly_periods[key]) for key in month_keys
+        }
+        yearly_summary = {
+            key: serialize_period(yearly_periods[key]) for key in yearly_keys
+        }
+
+        current = monthly_breakdown[current_month_key]
+        self._value = current["total_energy_kwh"]
         self._attributes = {
-            "month": month_key,
-            "home_energy_month_kwh": round(buckets["home"]["energy"], 2),
-            "home_cost_month": round(buckets["home"]["cost"], 2),
-            "home_charge_count_month": buckets["home"]["count"],
-            "external_energy_month_kwh": round(buckets["external"]["energy"], 2),
-            "external_cost_month": round(buckets["external"]["cost"], 2),
-            "external_charge_count_month": buckets["external"]["count"],
-            "total_energy_month_kwh": round(total_energy, 2),
-            "total_cost_month": round(total_cost, 2),
-            "total_charge_count_month": total_count,
+            "month": current_month_key,
+            "home_energy_month_kwh": current["home_energy_kwh"],
+            "home_cost_month": current["home_cost"],
+            "home_charge_count_month": current["home_charge_count"],
+            "external_energy_month_kwh": current["external_energy_kwh"],
+            "external_cost_month": current["external_cost"],
+            "external_charge_count_month": current["external_charge_count"],
+            "total_energy_month_kwh": current["total_energy_kwh"],
+            "total_cost_month": current["total_cost"],
+            "total_charge_count_month": current["total_charge_count"],
             "currency": next(iter(currencies)) if len(currencies) == 1 else None,
             "currencies": sorted(currencies) if len(currencies) > 1 else None,
             "energy_source_counts": energy_sources,
             "energy_priority": "billed > vehicle > charging_status > ford_last_charge > soc_calculated",
+            "monthly_breakdown": monthly_breakdown,
+            "yearly_summary": yearly_summary,
         }
-        if work_defined or buckets["work"]["count"] > 0:
+        if "work_energy_kwh" in current:
             self._attributes.update({
-                "work_energy_month_kwh": round(buckets["work"]["energy"], 2),
-                "work_cost_month": round(buckets["work"]["cost"], 2),
-                "work_charge_count_month": buckets["work"]["count"],
+                "work_energy_month_kwh": current["work_energy_kwh"],
+                "work_cost_month": current["work_cost"],
+                "work_charge_count_month": current["work_charge_count"],
             })
         self._attributes = {
             key: value for key, value in self._attributes.items()
