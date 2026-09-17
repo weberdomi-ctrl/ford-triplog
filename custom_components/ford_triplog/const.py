@@ -18,8 +18,8 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.4.2"
-BUILD: Final = "24203"
+VERSION: Final = "2.4.0"
+BUILD: Final = "24001"
 
 #
 # Storage
