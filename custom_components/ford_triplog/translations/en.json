@@ -1048,6 +1048,18 @@
       },
       "route_history": {
         "name": "Route History"
+      },
+      "last_trip_soc_recovered": {
+        "name": "SOC recovered in last trip"
+      },
+      "last_trip_regenerated_energy": {
+        "name": "Net recuperation in last trip"
+      },
+      "recuperation_statistics": {
+        "name": "Net recuperation statistics"
+      },
+      "charging_monthly_statistics": {
+        "name": "Monthly charging statistics"
       }
     },
     "binary_sensor": {

@@ -175,6 +175,9 @@ class ChargingLocationResolver:
         charge.charging_site_quality = (
             best_site.get("quality") or "user"
         )
+        charge.charging_site_type = str(
+            best_site.get("type") or "public"
+        ).strip().lower()
         charge.charging_site_distance_m = round(best_distance, 1)
 
         _LOGGER.info(

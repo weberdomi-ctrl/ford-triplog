@@ -1048,6 +1048,18 @@
       },
       "last_charge_energy_fordpass": {
         "name": "Energia ostatniej sesji ładowania z FordPass"
+      },
+      "last_trip_soc_recovered": {
+        "name": "Odzysk SOC podczas ostatniej jazdy"
+      },
+      "last_trip_regenerated_energy": {
+        "name": "Rekuperacja netto podczas ostatniej jazdy"
+      },
+      "recuperation_statistics": {
+        "name": "Statystyki rekuperacji netto"
+      },
+      "charging_monthly_statistics": {
+        "name": "Miesięczne statystyki ładowania"
       }
     },
     "binary_sensor": {

@@ -93,10 +93,29 @@ CHARGE_EXPORT_FIELDS = (
     "charge_id",
     "start_time",
     "end_time",
+    "detected_start_time",
+    "detected_end_time",
     "duration_seconds",
     "start_soc",
     "end_soc",
+    "initial_start_soc",
+    "stabilized_start_soc",
+    "stabilized_start_soc_time",
+    "start_soc_source",
+    "completion_soc",
+    "completion_time",
+    "end_soc_source",
+    "fordpass_start_soc",
+    "fordpass_end_soc",
+    "charging_type",
     "energy_added_kwh",
+    "energy_added_kwh_fordpass",
+    "energy_added_kwh_charging_status",
+    "energy_added_kwh_calculated",
+    "charger_energy_output_kwh",
+    "last_live_charging_soc",
+    "last_live_charging_status",
+    "last_live_charging_updated_at",
     "energy_billed_kwh",
     "energy_source",
     "energy_billed_source",
@@ -114,6 +133,7 @@ CHARGE_EXPORT_FIELDS = (
     "effective_price_per_kwh",
     "cost_source",
     "cost_verified",
+    "auto_memo",
     "start_address",
     "end_address",
     "start_latitude",
@@ -147,6 +167,25 @@ def _parse_local_date(value: Any) -> date | None:
     if timestamp.tzinfo is None:
         timestamp = timestamp.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return dt_util.as_local(timestamp).date()
+
+
+def _normalize_filter_date(value: Any) -> date | None:
+    """Normalize config-flow date values before export comparisons."""
+    if value is None or value == "":
+        return None
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return date.fromisoformat(text)
+        except ValueError as error:
+            raise ValueError(f"Invalid export date: {value!r}") from error
+    raise ValueError(f"Unsupported export date type: {type(value).__name__}")
 
 
 def _address_text(value: Any) -> str:
@@ -338,6 +377,8 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         "charge_id": _csv_value(data.get("charge_id")),
         "start_time": _csv_value(data.get("start_time")),
         "end_time": _csv_value(data.get("end_time")),
+        "detected_start_time": _csv_value(data.get("detected_start_time")),
+        "detected_end_time": _csv_value(data.get("detected_end_time")),
         "duration_seconds": _csv_value(
             _duration_seconds(
                 data.get("start_time"),
@@ -346,7 +387,42 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         ),
         "start_soc": _csv_value(data.get("start_soc")),
         "end_soc": _csv_value(data.get("end_soc")),
+        "initial_start_soc": _csv_value(data.get("initial_start_soc")),
+        "stabilized_start_soc": _csv_value(
+            data.get("stabilized_start_soc")
+        ),
+        "stabilized_start_soc_time": _csv_value(
+            data.get("stabilized_start_soc_time")
+        ),
+        "start_soc_source": _csv_value(data.get("start_soc_source")),
+        "completion_soc": _csv_value(data.get("completion_soc")),
+        "completion_time": _csv_value(data.get("completion_time")),
+        "end_soc_source": _csv_value(data.get("end_soc_source")),
+        "fordpass_start_soc": _csv_value(data.get("fordpass_start_soc")),
+        "fordpass_end_soc": _csv_value(data.get("fordpass_end_soc")),
+        "charging_type": _csv_value(data.get("charging_type")),
         "energy_added_kwh": _csv_value(data.get("energy_added_kwh")),
+        "energy_added_kwh_fordpass": _csv_value(
+            data.get("energy_added_kwh_fordpass")
+        ),
+        "energy_added_kwh_charging_status": _csv_value(
+            data.get("energy_added_kwh_charging_status")
+        ),
+        "energy_added_kwh_calculated": _csv_value(
+            data.get("energy_added_kwh_calculated")
+        ),
+        "charger_energy_output_kwh": _csv_value(
+            data.get("charger_energy_output_kwh")
+        ),
+        "last_live_charging_soc": _csv_value(
+            data.get("last_live_charging_soc")
+        ),
+        "last_live_charging_status": _csv_value(
+            data.get("last_live_charging_status")
+        ),
+        "last_live_charging_updated_at": _csv_value(
+            data.get("last_live_charging_updated_at")
+        ),
         "energy_billed_kwh": _csv_value(data.get("energy_billed_kwh")),
         "energy_source": _csv_value(data.get("energy_source")),
         "energy_billed_source": _csv_value(
@@ -468,9 +544,12 @@ class FordTriplogExporter:
     async def async_export_trips(
         self,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
+
         if start_date is not None and end_date is not None and start_date > end_date:
             raise ValueError("start_date must not be after end_date")
 
@@ -513,10 +592,13 @@ class FordTriplogExporter:
         self,
         journey_storage: Any,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
         """Export archived Journeys to one CSV file."""
+
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
 
         if (
             start_date is not None
@@ -602,10 +684,13 @@ class FordTriplogExporter:
         self,
         charge_manager: Any,
         *,
-        start_date: date | None = None,
-        end_date: date | None = None,
+        start_date: date | str | None = None,
+        end_date: date | str | None = None,
     ) -> dict[str, Any]:
         """Export archived charging sessions to one CSV file."""
+
+        start_date = _normalize_filter_date(start_date)
+        end_date = _normalize_filter_date(end_date)
 
         if (
             start_date is not None

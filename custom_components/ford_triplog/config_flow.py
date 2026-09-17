@@ -2128,7 +2128,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             location,
         ]
 
-        energy = getattr(charge, "energy_added_kwh", None)
+        energy = getattr(charge, "energy_billed_kwh", None)
+        if energy is None:
+            energy = getattr(charge, "energy_added_kwh", None)
         try:
             energy_value = float(energy) if energy is not None else None
         except (TypeError, ValueError):
@@ -3318,8 +3320,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     f"{self._format_optional_number(start_soc, 0)} % → "
                     f"{self._format_optional_number(end_soc, 0)} %"
                 )
+                display_energy = (
+                    getattr(charge, "energy_billed_kwh", None)
+                    if charge else None
+                )
+                if display_energy is None and charge:
+                    display_energy = getattr(charge, "energy_added_kwh", None)
                 energy = (
-                    f"{self._format_optional_number(getattr(charge, 'energy_added_kwh', None), 2)} kWh"
+                    f"{self._format_optional_number(display_energy, 2)} kWh"
                     if charge else "—"
                 )
                 label = f"⚡ {date_text} · {location}"

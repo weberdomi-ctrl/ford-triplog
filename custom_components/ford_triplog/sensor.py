@@ -160,6 +160,7 @@ async def async_setup_entry(
             FordTriplogLastChargeSocAddedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeDurationSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySensor(coordinator, history, common_translations),
+            FordTriplogLastChargeEnergyFordPassSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergyCalculatedSensor(coordinator, history, common_translations),
             FordTriplogLastChargeEnergySourceSensor(coordinator, history, common_translations),
             FordTriplogLastChargeStartAddressSensor(coordinator, history, common_translations),
@@ -167,6 +168,10 @@ async def async_setup_entry(
             FordTriplogLastTripStartSocSensor(coordinator, history, common_translations),
             FordTriplogLastTripEndSocSensor(coordinator, history, common_translations),
             FordTriplogLastTripSocUsedSensor(coordinator, history, common_translations),
+            FordTriplogLastTripSocRecoveredSensor(coordinator, history, common_translations),
+            FordTriplogLastTripRegeneratedEnergySensor(coordinator, history, common_translations),
+            FordTriplogRecuperationStatisticsSensor(coordinator, history, common_translations),
+            FordTriplogChargingMonthlyStatisticsSensor(coordinator, history, common_translations),
 
             FordTriplogTopTripSensor(
                 coordinator,
@@ -1755,7 +1760,36 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "start_longitude": data.get("start_longitude"),
                 "start_soc": data.get("start_soc"),
                 "end_soc": data.get("end_soc"),
+                "initial_start_soc": data.get("initial_start_soc"),
+                "stabilized_start_soc": data.get("stabilized_start_soc"),
+                "start_soc_source": data.get("start_soc_source"),
+                "completion_soc": data.get("completion_soc"),
+                "end_soc_source": data.get("end_soc_source"),
+                "fordpass_start_soc": data.get("fordpass_start_soc"),
+                "fordpass_end_soc": data.get("fordpass_end_soc"),
+                "charging_type": data.get("charging_type"),
                 "energy_added_kwh": data.get("energy_added_kwh"),
+                "energy_added_kwh_fordpass": data.get(
+                    "energy_added_kwh_fordpass"
+                ),
+                "energy_added_kwh_charging_status": data.get(
+                    "energy_added_kwh_charging_status"
+                ),
+                "energy_added_kwh_calculated": data.get(
+                    "energy_added_kwh_calculated"
+                ),
+                "charger_energy_output_kwh": data.get(
+                    "charger_energy_output_kwh"
+                ),
+                "last_live_charging_soc": data.get(
+                    "last_live_charging_soc"
+                ),
+                "last_live_charging_status": data.get(
+                    "last_live_charging_status"
+                ),
+                "last_live_charging_updated_at": data.get(
+                    "last_live_charging_updated_at"
+                ),
                 "energy_billed_kwh": data.get("energy_billed_kwh"),
                 "energy_source": data.get("energy_source"),
                 "energy_billed_source": data.get("energy_billed_source"),
@@ -1774,6 +1808,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "cost_source": data.get("cost_source"),
                 "cost_verified": data.get("cost_verified"),
                 "receipt_filename": data.get("receipt_filename"),
+                "auto_memo": data.get("auto_memo"),
                 "receipts": receipts_by_charge.get(
                     str(data.get("charge_id") or ""),
                     [],
@@ -5413,6 +5448,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         attributes = {
             "start_time": last_charge.get("start_time"),
             "end_time": last_charge.get("end_time"),
+            "detected_start_time": last_charge.get("detected_start_time"),
+            "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
             "duration": (
                 format_duration(duration_seconds)
@@ -5421,10 +5458,37 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             ),
             "start_soc": last_charge.get("start_soc"),
             "end_soc": last_charge.get("end_soc"),
+            "initial_start_soc": last_charge.get("initial_start_soc"),
+            "stabilized_start_soc": last_charge.get("stabilized_start_soc"),
+            "stabilized_start_soc_time": last_charge.get(
+                "stabilized_start_soc_time"
+            ),
+            "start_soc_source": last_charge.get("start_soc_source"),
+            "completion_soc": last_charge.get("completion_soc"),
+            "completion_time": last_charge.get("completion_time"),
+            "end_soc_source": last_charge.get("end_soc_source"),
+            "fordpass_start_soc": last_charge.get("fordpass_start_soc"),
+            "fordpass_end_soc": last_charge.get("fordpass_end_soc"),
+            "charging_type": last_charge.get("charging_type"),
+            "charger_energy_output_kwh": last_charge.get(
+                "charger_energy_output_kwh"
+            ),
+            "last_live_charging_soc": last_charge.get(
+                "last_live_charging_soc"
+            ),
+            "last_live_charging_status": last_charge.get(
+                "last_live_charging_status"
+            ),
+            "last_live_charging_updated_at": last_charge.get(
+                "last_live_charging_updated_at"
+            ),
             "soc_added": soc_added,
             "energy_added_kwh": last_charge.get("energy_added_kwh"),
             "energy_added_kwh_fordpass": last_charge.get(
                 "energy_added_kwh_fordpass"
+            ),
+            "energy_added_kwh_charging_status": last_charge.get(
+                "energy_added_kwh_charging_status"
             ),
             "energy_added_kwh_calculated": last_charge.get(
                 "energy_added_kwh_calculated"
@@ -5461,6 +5525,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             "receipt_filename": last_charge.get(
                 "receipt_filename"
             ),
+            "auto_memo": last_charge.get("auto_memo"),
             "display_location": display_location,
             "zone_name": zone_name,
             "charging_location": charging_location,
@@ -5671,6 +5736,29 @@ class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     ):
         self._value = (
             last_charge.get("energy_added_kwh")
+            if last_charge
+            else None
+        )
+
+
+class FordTriplogLastChargeEnergyFordPassSensor(FordTriplogSensorBase):
+    """Ford Last Charge vehicle-energy value."""
+
+    _attr_translation_key = "last_charge_energy_fordpass"
+    _attr_unique_id = "ford_triplog_last_charge_energy_fordpass"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:car-electric"
+
+    def update_values(
+        self,
+        statistics,
+        last_trip,
+        last_charge,
+    ):
+        self._value = (
+            last_charge.get("energy_added_kwh_fordpass")
             if last_charge
             else None
         )
@@ -6091,6 +6179,334 @@ class FordTriplogLastTripSocUsedSensor(FordTriplogSensorBase):
             return
 
         self._value = round(start - end, 1)
+
+class FordTriplogLastTripSocRecoveredSensor(FordTriplogSensorBase):
+    """Net SOC recovered during the last trip."""
+
+    _attr_translation_key = "last_trip_soc_recovered"
+    _attr_device_class = SensorDeviceClass.BATTERY
+    _attr_unique_id = "ford_triplog_last_trip_soc_recovered"
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:battery-plus"
+
+    def update_values(self, statistics, last_trip, last_charge):
+        if not last_trip:
+            self._value = None
+            return
+
+        start = last_trip.get("start_soc")
+        end = last_trip.get("end_soc")
+        if start is None or end is None:
+            self._value = None
+            return
+
+        try:
+            self._value = round(max(float(end) - float(start), 0.0), 1)
+        except (TypeError, ValueError):
+            self._value = None
+
+
+class FordTriplogLastTripRegeneratedEnergySensor(FordTriplogSensorBase):
+    """SOC-derived net recuperation energy during the last trip."""
+
+    _attr_translation_key = "last_trip_regenerated_energy"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_unique_id = "ford_triplog_last_trip_regenerated_energy"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:battery-sync-outline"
+
+    def update_values(self, statistics, last_trip, last_charge):
+        if not last_trip:
+            self._value = None
+            return
+
+        stored = last_trip.get("regenerated_energy_kwh")
+        if stored is not None:
+            try:
+                self._value = round(max(float(stored), 0.0), 2)
+                return
+            except (TypeError, ValueError):
+                pass
+
+        start = last_trip.get("start_soc")
+        end = last_trip.get("end_soc")
+        if start is None or end is None:
+            self._value = None
+            return
+
+        try:
+            recovered = max(float(end) - float(start), 0.0)
+            capacity = float(
+                last_trip.get("battery_capacity_kwh")
+                or self.coordinator.battery_capacity
+            )
+            self._value = round(recovered * capacity / 100.0, 2)
+        except (TypeError, ValueError):
+            self._value = None
+
+
+class FordTriplogRecuperationStatisticsSensor(FordTriplogSensorBase):
+    """Aggregate SOC-based net recuperation statistics."""
+
+    _attr_translation_key = "recuperation_statistics"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_unique_id = "ford_triplog_recuperation_statistics"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:battery-sync"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    def update_values(self, statistics, last_trip, last_charge):
+        statistics = statistics or {}
+        self._value = statistics.get("total_regenerated_energy_kwh", 0.0)
+        top = statistics.get("top_regen_trip")
+        self._attributes = {
+            "total_soc_recovered": statistics.get("total_soc_recovered", 0.0),
+            "regen_trip_count": statistics.get("regen_trip_count", 0),
+            "average_regenerated_energy_kwh": statistics.get(
+                "average_regenerated_energy_kwh", 0.0
+            ),
+            "top_regen_trip": top,
+            "calculation": "soc_net_gain",
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
+class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
+    """Current-month charging energy and costs by Home, Work and External."""
+
+    _attr_translation_key = "charging_monthly_statistics"
+    _attr_device_class = SensorDeviceClass.ENERGY
+    _attr_unique_id = "ford_triplog_charging_monthly_statistics"
+    _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_suggested_display_precision = 2
+    _attr_icon = "mdi:calendar-month"
+
+    def __init__(self, coordinator, history, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @classmethod
+    def _energy_for_charge(cls, charge: dict[str, Any]) -> tuple[float, str]:
+        priorities = (
+            ("energy_billed_kwh", "billed"),
+            ("energy_added_kwh", "vehicle"),
+            ("energy_added_kwh_charging_status", "charging_status"),
+            ("energy_added_kwh_fordpass", "ford_last_charge"),
+            ("energy_added_kwh_calculated", "soc_calculated"),
+        )
+        for key, source in priorities:
+            value = cls._optional_float(charge.get(key))
+            if value is not None and value >= 0:
+                return value, source
+        return 0.0, "none"
+
+    @staticmethod
+    def _distance_meters(
+        latitude_1: float,
+        longitude_1: float,
+        latitude_2: float,
+        longitude_2: float,
+    ) -> float:
+        earth_radius_m = 6_371_000.0
+        lat_1 = math.radians(latitude_1)
+        lat_2 = math.radians(latitude_2)
+        delta_lat = math.radians(latitude_2 - latitude_1)
+        delta_lon = math.radians(longitude_2 - longitude_1)
+        value = (
+            math.sin(delta_lat / 2) ** 2
+            + math.cos(lat_1)
+            * math.cos(lat_2)
+            * math.sin(delta_lon / 2) ** 2
+        )
+        return earth_radius_m * 2 * math.atan2(
+            math.sqrt(value), math.sqrt(1 - value)
+        )
+
+    @classmethod
+    def _site_type_for_charge(
+        cls,
+        charge: dict[str, Any],
+        sites: list[dict[str, Any]],
+    ) -> str:
+        cost_source = str(charge.get("cost_source") or "").strip().lower()
+        if cost_source == "home_tariff":
+            return "home"
+
+        explicit_type = str(
+            charge.get("charging_site_type") or ""
+        ).strip().lower()
+        if explicit_type in {"home", "work"}:
+            return explicit_type
+
+        charge_site_id = str(charge.get("charging_site_id") or "").strip()
+        if charge_site_id:
+            for site in sites:
+                if str(site.get("site_id") or "").strip() == charge_site_id:
+                    site_type = str(site.get("type") or "public").strip().lower()
+                    if site_type in {"home", "work"}:
+                        return site_type
+
+        latitude = charge.get("end_latitude")
+        longitude = charge.get("end_longitude")
+        if latitude is None or longitude is None:
+            latitude = charge.get("start_latitude")
+            longitude = charge.get("start_longitude")
+
+        try:
+            charge_lat = float(latitude)
+            charge_lon = float(longitude)
+        except (TypeError, ValueError):
+            return "external"
+
+        best_type = "external"
+        best_distance: float | None = None
+        for site in sites:
+            site_type = str(site.get("type") or "public").strip().lower()
+            if site_type not in {"home", "work"}:
+                continue
+            try:
+                distance = cls._distance_meters(
+                    charge_lat,
+                    charge_lon,
+                    float(site["latitude"]),
+                    float(site["longitude"]),
+                )
+                radius = float(site.get("radius") or 0.0)
+            except (KeyError, TypeError, ValueError):
+                continue
+            if radius <= 0 or distance > radius:
+                continue
+            if best_distance is None or distance < best_distance:
+                best_distance = distance
+                best_type = site_type
+
+        return best_type
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_CHARGE_DATA_UPDATED,
+                self._handle_charge_data_updated,
+            )
+        )
+
+    def _handle_charge_data_updated(self, *_args: Any) -> None:
+        self.hass.add_job(self._async_refresh_from_charge_update)
+
+    async def _async_refresh_from_charge_update(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        charges = await self.history.get_all_charges()
+        try:
+            sites = await self.coordinator.user_charging_site_storage.async_load()
+        except (OSError, ValueError):
+            sites = []
+
+        now = dt_util.now()
+        month_key = now.strftime("%Y-%m")
+        work_defined = any(
+            str(site.get("type") or "").strip().lower() == "work"
+            for site in sites
+        )
+        buckets = {
+            "home": {"energy": 0.0, "cost": 0.0, "count": 0},
+            "work": {"energy": 0.0, "cost": 0.0, "count": 0},
+            "external": {"energy": 0.0, "cost": 0.0, "count": 0},
+        }
+        total_energy = 0.0
+        total_cost = 0.0
+        total_count = 0
+        currencies: set[str] = set()
+        energy_sources: dict[str, int] = {}
+
+        for charge in charges:
+            if not charge.get("include_in_statistics", True):
+                continue
+            start_time = charge.get("start_time")
+            if not start_time:
+                continue
+            try:
+                parsed = datetime.fromisoformat(
+                    str(start_time).replace("Z", "+00:00")
+                )
+                local_start = dt_util.as_local(parsed)
+            except (TypeError, ValueError):
+                continue
+            if local_start.strftime("%Y-%m") != month_key:
+                continue
+
+            category = self._site_type_for_charge(charge, sites)
+            energy, energy_source = self._energy_for_charge(charge)
+            cost = self._optional_float(charge.get("cost_total")) or 0.0
+            currency = str(charge.get("currency") or "").strip().upper()
+            if currency:
+                currencies.add(currency)
+
+            row = buckets[category]
+            row["energy"] += energy
+            row["cost"] += cost
+            row["count"] += 1
+            total_energy += energy
+            total_cost += cost
+            total_count += 1
+            energy_sources[energy_source] = energy_sources.get(energy_source, 0) + 1
+
+        self._value = round(total_energy, 2)
+        self._attributes = {
+            "month": month_key,
+            "home_energy_month_kwh": round(buckets["home"]["energy"], 2),
+            "home_cost_month": round(buckets["home"]["cost"], 2),
+            "home_charge_count_month": buckets["home"]["count"],
+            "external_energy_month_kwh": round(buckets["external"]["energy"], 2),
+            "external_cost_month": round(buckets["external"]["cost"], 2),
+            "external_charge_count_month": buckets["external"]["count"],
+            "total_energy_month_kwh": round(total_energy, 2),
+            "total_cost_month": round(total_cost, 2),
+            "total_charge_count_month": total_count,
+            "currency": next(iter(currencies)) if len(currencies) == 1 else None,
+            "currencies": sorted(currencies) if len(currencies) > 1 else None,
+            "energy_source_counts": energy_sources,
+            "energy_priority": "billed > vehicle > charging_status > ford_last_charge > soc_calculated",
+        }
+        if work_defined or buckets["work"]["count"] > 0:
+            self._attributes.update({
+                "work_energy_month_kwh": round(buckets["work"]["energy"], 2),
+                "work_cost_month": round(buckets["work"]["cost"], 2),
+                "work_charge_count_month": buckets["work"]["count"],
+            })
+        self._attributes = {
+            key: value for key, value in self._attributes.items()
+            if value is not None
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
 
 class FordTriplogChargeCountSensor(FordTriplogSensorBase):
     """Number of recorded charging sessions."""
