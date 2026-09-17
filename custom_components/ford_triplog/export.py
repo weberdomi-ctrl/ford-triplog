@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import csv
 import functools
+import math
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +24,7 @@ from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
 from .storage import FordTriplogStorage
+from .user_charging_site_storage import UserChargingSiteStorage
 
 
 TRIP_EXPORT_FIELDS = (
@@ -86,6 +88,29 @@ JOURNEY_EXPORT_FIELDS = (
     "total_energy_flow_kwh",
     "trip_ids",
     "charge_ids",
+)
+
+
+MONTHLY_CHARGING_EXPORT_FIELDS = (
+    "month",
+    "home_energy_kwh",
+    "home_cost",
+    "home_charge_count",
+    "work_energy_kwh",
+    "work_cost",
+    "work_charge_count",
+    "external_energy_kwh",
+    "external_cost",
+    "external_charge_count",
+    "total_energy_kwh",
+    "total_cost",
+    "total_charge_count",
+    "currency",
+    "billed_count",
+    "vehicle_count",
+    "charging_status_count",
+    "ford_last_charge_count",
+    "soc_calculated_count",
 )
 
 
@@ -484,6 +509,109 @@ def _charge_row(charge: Any) -> dict[str, Any]:
     }
 
 
+def _optional_float(value: Any) -> float | None:
+    try:
+        return float(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+def _charge_energy_for_statistics(charge: dict[str, Any]) -> tuple[float, str]:
+    priorities = (
+        ("energy_billed_kwh", "billed"),
+        ("energy_added_kwh", "vehicle"),
+        ("energy_added_kwh_charging_status", "charging_status"),
+        ("energy_added_kwh_fordpass", "ford_last_charge"),
+        ("energy_added_kwh_calculated", "soc_calculated"),
+    )
+    for key, source in priorities:
+        value = _optional_float(charge.get(key))
+        if value is not None and value >= 0:
+            return value, source
+    return 0.0, "none"
+
+
+def _distance_meters(
+    latitude_1: float,
+    longitude_1: float,
+    latitude_2: float,
+    longitude_2: float,
+) -> float:
+    earth_radius_m = 6_371_000.0
+    lat_1 = math.radians(latitude_1)
+    lat_2 = math.radians(latitude_2)
+    delta_lat = math.radians(latitude_2 - latitude_1)
+    delta_lon = math.radians(longitude_2 - longitude_1)
+    value = (
+        math.sin(delta_lat / 2) ** 2
+        + math.cos(lat_1)
+        * math.cos(lat_2)
+        * math.sin(delta_lon / 2) ** 2
+    )
+    return earth_radius_m * 2 * math.atan2(
+        math.sqrt(value), math.sqrt(1 - value)
+    )
+
+
+def _charge_site_type(
+    charge: dict[str, Any],
+    sites: list[dict[str, Any]],
+) -> str:
+    cost_source = str(charge.get("cost_source") or "").strip().lower()
+    if cost_source == "home_tariff":
+        return "home"
+
+    explicit_type = str(
+        charge.get("charging_site_type") or ""
+    ).strip().lower()
+    if explicit_type in {"home", "work"}:
+        return explicit_type
+
+    charge_site_id = str(charge.get("charging_site_id") or "").strip()
+    if charge_site_id:
+        for site in sites:
+            if str(site.get("site_id") or "").strip() == charge_site_id:
+                site_type = str(site.get("type") or "public").strip().lower()
+                if site_type in {"home", "work"}:
+                    return site_type
+
+    latitude = charge.get("end_latitude")
+    longitude = charge.get("end_longitude")
+    if latitude is None or longitude is None:
+        latitude = charge.get("start_latitude")
+        longitude = charge.get("start_longitude")
+
+    try:
+        charge_lat = float(latitude)
+        charge_lon = float(longitude)
+    except (TypeError, ValueError):
+        return "external"
+
+    best_type = "external"
+    best_distance: float | None = None
+    for site in sites:
+        site_type = str(site.get("type") or "public").strip().lower()
+        if site_type not in {"home", "work"}:
+            continue
+        try:
+            distance = _distance_meters(
+                charge_lat,
+                charge_lon,
+                float(site["latitude"]),
+                float(site["longitude"]),
+            )
+            radius = float(site.get("radius") or 0.0)
+        except (KeyError, TypeError, ValueError):
+            continue
+        if radius <= 0 or distance > radius:
+            continue
+        if best_distance is None or distance < best_distance:
+            best_distance = distance
+            best_type = site_type
+
+    return best_type
+
+
 class FordTriplogExportView(HomeAssistantView):
     """Authenticated HTTP view for downloading generated export files."""
 
@@ -750,6 +878,129 @@ class FordTriplogExporter:
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
         }
+
+    async def async_export_monthly_charging_statistics(
+        self,
+        charge_manager: Any,
+    ) -> dict[str, Any]:
+        """Export the complete charging history aggregated by calendar month."""
+
+        charges = await charge_manager.async_get_charges(newest_first=False)
+        site_storage = UserChargingSiteStorage(self.hass)
+        await site_storage.async_setup()
+        sites = await site_storage.async_load()
+
+        periods: dict[str, dict[str, Any]] = {}
+
+        def empty_period() -> dict[str, Any]:
+            return {
+                "home": {"energy": 0.0, "cost": 0.0, "count": 0},
+                "work": {"energy": 0.0, "cost": 0.0, "count": 0},
+                "external": {"energy": 0.0, "cost": 0.0, "count": 0},
+                "currencies": set(),
+                "energy_sources": {},
+            }
+
+        for charge in charges:
+            data = (
+                charge.to_dict()
+                if hasattr(charge, "to_dict")
+                else charge
+                if isinstance(charge, dict)
+                else None
+            )
+            if not isinstance(data, dict):
+                continue
+            if not data.get("include_in_statistics", True):
+                continue
+
+            raw_start = data.get("start_time")
+            if not raw_start:
+                continue
+            try:
+                parsed = datetime.fromisoformat(
+                    str(raw_start).replace("Z", "+00:00")
+                )
+                local_start = dt_util.as_local(parsed)
+            except (TypeError, ValueError):
+                continue
+
+            month = local_start.strftime("%Y-%m")
+            period = periods.setdefault(month, empty_period())
+            category = _charge_site_type(data, sites)
+            energy, source = _charge_energy_for_statistics(data)
+            cost = _optional_float(data.get("cost_total")) or 0.0
+
+            bucket = period[category]
+            bucket["energy"] += energy
+            bucket["cost"] += cost
+            bucket["count"] += 1
+
+            currency = str(data.get("currency") or "").strip().upper()
+            if currency:
+                period["currencies"].add(currency)
+            period["energy_sources"][source] = (
+                period["energy_sources"].get(source, 0) + 1
+            )
+
+        rows: list[dict[str, Any]] = []
+        for month in sorted(periods):
+            period = periods[month]
+            home = period["home"]
+            work = period["work"]
+            external = period["external"]
+            total_energy = home["energy"] + work["energy"] + external["energy"]
+            total_cost = home["cost"] + work["cost"] + external["cost"]
+            total_count = home["count"] + work["count"] + external["count"]
+            currencies = sorted(period["currencies"])
+            sources = period["energy_sources"]
+
+            rows.append({
+                "month": month,
+                "home_energy_kwh": round(home["energy"], 2),
+                "home_cost": round(home["cost"], 2),
+                "home_charge_count": home["count"],
+                "work_energy_kwh": round(work["energy"], 2),
+                "work_cost": round(work["cost"], 2),
+                "work_charge_count": work["count"],
+                "external_energy_kwh": round(external["energy"], 2),
+                "external_cost": round(external["cost"], 2),
+                "external_charge_count": external["count"],
+                "total_energy_kwh": round(total_energy, 2),
+                "total_cost": round(total_cost, 2),
+                "total_charge_count": total_count,
+                "currency": currencies[0] if len(currencies) == 1 else ",".join(currencies),
+                "billed_count": sources.get("billed", 0),
+                "vehicle_count": sources.get("vehicle", 0),
+                "charging_status_count": sources.get("charging_status", 0),
+                "ford_last_charge_count": sources.get("ford_last_charge", 0),
+                "soc_calculated_count": sources.get("soc_calculated", 0),
+            })
+
+        filename = (
+            "ford_triplog_charging_monthly_"
+            + dt_util.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + ".csv"
+        )
+        output_file = self.export_path / filename
+        await self.hass.async_add_executor_job(
+            functools.partial(
+                self._write_csv,
+                output_file,
+                rows,
+                MONTHLY_CHARGING_EXPORT_FIELDS,
+            )
+        )
+
+        return {
+            "type": "charging_monthly",
+            "record_count": len(rows),
+            "filename": filename,
+            "path": str(output_file),
+            "start_date": rows[0]["month"] if rows else "",
+            "end_date": rows[-1]["month"] if rows else "",
+        }
+
 
     @staticmethod
     def _write_csv(

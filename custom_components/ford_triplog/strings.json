@@ -698,13 +698,15 @@
           "export_trips": "Export trips as CSV",
           "export_journeys": "Export journeys as CSV",
           "export_charges": "Export charging sessions as CSV",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "export_charging_monthly": "Export monthly charging statistics as CSV"
         },
         "menu_option_descriptions": {
           "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
           "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
           "init": "Return to the Ford Triplog overview.",
-          "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range."
+          "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range.",
+          "export_charging_monthly": "Export the complete charging history aggregated by calendar month as a CSV file."
         }
       },
       "export_trips": {
@@ -830,6 +832,10 @@
         "data": {
           "confirm": "Permanently delete receipt"
         }
+      },
+      "export_charging_monthly": {
+        "title": "Export monthly charging statistics",
+        "description": "Exports the complete charging history as one row per calendar month, split into Home, Work and External charging."
       }
     },
     "error": {

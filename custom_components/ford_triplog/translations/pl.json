@@ -698,13 +698,15 @@
           "export_trips": "Eksportuj przejazdy do CSV",
           "export_journeys": "Eksportuj podróże do CSV",
           "export_charges": "Eksportuj sesje ładowania do CSV",
-          "init": "Wróć do menu głównego"
+          "init": "Wróć do menu głównego",
+          "export_charging_monthly": "Eksportuj miesięczne statystyki ładowania do CSV"
         },
         "menu_option_descriptions": {
           "export_trips": "Eksportuj zapisane przejazdy do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "export_journeys": "Eksportuj zapisane podróże do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "export_charges": "Eksportuj zapisane sesje ładowania do pliku CSV, opcjonalnie ograniczając zakres dat.",
-          "init": "Wróć do przeglądu Ford Triplog."
+          "init": "Wróć do przeglądu Ford Triplog.",
+          "export_charging_monthly": "Eksportuj pełną historię ładowania zagregowaną według miesięcy kalendarzowych do pliku CSV."
         }
       },
       "export_trips": {
@@ -830,6 +832,10 @@
         "data": {
           "confirm": "Trwale usuń paragon"
         }
+      },
+      "export_charging_monthly": {
+        "title": "Eksport miesięcznych statystyk ładowania",
+        "description": "Eksportuje pełną historię ładowania jako jeden wiersz na miesiąc, z podziałem na Dom, Praca i Zewnętrzne."
       }
     },
     "error": {
