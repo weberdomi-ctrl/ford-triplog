@@ -31,6 +31,8 @@ class Trip:
         self.start_soc=data.get("start_soc")
         self.end_soc=data.get("end_soc")
         self.soc_used=data.get("soc_used")
+        self.soc_recovered=data.get("soc_recovered")
+        self.regenerated_energy_kwh=data.get("regenerated_energy_kwh")
         self.start_latitude=data.get("start_latitude")
         self.start_longitude=data.get("start_longitude")
         self.end_latitude=data.get("end_latitude")
@@ -94,6 +96,12 @@ class Trip:
                 self.average_speed_kmh=round(self.distance_km/h,1)
         if self.start_soc is not None and self.end_soc is not None:
             self.soc_used=round(self.start_soc-self.end_soc,1)
+            recovered_soc = max(self.end_soc - self.start_soc, 0.0)
+            self.soc_recovered = round(recovered_soc, 1)
+            self.regenerated_energy_kwh = round(
+                recovered_soc * self.battery_capacity_kwh / 100,
+                2,
+            )
             self.energy_used_kwh=round(self.soc_used*self.battery_capacity_kwh/100,2)
             if self.distance_km and self.distance_km>0:
                 self.consumption_kwh_100km=round(self.energy_used_kwh/self.distance_km*100,1)
@@ -110,6 +118,8 @@ class Trip:
             "start_soc":self.start_soc,
             "end_soc":self.end_soc,
             "soc_used":self.soc_used,
+            "soc_recovered":self.soc_recovered,
+            "regenerated_energy_kwh":self.regenerated_energy_kwh,
             "start_latitude":self.start_latitude,
             "start_longitude":self.start_longitude,
             "end_latitude":self.end_latitude,

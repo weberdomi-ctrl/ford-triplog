@@ -157,6 +157,63 @@ class FordTriplogHistory:
 
         return (start_soc_value - end_soc_value) * capacity / 100.0
 
+
+    def _trip_recovery_values(
+        self,
+        trip: dict[str, Any],
+        distance_km: float,
+    ) -> tuple[float, float]:
+        """Return SOC gain and SOC-derived net recuperation energy.
+
+        These values represent only net battery SOC gain across the complete
+        trip. They are not a measurement of all regenerative energy produced
+        while driving.
+        """
+
+        if distance_km <= 0:
+            return 0.0, 0.0
+
+        try:
+            stored_soc = float(trip.get("soc_recovered") or 0.0)
+        except (TypeError, ValueError):
+            stored_soc = 0.0
+
+        try:
+            stored_energy = float(
+                trip.get("regenerated_energy_kwh") or 0.0
+            )
+        except (TypeError, ValueError):
+            stored_energy = 0.0
+
+        if stored_soc > 0 and stored_energy > 0:
+            return stored_soc, stored_energy
+
+        try:
+            start_soc = float(trip.get("start_soc"))
+            end_soc = float(trip.get("end_soc"))
+        except (TypeError, ValueError):
+            return max(stored_soc, 0.0), max(stored_energy, 0.0)
+
+        soc_recovered = max(end_soc - start_soc, 0.0)
+        if soc_recovered <= 0:
+            return 0.0, 0.0
+
+        try:
+            capacity = float(
+                trip.get("battery_capacity_kwh")
+                or self.battery_capacity_kwh
+            )
+        except (TypeError, ValueError):
+            capacity = self.battery_capacity_kwh
+
+        if capacity <= 0:
+            capacity = self.battery_capacity_kwh
+
+        return (
+            round(soc_recovered, 1),
+            round(soc_recovered * capacity / 100.0, 2),
+        )
+
     async def get_statistics(self):
         """Recalculate statistics from all archived records."""
         trips = await self.get_all_trips()
@@ -175,6 +232,11 @@ class FordTriplogHistory:
         energy_trip_count = 0
         top_trip: dict[str, Any] | None = None
         top_trip_distance = -1.0
+        total_soc_recovered = 0.0
+        total_regenerated_energy = 0.0
+        regen_trip_count = 0
+        top_regen_trip: dict[str, Any] | None = None
+        top_regen_energy = -1.0
 
         for charge in charges:
             if not charge.get("include_in_statistics", True):
@@ -251,6 +313,31 @@ class FordTriplogHistory:
             ):
                 total_trip_soc_used += start_soc - end_soc
 
+            soc_recovered, regenerated_energy = (
+                self._trip_recovery_values(trip, distance)
+            )
+            if soc_recovered > 0 and regenerated_energy > 0:
+                total_soc_recovered += soc_recovered
+                total_regenerated_energy += regenerated_energy
+                regen_trip_count += 1
+
+                if regenerated_energy > top_regen_energy:
+                    top_regen_energy = regenerated_energy
+                    top_regen_trip = {
+                        "trip_id": trip.get("trip_id"),
+                        "start_time": trip.get("start_time"),
+                        "end_time": trip.get("end_time"),
+                        "start_address": trip.get("start_address"),
+                        "end_address": trip.get("end_address"),
+                        "distance_km": round(distance, 1),
+                        "start_soc": start_soc,
+                        "end_soc": end_soc,
+                        "soc_recovered": round(soc_recovered, 1),
+                        "regenerated_energy_kwh": round(
+                            regenerated_energy, 2
+                        ),
+                    }
+
         average_charge_duration = (
             total_charge_duration / charge_count
             if charge_count
@@ -296,6 +383,11 @@ class FordTriplogHistory:
             if total_distance > 0
             else 0
         )
+        average_regenerated_energy = (
+            total_regenerated_energy / regen_trip_count
+            if regen_trip_count
+            else 0
+        )
 
         return {
             "trip_count": trip_count,
@@ -307,6 +399,15 @@ class FordTriplogHistory:
             "average_trip_energy_used_kwh": round(average_trip_energy, 2),
             "average_trip_consumption": round(average_trip_consumption, 1),
             "average_trip_soc_used": round(average_trip_soc_used, 1),
+            "total_soc_recovered": round(total_soc_recovered, 1),
+            "total_regenerated_energy_kwh": round(
+                total_regenerated_energy, 2
+            ),
+            "regen_trip_count": regen_trip_count,
+            "average_regenerated_energy_kwh": round(
+                average_regenerated_energy, 2
+            ),
+            "top_regen_trip": top_regen_trip,
             "charge_count": charge_count,
             "total_charge_duration": round(total_charge_duration, 1),
             "average_charge_duration": round(average_charge_duration, 1),

@@ -698,13 +698,15 @@
           "export_trips": "Fahrten als CSV exportieren",
           "export_journeys": "Touren als CSV exportieren",
           "export_charges": "Ladevorgänge als CSV exportieren",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "export_charging_monthly": "Monatliche Ladestatistik als CSV exportieren"
         },
         "menu_option_descriptions": {
           "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "export_journeys": "Gespeicherte Touren optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
-          "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren."
+          "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
+          "export_charging_monthly": "Die komplette Ladehistorie nach Kalendermonat aggregiert als CSV-Datei exportieren."
         }
       },
       "export_trips": {
@@ -830,6 +832,10 @@
         "data": {
           "confirm": "Beleg endgültig löschen"
         }
+      },
+      "export_charging_monthly": {
+        "title": "Monatliche Ladestatistik exportieren",
+        "description": "Exportiert die komplette Ladehistorie mit einer Zeile pro Kalendermonat, aufgeteilt nach Zuhause, Arbeit und Extern."
       }
     },
     "error": {
@@ -1048,6 +1054,18 @@
       },
       "route_history": {
         "name": "Routenhistorie"
+      },
+      "last_trip_soc_recovered": {
+        "name": "SOC-Rückgewinnung der letzten Fahrt"
+      },
+      "last_trip_regenerated_energy": {
+        "name": "Netto-Rekuperation der letzten Fahrt"
+      },
+      "recuperation_statistics": {
+        "name": "Netto-Rekuperationsstatistik"
+      },
+      "charging_monthly_statistics": {
+        "name": "Ladestatistik Monat"
       }
     },
     "binary_sensor": {

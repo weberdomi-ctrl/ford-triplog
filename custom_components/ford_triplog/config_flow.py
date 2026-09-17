@@ -2128,7 +2128,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             location,
         ]
 
-        energy = getattr(charge, "energy_added_kwh", None)
+        energy = getattr(charge, "energy_billed_kwh", None)
+        if energy is None:
+            energy = getattr(charge, "energy_added_kwh", None)
         try:
             energy_value = float(energy) if energy is not None else None
         except (TypeError, ValueError):
@@ -3318,8 +3320,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     f"{self._format_optional_number(start_soc, 0)} % → "
                     f"{self._format_optional_number(end_soc, 0)} %"
                 )
+                display_energy = (
+                    getattr(charge, "energy_billed_kwh", None)
+                    if charge else None
+                )
+                if display_energy is None and charge:
+                    display_energy = getattr(charge, "energy_added_kwh", None)
                 energy = (
-                    f"{self._format_optional_number(getattr(charge, 'energy_added_kwh', None), 2)} kWh"
+                    f"{self._format_optional_number(display_energy, 2)} kWh"
                     if charge else "—"
                 )
                 label = f"⚡ {date_text} · {location}"
@@ -4726,6 +4734,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "export_trips",
                 "export_journeys",
                 "export_charges",
+                "export_charging_monthly",
                 "init",
             ],
         )
@@ -5019,6 +5028,63 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ),
             errors=errors,
         )
+
+    async def async_step_export_charging_monthly(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export complete charging history aggregated by calendar month."""
+
+        try:
+            exporter = FordTriplogExporter(
+                self.hass,
+                self._get_trip_storage(),
+            )
+            result = await exporter.async_export_monthly_charging_statistics(
+                self._get_export_charge_manager()
+            )
+        except (
+            HomeAssistantError,
+            OSError,
+            RuntimeError,
+            ValueError,
+        ):
+            _LOGGER.exception("Monthly charging statistics CSV export failed")
+            return self.async_abort(reason="export_failed")
+
+        filename = str(result.get("filename") or "")
+        export_path = f"/api/ford_triplog/exports/{filename}"
+        signed_path = async_sign_path(
+            self.hass,
+            export_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=True,
+            ).rstrip("/")
+            self._selected_export_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            self._selected_export_url = signed_path
+
+        self._export_kind = "charging_monthly"
+        self._export_result = {
+            "record_count": str(result.get("record_count", 0)),
+            "filename": filename,
+            "path": str(result.get("path") or ""),
+            "period": await self._format_export_period(
+                result.get("start_date"),
+                result.get("end_date"),
+            ),
+            "record_type": "Months",
+        }
+        return await self.async_step_export_result()
 
     async def async_step_export_result(
         self,

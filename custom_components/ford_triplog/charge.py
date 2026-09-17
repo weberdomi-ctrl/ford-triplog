@@ -83,6 +83,7 @@ class Charge:
         self.charging_site_capacity: list[str] = []
         self.charging_site_connectors: list[str] = []
         self.charging_site_quality: str | None = None
+        self.charging_site_type: str | None = None
         self.charging_site_distance_m: float | None = None
 
         # FordPass Last Charge data is initially retained as a complete raw
@@ -394,6 +395,7 @@ class Charge:
             "charging_site_capacity": self.charging_site_capacity,
             "charging_site_connectors": self.charging_site_connectors,
             "charging_site_quality": self.charging_site_quality,
+            "charging_site_type": self.charging_site_type,
             "charging_site_distance_m": self.charging_site_distance_m,
             "fordpass_last_charge": self.fordpass_last_charge,
             "last_charge_baseline_signature": (
@@ -524,6 +526,7 @@ class Charge:
         charge.charging_site_capacity = data.get("charging_site_capacity", [])
         charge.charging_site_connectors = data.get("charging_site_connectors", [])
         charge.charging_site_quality = data.get("charging_site_quality")
+        charge.charging_site_type = data.get("charging_site_type")
         charge.charging_site_distance_m = data.get("charging_site_distance_m")
 
         charge.fordpass_last_charge = data.get("fordpass_last_charge")
