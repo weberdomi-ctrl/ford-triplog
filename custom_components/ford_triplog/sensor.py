@@ -6184,7 +6184,6 @@ class FordTriplogLastTripSocRecoveredSensor(FordTriplogSensorBase):
     """Net SOC recovered during the last trip."""
 
     _attr_translation_key = "last_trip_soc_recovered"
-    _attr_device_class = SensorDeviceClass.BATTERY
     _attr_unique_id = "ford_triplog_last_trip_soc_recovered"
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
@@ -6215,7 +6214,6 @@ class FordTriplogLastTripRegeneratedEnergySensor(FordTriplogSensorBase):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_last_trip_regenerated_energy"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:battery-sync-outline"
 
@@ -6290,7 +6288,7 @@ class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
     _attr_device_class = SensorDeviceClass.ENERGY
     _attr_unique_id = "ford_triplog_charging_monthly_statistics"
     _attr_native_unit_of_measurement = UnitOfEnergy.KILO_WATT_HOUR
-    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_state_class = SensorStateClass.TOTAL
     _attr_suggested_display_precision = 2
     _attr_icon = "mdi:calendar-month"
 
