@@ -6697,11 +6697,50 @@ class FordTriplogDrivingMonthlyStatisticsSensor(FordTriplogSensorBase):
             duration = max(0, self._optional_int(trip.get("duration_seconds")))
             energy = self._optional_float(trip.get("energy_used_kwh")) or 0.0
             soc_used = self._optional_float(trip.get("soc_used")) or 0.0
-            soc_recovered = max(0.0, self._optional_float(trip.get("soc_recovered")) or 0.0)
-            regenerated = max(
+
+            # Older archived trips predate the dedicated recuperation fields.
+            # Keep the monthly/yearly statistics consistent with the main
+            # history statistics by reconstructing net SOC gain from the
+            # trip start/end SOC when the stored recovery pair is unavailable.
+            stored_soc_recovered = max(
+                0.0,
+                self._optional_float(trip.get("soc_recovered")) or 0.0,
+            )
+            stored_regenerated = max(
                 0.0,
                 self._optional_float(trip.get("regenerated_energy_kwh")) or 0.0,
             )
+
+            if stored_soc_recovered > 0.0 and stored_regenerated > 0.0:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
+            elif distance > 0.0:
+                start_soc = self._optional_float(trip.get("start_soc"))
+                end_soc = self._optional_float(trip.get("end_soc"))
+                if start_soc is not None and end_soc is not None:
+                    soc_recovered = max(end_soc - start_soc, 0.0)
+                    if soc_recovered > 0.0:
+                        capacity = self._optional_float(
+                            trip.get("battery_capacity_kwh")
+                        )
+                        if capacity is None or capacity <= 0.0:
+                            capacity = self._optional_float(
+                                self.coordinator.battery_capacity
+                            ) or 0.0
+                        regenerated = (
+                            soc_recovered * capacity / 100.0
+                            if capacity > 0.0
+                            else 0.0
+                        )
+                    else:
+                        soc_recovered = 0.0
+                        regenerated = 0.0
+                else:
+                    soc_recovered = stored_soc_recovered
+                    regenerated = stored_regenerated
+            else:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
 
             period["distance"] = float(period["distance"]) + distance
             period["trip_count"] = int(period["trip_count"]) + 1
