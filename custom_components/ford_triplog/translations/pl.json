@@ -1066,6 +1066,9 @@
       },
       "charging_monthly_statistics": {
         "name": "Miesięczne statystyki ładowania"
+      },
+      "driving_monthly_statistics": {
+        "name": "Miesięczne statystyki jazdy"
       }
     },
     "binary_sensor": {
