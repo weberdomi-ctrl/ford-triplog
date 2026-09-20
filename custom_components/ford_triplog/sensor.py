@@ -59,6 +59,7 @@ from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
+from .charging_site_lookup import haversine_distance_m
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -534,33 +535,126 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
         return round((energy / distance) * 100, 1)
 
+    def _resolve_ha_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Return the closest matching Home Assistant zone name."""
+
+        if latitude is None or longitude is None or self.hass is None:
+            return None
+
+        try:
+            point_lat = float(latitude)
+            point_lon = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        closest: tuple[float, str] | None = None
+        for state in self.hass.states.async_all("zone"):
+            try:
+                zone_lat = float(state.attributes.get("latitude"))
+                zone_lon = float(state.attributes.get("longitude"))
+                zone_radius = max(0.0, float(state.attributes.get("radius", 100)))
+                distance_m = haversine_distance_m(
+                    point_lat,
+                    point_lon,
+                    zone_lat,
+                    zone_lon,
+                )
+            except (TypeError, ValueError):
+                continue
+
+            if distance_m > zone_radius:
+                continue
+
+            if state.entity_id == "zone.home":
+                zone_name = "Home"
+            else:
+                zone_name = str(
+                    state.attributes.get("friendly_name")
+                    or state.name
+                    or state.entity_id.split(".", 1)[-1]
+                ).strip()
+
+            if not zone_name:
+                continue
+
+            if closest is None or distance_m < closest[0]:
+                closest = (distance_m, zone_name)
+
+        return closest[1] if closest else None
+
+    def _resolve_known_location(
+        self,
+        *,
+        latitude: Any,
+        longitude: Any,
+        existing_location: Any = None,
+        address: Any = None,
+        existing_source: Any = None,
+    ) -> tuple[str | None, str | None, dict[str, Any] | None]:
+        """Resolve display location using zone -> user place -> existing data."""
+
+        zone_name = self._resolve_ha_zone_name(latitude, longitude)
+        if zone_name:
+            return zone_name, "ha_zone", None
+
+        user_place_storage = getattr(
+            self.coordinator, "user_place_storage", None
+        )
+        if user_place_storage is not None:
+            place = user_place_storage.resolve_cached(latitude, longitude)
+            if place and place.get("name"):
+                return str(place["name"]), "user_place", place
+
+        resolved = existing_location or self._short_address(address)
+        return resolved, existing_source, None
+
     def _item_start_location(self, item: Any) -> str | None:
         """Return the resolved start location of an item."""
 
         if getattr(item, "item_type", None) == "trip":
-            return (
-                getattr(item, "start_location", None)
-                or self._short_address(getattr(item, "start_address", None))
+            location, _source, _place = self._resolve_known_location(
+                latitude=getattr(item, "start_latitude", None),
+                longitude=getattr(item, "start_longitude", None),
+                existing_location=getattr(item, "start_location", None),
+                address=getattr(item, "start_address", None),
+                existing_source=getattr(item, "start_location_source", None),
             )
+            return location
 
-        return (
-            getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None))
+        location, _source, _place = self._resolve_known_location(
+            latitude=getattr(item, "latitude", None),
+            longitude=getattr(item, "longitude", None),
+            existing_location=getattr(item, "location", None),
+            address=getattr(item, "address", None),
+            existing_source=getattr(item, "location_source", None),
         )
+        return location
 
     def _item_end_location(self, item: Any) -> str | None:
         """Return the resolved end location of an item."""
 
         if getattr(item, "item_type", None) == "trip":
-            return (
-                getattr(item, "end_location", None)
-                or self._short_address(getattr(item, "end_address", None))
+            location, _source, _place = self._resolve_known_location(
+                latitude=getattr(item, "end_latitude", None),
+                longitude=getattr(item, "end_longitude", None),
+                existing_location=getattr(item, "end_location", None),
+                address=getattr(item, "end_address", None),
+                existing_source=getattr(item, "end_location_source", None),
             )
+            return location
 
-        return (
-            getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None))
+        location, _source, _place = self._resolve_known_location(
+            latitude=getattr(item, "latitude", None),
+            longitude=getattr(item, "longitude", None),
+            existing_location=getattr(item, "location", None),
+            address=getattr(item, "address", None),
+            existing_source=getattr(item, "location_source", None),
         )
+        return location
 
     def _item_location_details(
         self,
@@ -572,31 +666,64 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
         if getattr(item, "item_type", None) == "trip":
             prefix = endpoint or "end"
-            return {
-                "location": getattr(item, f"{prefix}_location", None)
-                or self._short_address(
-                    getattr(item, f"{prefix}_address", None)
-                ),
-                "address": self._short_address(
-                    getattr(item, f"{prefix}_address", None)
-                ),
-                "latitude": getattr(item, f"{prefix}_latitude", None),
-                "longitude": getattr(item, f"{prefix}_longitude", None),
-                "location_source": getattr(
-                    item,
-                    f"{prefix}_location_source",
-                    None,
-                ),
+            latitude = getattr(item, f"{prefix}_latitude", None)
+            longitude = getattr(item, f"{prefix}_longitude", None)
+            address = getattr(item, f"{prefix}_address", None)
+            existing_source = getattr(
+                item,
+                f"{prefix}_location_source",
+                None,
+            )
+            location, location_source, place = self._resolve_known_location(
+                latitude=latitude,
+                longitude=longitude,
+                existing_location=getattr(item, f"{prefix}_location", None),
+                address=address,
+                existing_source=existing_source,
+            )
+            result = {
+                "location": location,
+                "address": self._short_address(address),
+                "latitude": latitude,
+                "longitude": longitude,
+                "location_source": location_source,
             }
+            if place:
+                result.update(
+                    {
+                        "user_place_id": place.get("place_id"),
+                        "user_place_name": place.get("name"),
+                        "user_place_distance_m": place.get("distance_m"),
+                    }
+                )
+            return result
 
-        return {
-            "location": getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None)),
-            "address": self._short_address(getattr(item, "address", None)),
-            "latitude": getattr(item, "latitude", None),
-            "longitude": getattr(item, "longitude", None),
-            "location_source": getattr(item, "location_source", None),
+        latitude = getattr(item, "latitude", None)
+        longitude = getattr(item, "longitude", None)
+        address = getattr(item, "address", None)
+        location, location_source, place = self._resolve_known_location(
+            latitude=latitude,
+            longitude=longitude,
+            existing_location=getattr(item, "location", None),
+            address=address,
+            existing_source=getattr(item, "location_source", None),
+        )
+        result = {
+            "location": location,
+            "address": self._short_address(address),
+            "latitude": latitude,
+            "longitude": longitude,
+            "location_source": location_source,
         }
+        if place:
+            result.update(
+                {
+                    "user_place_id": place.get("place_id"),
+                    "user_place_name": place.get("name"),
+                    "user_place_distance_m": place.get("distance_m"),
+                }
+            )
+        return result
 
     def _build_timeline(self, journey) -> tuple[list[dict[str, Any]], int]:
         """Build start, trip, pause, charge and end timeline entries."""
@@ -631,16 +758,27 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
-        start_location = (
-            self._item_start_location(first_item)
-            if first_item is not None
-            else self._short_address(journey.start_address)
-        )
-        end_location = (
-            self._item_end_location(last_item)
-            if last_item is not None
-            else self._short_address(journey.end_address)
-        )
+        if first_item is not None:
+            start_location = self._item_start_location(first_item)
+        else:
+            start_location, _start_source, _start_place = (
+                self._resolve_known_location(
+                    latitude=journey.start_latitude,
+                    longitude=journey.start_longitude,
+                    address=journey.start_address,
+                )
+            )
+
+        if last_item is not None:
+            end_location = self._item_end_location(last_item)
+        else:
+            end_location, _end_source, _end_place = (
+                self._resolve_known_location(
+                    latitude=journey.end_latitude,
+                    longitude=journey.end_longitude,
+                    address=journey.end_address,
+                )
+            )
 
         timeline.append(
             {
@@ -679,6 +817,13 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     1,
                 )
 
+                start_details = self._item_location_details(
+                    item, endpoint="start"
+                )
+                end_details = self._item_location_details(
+                    item, endpoint="end"
+                )
+
                 entry = {
                     "type": "trip",
                     "id": item.item_id,
@@ -688,14 +833,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
-                    "start_location": self._item_start_location(item),
-                    "end_location": self._item_end_location(item),
-                    "display_start_location": (
-                        self._item_start_location(item)
-                    ),
-                    "display_end_location": (
-                        self._item_end_location(item)
-                    ),
+                    "start_location": start_details.get("location"),
+                    "end_location": end_details.get("location"),
+                    "display_start_location": start_details.get("location"),
+                    "display_end_location": end_details.get("location"),
                     "start_address": self._short_address(
                         getattr(item, "start_address", None)
                     ),
@@ -714,15 +855,25 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     ),
                     "end_latitude": getattr(item, "end_latitude", None),
                     "end_longitude": getattr(item, "end_longitude", None),
-                    "start_location_source": getattr(
-                        item,
-                        "start_location_source",
-                        None,
+                    "start_location_source": start_details.get(
+                        "location_source"
                     ),
-                    "end_location_source": getattr(
-                        item,
-                        "end_location_source",
-                        None,
+                    "end_location_source": end_details.get(
+                        "location_source"
+                    ),
+                    "start_user_place_id": start_details.get(
+                        "user_place_id"
+                    ),
+                    "start_user_place_name": start_details.get(
+                        "user_place_name"
+                    ),
+                    "start_user_place_distance_m": start_details.get(
+                        "user_place_distance_m"
+                    ),
+                    "end_user_place_id": end_details.get("user_place_id"),
+                    "end_user_place_name": end_details.get("user_place_name"),
+                    "end_user_place_distance_m": end_details.get(
+                        "user_place_distance_m"
                     ),
                     "distance_km": distance_km,
                     "energy_used_kwh": energy_kwh,
@@ -945,7 +1096,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 pause_entry["location"] = manual_location
                 pause_entry["display_location"] = manual_location
                 pause_entry["location_source"] = "manual"
-            elif auto_place and auto_place.get("name"):
+            elif (
+                pause_location.get("location_source") != "ha_zone"
+                and auto_place
+                and auto_place.get("name")
+            ):
                 pause_entry["location"] = auto_place["name"]
                 pause_entry["display_location"] = auto_place["name"]
                 pause_entry["location_source"] = "user_place"
