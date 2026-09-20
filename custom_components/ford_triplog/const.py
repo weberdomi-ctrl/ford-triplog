@@ -18,8 +18,8 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.4.3"
-BUILD: Final = "24313"
+VERSION: Final = "2.4.4"
+BUILD: Final = "24401"
 
 #
 # Storage
@@ -124,6 +124,17 @@ DEFAULT_JOURNEY_MAX_GAP_HOURS: Final = 24
 DEFAULT_CHARGE_MATCH_TIMEOUT: Final = 300  # 5 minutes
 DEFAULT_CHARGE_MATCH_RADIUS: Final = 50.0  # meters
 DEFAULT_LAST_CHARGE_STABLE_TIME: Final = 15  # seconds
+
+#
+# Vehicle source health
+#
+
+VEHICLE_SOURCE_HEALTH_HEALTHY: Final = "healthy"
+VEHICLE_SOURCE_HEALTH_DEGRADED: Final = "degraded"
+VEHICLE_SOURCE_HEALTH_GRACE: Final = "grace_period"
+VEHICLE_SOURCE_HEALTH_UNAVAILABLE: Final = "unavailable"
+VEHICLE_SOURCE_HEALTH_UNKNOWN: Final = "unknown"
+DEFAULT_VEHICLE_SOURCE_UNAVAILABLE_GRACE_SECONDS: Final = 20 * 60
 
 #
 # Events

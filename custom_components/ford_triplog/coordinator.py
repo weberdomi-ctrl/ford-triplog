@@ -73,10 +73,21 @@ from .charging_site_lookup import (
 from .const import (
     CONF_BATTERY_CAPACITY,
     DEFAULT_BATTERY_CAPACITY_KWH,
+    CONF_IGNITION,
+    CONF_ODOMETER,
+    CONF_TRACKER,
+    CONF_SOC,
+    CONF_CHARGING,
     CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
     DEFAULT_LAST_CHARGE_STABLE_TIME,
+    DEFAULT_VEHICLE_SOURCE_UNAVAILABLE_GRACE_SECONDS,
+    VEHICLE_SOURCE_HEALTH_DEGRADED,
+    VEHICLE_SOURCE_HEALTH_GRACE,
+    VEHICLE_SOURCE_HEALTH_HEALTHY,
+    VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
+    VEHICLE_SOURCE_HEALTH_UNKNOWN,
     SMART_TRIP_TIMEOUT,
 )
 
@@ -269,6 +280,36 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._publish_handle: asyncio.TimerHandle | None = None
         self._pending_publish_data: dict[str, Any] | None = None
 
+        # Vehicle-source health monitoring. A full source outage is only
+        # declared when every configured live vehicle entity is unavailable
+        # for the complete grace period. Individual missing entities are
+        # reported as degraded but do not trigger an outage. Last Charge is
+        # intentionally excluded because it is a historical snapshot and may
+        # remain available while the live API is down.
+        self.vehicle_source_health = VEHICLE_SOURCE_HEALTH_UNKNOWN
+        self.vehicle_source_unavailable_since: datetime | None = None
+        self.vehicle_source_unavailable_entities: list[str] = []
+        self.vehicle_source_monitored_entities: tuple[str, ...] = tuple(
+            dict.fromkeys(
+                entity_id
+                for entity_id in (
+                    config.get(CONF_IGNITION),
+                    config.get(CONF_ODOMETER),
+                    config.get(CONF_TRACKER),
+                    config.get(CONF_SOC),
+                    config.get(CONF_CHARGING),
+                )
+                if entity_id
+            )
+        )
+        self.vehicle_source_unavailable_grace_seconds = int(
+            config.get(
+                "vehicle_source_unavailable_grace_seconds",
+                DEFAULT_VEHICLE_SOURCE_UNAVAILABLE_GRACE_SECONDS,
+            )
+        )
+        self._vehicle_source_health_timer: asyncio.TimerHandle | None = None
+
 
         # Smart Trip
         self.trip_pause_time: float | None = None
@@ -286,6 +327,114 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.journey_rebuilder: Any | None = None
         self.route_tracker: Any | None = None
        
+
+    @staticmethod
+    def _vehicle_source_state_unavailable(state: State | None) -> bool:
+        """Return whether a configured source entity is currently unusable."""
+
+        if state is None:
+            return True
+
+        normalized = str(state.state or "").strip().lower()
+        return normalized in {
+            "",
+            "unknown",
+            "unavailable",
+            "unsupported",
+            "none",
+            "null",
+        }
+
+    def _cancel_vehicle_source_health_timer(self) -> None:
+        """Cancel the pending source-health grace timer."""
+
+        if self._vehicle_source_health_timer is not None:
+            self._vehicle_source_health_timer.cancel()
+            self._vehicle_source_health_timer = None
+
+    def _schedule_vehicle_source_health_timer(self, delay: float) -> None:
+        """Schedule reevaluation when the outage grace period expires."""
+
+        self._cancel_vehicle_source_health_timer()
+        self._vehicle_source_health_timer = self.hass.loop.call_later(
+            max(0.0, delay),
+            self._vehicle_source_health_timeout,
+        )
+
+    def _vehicle_source_health_timeout(self) -> None:
+        """Promote a persistent full-source outage after its grace period."""
+
+        self._vehicle_source_health_timer = None
+        self._evaluate_vehicle_source_health()
+        self._schedule_coordinator_update(self.vehicle_state)
+
+    def _evaluate_vehicle_source_health(self) -> None:
+        """Update health state for the configured live vehicle source."""
+
+        previous = self.vehicle_source_health
+        monitored = self.vehicle_source_monitored_entities
+
+        if not monitored:
+            self._cancel_vehicle_source_health_timer()
+            self.vehicle_source_unavailable_since = None
+            self.vehicle_source_unavailable_entities = []
+            self.vehicle_source_health = VEHICLE_SOURCE_HEALTH_UNKNOWN
+            return
+
+        unavailable = [
+            entity_id
+            for entity_id in monitored
+            if self._vehicle_source_state_unavailable(
+                self.hass.states.get(entity_id)
+            )
+        ]
+        self.vehicle_source_unavailable_entities = unavailable
+
+        if len(unavailable) == len(monitored):
+            now = dt_util.utcnow()
+            if self.vehicle_source_unavailable_since is None:
+                self.vehicle_source_unavailable_since = now
+
+            elapsed = max(
+                0.0,
+                (now - self.vehicle_source_unavailable_since).total_seconds(),
+            )
+            remaining = max(
+                0.0,
+                float(self.vehicle_source_unavailable_grace_seconds) - elapsed,
+            )
+
+            if remaining <= 0:
+                self._cancel_vehicle_source_health_timer()
+                self.vehicle_source_health = VEHICLE_SOURCE_HEALTH_UNAVAILABLE
+            else:
+                self.vehicle_source_health = VEHICLE_SOURCE_HEALTH_GRACE
+                if self._vehicle_source_health_timer is None:
+                    self._schedule_vehicle_source_health_timer(remaining)
+        else:
+            self._cancel_vehicle_source_health_timer()
+            self.vehicle_source_unavailable_since = None
+            self.vehicle_source_health = (
+                VEHICLE_SOURCE_HEALTH_DEGRADED
+                if unavailable
+                else VEHICLE_SOURCE_HEALTH_HEALTHY
+            )
+
+        if self.vehicle_source_health != previous:
+            if self.vehicle_source_health == VEHICLE_SOURCE_HEALTH_UNAVAILABLE:
+                _LOGGER.warning(
+                    "Vehicle source health changed: %s -> %s; unavailable=%s",
+                    previous,
+                    self.vehicle_source_health,
+                    ", ".join(unavailable),
+                )
+            else:
+                _LOGGER.info(
+                    "Vehicle source health changed: %s -> %s; unavailable=%s",
+                    previous,
+                    self.vehicle_source_health,
+                    ", ".join(unavailable) or "none",
+                )
 
     def _schedule_coordinator_update(
         self,
@@ -362,6 +511,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.remove_listener = async_track_state_change_event(
             self.hass, entities, self._state_changed
         )
+
+        self.vehicle_state = self._read_vehicle_state()
+        self._evaluate_vehicle_source_health()
 
         if self.last_charge_entity:
             last_charge = self.hass.states.get(self.last_charge_entity)
@@ -501,6 +653,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._cancel_last_charge_timer()
         self._cancel_last_charge_timeout_timer()
         self._cancel_charge_start_soc_recheck()
+        self._cancel_vehicle_source_health_timer()
 
         if self._publish_handle is not None:
             self._publish_handle.cancel()
@@ -794,6 +947,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
+        self._evaluate_vehicle_source_health()
 
         ignition_raw = self.vehicle_state.get("ignition")
         ignition_state = str(ignition_raw or "").strip().lower()
