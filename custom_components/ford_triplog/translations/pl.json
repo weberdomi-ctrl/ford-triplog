@@ -1132,6 +1132,16 @@
       },
       "driving_monthly_statistics": {
         "name": "Miesięczne statystyki jazdy"
+      },
+      "vehicle_source_status": {
+        "name": "Stan źródła danych pojazdu",
+        "state": {
+          "healthy": "Dostępne",
+          "degraded": "Ograniczone",
+          "grace_period": "Okres karencji",
+          "unavailable": "Niedostępne",
+          "unknown": "Nieznane"
+        }
       }
     },
     "binary_sensor": {
