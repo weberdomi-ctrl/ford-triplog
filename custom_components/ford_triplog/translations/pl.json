@@ -35,7 +35,8 @@
           "charge_management": "Zarządzaj sesjami ładowania",
           "user_charging_sites": "Własne lokalizacje ładowania",
           "charging_site_database": "Lokalizacje ładowania OpenStreetMap",
-          "export": "Eksport danych"
+          "export": "Eksport danych",
+          "user_places": "Custom places"
         },
         "menu_option_descriptions": {
           "settings": "Edytuj ustawienia przejazdów, ładowania, pojazdu i taryf.",
@@ -45,7 +46,8 @@
           "charge_management": "Zarządzaj sesjami ładowania, kosztami i powiązanymi paragonami.",
           "user_charging_sites": "Wyświetlaj i zarządzaj własnymi lokalizacjami ładowania.",
           "charging_site_database": "Pobierz lub zaimportuj bazę lokalizacji ładowania.",
-          "export": "Eksportuj zapisane dane Ford Triplog do pliku CSV."
+          "export": "Eksportuj zapisane dane Ford Triplog do pliku CSV.",
+          "user_places": "Manage places for automatic pause assignment."
         }
       },
       "settings": {
@@ -699,14 +701,16 @@
           "export_journeys": "Eksportuj podróże do CSV",
           "export_charges": "Eksportuj sesje ładowania do CSV",
           "init": "Wróć do menu głównego",
-          "export_charging_monthly": "Eksportuj miesięczne statystyki ładowania do CSV"
+          "export_charging_monthly": "Eksportuj miesięczne statystyki ładowania do CSV",
+          "export_driving_monthly": "Eksportuj miesięczne statystyki jazdy jako CSV"
         },
         "menu_option_descriptions": {
           "export_trips": "Eksportuj zapisane przejazdy do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "export_journeys": "Eksportuj zapisane podróże do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "export_charges": "Eksportuj zapisane sesje ładowania do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "init": "Wróć do przeglądu Ford Triplog.",
-          "export_charging_monthly": "Eksportuj pełną historię ładowania zagregowaną według miesięcy kalendarzowych do pliku CSV."
+          "export_charging_monthly": "Eksportuj pełną historię ładowania zagregowaną według miesięcy kalendarzowych do pliku CSV.",
+          "export_driving_monthly": "Eksportuj pełną historię jazdy zagregowaną według miesięcy kalendarzowych jako plik CSV."
         }
       },
       "export_trips": {
@@ -779,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Edytuj przerwę",
           "pause_receipts": "Paragony",
-          "pause_selection": "Wróć do przerw"
+          "pause_selection": "Wróć do przerw",
+          "pause_save_place": "Zapisz jako własne miejsce"
         },
         "menu_option_descriptions": {
           "pause_edit": "Edytuj kategorię, tytuł, notatkę, lokalizację i koszty.",
           "pause_receipts": "Wyświetl paragony lub przypisz nowy paragon bezpośrednio do tej przerwy.",
-          "pause_selection": "Wróć do listy wykrytych przerw."
+          "pause_selection": "Wróć do listy wykrytych przerw.",
+          "pause_save_place": "Przejmij współrzędne bezpośrednio z tej przerwy i zapisz je jako miejsce do ponownego użycia."
         }
       },
       "pause_receipts": {
@@ -836,6 +842,56 @@
       "export_charging_monthly": {
         "title": "Eksport miesięcznych statystyk ładowania",
         "description": "Eksportuje pełną historię ładowania jako jeden wiersz na miesiąc, z podziałem na Dom, Praca i Zewnętrzne."
+      },
+      "export_driving_monthly": {
+        "title": "Eksport miesięcznych statystyk jazdy",
+        "description": "Eksportuje pełną historię jazdy z jednym wierszem na miesiąc kalendarzowy, w tym dystans, przejazdy, podróże, czas jazdy, energię, zużycie i rekuperację netto."
+      },
+      "user_places": {
+        "title": "Custom places",
+        "description": "Manage places that automatically enrich pauses with category, location and description.",
+        "menu_options": {
+          "user_place_new": "Add place",
+          "user_place_selection": "Select place",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "user_place_new": "Create a place with coordinates and detection radius.",
+          "user_place_selection": "Open, edit or delete a stored place.",
+          "init": "Return to the Ford Triplog overview."
+        }
+      },
+      "user_place_selection": {
+        "title": "Select place",
+        "description": "{place_count} custom places stored.",
+        "data": {
+          "user_place_selection": "Place"
+        }
+      },
+      "user_place_edit": {
+        "title": "Add or edit place",
+        "description": "When a pause is inside the configured radius, Ford Triplog enriches it automatically. Manual pause edits still take precedence.",
+        "data": {
+          "name": "Place / name",
+          "category": "Category",
+          "description": "Description",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius_m": "Detection radius (m)",
+          "icon": "Icon (optional)",
+          "action": "Action"
+        }
+      },
+      "pause_save_place": {
+        "title": "Zapisz przerwę jako miejsce",
+        "description": "Współrzędne są pobierane automatycznie z przerwy: {latitude}, {longitude}.\n\nBieżące miejsce: {location}",
+        "data": {
+          "name": "Miejsce / nazwa",
+          "category": "Kategoria",
+          "description": "Opis",
+          "radius_m": "Promień wykrywania (m)",
+          "icon": "Ikona (opcjonalnie)"
+        }
       }
     },
     "error": {
@@ -888,7 +944,14 @@
       "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych.",
       "route_rebuild_confirmation_required": "Działanie musi zostać potwierdzone.",
       "route_rebuild_failed": "Nie udało się zakończyć konserwacji tras. Sprawdź dziennik Home Assistant, aby uzyskać szczegóły.",
-      "route_osrm_not_configured": "OSRM nie jest skonfigurowany. Najpierw skonfiguruj adres OSRM."
+      "route_osrm_not_configured": "OSRM nie jest skonfigurowany. Najpierw skonfiguruj adres OSRM.",
+      "user_place_load_failed": "Custom places could not be loaded.",
+      "user_place_not_found": "The selected place was not found.",
+      "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
+      "user_place_duplicate": "W tej lokalizacji lub w jej bezpośrednim sąsiedztwie istnieje już niestandardowe miejsce o tej nazwie.",
+      "user_place_delete_failed": "The place could not be deleted.",
+      "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS.",
+      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie."
     }
   },
   "entity": {
@@ -1066,6 +1129,9 @@
       },
       "charging_monthly_statistics": {
         "name": "Miesięczne statystyki ładowania"
+      },
+      "driving_monthly_statistics": {
+        "name": "Miesięczne statystyki jazdy"
       }
     },
     "binary_sensor": {

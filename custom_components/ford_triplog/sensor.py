@@ -59,6 +59,7 @@ from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
+from .charging_site_lookup import haversine_distance_m
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -118,6 +119,7 @@ async def async_setup_entry(
                 common_translations,
             ),
             FordTriplogLastJourneyOverviewSensor(
+                coordinator,
                 journey_storage,
                 common_translations,
             ),
@@ -131,6 +133,7 @@ async def async_setup_entry(
                 entry.entry_id,
             ),
             FordTriplogJourneyHistorySensor(
+                coordinator,
                 journey_storage,
                 common_translations,
                 entry.entry_id,
@@ -172,6 +175,9 @@ async def async_setup_entry(
             FordTriplogLastTripRegeneratedEnergySensor(coordinator, history, common_translations),
             FordTriplogRecuperationStatisticsSensor(coordinator, history, common_translations),
             FordTriplogChargingMonthlyStatisticsSensor(coordinator, history, common_translations),
+            FordTriplogDrivingMonthlyStatisticsSensor(
+                coordinator, history, journey_storage, common_translations
+            ),
 
             FordTriplogTopTripSensor(
                 coordinator,
@@ -378,9 +384,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
     def __init__(
         self,
+        coordinator,
         storage: FordTriplogJourneyStorage | None,
         translations: dict[str, str],
     ) -> None:
+        self.coordinator = coordinator
         self.storage = storage
         self.translations = translations
         self._journey = None
@@ -527,33 +535,126 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
         return round((energy / distance) * 100, 1)
 
+    def _resolve_ha_zone_name(
+        self,
+        latitude: Any,
+        longitude: Any,
+    ) -> str | None:
+        """Return the closest matching Home Assistant zone name."""
+
+        if latitude is None or longitude is None or self.hass is None:
+            return None
+
+        try:
+            point_lat = float(latitude)
+            point_lon = float(longitude)
+        except (TypeError, ValueError):
+            return None
+
+        closest: tuple[float, str] | None = None
+        for state in self.hass.states.async_all("zone"):
+            try:
+                zone_lat = float(state.attributes.get("latitude"))
+                zone_lon = float(state.attributes.get("longitude"))
+                zone_radius = max(0.0, float(state.attributes.get("radius", 100)))
+                distance_m = haversine_distance_m(
+                    point_lat,
+                    point_lon,
+                    zone_lat,
+                    zone_lon,
+                )
+            except (TypeError, ValueError):
+                continue
+
+            if distance_m > zone_radius:
+                continue
+
+            if state.entity_id == "zone.home":
+                zone_name = "Home"
+            else:
+                zone_name = str(
+                    state.attributes.get("friendly_name")
+                    or state.name
+                    or state.entity_id.split(".", 1)[-1]
+                ).strip()
+
+            if not zone_name:
+                continue
+
+            if closest is None or distance_m < closest[0]:
+                closest = (distance_m, zone_name)
+
+        return closest[1] if closest else None
+
+    def _resolve_known_location(
+        self,
+        *,
+        latitude: Any,
+        longitude: Any,
+        existing_location: Any = None,
+        address: Any = None,
+        existing_source: Any = None,
+    ) -> tuple[str | None, str | None, dict[str, Any] | None]:
+        """Resolve display location using zone -> user place -> existing data."""
+
+        zone_name = self._resolve_ha_zone_name(latitude, longitude)
+        if zone_name:
+            return zone_name, "ha_zone", None
+
+        user_place_storage = getattr(
+            self.coordinator, "user_place_storage", None
+        )
+        if user_place_storage is not None:
+            place = user_place_storage.resolve_cached(latitude, longitude)
+            if place and place.get("name"):
+                return str(place["name"]), "user_place", place
+
+        resolved = existing_location or self._short_address(address)
+        return resolved, existing_source, None
+
     def _item_start_location(self, item: Any) -> str | None:
         """Return the resolved start location of an item."""
 
         if getattr(item, "item_type", None) == "trip":
-            return (
-                getattr(item, "start_location", None)
-                or self._short_address(getattr(item, "start_address", None))
+            location, _source, _place = self._resolve_known_location(
+                latitude=getattr(item, "start_latitude", None),
+                longitude=getattr(item, "start_longitude", None),
+                existing_location=getattr(item, "start_location", None),
+                address=getattr(item, "start_address", None),
+                existing_source=getattr(item, "start_location_source", None),
             )
+            return location
 
-        return (
-            getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None))
+        location, _source, _place = self._resolve_known_location(
+            latitude=getattr(item, "latitude", None),
+            longitude=getattr(item, "longitude", None),
+            existing_location=getattr(item, "location", None),
+            address=getattr(item, "address", None),
+            existing_source=getattr(item, "location_source", None),
         )
+        return location
 
     def _item_end_location(self, item: Any) -> str | None:
         """Return the resolved end location of an item."""
 
         if getattr(item, "item_type", None) == "trip":
-            return (
-                getattr(item, "end_location", None)
-                or self._short_address(getattr(item, "end_address", None))
+            location, _source, _place = self._resolve_known_location(
+                latitude=getattr(item, "end_latitude", None),
+                longitude=getattr(item, "end_longitude", None),
+                existing_location=getattr(item, "end_location", None),
+                address=getattr(item, "end_address", None),
+                existing_source=getattr(item, "end_location_source", None),
             )
+            return location
 
-        return (
-            getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None))
+        location, _source, _place = self._resolve_known_location(
+            latitude=getattr(item, "latitude", None),
+            longitude=getattr(item, "longitude", None),
+            existing_location=getattr(item, "location", None),
+            address=getattr(item, "address", None),
+            existing_source=getattr(item, "location_source", None),
         )
+        return location
 
     def _item_location_details(
         self,
@@ -565,31 +666,64 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
         if getattr(item, "item_type", None) == "trip":
             prefix = endpoint or "end"
-            return {
-                "location": getattr(item, f"{prefix}_location", None)
-                or self._short_address(
-                    getattr(item, f"{prefix}_address", None)
-                ),
-                "address": self._short_address(
-                    getattr(item, f"{prefix}_address", None)
-                ),
-                "latitude": getattr(item, f"{prefix}_latitude", None),
-                "longitude": getattr(item, f"{prefix}_longitude", None),
-                "location_source": getattr(
-                    item,
-                    f"{prefix}_location_source",
-                    None,
-                ),
+            latitude = getattr(item, f"{prefix}_latitude", None)
+            longitude = getattr(item, f"{prefix}_longitude", None)
+            address = getattr(item, f"{prefix}_address", None)
+            existing_source = getattr(
+                item,
+                f"{prefix}_location_source",
+                None,
+            )
+            location, location_source, place = self._resolve_known_location(
+                latitude=latitude,
+                longitude=longitude,
+                existing_location=getattr(item, f"{prefix}_location", None),
+                address=address,
+                existing_source=existing_source,
+            )
+            result = {
+                "location": location,
+                "address": self._short_address(address),
+                "latitude": latitude,
+                "longitude": longitude,
+                "location_source": location_source,
             }
+            if place:
+                result.update(
+                    {
+                        "user_place_id": place.get("place_id"),
+                        "user_place_name": place.get("name"),
+                        "user_place_distance_m": place.get("distance_m"),
+                    }
+                )
+            return result
 
-        return {
-            "location": getattr(item, "location", None)
-            or self._short_address(getattr(item, "address", None)),
-            "address": self._short_address(getattr(item, "address", None)),
-            "latitude": getattr(item, "latitude", None),
-            "longitude": getattr(item, "longitude", None),
-            "location_source": getattr(item, "location_source", None),
+        latitude = getattr(item, "latitude", None)
+        longitude = getattr(item, "longitude", None)
+        address = getattr(item, "address", None)
+        location, location_source, place = self._resolve_known_location(
+            latitude=latitude,
+            longitude=longitude,
+            existing_location=getattr(item, "location", None),
+            address=address,
+            existing_source=getattr(item, "location_source", None),
+        )
+        result = {
+            "location": location,
+            "address": self._short_address(address),
+            "latitude": latitude,
+            "longitude": longitude,
+            "location_source": location_source,
         }
+        if place:
+            result.update(
+                {
+                    "user_place_id": place.get("place_id"),
+                    "user_place_name": place.get("name"),
+                    "user_place_distance_m": place.get("distance_m"),
+                }
+            )
+        return result
 
     def _build_timeline(self, journey) -> tuple[list[dict[str, Any]], int]:
         """Build start, trip, pause, charge and end timeline entries."""
@@ -624,16 +758,27 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         first_item = items[0] if items else None
         last_item = items[-1] if items else None
 
-        start_location = (
-            self._item_start_location(first_item)
-            if first_item is not None
-            else self._short_address(journey.start_address)
-        )
-        end_location = (
-            self._item_end_location(last_item)
-            if last_item is not None
-            else self._short_address(journey.end_address)
-        )
+        if first_item is not None:
+            start_location = self._item_start_location(first_item)
+        else:
+            start_location, _start_source, _start_place = (
+                self._resolve_known_location(
+                    latitude=journey.start_latitude,
+                    longitude=journey.start_longitude,
+                    address=journey.start_address,
+                )
+            )
+
+        if last_item is not None:
+            end_location = self._item_end_location(last_item)
+        else:
+            end_location, _end_source, _end_place = (
+                self._resolve_known_location(
+                    latitude=journey.end_latitude,
+                    longitude=journey.end_longitude,
+                    address=journey.end_address,
+                )
+            )
 
         timeline.append(
             {
@@ -672,6 +817,13 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     1,
                 )
 
+                start_details = self._item_location_details(
+                    item, endpoint="start"
+                )
+                end_details = self._item_location_details(
+                    item, endpoint="end"
+                )
+
                 entry = {
                     "type": "trip",
                     "id": item.item_id,
@@ -681,14 +833,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     "end_time_formatted": self._format_clock(item.end_time),
                     "duration_seconds": duration_seconds,
                     "duration": format_duration(duration_seconds),
-                    "start_location": self._item_start_location(item),
-                    "end_location": self._item_end_location(item),
-                    "display_start_location": (
-                        self._item_start_location(item)
-                    ),
-                    "display_end_location": (
-                        self._item_end_location(item)
-                    ),
+                    "start_location": start_details.get("location"),
+                    "end_location": end_details.get("location"),
+                    "display_start_location": start_details.get("location"),
+                    "display_end_location": end_details.get("location"),
                     "start_address": self._short_address(
                         getattr(item, "start_address", None)
                     ),
@@ -707,15 +855,25 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                     ),
                     "end_latitude": getattr(item, "end_latitude", None),
                     "end_longitude": getattr(item, "end_longitude", None),
-                    "start_location_source": getattr(
-                        item,
-                        "start_location_source",
-                        None,
+                    "start_location_source": start_details.get(
+                        "location_source"
                     ),
-                    "end_location_source": getattr(
-                        item,
-                        "end_location_source",
-                        None,
+                    "end_location_source": end_details.get(
+                        "location_source"
+                    ),
+                    "start_user_place_id": start_details.get(
+                        "user_place_id"
+                    ),
+                    "start_user_place_name": start_details.get(
+                        "user_place_name"
+                    ),
+                    "start_user_place_distance_m": start_details.get(
+                        "user_place_distance_m"
+                    ),
+                    "end_user_place_id": end_details.get("user_place_id"),
+                    "end_user_place_name": end_details.get("user_place_name"),
+                    "end_user_place_distance_m": end_details.get(
+                        "user_place_distance_m"
                     ),
                     "distance_km": distance_km,
                     "energy_used_kwh": energy_kwh,
@@ -856,6 +1014,16 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if not isinstance(override, dict):
                 override = {}
 
+            auto_place = None
+            user_place_storage = getattr(
+                self.coordinator, "user_place_storage", None
+            )
+            if user_place_storage is not None:
+                auto_place = user_place_storage.resolve_cached(
+                    pause_location.get("latitude"),
+                    pause_location.get("longitude"),
+                )
+
             pause_soc_start = self._optional_number(
                 getattr(item, "end_soc", None),
                 1,
@@ -905,9 +1073,18 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "battery_energy_change_kwh": (
                     battery_energy_change_kwh
                 ),
-                "category": override.get("category"),
+                "category": (
+                    override.get("category")
+                    or (auto_place or {}).get("category")
+                ),
                 "title": override.get("title"),
-                "note": override.get("note"),
+                "note": (
+                    override.get("note")
+                    or (auto_place or {}).get("description")
+                ),
+                "user_place_id": (auto_place or {}).get("place_id"),
+                "user_place_name": (auto_place or {}).get("name"),
+                "user_place_distance_m": (auto_place or {}).get("distance_m"),
                 "cost_total": override.get("cost_total"),
                 "currency": override.get("currency"),
                 "edited": bool(override),
@@ -919,6 +1096,14 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 pause_entry["location"] = manual_location
                 pause_entry["display_location"] = manual_location
                 pause_entry["location_source"] = "manual"
+            elif (
+                pause_location.get("location_source") != "ha_zone"
+                and auto_place
+                and auto_place.get("name")
+            ):
+                pause_entry["location"] = auto_place["name"]
+                pause_entry["display_location"] = auto_place["name"]
+                pause_entry["location_source"] = "user_place"
 
             timeline.append(
                 {
@@ -1135,12 +1320,13 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
 
     def __init__(
         self,
+        coordinator,
         storage,
         translations,
         entry_id: str,
         receipt_storage=None,
     ) -> None:
-        super().__init__(storage, translations)
+        super().__init__(coordinator, storage, translations)
         self.entry_id = entry_id
         self.receipt_storage = receipt_storage
         self._selected_date = None
@@ -6585,6 +6771,243 @@ class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
         self._attributes = {
             key: value for key, value in self._attributes.items()
             if value is not None
+        }
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        return self._attributes
+
+
+class FordTriplogDrivingMonthlyStatisticsSensor(FordTriplogSensorBase):
+    """Current-month driving statistics with rolling monthly/yearly summaries."""
+
+    _attr_translation_key = "driving_monthly_statistics"
+    _attr_device_class = SensorDeviceClass.DISTANCE
+    _attr_unique_id = "ford_triplog_driving_monthly_statistics"
+    _attr_native_unit_of_measurement = UnitOfLength.KILOMETERS
+    _attr_state_class = SensorStateClass.TOTAL
+    _attr_suggested_display_precision = 1
+    _attr_icon = "mdi:car-clock"
+
+    def __init__(self, coordinator, history, journey_storage, translations) -> None:
+        super().__init__(coordinator, history, translations)
+        self.journey_storage = journey_storage
+        self._attributes: dict[str, Any] = {}
+
+    @staticmethod
+    def _optional_float(value: Any) -> float | None:
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _optional_int(value: Any) -> int:
+        try:
+            return int(value) if value is not None else 0
+        except (TypeError, ValueError):
+            return 0
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_TRIP_UPDATED,
+                self._handle_driving_data_updated,
+            )
+        )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_LAST_JOURNEY_UPDATED,
+                self._handle_driving_data_updated,
+            )
+        )
+
+    def _handle_driving_data_updated(self, *_args: Any) -> None:
+        self.hass.add_job(self._async_refresh_from_driving_update)
+
+    async def _async_refresh_from_driving_update(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        trips = await self.history.get_all_trips()
+        journeys = (
+            await self.journey_storage.get_all_journeys()
+            if self.journey_storage is not None
+            else []
+        )
+
+        now = dt_util.now()
+        current_month_key = now.strftime("%Y-%m")
+
+        def empty_period() -> dict[str, float | int]:
+            return {
+                "distance": 0.0,
+                "trip_count": 0,
+                "journey_count": 0,
+                "duration_seconds": 0,
+                "energy_used": 0.0,
+                "soc_used": 0.0,
+                "soc_recovered": 0.0,
+                "regenerated_energy": 0.0,
+                "regen_trip_count": 0,
+            }
+
+        def month_key_offset(offset: int) -> str:
+            month_index = now.year * 12 + (now.month - 1) + offset
+            year, month_zero = divmod(month_index, 12)
+            return f"{year:04d}-{month_zero + 1:02d}"
+
+        month_keys = [month_key_offset(offset) for offset in range(-11, 1)]
+        monthly_periods = {key: empty_period() for key in month_keys}
+        yearly_keys = [str(now.year - 1), str(now.year - 2)]
+        yearly_periods = {key: empty_period() for key in yearly_keys}
+
+        def parse_local_date(value: Any) -> datetime | None:
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                return dt_util.as_local(parsed)
+            except (TypeError, ValueError):
+                return None
+
+        def add_trip(period: dict[str, float | int], trip: dict[str, Any]) -> None:
+            distance = max(0.0, self._optional_float(trip.get("distance_km")) or 0.0)
+            duration = max(0, self._optional_int(trip.get("duration_seconds")))
+            energy = self._optional_float(trip.get("energy_used_kwh")) or 0.0
+            soc_used = self._optional_float(trip.get("soc_used")) or 0.0
+
+            # Older archived trips predate the dedicated recuperation fields.
+            # Keep the monthly/yearly statistics consistent with the main
+            # history statistics by reconstructing net SOC gain from the
+            # trip start/end SOC when the stored recovery pair is unavailable.
+            stored_soc_recovered = max(
+                0.0,
+                self._optional_float(trip.get("soc_recovered")) or 0.0,
+            )
+            stored_regenerated = max(
+                0.0,
+                self._optional_float(trip.get("regenerated_energy_kwh")) or 0.0,
+            )
+
+            if stored_soc_recovered > 0.0 and stored_regenerated > 0.0:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
+            elif distance > 0.0:
+                start_soc = self._optional_float(trip.get("start_soc"))
+                end_soc = self._optional_float(trip.get("end_soc"))
+                if start_soc is not None and end_soc is not None:
+                    soc_recovered = max(end_soc - start_soc, 0.0)
+                    if soc_recovered > 0.0:
+                        capacity = self._optional_float(
+                            trip.get("battery_capacity_kwh")
+                        )
+                        if capacity is None or capacity <= 0.0:
+                            capacity = self._optional_float(
+                                self.coordinator.battery_capacity
+                            ) or 0.0
+                        regenerated = (
+                            soc_recovered * capacity / 100.0
+                            if capacity > 0.0
+                            else 0.0
+                        )
+                    else:
+                        soc_recovered = 0.0
+                        regenerated = 0.0
+                else:
+                    soc_recovered = stored_soc_recovered
+                    regenerated = stored_regenerated
+            else:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
+
+            period["distance"] = float(period["distance"]) + distance
+            period["trip_count"] = int(period["trip_count"]) + 1
+            period["duration_seconds"] = int(period["duration_seconds"]) + duration
+            period["energy_used"] = float(period["energy_used"]) + energy
+            period["soc_used"] = float(period["soc_used"]) + soc_used
+            period["soc_recovered"] = float(period["soc_recovered"]) + soc_recovered
+            period["regenerated_energy"] = float(period["regenerated_energy"]) + regenerated
+            if soc_recovered > 0.0 or regenerated > 0.0:
+                period["regen_trip_count"] = int(period["regen_trip_count"]) + 1
+
+        for trip in trips:
+            if not isinstance(trip, dict):
+                continue
+            local_start = parse_local_date(trip.get("start_time"))
+            if local_start is None:
+                continue
+            month_key = local_start.strftime("%Y-%m")
+            year_key = local_start.strftime("%Y")
+            if month_key in monthly_periods:
+                add_trip(monthly_periods[month_key], trip)
+            if year_key in yearly_periods:
+                add_trip(yearly_periods[year_key], trip)
+
+        # Journey count is intentionally derived from archived journeys only;
+        # incomplete/current-day single-trip journeys are therefore not counted.
+        for journey in journeys:
+            start_value = getattr(journey, "start_time", None)
+            local_start = parse_local_date(start_value)
+            if local_start is None:
+                continue
+            month_key = local_start.strftime("%Y-%m")
+            year_key = local_start.strftime("%Y")
+            if month_key in monthly_periods:
+                monthly_periods[month_key]["journey_count"] = (
+                    int(monthly_periods[month_key]["journey_count"]) + 1
+                )
+            if year_key in yearly_periods:
+                yearly_periods[year_key]["journey_count"] = (
+                    int(yearly_periods[year_key]["journey_count"]) + 1
+                )
+
+        def serialize_period(period: dict[str, float | int]) -> dict[str, Any]:
+            distance = float(period["distance"])
+            energy = float(period["energy_used"])
+            average_consumption = energy / distance * 100.0 if distance > 0 else 0.0
+            return {
+                "distance_km": round(distance, 1),
+                "trip_count": int(period["trip_count"]),
+                "journey_count": int(period["journey_count"]),
+                "driving_duration_seconds": int(period["duration_seconds"]),
+                "energy_used_kwh": round(energy, 2),
+                "average_consumption_kwh_100km": round(average_consumption, 1),
+                "soc_used": round(float(period["soc_used"]), 1),
+                "soc_recovered": round(float(period["soc_recovered"]), 1),
+                "regenerated_energy_kwh": round(float(period["regenerated_energy"]), 2),
+                "regen_trip_count": int(period["regen_trip_count"]),
+            }
+
+        monthly_breakdown = {
+            key: serialize_period(monthly_periods[key]) for key in month_keys
+        }
+        yearly_summary = {
+            key: serialize_period(yearly_periods[key]) for key in yearly_keys
+        }
+
+        current = monthly_breakdown[current_month_key]
+        self._value = current["distance_km"]
+        self._attributes = {
+            "month": current_month_key,
+            "distance_month_km": current["distance_km"],
+            "trip_count_month": current["trip_count"],
+            "journey_count_month": current["journey_count"],
+            "driving_duration_month_seconds": current["driving_duration_seconds"],
+            "energy_used_month_kwh": current["energy_used_kwh"],
+            "average_consumption_month_kwh_100km": current["average_consumption_kwh_100km"],
+            "soc_used_month": current["soc_used"],
+            "soc_recovered_month": current["soc_recovered"],
+            "regenerated_energy_month_kwh": current["regenerated_energy_kwh"],
+            "regen_trip_count_month": current["regen_trip_count"],
+            "energy_semantics": "signed_net_battery_energy",
+            "recuperation_semantics": "soc_net_gain",
+            "monthly_breakdown": monthly_breakdown,
+            "yearly_summary": yearly_summary,
         }
 
     @property

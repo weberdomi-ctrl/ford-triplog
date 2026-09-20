@@ -35,7 +35,8 @@
           "charge_management": "Charging sessions",
           "user_charging_sites": "Custom charging locations",
           "charging_site_database": "OpenStreetMap charging locations",
-          "export": "Export data"
+          "export": "Export data",
+          "user_places": "Custom places"
         },
         "menu_option_descriptions": {
           "settings": "Edit trip, charging and vehicle settings.",
@@ -45,7 +46,8 @@
           "charge_management": "Manage charging sessions, costs and related receipts.",
           "user_charging_sites": "View and manage custom charging locations.",
           "charging_site_database": "Download or import the charging location database.",
-          "export": "Export stored Ford Triplog data as a CSV file."
+          "export": "Export stored Ford Triplog data as a CSV file.",
+          "user_places": "Manage places for automatic pause assignment."
         }
       },
       "settings": {
@@ -699,14 +701,16 @@
           "export_journeys": "Export journeys as CSV",
           "export_charges": "Export charging sessions as CSV",
           "init": "Back to main menu",
-          "export_charging_monthly": "Export monthly charging statistics as CSV"
+          "export_charging_monthly": "Export monthly charging statistics as CSV",
+          "export_driving_monthly": "Export monthly driving statistics as CSV"
         },
         "menu_option_descriptions": {
           "export_trips": "Export stored trips as a CSV file, optionally limited to a date range.",
           "export_journeys": "Export stored journeys as a CSV file, optionally limited to a date range.",
           "init": "Return to the Ford Triplog overview.",
           "export_charges": "Export stored charging sessions as a CSV file, optionally limited to a date range.",
-          "export_charging_monthly": "Export the complete charging history aggregated by calendar month as a CSV file."
+          "export_charging_monthly": "Export the complete charging history aggregated by calendar month as a CSV file.",
+          "export_driving_monthly": "Export the complete driving history aggregated by calendar month as a CSV file."
         }
       },
       "export_trips": {
@@ -779,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Edit pause",
           "pause_receipts": "Receipts",
-          "pause_selection": "Back to pauses"
+          "pause_selection": "Back to pauses",
+          "pause_save_place": "Save as custom place"
         },
         "menu_option_descriptions": {
           "pause_edit": "Edit category, title, note, location and costs.",
           "pause_receipts": "Show receipts or attach a new receipt to this pause.",
-          "pause_selection": "Return to the list of detected pauses."
+          "pause_selection": "Return to the list of detected pauses.",
+          "pause_save_place": "Use this pause's coordinates directly and save them as a reusable place."
         }
       },
       "pause_receipts": {
@@ -836,6 +842,56 @@
       "export_charging_monthly": {
         "title": "Export monthly charging statistics",
         "description": "Exports the complete charging history as one row per calendar month, split into Home, Work and External charging."
+      },
+      "export_driving_monthly": {
+        "title": "Export monthly driving statistics",
+        "description": "Exports the complete driving history with one row per calendar month, including distance, trips, journeys, driving time, energy, consumption and net recuperation."
+      },
+      "user_places": {
+        "title": "Custom places",
+        "description": "Manage places that automatically enrich pauses with category, location and description.",
+        "menu_options": {
+          "user_place_new": "Add place",
+          "user_place_selection": "Select place",
+          "init": "Back to main menu"
+        },
+        "menu_option_descriptions": {
+          "user_place_new": "Create a place with coordinates and detection radius.",
+          "user_place_selection": "Open, edit or delete a stored place.",
+          "init": "Return to the Ford Triplog overview."
+        }
+      },
+      "user_place_selection": {
+        "title": "Select place",
+        "description": "{place_count} custom places stored.",
+        "data": {
+          "user_place_selection": "Place"
+        }
+      },
+      "user_place_edit": {
+        "title": "Add or edit place",
+        "description": "When a pause is inside the configured radius, Ford Triplog enriches it automatically. Manual pause edits still take precedence.",
+        "data": {
+          "name": "Place / name",
+          "category": "Category",
+          "description": "Description",
+          "latitude": "Latitude",
+          "longitude": "Longitude",
+          "radius_m": "Detection radius (m)",
+          "icon": "Icon (optional)",
+          "action": "Action"
+        }
+      },
+      "pause_save_place": {
+        "title": "Save pause as place",
+        "description": "Coordinates are taken automatically from the pause: {latitude}, {longitude}.\n\nCurrent location: {location}",
+        "data": {
+          "name": "Place / name",
+          "category": "Category",
+          "description": "Description",
+          "radius_m": "Detection radius (m)",
+          "icon": "Icon (optional)"
+        }
       }
     },
     "error": {
@@ -888,7 +944,14 @@
       "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
       "route_rebuild_confirmation_required": "The action must be confirmed.",
       "route_rebuild_failed": "The route maintenance action could not be completed. Check the Home Assistant log for details.",
-      "route_osrm_not_configured": "OSRM is not configured. Configure an OSRM address first."
+      "route_osrm_not_configured": "OSRM is not configured. Configure an OSRM address first.",
+      "user_place_load_failed": "Custom places could not be loaded.",
+      "user_place_not_found": "The selected place was not found.",
+      "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
+      "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
+      "user_place_delete_failed": "The place could not be deleted.",
+      "pause_place_no_coordinates": "No GPS coordinates are available for this pause.",
+      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed."
     }
   },
   "entity": {
@@ -1066,6 +1129,9 @@
       },
       "charging_monthly_statistics": {
         "name": "Monthly charging statistics"
+      },
+      "driving_monthly_statistics": {
+        "name": "Monthly driving statistics"
       }
     },
     "binary_sensor": {

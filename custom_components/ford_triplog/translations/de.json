@@ -35,7 +35,8 @@
           "charge_management": "Ladevorgänge verwalten",
           "user_charging_sites": "Eigene Ladeorte",
           "charging_site_database": "OpenStreetMap-Ladeorte",
-          "export": "Daten exportieren"
+          "export": "Daten exportieren",
+          "user_places": "Benutzerdefinierte Orte"
         },
         "menu_option_descriptions": {
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
@@ -45,7 +46,8 @@
           "charge_management": "Ladevorgänge, Kosten und zugehörige Belege verwalten.",
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
-          "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren."
+          "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren.",
+          "user_places": "Orte für automatische Pausen-Zuordnung verwalten."
         }
       },
       "settings": {
@@ -699,14 +701,16 @@
           "export_journeys": "Touren als CSV exportieren",
           "export_charges": "Ladevorgänge als CSV exportieren",
           "init": "Zurück zum Hauptmenü",
-          "export_charging_monthly": "Monatliche Ladestatistik als CSV exportieren"
+          "export_charging_monthly": "Monatliche Ladestatistik als CSV exportieren",
+          "export_driving_monthly": "Monatliche Fahrstatistik als CSV exportieren"
         },
         "menu_option_descriptions": {
           "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "export_journeys": "Gespeicherte Touren optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
           "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
-          "export_charging_monthly": "Die komplette Ladehistorie nach Kalendermonat aggregiert als CSV-Datei exportieren."
+          "export_charging_monthly": "Die komplette Ladehistorie nach Kalendermonat aggregiert als CSV-Datei exportieren.",
+          "export_driving_monthly": "Die komplette Fahrhistorie nach Kalendermonat aggregiert als CSV-Datei exportieren."
         }
       },
       "export_trips": {
@@ -779,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Pause bearbeiten",
           "pause_receipts": "Belege",
-          "pause_selection": "Zurück zu den Pausen"
+          "pause_selection": "Zurück zu den Pausen",
+          "pause_save_place": "Als benutzerdefinierten Ort speichern"
         },
         "menu_option_descriptions": {
           "pause_edit": "Kategorie, Titel, Notiz, Ort und Kosten bearbeiten.",
           "pause_receipts": "Belege anzeigen oder einen neuen Beleg direkt dieser Pause zuordnen.",
-          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren."
+          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren.",
+          "pause_save_place": "Koordinaten direkt aus dieser Pause übernehmen und als wiederverwendbaren Ort speichern."
         }
       },
       "pause_receipts": {
@@ -836,6 +842,56 @@
       "export_charging_monthly": {
         "title": "Monatliche Ladestatistik exportieren",
         "description": "Exportiert die komplette Ladehistorie mit einer Zeile pro Kalendermonat, aufgeteilt nach Zuhause, Arbeit und Extern."
+      },
+      "export_driving_monthly": {
+        "title": "Monatliche Fahrstatistik exportieren",
+        "description": "Exportiert die komplette Fahrhistorie mit einer Zeile pro Kalendermonat, inklusive Strecke, Fahrten, Journeys, Fahrzeit, Energie, Verbrauch und Netto-Rekuperation."
+      },
+      "user_places": {
+        "title": "Benutzerdefinierte Orte",
+        "description": "Verwalte Orte, die Pausen automatisch erkennen und mit Kategorie, Ort und Beschreibung ergänzen.",
+        "menu_options": {
+          "user_place_new": "Neuen Ort anlegen",
+          "user_place_selection": "Ort auswählen",
+          "init": "Zurück zum Hauptmenü"
+        },
+        "menu_option_descriptions": {
+          "user_place_new": "Einen neuen Ort mit Koordinaten und Erkennungsradius anlegen.",
+          "user_place_selection": "Einen gespeicherten Ort öffnen, bearbeiten oder löschen.",
+          "init": "Zur Ford-Triplog-Übersicht zurückkehren."
+        }
+      },
+      "user_place_selection": {
+        "title": "Ort auswählen",
+        "description": "{place_count} benutzerdefinierte Orte gespeichert.",
+        "data": {
+          "user_place_selection": "Ort"
+        }
+      },
+      "user_place_edit": {
+        "title": "Ort anlegen oder bearbeiten",
+        "description": "Liegt eine Pause innerhalb des Radius, ergänzt Ford Triplog den Ort automatisch. Manuelle Pause-Bearbeitungen haben weiterhin Vorrang.",
+        "data": {
+          "name": "Ort / Name",
+          "category": "Kategorie",
+          "description": "Beschreibung",
+          "latitude": "Breitengrad",
+          "longitude": "Längengrad",
+          "radius_m": "Erkennungsradius (m)",
+          "icon": "Icon (optional)",
+          "action": "Aktion"
+        }
+      },
+      "pause_save_place": {
+        "title": "Pause als Ort speichern",
+        "description": "Die Koordinaten werden automatisch aus der Pause übernommen: {latitude}, {longitude}.\n\nAktueller Ort: {location}",
+        "data": {
+          "name": "Ort / Name",
+          "category": "Kategorie",
+          "description": "Beschreibung",
+          "radius_m": "Erkennungsradius (m)",
+          "icon": "Icon (optional)"
+        }
       }
     },
     "error": {
@@ -888,7 +944,14 @@
       "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
       "route_rebuild_confirmation_required": "Die Aktion muss bestätigt werden.",
       "route_rebuild_failed": "Die Routen-Wartung konnte nicht abgeschlossen werden. Prüfe das Home-Assistant-Protokoll für Details.",
-      "route_osrm_not_configured": "OSRM ist nicht konfiguriert. Konfiguriere zuerst eine OSRM-Adresse."
+      "route_osrm_not_configured": "OSRM ist nicht konfiguriert. Konfiguriere zuerst eine OSRM-Adresse.",
+      "user_place_load_failed": "Benutzerdefinierte Orte konnten nicht geladen werden.",
+      "user_place_not_found": "Der ausgewählte Ort wurde nicht gefunden.",
+      "user_place_save_failed": "Der Ort konnte nicht gespeichert werden. Prüfe Name, Koordinaten und Radius.",
+      "user_place_duplicate": "Ein benutzerdefinierter Ort an dieser Position bzw. mit diesem Namen in unmittelbarer Nähe existiert bereits.",
+      "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
+      "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar.",
+      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist."
     }
   },
   "entity": {
@@ -1066,6 +1129,9 @@
       },
       "charging_monthly_statistics": {
         "name": "Ladestatistik Monat"
+      },
+      "driving_monthly_statistics": {
+        "name": "Fahrstatistik Monat"
       }
     },
     "binary_sensor": {

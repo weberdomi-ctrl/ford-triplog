@@ -47,6 +47,11 @@ from homeassistant.util import dt as dt_util
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
+from .user_place_storage import (
+    FordTriplogUserPlaceStorage,
+    DEFAULT_USER_PLACE_RADIUS_M,
+    UserPlaceDuplicateError,
+)
 from .receipt_storage import FordTriplogReceiptStorage
 from .ocr_client import (
     FordTriplogOCRAuthenticationError,
@@ -131,6 +136,38 @@ CONF_USER_CHARGING_SITE_ACTION = "action"
 USER_CHARGING_SITE_NEW = "__new__"
 USER_CHARGING_SITE_PENDING = "__pending__"
 USER_CHARGING_SITE_BACK = "__back__"
+
+CONF_USER_PLACE_SELECTION = "user_place_selection"
+CONF_USER_PLACE_NAME = "name"
+CONF_USER_PLACE_CATEGORY = "category"
+CONF_USER_PLACE_DESCRIPTION = "description"
+CONF_USER_PLACE_LATITUDE = "latitude"
+CONF_USER_PLACE_LONGITUDE = "longitude"
+CONF_USER_PLACE_RADIUS = "radius_m"
+CONF_USER_PLACE_ICON = "icon"
+CONF_USER_PLACE_ACTION = "action"
+USER_PLACE_BACK = "__back__"
+USER_PLACE_ACTION_SAVE = "save"
+USER_PLACE_ACTION_DELETE = "delete"
+USER_PLACE_ACTION_BACK = "back"
+
+USER_PLACE_ICON_OPTIONS = [
+    selector.SelectOptionDict(value="", label="Kein Icon"),
+    selector.SelectOptionDict(value="mdi:briefcase", label="Arbeit"),
+    selector.SelectOptionDict(value="mdi:office-building", label="Büro"),
+    selector.SelectOptionDict(value="mdi:cart", label="Einkaufen"),
+    selector.SelectOptionDict(value="mdi:store", label="Geschäft"),
+    selector.SelectOptionDict(value="mdi:silverware-fork-knife", label="Restaurant"),
+    selector.SelectOptionDict(value="mdi:coffee", label="Café"),
+    selector.SelectOptionDict(value="mdi:account-tie", label="Kunde"),
+    selector.SelectOptionDict(value="mdi:home", label="Zuhause"),
+    selector.SelectOptionDict(value="mdi:walk", label="Freizeit"),
+    selector.SelectOptionDict(value="mdi:run", label="Sport"),
+    selector.SelectOptionDict(value="mdi:parking", label="Parken"),
+    selector.SelectOptionDict(value="mdi:bed", label="Übernachtung"),
+    selector.SelectOptionDict(value="mdi:ev-station", label="Laden"),
+    selector.SelectOptionDict(value="mdi:map-marker", label="Sonstiger Ort"),
+]
 
 CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
@@ -337,6 +374,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._pending_charging_site_storage: PendingChargingSiteStorage | None = None
         self._selected_user_charging_site: dict[str, Any] | None = None
         self._selected_pending_charging_site: dict[str, Any] | None = None
+        self._user_place_storage: FordTriplogUserPlaceStorage | None = None
+        self._selected_user_place: dict[str, Any] | None = None
         self._charging_site_translations: dict[str, str] | None = None
         self._journey_result: dict[str, str] = {}
         self._route_result: dict[str, str] = {}
@@ -378,6 +417,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "pause_management",
                 "charge_management",
                 "export",
+                "user_places",
                 "user_charging_sites",
                 "charging_site_database",
             ],
@@ -2301,6 +2341,70 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return storage
 
+    def _get_user_place_storage(self) -> FordTriplogUserPlaceStorage:
+        """Return the user-place storage for this config entry."""
+
+        if self._user_place_storage is not None:
+            return self._user_place_storage
+
+        runtime_data = self.hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id, {}
+        )
+        coordinator = runtime_data.get("coordinator")
+        storage = getattr(coordinator, "user_place_storage", None)
+        if storage is None:
+            raise HomeAssistantError("User place storage is not initialized")
+        self._user_place_storage = storage
+        return storage
+
+    def _resolve_user_place_for_pause(
+        self,
+        current: Any,
+        following: Any,
+    ) -> dict[str, Any] | None:
+        """Resolve one pause against cached user-defined places."""
+
+        latitude = (
+            getattr(current, "end_latitude", None)
+            if getattr(current, "end_latitude", None) is not None
+            else getattr(following, "start_latitude", None)
+        )
+        longitude = (
+            getattr(current, "end_longitude", None)
+            if getattr(current, "end_longitude", None) is not None
+            else getattr(following, "start_longitude", None)
+        )
+        try:
+            return self._get_user_place_storage().resolve_cached(
+                latitude, longitude
+            )
+        except HomeAssistantError:
+            return None
+
+    @staticmethod
+    def _pause_coordinates(
+        current: Any,
+        following: Any,
+    ) -> tuple[float | None, float | None]:
+        """Return the best coordinate pair for a pause."""
+
+        latitude = (
+            getattr(current, "end_latitude", None)
+            if getattr(current, "end_latitude", None) is not None
+            else getattr(following, "start_latitude", None)
+        )
+        longitude = (
+            getattr(current, "end_longitude", None)
+            if getattr(current, "end_longitude", None) is not None
+            else getattr(following, "start_longitude", None)
+        )
+        try:
+            if latitude is None or longitude is None:
+                return None, None
+            return float(latitude), float(longitude)
+        except (TypeError, ValueError):
+            return None, None
+
     @staticmethod
     def _pause_location(current: Any, following: Any) -> str:
         """Return the most useful automatic location for a pause."""
@@ -2363,9 +2467,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 pause_id = build_pause_id(current.item_id, following.item_id)
                 override = dict(journey.pause_overrides.get(pause_id, {}))
-                location = override.get("location") or self._pause_location(
-                    current,
-                    following,
+                auto_place = self._resolve_user_place_for_pause(
+                    current, following
+                )
+                pause_latitude, pause_longitude = self._pause_coordinates(
+                    current, following
+                )
+                location = (
+                    override.get("location")
+                    or (auto_place or {}).get("name")
+                    or self._pause_location(current, following)
                 )
                 title = override.get("title")
                 date_text = str(journey.date or "—")
@@ -2392,6 +2503,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ),
                         "title": str(title or ""),
                         "location": str(location or "—"),
+                        "category": str(
+                            override.get("category")
+                            or (auto_place or {}).get("category")
+                            or ""
+                        ),
+                        "note": str(
+                            override.get("note")
+                            or (auto_place or {}).get("description")
+                            or ""
+                        ),
+                        "user_place_id": (auto_place or {}).get("place_id"),
+                        "latitude": pause_latitude,
+                        "longitude": pause_longitude,
                         "cost_total": override.get("cost_total"),
                         "currency": str(override.get("currency") or ""),
                     }
@@ -2529,19 +2653,138 @@ class FordTriplogOptionsFlow(OptionsFlow):
             and str(receipt.get("target_id") or "") == self._selected_pause_id
         ]
 
+        menu_options = [
+            "pause_edit",
+            "pause_receipts",
+        ]
+        if pause.get("latitude") is not None and pause.get("longitude") is not None:
+            menu_options.append("pause_save_place")
+        menu_options.append("pause_selection")
+
         return self.async_show_menu(
             step_id="pause_detail",
-            menu_options=[
-                "pause_edit",
-                "pause_receipts",
-                "pause_selection",
-            ],
+            menu_options=menu_options,
             description_placeholders={
                 "date": str(pause.get("date") or "—"),
                 "start_time": str(pause.get("start_time") or "—"),
                 "location": str(pause.get("location") or "—"),
                 "title": str(pause.get("title") or "—"),
                 "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_pause_save_place(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Save the selected pause location as a user-defined place."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        latitude = pause.get("latitude")
+        longitude = pause.get("longitude")
+        if latitude is None or longitude is None:
+            return self.async_show_form(
+                step_id="pause_save_place",
+                data_schema=vol.Schema({}),
+                errors={"base": "pause_place_no_coordinates"},
+                description_placeholders={
+                    "location": str(pause.get("location") or "—"),
+                    "latitude": "—",
+                    "longitude": "—",
+                },
+            )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self._get_user_place_storage().async_add(
+                    {
+                        "name": user_input.get(CONF_USER_PLACE_NAME),
+                        "category": user_input.get(CONF_USER_PLACE_CATEGORY, ""),
+                        "description": user_input.get(
+                            CONF_USER_PLACE_DESCRIPTION, ""
+                        ),
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "radius_m": user_input.get(
+                            CONF_USER_PLACE_RADIUS, DEFAULT_USER_PLACE_RADIUS_M
+                        ),
+                        "icon": user_input.get(CONF_USER_PLACE_ICON, ""),
+                    }
+                )
+            except UserPlaceDuplicateError:
+                errors["base"] = "user_place_duplicate"
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "user_place_save_failed"
+            else:
+                # Re-open the pause so the freshly cached place is applied
+                # immediately to its automatic location/category/description.
+                return await self.async_step_pause_detail()
+
+        suggested_name = str(pause.get("location") or "").strip()
+        if suggested_name == "—":
+            suggested_name = ""
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USER_PLACE_NAME,
+                    default=suggested_name,
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_USER_PLACE_CATEGORY,
+                    default=str(pause.get("category") or ""),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            "Arbeit",
+                            "Einkaufen",
+                            "Freizeit",
+                            "Restaurant",
+                            "Kunde",
+                            "Familie",
+                            "Sport",
+                            "Parken",
+                            "Übernachtung",
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_USER_PLACE_DESCRIPTION,
+                    default=str(pause.get("note") or ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
+                vol.Required(
+                    CONF_USER_PLACE_RADIUS,
+                    default=DEFAULT_USER_PLACE_RADIUS_M,
+                ): vol.All(vol.Coerce(int), vol.Range(min=10, max=5000)),
+                vol.Optional(
+                    CONF_USER_PLACE_ICON,
+                    default="",
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=USER_PLACE_ICON_OPTIONS,
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="pause_save_place",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "location": str(pause.get("location") or "—"),
+                "latitude": f"{float(latitude):.6f}",
+                "longitude": f"{float(longitude):.6f}",
             },
         )
 
@@ -4423,18 +4666,39 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if not user_input.get("confirm"):
                 errors["base"] = "journey_confirmation_required"
             else:
-                try:
-                    result = await self._get_journey_rebuilder().async_rebuild_journeys(
-                        start_date=user_input.get("start_date"),
-                        end_date=user_input.get("end_date"),
-                    )
-                except (HomeAssistantError, ValueError):
-                    errors["base"] = "journey_operation_failed"
+                rebuilder = self._get_journey_rebuilder()
+
+                if rebuilder.is_running:
+                    errors["base"] = "journey_operation_busy"
                 else:
-                    self._journey_result = self._format_journey_result(
-                        result.to_dict()
+                    start_date = user_input.get("start_date")
+                    end_date = user_input.get("end_date")
+
+                    async def _run_rebuild_background() -> None:
+                        try:
+                            result = await rebuilder.async_rebuild_journeys(
+                                start_date=start_date,
+                                end_date=end_date,
+                            )
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.exception(
+                                "Journey rebuild from options flow failed in background"
+                            )
+                            return
+
+                        _LOGGER.info(
+                            "Journey rebuild from options flow completed in background: %s",
+                            result.to_dict(),
+                        )
+
+                    self.hass.async_create_task(_run_rebuild_background())
+                    _LOGGER.info(
+                        "Journey rebuild started in background from options flow: "
+                        "start_date=%s end_date=%s",
+                        start_date,
+                        end_date,
                     )
-                    return await self.async_step_journey_result()
+                    return await self.async_step_init()
 
         return self.async_show_form(
             step_id="journey_rebuild",
@@ -4722,6 +4986,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         return manager
 
+    def _get_export_battery_capacity(self) -> float | None:
+        """Return configured usable battery capacity for driving exports."""
+
+        runtime_data = self.hass.data.get(
+            DOMAIN,
+            {},
+        ).get(
+            self._config_entry.entry_id,
+            {},
+        )
+        coordinator = runtime_data.get("coordinator")
+        value = getattr(coordinator, "battery_capacity", None)
+        try:
+            return float(value) if value is not None else None
+        except (TypeError, ValueError):
+            return None
+
+
     async def async_step_export(
         self,
         user_input: dict[str, Any] | None = None,
@@ -4735,6 +5017,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "export_journeys",
                 "export_charges",
                 "export_charging_monthly",
+                "export_driving_monthly",
                 "init",
             ],
         )
@@ -5085,6 +5368,65 @@ class FordTriplogOptionsFlow(OptionsFlow):
             "record_type": "Months",
         }
         return await self.async_step_export_result()
+
+    async def async_step_export_driving_monthly(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Export complete driving history aggregated by calendar month."""
+
+        try:
+            exporter = FordTriplogExporter(
+                self.hass,
+                self._get_trip_storage(),
+            )
+            result = await exporter.async_export_monthly_driving_statistics(
+                self._get_export_journey_storage(),
+                battery_capacity_kwh=self._get_export_battery_capacity(),
+            )
+        except (
+            HomeAssistantError,
+            OSError,
+            RuntimeError,
+            ValueError,
+        ):
+            _LOGGER.exception("Monthly driving statistics CSV export failed")
+            return self.async_abort(reason="export_failed")
+
+        filename = str(result.get("filename") or "")
+        export_path = f"/api/ford_triplog/exports/{filename}"
+        signed_path = async_sign_path(
+            self.hass,
+            export_path,
+            timedelta(minutes=10),
+            use_content_user=True,
+        )
+        try:
+            base_url = get_url(
+                self.hass,
+                allow_internal=True,
+                allow_external=True,
+                allow_cloud=True,
+                allow_ip=True,
+                prefer_external=True,
+            ).rstrip("/")
+            self._selected_export_url = f"{base_url}{signed_path}"
+        except NoURLAvailableError:
+            self._selected_export_url = signed_path
+
+        self._export_kind = "driving_monthly"
+        self._export_result = {
+            "record_count": str(result.get("record_count", 0)),
+            "filename": filename,
+            "path": str(result.get("path") or ""),
+            "period": await self._format_export_period(
+                result.get("start_date"),
+                result.get("end_date"),
+            ),
+            "record_type": "Months",
+        }
+        return await self.async_step_export_result()
+
 
     async def async_step_export_result(
         self,
@@ -5701,6 +6043,233 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         await self._user_charging_site_storage.async_setup()
         await self._pending_charging_site_storage.async_setup()
+
+    async def async_step_user_places(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show user-defined place navigation."""
+
+        return self.async_show_menu(
+            step_id="user_places",
+            menu_options=[
+                "user_place_new",
+                "user_place_selection",
+                "init",
+            ],
+        )
+
+    async def async_step_user_place_new(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create a new user-defined place."""
+
+        self._selected_user_place = None
+        return await self.async_step_user_place_edit(user_input)
+
+    async def async_step_user_place_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a user-defined place."""
+
+        errors: dict[str, str] = {}
+        try:
+            places = await self._get_user_place_storage().async_load()
+        except (HomeAssistantError, OSError, ValueError):
+            places = []
+            errors["base"] = "user_place_load_failed"
+
+        if user_input is not None:
+            selection = str(user_input.get(CONF_USER_PLACE_SELECTION) or "")
+            if selection == USER_PLACE_BACK:
+                return await self.async_step_user_places()
+            selected = next(
+                (place for place in places if place.get("place_id") == selection),
+                None,
+            )
+            if selected is None:
+                errors["base"] = "user_place_not_found"
+            else:
+                self._selected_user_place = selected
+                return await self.async_step_user_place_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=USER_PLACE_BACK,
+                label=await self._selection_back_label(),
+            )
+        ]
+        options.extend(
+            selector.SelectOptionDict(
+                value=str(place.get("place_id") or ""),
+                label=(
+                    f"{place.get('name', '—')} · "
+                    f"{place.get('category') or '—'} · "
+                    f"{place.get('radius_m', DEFAULT_USER_PLACE_RADIUS_M)} m"
+                ),
+            )
+            for place in sorted(
+                places,
+                key=lambda item: str(item.get("name") or "").casefold(),
+            )
+        )
+
+        return self.async_show_form(
+            step_id="user_place_selection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_USER_PLACE_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={"place_count": str(len(places))},
+        )
+
+    async def async_step_user_place_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Create or edit one user-defined place."""
+
+        errors: dict[str, str] = {}
+        existing = dict(self._selected_user_place or {})
+
+        if user_input is not None:
+            action = str(user_input.get(CONF_USER_PLACE_ACTION) or USER_PLACE_ACTION_SAVE)
+            if action == USER_PLACE_ACTION_BACK:
+                return await (
+                    self.async_step_user_place_selection()
+                    if existing
+                    else self.async_step_user_places()
+                )
+            if action == USER_PLACE_ACTION_DELETE and existing:
+                try:
+                    await self._get_user_place_storage().async_delete(
+                        str(existing.get("place_id") or "")
+                    )
+                except (HomeAssistantError, OSError, ValueError):
+                    errors["base"] = "user_place_delete_failed"
+                else:
+                    self._selected_user_place = None
+                    return await self.async_step_user_place_selection()
+            elif action == USER_PLACE_ACTION_SAVE:
+                changes = {
+                    "name": user_input.get(CONF_USER_PLACE_NAME),
+                    "category": user_input.get(CONF_USER_PLACE_CATEGORY, ""),
+                    "description": user_input.get(CONF_USER_PLACE_DESCRIPTION, ""),
+                    "latitude": user_input.get(CONF_USER_PLACE_LATITUDE),
+                    "longitude": user_input.get(CONF_USER_PLACE_LONGITUDE),
+                    "radius_m": user_input.get(CONF_USER_PLACE_RADIUS),
+                    "icon": user_input.get(CONF_USER_PLACE_ICON, ""),
+                }
+                try:
+                    storage = self._get_user_place_storage()
+                    if existing:
+                        saved = await storage.async_update(
+                            str(existing.get("place_id") or ""), changes
+                        )
+                    else:
+                        saved = await storage.async_add(changes)
+                except UserPlaceDuplicateError:
+                    errors["base"] = "user_place_duplicate"
+                except (HomeAssistantError, OSError, ValueError, KeyError):
+                    errors["base"] = "user_place_save_failed"
+                else:
+                    self._selected_user_place = saved
+                    return await self.async_step_user_place_selection()
+
+        action_options = [
+            selector.SelectOptionDict(value=USER_PLACE_ACTION_SAVE, label="Speichern"),
+        ]
+        if existing:
+            action_options.append(
+                selector.SelectOptionDict(value=USER_PLACE_ACTION_DELETE, label="Löschen")
+            )
+        action_options.append(
+            selector.SelectOptionDict(value=USER_PLACE_ACTION_BACK, label="Zurück")
+        )
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USER_PLACE_NAME,
+                    default=str(existing.get("name") or ""),
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_USER_PLACE_CATEGORY,
+                    default=str(existing.get("category") or ""),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            "Arbeit",
+                            "Einkaufen",
+                            "Freizeit",
+                            "Restaurant",
+                            "Kunde",
+                            "Familie",
+                            "Sport",
+                            "Parken",
+                            "Übernachtung",
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_USER_PLACE_DESCRIPTION,
+                    default=str(existing.get("description") or ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
+                vol.Required(
+                    CONF_USER_PLACE_LATITUDE,
+                    default=existing.get("latitude", 0.0),
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_USER_PLACE_LONGITUDE,
+                    default=existing.get("longitude", 0.0),
+                ): vol.Coerce(float),
+                vol.Required(
+                    CONF_USER_PLACE_RADIUS,
+                    default=existing.get("radius_m", DEFAULT_USER_PLACE_RADIUS_M),
+                ): vol.All(vol.Coerce(int), vol.Range(min=10, max=5000)),
+                vol.Optional(
+                    CONF_USER_PLACE_ICON,
+                    default=str(existing.get("icon") or ""),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=USER_PLACE_ICON_OPTIONS,
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Required(
+                    CONF_USER_PLACE_ACTION,
+                    default=USER_PLACE_ACTION_SAVE,
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=action_options,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="user_place_edit",
+            data_schema=schema,
+            errors=errors,
+        )
 
     async def async_step_user_charging_sites(
         self,

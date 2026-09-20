@@ -64,6 +64,7 @@ from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
+from .user_place_storage import FordTriplogUserPlaceStorage
 from .charging_site_lookup import (
     ChargingSiteDatabaseError,
     ChargingSiteLookup,
@@ -156,6 +157,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         self.user_charging_site_storage = UserChargingSiteStorage(hass)
+        self.user_place_storage = FordTriplogUserPlaceStorage(hass)
         self.pending_charging_site_storage = PendingChargingSiteStorage(hass)
 
         self.charging_location_resolver = ChargingLocationResolver(
@@ -316,6 +318,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     async def async_setup(self):
         await self.storage.async_setup()
         await self.user_charging_site_storage.async_setup()
+        await self.user_place_storage.async_setup()
         await self.pending_charging_site_storage.async_setup()
         await self._async_setup_charging_site_lookup()
 

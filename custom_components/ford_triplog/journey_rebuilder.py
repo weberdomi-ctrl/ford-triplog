@@ -18,6 +18,7 @@ from datetime import date, datetime
 from typing import Any, Awaitable, Callable, Final, Literal, Mapping
 
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.exceptions import HomeAssistantError
 
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .journey import FordTriplogJourney, build_pause_id
@@ -148,6 +149,13 @@ class FordTriplogJourneyRebuilder:
         self.hass = journey_storage.hass
 
         self._lock = asyncio.Lock()
+        self._running = False
+
+    @property
+    def is_running(self) -> bool:
+        """Return True while any journey maintenance operation is active."""
+
+        return self._running
 
     async def async_update_journeys(
         self,
@@ -205,46 +213,234 @@ class FordTriplogJourneyRebuilder:
     ) -> JourneyRebuildResult:
         """Execute one serialized maintenance task."""
 
-        async with self._lock:
-            normalized_start = self._normalize_date(start_date)
-            normalized_end = self._normalize_date(end_date)
+        if self._running:
+            raise HomeAssistantError(
+                "Journey maintenance is already running"
+            )
 
-            if (
+        self._running = True
+        try:
+            async with self._lock:
+                normalized_start = self._normalize_date(start_date)
+                normalized_end = self._normalize_date(end_date)
+
+                if (
                 normalized_start is not None
-                and normalized_end is not None
-                and normalized_start > normalized_end
-            ):
-                raise ValueError(
-                    "start_date must not be after end_date"
+                    and normalized_end is not None
+                    and normalized_start > normalized_end
+                ):
+                    raise ValueError(
+                        "start_date must not be after end_date"
+                    )
+
+                await self.source_storage.async_setup()
+                await self.journey_storage.async_setup()
+
+                await self._report(
+                    JourneyRebuildProgress(
+                        mode=mode,
+                        status="loading",
+                        processed=0,
+                        total=0,
+                        start_date=self._date_string(normalized_start),
+                        end_date=self._date_string(normalized_end),
+                        message="Loading archived trips, charges and journeys",
+                    )
                 )
 
-            await self.source_storage.async_setup()
-            await self.journey_storage.async_setup()
-
-            await self._report(
-                JourneyRebuildProgress(
-                    mode=mode,
-                    status="loading",
-                    processed=0,
-                    total=0,
-                    start_date=self._date_string(normalized_start),
-                    end_date=self._date_string(normalized_end),
-                    message="Loading archived trips, charges and journeys",
+                existing_journeys = (
+                    await self.journey_storage.get_all_journeys()
                 )
-            )
 
-            existing_journeys = (
-                await self.journey_storage.get_all_journeys()
-            )
+                if mode == "delete":
+                    journeys_deleted = await self._delete_matching_journeys(
+                        existing_journeys,
+                        normalized_start,
+                        normalized_end,
+                        mode=mode,
+                    )
 
-            if mode == "delete":
-                journeys_deleted = await self._delete_matching_journeys(
-                    existing_journeys,
+                    await self._synchronize_last_journey()
+                    async_dispatcher_send(
+                        self.hass,
+                        SIGNAL_LAST_JOURNEY_UPDATED,
+                    )
+
+                    result = JourneyRebuildResult(
+                        mode=mode,
+                        start_date=self._date_string(normalized_start),
+                        end_date=self._date_string(normalized_end),
+                        source_trips=0,
+                        source_charges=0,
+                        processed_records=0,
+                        journeys_created=0,
+                        journeys_deleted=journeys_deleted,
+                        skipped_records=0,
+                        affected_dates=(),
+                    )
+
+                    await self._report(
+                        JourneyRebuildProgress(
+                            mode=mode,
+                            status="completed",
+                            processed=journeys_deleted,
+                            total=journeys_deleted,
+                            start_date=result.start_date,
+                            end_date=result.end_date,
+                            journeys_deleted=journeys_deleted,
+                            message="Journey deletion completed",
+                        )
+                    )
+                    return result
+
+                trips, skipped_trips = await self._load_trips(
                     normalized_start,
                     normalized_end,
+                )
+                trips, duplicate_trips = self._drop_duplicate_trips(trips)
+                skipped_trips += duplicate_trips
+                charges, skipped_charges = await self._load_charges(
+                normalized_start,
+                    normalized_end,
+                )
+
+                source_dates = {
+                    self._event_date(event)
+                    for event in (*trips, *charges)
+                }
+
+                if mode == "update":
+                    affected_dates = self._find_missing_dates(
+                        trips,
+                        charges,
+                        existing_journeys,
+                    )
+                else:
+                    affected_dates = source_dates
+
+                affected_dates = {
+                    current_date
+                    for current_date in affected_dates
+                    if self._date_in_range(
+                        current_date,
+                        normalized_start,
+                        normalized_end,
+                    )
+                }
+
+                preserved_pause_overrides = {
+                    pause_id: dict(override)
+                    for journey in existing_journeys
+                    if self._journey_date(journey) in affected_dates
+                    for pause_id, override in journey.pause_overrides.items()
+                }
+
+                journeys_deleted = await self._delete_journeys_for_dates(
+                    existing_journeys,
+                    affected_dates,
                     mode=mode,
                 )
 
+                events = sorted(
+                    (
+                        event
+                        for event in (*trips, *charges)
+                        if self._event_date(event) in affected_dates
+                    ),
+                    key=self._event_sort_key,
+                )
+
+                total = len(events)
+                skipped_records = skipped_trips + skipped_charges
+
+                await self._report(
+                    JourneyRebuildProgress(
+                        mode=mode,
+                        status="running",
+                        processed=0,
+                        total=total,
+                        start_date=self._date_string(normalized_start),
+                        end_date=self._date_string(normalized_end),
+                        journeys_deleted=journeys_deleted,
+                        skipped_records=skipped_records,
+                        message="Recalculating daily journeys",
+                    )
+                )
+
+                manager = FordTriplogJourneyManager(
+                    self.source_storage.hass,
+                    self.journey_storage,
+                    battery_capacity_kwh=self.battery_capacity_kwh,
+                    maintenance_mode=True,
+                )
+                await manager.async_setup()
+
+                # A maintenance run must only use the selected archive data.
+                manager.current_journey = None
+                await self.journey_storage.clear_current_journey()
+
+                journeys_created = 0
+                processed = 0
+
+                for event in events:
+                    if event.event_type == _EVENT_TRIP:
+                        update = await manager.async_process_trip(
+                            event.data
+                        )
+                    else:
+                        update = await manager.async_process_charge(
+                            event.data
+                        )
+
+                    if update.completed_journey is not None:
+                        journeys_created += 1
+
+                    processed += 1
+
+                    await self._report(
+                        JourneyRebuildProgress(
+                            mode=mode,
+                            status="running",
+                            processed=processed,
+                            total=total,
+                            start_date=self._date_string(
+                                normalized_start
+                            ),
+                            end_date=self._date_string(normalized_end),
+                            journeys_created=journeys_created,
+                            journeys_deleted=journeys_deleted,
+                            skipped_records=skipped_records,
+                            message="Recalculating daily journeys",
+                        )
+                    )
+
+                final_update = await manager.async_finalize_current(
+                    reason="maintenance_run_completed"
+                )
+
+                if final_update.completed_journey is not None:
+                    journeys_created += 1
+
+                await self.journey_storage.clear_current_journey()
+                if preserved_pause_overrides:
+                    rebuilt_journeys = await self.journey_storage.get_all_journeys()
+                    for rebuilt_journey in rebuilt_journeys:
+                        valid_pause_ids = {
+                            build_pause_id(current.item_id, following.item_id)
+                            for current, following in zip(
+                                rebuilt_journey.items, rebuilt_journey.items[1:]
+                            )
+                        }
+                        matching = {
+                            pause_id: override
+                            for pause_id, override in preserved_pause_overrides.items()
+                            if pause_id in valid_pause_ids
+                        }
+                        if matching:
+                            rebuilt_journey.pause_overrides.update(matching)
+                            await self.journey_storage.save_archived_journey(
+                                rebuilt_journey
+                            )
                 await self._synchronize_last_journey()
                 async_dispatcher_send(
                     self.hass,
@@ -255,214 +451,115 @@ class FordTriplogJourneyRebuilder:
                     mode=mode,
                     start_date=self._date_string(normalized_start),
                     end_date=self._date_string(normalized_end),
-                    source_trips=0,
-                    source_charges=0,
-                    processed_records=0,
-                    journeys_created=0,
+                    source_trips=len(trips),
+                    source_charges=len(charges),
+                    processed_records=processed,
+                    journeys_created=journeys_created,
                     journeys_deleted=journeys_deleted,
-                    skipped_records=0,
-                    affected_dates=(),
+                    skipped_records=skipped_records,
+                    affected_dates=tuple(
+                        sorted(
+                            current_date.isoformat()
+                            for current_date in affected_dates
+                        )
+                    ),
                 )
 
                 await self._report(
                     JourneyRebuildProgress(
                         mode=mode,
                         status="completed",
-                        processed=journeys_deleted,
-                        total=journeys_deleted,
-                        start_date=result.start_date,
-                        end_date=result.end_date,
-                        journeys_deleted=journeys_deleted,
-                        message="Journey deletion completed",
-                    )
-                )
-                return result
-
-            trips, skipped_trips = await self._load_trips(
-                normalized_start,
-                normalized_end,
-            )
-            charges, skipped_charges = await self._load_charges(
-                normalized_start,
-                normalized_end,
-            )
-
-            source_dates = {
-                self._event_date(event)
-                for event in (*trips, *charges)
-            }
-
-            if mode == "update":
-                affected_dates = self._find_missing_dates(
-                    trips,
-                    charges,
-                    existing_journeys,
-                )
-            else:
-                affected_dates = source_dates
-
-            affected_dates = {
-                current_date
-                for current_date in affected_dates
-                if self._date_in_range(
-                    current_date,
-                    normalized_start,
-                    normalized_end,
-                )
-            }
-
-            preserved_pause_overrides = {
-                pause_id: dict(override)
-                for journey in existing_journeys
-                if self._journey_date(journey) in affected_dates
-                for pause_id, override in journey.pause_overrides.items()
-            }
-
-            journeys_deleted = await self._delete_journeys_for_dates(
-                existing_journeys,
-                affected_dates,
-                mode=mode,
-            )
-
-            events = sorted(
-                (
-                    event
-                    for event in (*trips, *charges)
-                    if self._event_date(event) in affected_dates
-                ),
-                key=self._event_sort_key,
-            )
-
-            total = len(events)
-            skipped_records = skipped_trips + skipped_charges
-
-            await self._report(
-                JourneyRebuildProgress(
-                    mode=mode,
-                    status="running",
-                    processed=0,
-                    total=total,
-                    start_date=self._date_string(normalized_start),
-                    end_date=self._date_string(normalized_end),
-                    journeys_deleted=journeys_deleted,
-                    skipped_records=skipped_records,
-                    message="Recalculating daily journeys",
-                )
-            )
-
-            manager = FordTriplogJourneyManager(
-                self.source_storage.hass,
-                self.journey_storage,
-                battery_capacity_kwh=self.battery_capacity_kwh,
-            )
-            await manager.async_setup()
-
-            # A maintenance run must only use the selected archive data.
-            manager.current_journey = None
-            await self.journey_storage.clear_current_journey()
-
-            journeys_created = 0
-            processed = 0
-
-            for event in events:
-                if event.event_type == _EVENT_TRIP:
-                    update = await manager.async_process_trip(
-                        event.data
-                    )
-                else:
-                    update = await manager.async_process_charge(
-                        event.data
-                    )
-
-                if update.completed_journey is not None:
-                    journeys_created += 1
-
-                processed += 1
-
-                await self._report(
-                    JourneyRebuildProgress(
-                        mode=mode,
-                        status="running",
                         processed=processed,
                         total=total,
-                        start_date=self._date_string(
-                            normalized_start
-                        ),
-                        end_date=self._date_string(normalized_end),
+                        start_date=result.start_date,
+                        end_date=result.end_date,
                         journeys_created=journeys_created,
                         journeys_deleted=journeys_deleted,
                         skipped_records=skipped_records,
-                        message="Recalculating daily journeys",
+                        message="Journey maintenance completed",
                     )
                 )
 
-            final_update = await manager.async_finalize_current(
-                reason="maintenance_run_completed"
-            )
+                return result
 
-            if final_update.completed_journey is not None:
-                journeys_created += 1
+        finally:
+            self._running = False
 
-            await self.journey_storage.clear_current_journey()
-            if preserved_pause_overrides:
-                rebuilt_journeys = await self.journey_storage.get_all_journeys()
-                for rebuilt_journey in rebuilt_journeys:
-                    valid_pause_ids = {
-                        build_pause_id(current.item_id, following.item_id)
-                        for current, following in zip(
-                            rebuilt_journey.items, rebuilt_journey.items[1:]
-                        )
-                    }
-                    matching = {
-                        pause_id: override
-                        for pause_id, override in preserved_pause_overrides.items()
-                        if pause_id in valid_pause_ids
-                    }
-                    if matching:
-                        rebuilt_journey.pause_overrides.update(matching)
-                        await self.journey_storage.save_archived_journey(
-                            rebuilt_journey
-                        )
-            await self._synchronize_last_journey()
-            async_dispatcher_send(
-                self.hass,
-                SIGNAL_LAST_JOURNEY_UPDATED,
-            )
 
-            result = JourneyRebuildResult(
-                mode=mode,
-                start_date=self._date_string(normalized_start),
-                end_date=self._date_string(normalized_end),
-                source_trips=len(trips),
-                source_charges=len(charges),
-                processed_records=processed,
-                journeys_created=journeys_created,
-                journeys_deleted=journeys_deleted,
-                skipped_records=skipped_records,
-                affected_dates=tuple(
-                    sorted(
-                        current_date.isoformat()
-                        for current_date in affected_dates
-                    )
-                ),
-            )
+    @classmethod
+    def _drop_duplicate_trips(
+        cls,
+        trips: list[_SourceEvent],
+    ) -> tuple[list[_SourceEvent], int]:
+        """Drop near-identical duplicate trip records during maintenance rebuilds.
 
-            await self._report(
-                JourneyRebuildProgress(
-                    mode=mode,
-                    status="completed",
-                    processed=processed,
-                    total=total,
-                    start_date=result.start_date,
-                    end_date=result.end_date,
-                    journeys_created=journeys_created,
-                    journeys_deleted=journeys_deleted,
-                    skipped_records=skipped_records,
-                    message="Journey maintenance completed",
+        Historical source data can contain the same physical drive twice with
+        IDs a few seconds apart. Including both would double-count distance and
+        causes the second record to overlap the first. The earlier record is
+        kept deterministically; live trip handling is not changed.
+        """
+
+        ordered = sorted(trips, key=cls._event_sort_key)
+        filtered: list[_SourceEvent] = []
+        skipped = 0
+
+        for event in ordered:
+            duplicate_of: _SourceEvent | None = None
+            for candidate in reversed(filtered[-3:]):
+                if cls._trips_are_near_duplicates(candidate.data, event.data):
+                    duplicate_of = candidate
+                    break
+
+            if duplicate_of is not None:
+                skipped += 1
+                _LOGGER.warning(
+                    "Journey rebuild skipped duplicate trip %s (duplicate of %s)",
+                    event.data.get("trip_id"),
+                    duplicate_of.data.get("trip_id"),
                 )
-            )
+                continue
 
-            return result
+            filtered.append(event)
+
+        return filtered, skipped
+
+    @classmethod
+    def _trips_are_near_duplicates(
+        cls,
+        first: Mapping[str, Any],
+        second: Mapping[str, Any],
+    ) -> bool:
+        """Return True when two archive records describe the same drive."""
+
+        try:
+            first_start = cls._parse_datetime(first.get("start_time"))
+            second_start = cls._parse_datetime(second.get("start_time"))
+            first_end = cls._parse_datetime(first.get("end_time"))
+            second_end = cls._parse_datetime(second.get("end_time"))
+            first_distance = float(first.get("distance_km"))
+            second_distance = float(second.get("distance_km"))
+        except (TypeError, ValueError):
+            return False
+
+        if abs((second_start - first_start).total_seconds()) > 10.0:
+            return False
+        if abs((second_end - first_end).total_seconds()) > 10.0:
+            return False
+        if abs(second_distance - first_distance) > 0.2:
+            return False
+
+        for key in ("start_odometer", "end_odometer", "start_soc", "end_soc"):
+            first_value = first.get(key)
+            second_value = second.get(key)
+            if first_value is None or second_value is None:
+                continue
+            try:
+                if abs(float(first_value) - float(second_value)) > 0.1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        return True
 
     async def _load_trips(
         self,

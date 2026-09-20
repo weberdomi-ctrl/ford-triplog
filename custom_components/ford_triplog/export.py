@@ -91,6 +91,22 @@ JOURNEY_EXPORT_FIELDS = (
 )
 
 
+MONTHLY_DRIVING_EXPORT_FIELDS = (
+    "month",
+    "distance_km",
+    "trip_count",
+    "journey_count",
+    "driving_duration_seconds",
+    "driving_duration_hours",
+    "energy_used_kwh",
+    "average_consumption_kwh_100km",
+    "soc_used",
+    "soc_recovered",
+    "regenerated_energy_kwh",
+    "regen_trip_count",
+)
+
+
 MONTHLY_CHARGING_EXPORT_FIELDS = (
     "month",
     "home_energy_kwh",
@@ -878,6 +894,182 @@ class FordTriplogExporter:
             "start_date": start_date.isoformat() if start_date else "",
             "end_date": end_date.isoformat() if end_date else "",
         }
+
+    async def async_export_monthly_driving_statistics(
+        self,
+        journey_storage: Any,
+        *,
+        battery_capacity_kwh: float | None = None,
+    ) -> dict[str, Any]:
+        """Export the complete driving history aggregated by calendar month."""
+
+        trips = await self.storage.load_archived_trips()
+        journeys = await journey_storage.get_all_journeys()
+        periods: dict[str, dict[str, float | int]] = {}
+
+        def empty_period() -> dict[str, float | int]:
+            return {
+                "distance": 0.0,
+                "trip_count": 0,
+                "journey_count": 0,
+                "duration_seconds": 0,
+                "energy_used": 0.0,
+                "soc_used": 0.0,
+                "soc_recovered": 0.0,
+                "regenerated_energy": 0.0,
+                "regen_trip_count": 0,
+            }
+
+        def optional_float(value: Any) -> float | None:
+            try:
+                return float(value) if value is not None else None
+            except (TypeError, ValueError):
+                return None
+
+        def optional_int(value: Any) -> int:
+            try:
+                return int(value) if value is not None else 0
+            except (TypeError, ValueError):
+                return 0
+
+        def parse_local_datetime(value: Any) -> datetime | None:
+            if not value:
+                return None
+            try:
+                parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+                return dt_util.as_local(parsed)
+            except (TypeError, ValueError):
+                return None
+
+        fallback_capacity = optional_float(battery_capacity_kwh) or 0.0
+
+        for trip in trips:
+            if not isinstance(trip, dict):
+                continue
+            local_start = parse_local_datetime(trip.get("start_time"))
+            if local_start is None:
+                continue
+
+            month = local_start.strftime("%Y-%m")
+            period = periods.setdefault(month, empty_period())
+            distance = max(0.0, optional_float(trip.get("distance_km")) or 0.0)
+            duration = max(0, optional_int(trip.get("duration_seconds")))
+            energy = optional_float(trip.get("energy_used_kwh")) or 0.0
+            soc_used = optional_float(trip.get("soc_used")) or 0.0
+
+            stored_soc_recovered = max(
+                0.0, optional_float(trip.get("soc_recovered")) or 0.0
+            )
+            stored_regenerated = max(
+                0.0, optional_float(trip.get("regenerated_energy_kwh")) or 0.0
+            )
+
+            if stored_soc_recovered > 0.0 and stored_regenerated > 0.0:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
+            elif distance > 0.0:
+                start_soc = optional_float(trip.get("start_soc"))
+                end_soc = optional_float(trip.get("end_soc"))
+                if start_soc is not None and end_soc is not None:
+                    soc_recovered = max(end_soc - start_soc, 0.0)
+                    capacity = optional_float(trip.get("battery_capacity_kwh"))
+                    if capacity is None or capacity <= 0.0:
+                        capacity = fallback_capacity
+                    regenerated = (
+                        soc_recovered * capacity / 100.0
+                        if soc_recovered > 0.0 and capacity > 0.0
+                        else 0.0
+                    )
+                else:
+                    soc_recovered = stored_soc_recovered
+                    regenerated = stored_regenerated
+            else:
+                soc_recovered = stored_soc_recovered
+                regenerated = stored_regenerated
+
+            period["distance"] = float(period["distance"]) + distance
+            period["trip_count"] = int(period["trip_count"]) + 1
+            period["duration_seconds"] = int(period["duration_seconds"]) + duration
+            period["energy_used"] = float(period["energy_used"]) + energy
+            period["soc_used"] = float(period["soc_used"]) + soc_used
+            period["soc_recovered"] = float(period["soc_recovered"]) + soc_recovered
+            period["regenerated_energy"] = (
+                float(period["regenerated_energy"]) + regenerated
+            )
+            if soc_recovered > 0.0 or regenerated > 0.0:
+                period["regen_trip_count"] = int(period["regen_trip_count"]) + 1
+
+        for journey in journeys:
+            data = (
+                journey.to_dict()
+                if hasattr(journey, "to_dict")
+                else journey
+                if isinstance(journey, dict)
+                else None
+            )
+            if not isinstance(data, dict):
+                continue
+            local_start = parse_local_datetime(data.get("start_time"))
+            if local_start is None:
+                continue
+            month = local_start.strftime("%Y-%m")
+            # Do not create a month from a Journey alone. The driving export is
+            # anchored to archived Trips, matching the monthly sensor semantics.
+            if month in periods:
+                periods[month]["journey_count"] = (
+                    int(periods[month]["journey_count"]) + 1
+                )
+
+        rows: list[dict[str, Any]] = []
+        for month in sorted(periods):
+            period = periods[month]
+            distance = float(period["distance"])
+            energy = float(period["energy_used"])
+            duration_seconds = int(period["duration_seconds"])
+            average_consumption = (
+                energy / distance * 100.0 if distance > 0.0 else 0.0
+            )
+            rows.append({
+                "month": month,
+                "distance_km": round(distance, 1),
+                "trip_count": int(period["trip_count"]),
+                "journey_count": int(period["journey_count"]),
+                "driving_duration_seconds": duration_seconds,
+                "driving_duration_hours": round(duration_seconds / 3600.0, 2),
+                "energy_used_kwh": round(energy, 2),
+                "average_consumption_kwh_100km": round(average_consumption, 1),
+                "soc_used": round(float(period["soc_used"]), 1),
+                "soc_recovered": round(float(period["soc_recovered"]), 1),
+                "regenerated_energy_kwh": round(
+                    float(period["regenerated_energy"]), 2
+                ),
+                "regen_trip_count": int(period["regen_trip_count"]),
+            })
+
+        filename = (
+            "ford_triplog_driving_monthly_"
+            + dt_util.now().strftime("%Y-%m-%d_%H-%M-%S")
+            + ".csv"
+        )
+        output_file = self.export_path / filename
+        await self.hass.async_add_executor_job(
+            functools.partial(
+                self._write_csv,
+                output_file,
+                rows,
+                MONTHLY_DRIVING_EXPORT_FIELDS,
+            )
+        )
+
+        return {
+            "type": "driving_monthly",
+            "record_count": len(rows),
+            "filename": filename,
+            "path": str(output_file),
+            "start_date": rows[0]["month"] if rows else "",
+            "end_date": rows[-1]["month"] if rows else "",
+        }
+
 
     async def async_export_monthly_charging_statistics(
         self,
