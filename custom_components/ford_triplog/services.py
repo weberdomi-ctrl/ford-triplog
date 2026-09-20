@@ -1204,6 +1204,8 @@ async def async_register_services(hass: HomeAssistant) -> None:
         SERVICE_REBUILD_JOURNEYS,
     ):
 
+        rebuild_tasks: dict[int, asyncio.Task[Any]] = {}
+
         async def handle_rebuild_journeys(
             call: ServiceCall,
         ) -> dict[str, Any]:
@@ -1220,12 +1222,31 @@ async def async_register_services(hass: HomeAssistant) -> None:
                 call.data.get(ATTR_ENTRY_ID),
             )
 
+            task_key = id(rebuilder)
+            active_task = rebuild_tasks.get(task_key)
+
+            if active_task is not None and not active_task.done():
+                _LOGGER.warning(
+                    "Journey rebuild request ignored because a rebuild is already running"
+                )
+                return {
+                    "status": "already_running",
+                    "mode": "rebuild",
+                    "start_date": start_date.isoformat() if start_date else None,
+                    "end_date": end_date.isoformat() if end_date else None,
+                }
+
             async def _run_rebuild_background() -> None:
                 try:
                     result = await rebuilder.async_rebuild_journeys(
                         start_date=start_date,
                         end_date=end_date,
                     )
+                except asyncio.CancelledError:
+                    _LOGGER.warning(
+                        "Journey rebuild cancelled in background"
+                    )
+                    raise
                 except Exception:
                     _LOGGER.exception(
                         "Journey rebuild failed in background"
@@ -1237,7 +1258,14 @@ async def async_register_services(hass: HomeAssistant) -> None:
                     result.to_dict(),
                 )
 
-            hass.async_create_task(_run_rebuild_background())
+            task = hass.async_create_task(_run_rebuild_background())
+            rebuild_tasks[task_key] = task
+
+            def _cleanup_rebuild_task(done_task: asyncio.Task[Any]) -> None:
+                if rebuild_tasks.get(task_key) is done_task:
+                    rebuild_tasks.pop(task_key, None)
+
+            task.add_done_callback(_cleanup_rebuild_task)
 
             _LOGGER.info(
                 "Journey rebuild started in background: start_date=%s end_date=%s",
