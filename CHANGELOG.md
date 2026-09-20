@@ -1,5 +1,56 @@
 # Changelog
 
+## 2.4.0
+
+### Added
+
+- Added SOC-based net recuperation fields for Trips: `soc_recovered` and `regenerated_energy_kwh`.
+- Added recuperation statistics including recovered SOC, net recuperated energy, recuperation-trip count, average recuperation and top recuperation Trip.
+- Added monthly driving statistics with distance, Trip/Journey counts, driving time, net battery energy, average consumption and recuperation.
+- Added monthly driving-statistics CSV export.
+- Added monthly charging statistics split into Home, Work and External charging, including energy, cost and session counts.
+- Added rolling monthly charging history, yearly summaries and monthly charging-statistics CSV export.
+- Added user-defined places for automatic Journey pause assignment, including name, category, description, coordinates, radius and optional icon.
+- Added direct creation of user-defined places from existing Journey pauses.
+- Added duplicate protection for near-identical user-defined places.
+- Added vehicle-source health monitoring with `healthy`, `degraded`, `grace_period`, `unavailable` and `unknown` states.
+- Added a vehicle-source connectivity binary sensor and a translated dashboard status sensor with dynamic icons.
+- Added one Home Assistant Persistent Notification per continuous vehicle-source outage after a 20-minute grace period.
+
+### Improved
+
+- Improved AC/DC charging start handling using the reported charging type.
+- Added delayed Start-SOC stabilization to reduce incorrect SOC jumps at charging start.
+- Preserved the last valid live charging snapshot when Ford clears charging attributes immediately after a manual stop.
+- Charging completion now captures available end-SOC, charging type and charger-energy values before unplugging.
+- Charging energy sources are retained separately instead of silently overwriting one another.
+- Ford Last Charge remains the final reconciliation source when matching session data becomes available later.
+- Billed receipt energy has highest priority for charging-cost calculations.
+- Known-place display priority is Home Assistant zone → user-defined place → existing location/address.
+- Manual pause edits retain priority over automatically assigned place data.
+- Full Journey rebuild now runs as a Home Assistant background task.
+- Added a central non-queuing guard so only one Journey maintenance operation can run at a time.
+- Historical near-duplicate Trips are filtered deterministically during full Journey rebuild.
+- Added maintenance-only tolerance for short historical Trip/charging timestamp overlaps when their locations match.
+- Vehicle-source recovery resets the outage notification state so a later independent outage can notify again.
+- Startup logging includes the Ford Triplog version and build number.
+
+### Fixed
+
+- Fixed repeated/queued Journey rebuild requests deleting newly rebuilt Journeys and starting again.
+- Fixed historical Trips remaining unassigned because of short charging/Trip timestamp overlaps.
+- Fixed date-filtered CSV exports when Home Assistant provides date values as strings.
+- Corrected Home Assistant state metadata for recuperation and monthly charging sensors.
+- Fixed duplicate historical Trip records influencing Journey rebuild results by filtering near-identical duplicates before processing.
+
+### Notes
+
+- Normal live Journey matching remains strict; the additional timestamp-overlap tolerance is used only during maintenance rebuilds.
+- Ford Last Charge is intentionally excluded from live vehicle-source outage detection.
+- A complete source outage is declared only when all monitored live vehicle entities remain unavailable for 20 minutes.
+- EVCC is not used as a fallback vehicle-data source in 2.4.
+- Final public release: Build 24404.
+
 ## 2.3.0
 
 ### Added

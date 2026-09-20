@@ -13,12 +13,16 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.binary_sensor import (
+    BinarySensorDeviceClass,
     BinarySensorEntity,
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 
-from .const import DOMAIN
+from .const import (
+    DOMAIN,
+    VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
+)
 
 
 async def async_setup_entry(
@@ -34,9 +38,8 @@ async def async_setup_entry(
 
     async_add_entities(
         [
-            FordTriplogActiveTripBinarySensor(
-                coordinator
-            )
+            FordTriplogActiveTripBinarySensor(coordinator),
+            FordTriplogVehicleSourceConnectivityBinarySensor(coordinator),
         ]
     )
 
@@ -103,3 +106,68 @@ class FordTriplogActiveTripBinarySensor(
             "manufacturer": "Ford",
             "model": "Triplog",
         }
+
+class FordTriplogVehicleSourceConnectivityBinarySensor(BinarySensorEntity):
+    """Binary sensor exposing the configured vehicle source health."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "vehicle_source_connectivity"
+    _attr_unique_id = "ford_triplog_vehicle_source_connectivity"
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_icon = "mdi:car-connected"
+
+    def __init__(self, coordinator) -> None:
+        self.coordinator = coordinator
+
+    async def async_added_to_hass(self) -> None:
+        self.async_on_remove(
+            self.coordinator.async_add_listener(
+                self._handle_coordinator_update
+            )
+        )
+
+    @callback
+    def _handle_coordinator_update(self) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def is_on(self) -> bool:
+        return (
+            self.coordinator.vehicle_source_health
+            != VEHICLE_SOURCE_HEALTH_UNAVAILABLE
+        )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        unavailable_since = self.coordinator.vehicle_source_unavailable_since
+        return {
+            "health_state": self.coordinator.vehicle_source_health,
+            "unavailable_since": (
+                unavailable_since.isoformat()
+                if unavailable_since is not None
+                else None
+            ),
+            "grace_seconds": (
+                self.coordinator.vehicle_source_unavailable_grace_seconds
+            ),
+            "monitored_entities": list(
+                self.coordinator.vehicle_source_monitored_entities
+            ),
+            "unavailable_entities": list(
+                self.coordinator.vehicle_source_unavailable_entities
+            ),
+        }
+
+    @property
+    def available(self) -> bool:
+        return self.coordinator.last_update_success
+
+    @property
+    def device_info(self) -> dict[str, Any]:
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+        }
+

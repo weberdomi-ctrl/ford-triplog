@@ -3,8 +3,8 @@ Ford Triplog
 
 Charge object.
 
-Version: 2.4.1
-Release: 2.4.1 - Charging source reconciliation
+Version: 2.4.0
+Release: 2.4.0
 """
 
 from __future__ import annotations

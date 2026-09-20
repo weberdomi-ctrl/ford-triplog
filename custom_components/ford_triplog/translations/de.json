@@ -1132,11 +1132,24 @@
       },
       "driving_monthly_statistics": {
         "name": "Fahrstatistik Monat"
+      },
+      "vehicle_source_status": {
+        "name": "Fahrzeugdatenquelle Status",
+        "state": {
+          "healthy": "Verfügbar",
+          "degraded": "Eingeschränkt",
+          "grace_period": "Wartefrist",
+          "unavailable": "Nicht verfügbar",
+          "unknown": "Unbekannt"
+        }
       }
     },
     "binary_sensor": {
       "trip_active": {
         "name": "Fahrt aktiv"
+      },
+      "vehicle_source_connectivity": {
+        "name": "Fahrzeugdatenquelle"
       }
     },
     "select": {

@@ -1132,11 +1132,24 @@
       },
       "driving_monthly_statistics": {
         "name": "Monthly driving statistics"
+      },
+      "vehicle_source_status": {
+        "name": "Vehicle source status",
+        "state": {
+          "healthy": "Healthy",
+          "degraded": "Degraded",
+          "grace_period": "Grace period",
+          "unavailable": "Unavailable",
+          "unknown": "Unknown"
+        }
       }
     },
     "binary_sensor": {
       "trip_active": {
         "name": "Trip Active"
+      },
+      "vehicle_source_connectivity": {
+        "name": "Vehicle source connectivity"
       }
     },
     "select": {
