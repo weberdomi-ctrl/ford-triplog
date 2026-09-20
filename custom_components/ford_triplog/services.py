@@ -1207,11 +1207,50 @@ async def async_register_services(hass: HomeAssistant) -> None:
         async def handle_rebuild_journeys(
             call: ServiceCall,
         ) -> dict[str, Any]:
-            return await _async_execute_journey_maintenance(
-                hass,
-                call,
-                operation="rebuild",
+            start_date = call.data.get(ATTR_START_DATE)
+            end_date = call.data.get(ATTR_END_DATE)
+
+            _validate_journey_date_range(
+                start_date,
+                end_date,
             )
+
+            rebuilder = _resolve_journey_rebuilder(
+                hass,
+                call.data.get(ATTR_ENTRY_ID),
+            )
+
+            async def _run_rebuild_background() -> None:
+                try:
+                    result = await rebuilder.async_rebuild_journeys(
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except Exception:
+                    _LOGGER.exception(
+                        "Journey rebuild failed in background"
+                    )
+                    return
+
+                _LOGGER.info(
+                    "Journey rebuild completed in background: %s",
+                    result.to_dict(),
+                )
+
+            hass.async_create_task(_run_rebuild_background())
+
+            _LOGGER.info(
+                "Journey rebuild started in background: start_date=%s end_date=%s",
+                start_date,
+                end_date,
+            )
+
+            return {
+                "status": "started",
+                "mode": "rebuild",
+                "start_date": start_date.isoformat() if start_date else None,
+                "end_date": end_date.isoformat() if end_date else None,
+            }
 
         hass.services.async_register(
             DOMAIN,
