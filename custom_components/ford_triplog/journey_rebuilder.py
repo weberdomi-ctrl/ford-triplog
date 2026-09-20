@@ -294,9 +294,11 @@ class FordTriplogJourneyRebuilder:
                     return result
 
                 trips, skipped_trips = await self._load_trips(
-                normalized_start,
+                    normalized_start,
                     normalized_end,
                 )
+                trips, duplicate_trips = self._drop_duplicate_trips(trips)
+                skipped_trips += duplicate_trips
                 charges, skipped_charges = await self._load_charges(
                 normalized_start,
                     normalized_end,
@@ -369,6 +371,7 @@ class FordTriplogJourneyRebuilder:
                     self.source_storage.hass,
                     self.journey_storage,
                     battery_capacity_kwh=self.battery_capacity_kwh,
+                    maintenance_mode=True,
                 )
                 await manager.async_setup()
 
@@ -481,6 +484,82 @@ class FordTriplogJourneyRebuilder:
 
         finally:
             self._running = False
+
+
+    @classmethod
+    def _drop_duplicate_trips(
+        cls,
+        trips: list[_SourceEvent],
+    ) -> tuple[list[_SourceEvent], int]:
+        """Drop near-identical duplicate trip records during maintenance rebuilds.
+
+        Historical source data can contain the same physical drive twice with
+        IDs a few seconds apart. Including both would double-count distance and
+        causes the second record to overlap the first. The earlier record is
+        kept deterministically; live trip handling is not changed.
+        """
+
+        ordered = sorted(trips, key=cls._event_sort_key)
+        filtered: list[_SourceEvent] = []
+        skipped = 0
+
+        for event in ordered:
+            duplicate_of: _SourceEvent | None = None
+            for candidate in reversed(filtered[-3:]):
+                if cls._trips_are_near_duplicates(candidate.data, event.data):
+                    duplicate_of = candidate
+                    break
+
+            if duplicate_of is not None:
+                skipped += 1
+                _LOGGER.warning(
+                    "Journey rebuild skipped duplicate trip %s (duplicate of %s)",
+                    event.data.get("trip_id"),
+                    duplicate_of.data.get("trip_id"),
+                )
+                continue
+
+            filtered.append(event)
+
+        return filtered, skipped
+
+    @classmethod
+    def _trips_are_near_duplicates(
+        cls,
+        first: Mapping[str, Any],
+        second: Mapping[str, Any],
+    ) -> bool:
+        """Return True when two archive records describe the same drive."""
+
+        try:
+            first_start = cls._parse_datetime(first.get("start_time"))
+            second_start = cls._parse_datetime(second.get("start_time"))
+            first_end = cls._parse_datetime(first.get("end_time"))
+            second_end = cls._parse_datetime(second.get("end_time"))
+            first_distance = float(first.get("distance_km"))
+            second_distance = float(second.get("distance_km"))
+        except (TypeError, ValueError):
+            return False
+
+        if abs((second_start - first_start).total_seconds()) > 10.0:
+            return False
+        if abs((second_end - first_end).total_seconds()) > 10.0:
+            return False
+        if abs(second_distance - first_distance) > 0.2:
+            return False
+
+        for key in ("start_odometer", "end_odometer", "start_soc", "end_soc"):
+            first_value = first.get(key)
+            second_value = second.get(key)
+            if first_value is None or second_value is None:
+                continue
+            try:
+                if abs(float(first_value) - float(second_value)) > 0.1:
+                    return False
+            except (TypeError, ValueError):
+                return False
+
+        return True
 
     async def _load_trips(
         self,

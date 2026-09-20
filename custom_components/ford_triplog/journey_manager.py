@@ -37,6 +37,7 @@ DEFAULT_CHARGE_TO_TRIP_TIMEOUT_SECONDS = 12 * 60 * 60
 DEFAULT_CHARGE_TO_CHARGE_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCATION_MATCH_RADIUS_METERS = 500.0
 CHARGE_TO_TRIP_CHRONOLOGY_TOLERANCE_SECONDS = 5.0
+MAINTENANCE_CHRONOLOGY_TOLERANCE_SECONDS = 600.0
 
 
 @dataclass(slots=True, frozen=True)
@@ -73,6 +74,7 @@ class FordTriplogJourneyManager:
         home_zone_entity_id: str = DEFAULT_JOURNEY_HOME_ZONE,
         home_timeout_minutes: int = DEFAULT_JOURNEY_HOME_TIMEOUT,
         battery_capacity_kwh: float | None = None,
+        maintenance_mode: bool = False,
     ) -> None:
         """Initialize the daily journey manager."""
 
@@ -106,6 +108,7 @@ class FordTriplogJourneyManager:
             0,
             int(home_timeout_minutes),
         ) * 60
+        self.maintenance_mode = bool(maintenance_mode)
         self.battery_capacity_kwh = self._normalize_battery_capacity(
             battery_capacity_kwh
         )
@@ -1181,7 +1184,27 @@ class FordTriplogJourneyManager:
         gap = (charge_start - trip_end).total_seconds()
 
         if gap < 0:
-            return False, "charge_starts_before_trip_ends"
+            overlap_coordinates = (
+                trip.get("end_latitude"),
+                trip.get("end_longitude"),
+                charge.get("start_latitude"),
+                charge.get("start_longitude"),
+            )
+            if (
+                self.maintenance_mode
+                and gap >= -MAINTENANCE_CHRONOLOGY_TOLERANCE_SECONDS
+                and all(value is not None for value in overlap_coordinates)
+                and self._locations_match(*overlap_coordinates)
+            ):
+                _LOGGER.debug(
+                    "Journey maintenance chronology tolerance accepted %.3fs "
+                    "overlap between trip %s and charge %s",
+                    abs(gap),
+                    trip.get("trip_id"),
+                    charge.get("charge_id"),
+                )
+            else:
+                return False, "charge_starts_before_trip_ends"
 
         if gap > self.journey_max_gap_seconds:
             return False, "journey_max_gap_exceeded"
@@ -1260,12 +1283,26 @@ class FordTriplogJourneyManager:
         # is correct.  Ford Last Charge timestamps normally remove this drift;
         # keep a narrow tolerance as a defensive fallback.
         if gap < -CHARGE_TO_TRIP_CHRONOLOGY_TOLERANCE_SECONDS:
-            return False, "trip_starts_before_charge_ends"
+            overlap_coordinates = (
+                charge.get("end_latitude"),
+                charge.get("end_longitude"),
+                trip.get("start_latitude"),
+                trip.get("start_longitude"),
+            )
+            maintenance_overlap_ok = (
+                self.maintenance_mode
+                and gap >= -MAINTENANCE_CHRONOLOGY_TOLERANCE_SECONDS
+                and all(value is not None for value in overlap_coordinates)
+                and self._locations_match(*overlap_coordinates)
+            )
+            if not maintenance_overlap_ok:
+                return False, "trip_starts_before_charge_ends"
 
         if gap < 0:
             _LOGGER.debug(
-                "Journey chronology tolerance accepted %.3fs overlap "
+                "%s chronology tolerance accepted %.3fs overlap "
                 "between charge %s and trip %s",
+                "Journey maintenance" if self.maintenance_mode else "Journey",
                 abs(gap),
                 charge.get("charge_id"),
                 trip.get("trip_id"),
