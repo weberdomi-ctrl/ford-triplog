@@ -1,6 +1,6 @@
 # Ford Triplog Roadmap
 
-This roadmap summarizes completed 2.0.x / 2.1 / 2.2 development, the current 2.3 test release and the next planned Ford Triplog releases.
+This roadmap summarizes completed Ford Triplog releases and the next planned development areas.
 
 ---
 
@@ -192,7 +192,7 @@ internal JSON payloads directly.
 Version 2.3 completes the storage migration started in 2.1 and expands
 the Route Tracker for dense Home Assistant Companion App GPS data.
 
-Status: **In testing**
+Status: **Released**
 
 ## Implemented – SQLite-only Production Storage
 
@@ -276,74 +276,108 @@ after a successful plausibility check.
 
 ---
 
-# Version 2.4 – Route Data Portability & GPS Enrichment
+# Version 2.4 – Charging Reliability, Statistics, Journey Places & Source Health
 
-Version 2.4 is planned to make recorded routes more useful outside Home
-Assistant and to retain additional GPS information when a source can
-provide it.
+Status: **Released**
 
-## Planned – Route Export for Third-party Applications
+Version 2.4 consolidates charging-data reliability improvements, new energy/statistics reporting, reusable Journey places, safer historical Journey maintenance and vehicle-source health monitoring.
 
-Export stored route data through the Home Assistant options flow.
+## Implemented – Charging Source Reconciliation
 
-Candidate exports:
+- AC/DC charging type handling
+- Delayed Start-SOC stabilization
+- Live charging snapshots for SOC, charging type and charger energy
+- Preservation of the last valid live snapshot when Ford clears values after a manual stop
+- Completion snapshot for available end-SOC, charging type and charger energy
+- Separate storage of technical charging-energy sources
+- Ford Last Charge reconciliation for already completed sessions
+- Billed receipt energy has highest priority for charging-cost calculations
+- Improved charging-energy provenance and session transparency
 
-- Raw GPS points as CSV
-- Raw GPS tracks as GPX
-- Raw or OSRM-matched geometry as GeoJSON
-- Direct Home Assistant download
-- Export of the latest route, selected routes or a date range
+## Implemented – Recuperation and Monthly Driving Statistics
 
-Raw and OSRM-matched data should remain clearly separated so external
-tools can choose between the original trace and the road-matched
-geometry.
+- Trip fields `soc_recovered` and `regenerated_energy_kwh`
+- SOC-based net recuperation statistics
+- Total recovered SOC
+- Total net recuperated energy
+- Recuperation-trip count
+- Average recuperation
+- Top recuperation Trip
+- Monthly driving distance
+- Monthly Trip and Journey counts
+- Monthly driving time
+- Monthly net battery energy
+- Monthly average consumption
+- Monthly recuperation values
+- Monthly driving-statistics CSV export
 
-## Planned – Enriched GPS Point Storage
+## Implemented – Monthly Charging Statistics
 
-When the selected Route Tracker source provides additional attributes,
-Ford Triplog may store optional metadata together with each raw GPS
-point.
+- Home / Work / External classification
+- Energy, cost and session count per category
+- Current-month totals
+- Rolling monthly history
+- Yearly summaries
+- Monthly charging-statistics CSV export
+- Energy-source selection aligned with stored charging-session provenance
 
-Candidate fields:
+## Implemented – User-defined Places
 
-- altitude
-- GPS accuracy
-- speed
-- course / bearing
+- Reusable places for automatic Journey pause assignment
+- Name, category and description
+- Latitude / longitude and configurable radius
+- Optional MDI icon
+- Direct creation from an existing Journey pause
+- Duplicate protection for near-identical places
+- Home Assistant zone → user-defined place → existing location/address display priority
+- Manual pause edits retain priority
 
-Latitude, longitude and timestamp remain the required common route
-fields.
+## Implemented – Journey Maintenance Reliability
 
-Sources that do not expose the additional metadata remain fully
-compatible. Existing stored routes must continue to load without a data
-migration that requires those optional values.
+- Full rebuild runs as a Home Assistant background task
+- Central non-queuing maintenance guard
+- Duplicate/queued rebuild requests are rejected
+- Deterministic filtering of near-identical historical duplicate Trips
+- Maintenance-only reconciliation of short historical Trip/charging timestamp overlaps when locations match
+- Normal live Journey matching remains unchanged
 
-Possible later uses include:
+## Implemented – Vehicle-source Health Monitoring
 
-- elevation profiles
-- route-quality diagnostics
-- speed profiles
-- more detailed third-party exports
+- Health states: healthy, degraded, grace period, unavailable and unknown
+- Connectivity binary sensor
+- Translated dashboard/badge status sensor
+- Dynamic health-state icons
+- 20-minute grace period before declaring a complete source outage
+- One Home Assistant Persistent Notification per continuous outage
+- Recovery resets the notification state
+- Ford Last Charge excluded from live-source outage detection
 
-## Planned – Charging Metadata Enrichment
+## Deferred beyond 2.4
 
-When FordPass/Ford Connect last-charge data exposes additional
-attributes, Ford Triplog may automatically generate a compact optional
-memo without changing the structured charging-session fields.
+The following earlier 2.4 ideas were not required for the final 2.4 release and remain candidates for future development:
 
-Example information can include:
-
-- charger type
-- start/end SOC
-- SOC delta
-- average charging power
-- distance added
-- configured charge target
-
-Only attributes that are actually available from the configured source
-should be included.
+- Route export for third-party applications
+- Raw GPS export with timestamps
+- GPX / GeoJSON route export
+- Optional enriched GPS point metadata such as altitude, accuracy, speed and course
+- Further charging metadata presentation improvements
+- Multi-vehicle support
 
 ---
+
+# Version 2.5+ – Planned
+
+Potential next development areas:
+
+- Multi-vehicle support
+- Route export and route-data portability
+- Optional enriched GPS point metadata
+- Additional database-backed reporting
+- Maintenance tracking
+- Further charging and energy reporting improvements
+
+---
+
 
 # Version 3.x – Manufacturer-neutral Research
 
@@ -383,6 +417,7 @@ Additional future development areas include:
 | 2.0.3 | Released | Translation cleanup, Top Locations, Top Routes, location resolution and 2.0.x consolidation |
 | 2.1 | Released | SQLite storage backend, selectable JSON/SQLite reads, migration validation, SQL-based statistics and runtime optimization |
 | 2.2 | Released | CSV exports, maintenance tools, pause receipts, History reliability and continued JSON/SQLite validation |
-| 2.3 | In testing | SQLite-only storage, direct device-tracker GPS, improved trip-end GPS, dense OSRM matching and Route maintenance |
-| 2.4 | Planned | Route export, enriched GPS point metadata and charging metadata enrichment |
+| 2.3 | Released | SQLite-only storage, direct device-tracker GPS, improved trip-end GPS, dense OSRM matching and Route maintenance |
+| 2.4 | Released | Charging reliability, recuperation/monthly statistics, user-defined places, Journey rebuild reliability and vehicle-source health |
+| 2.5+ | Planned | Multi-vehicle, route export/data portability, enriched GPS metadata and further reporting |
 | 3.x | Research | Manufacturer-neutral Triplog core and vehicle adapters |

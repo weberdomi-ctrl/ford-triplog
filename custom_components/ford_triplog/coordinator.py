@@ -3,8 +3,8 @@ Ford Triplog
 
 Coordinator
 
-Version: 2.4.1
-Build: 24101 - Charging source reconciliation
+Version: 2.4.0
+Build: 24404 - 2.4 Final
 
 Changes:
 - Preserves signed trip energy so net recuperation reduces consumption totals.

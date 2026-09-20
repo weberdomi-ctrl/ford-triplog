@@ -5,9 +5,9 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.4.1
-Phase: Charging reconciliation
-Build: 24102
+Version: 2.4.0
+Phase: 2.4 Final
+Build: 24404
 
 Changes:
 

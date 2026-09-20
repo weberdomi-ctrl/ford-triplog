@@ -30,7 +30,7 @@ and creates a permanent local driving history including detailed trip
 statistics, charging history, GPS routes, energy calculations and charging
 location recognition.
 
-For Ford Triplog 2.3, Ford Connect is the recommended vehicle data source.
+For Ford Triplog 2.4, Ford Connect is the recommended vehicle data source.
 Compatible FordPass entities can still be used where available.
 
 All data is stored locally inside Home Assistant.
@@ -277,6 +277,76 @@ Ford Triplog continuously maintains:
 ------------------------------------------------------------------------
 
 
+
+## 📍 User-defined Places
+
+Ford Triplog 2.4 adds reusable places for automatically enriching Journey pauses.
+
+A user-defined place can contain:
+
+- Name
+- Category
+- Description
+- Latitude / longitude
+- Matching radius
+- Optional MDI icon
+
+Places can be created directly from an existing Journey pause. When a later pause occurs inside the configured radius, Ford Triplog can reuse the saved place information automatically.
+
+Manual pause edits retain priority over automatically resolved place data.
+
+------------------------------------------------------------------------
+
+## ♻️ Recuperation and Monthly Statistics
+
+Ford Triplog 2.4 extends energy and reporting data with SOC-based net recuperation and monthly summaries.
+
+New statistics include:
+
+- Recovered SOC per Trip
+- SOC-derived net recuperated energy
+- Total recuperation statistics
+- Top recuperation Trip
+- Monthly driving distance
+- Monthly Trip and Journey counts
+- Monthly driving time
+- Monthly net battery energy
+- Monthly average consumption
+- Monthly Home / Work / External charging energy
+- Monthly charging costs and session counts
+- Rolling monthly history and yearly charging summaries
+- CSV export for monthly driving and charging statistics
+
+Recuperation values represent the net SOC gain over a complete Trip. They are not a measurement of all regenerative energy generated during the drive.
+
+------------------------------------------------------------------------
+
+## 📡 Vehicle Source Health
+
+Ford Triplog 2.4 monitors the configured live vehicle-data source.
+
+The source-health model distinguishes between:
+
+- Healthy
+- Degraded
+- Grace period
+- Unavailable
+- Unknown
+
+A complete outage is only declared when all monitored live source entities remain unavailable for 20 minutes.
+
+Ford Triplog provides:
+
+- A connectivity binary sensor for automations
+- A translated status sensor for dashboards and badges
+- Dynamic status icons
+- One Home Assistant Persistent Notification per continuous outage
+- Automatic reset after the source recovers
+
+Short-lived or partial source outages therefore do not immediately create an alert.
+
+------------------------------------------------------------------------
+
 ## 🧹 Maintenance Tools
 
 Ford Triplog includes guarded maintenance functions for stored history.
@@ -287,6 +357,9 @@ Ford Triplog includes guarded maintenance functions for stored history.
 - The stored last charging session is refreshed when required
 - Existing receipt files are preserved when an invalid charging session
   is removed
+- Journey rebuild runs in the background and prevents duplicate/queued maintenance runs
+- Historical near-duplicate Trips are filtered deterministically during a full rebuild
+- Short historical Trip/charging overlaps can be reconciled during maintenance when their locations match
 - Stored GPS routes can be rebuilt through the configured OSRM server
 - Route maintenance can rebuild the latest route, raw/failed routes or all routes
 - Raw GPS points are preserved when matched route geometry is rebuilt
@@ -295,7 +368,7 @@ Ford Triplog includes guarded maintenance functions for stored history.
 
 ## 🗃️ Local SQLite Storage
 
-Ford Triplog 2.3 completes the storage migration started in 2.1.
+Ford Triplog 2.4 continues to use the SQLite-only storage architecture completed in 2.3.
 
 SQLite is now the sole productive Ford Triplog datastore.
 
@@ -315,7 +388,7 @@ SQLite is now the sole productive Ford Triplog datastore.
 The SQLite database is stored locally inside the Ford Triplog Home
 Assistant storage directory.
 
-Ford Triplog 2.3 also persists active Route Tracker data periodically while a
+Ford Triplog also persists active Route Tracker data periodically while a
 Trip is running and force-saves it on important lifecycle transitions. This
 reduces route loss after an unexpected Home Assistant interruption without
 writing every individual GPS point directly to SQLite.
@@ -328,7 +401,7 @@ writing every individual GPS point directly to SQLite.
 - HACS
 - A compatible Ford vehicle data integration exposing the required Home
   Assistant entities
-  - Ford Connect is recommended for Ford Triplog 2.3
+  - Ford Connect is recommended for Ford Triplog 2.4
   - FordPass can be used where compatible entities are available
 - Python 3.12+
 
@@ -353,7 +426,7 @@ Ford Triplog waits for valid numeric source values and ignores temporary
 `unknown` / `unavailable` states. Drive the vehicle once after setup if the
 vehicle integration has not yet published current telemetry.
 
-Ford Connect is the recommended source for Ford Triplog 2.3. FordPass can
+Ford Connect is the recommended source for Ford Triplog 2.4. FordPass can
 still be used where available, but it is a community-maintained unofficial
 integration and can be affected by Ford backend changes.
 
@@ -403,56 +476,27 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 
 # Roadmap
 
-## Version 2.3 – Released
+## Version 2.4 – Released
 
-- SQLite-only productive storage
-- One-time legacy JSON migration/import with persistent migration markers
-- Direct Home Assistant `device_tracker` GPS Route Tracker source
-- Active-route SQLite snapshots with forced lifecycle saves
-- Newest-timestamp trip-end GPS selection
-- Dense-trace OSRM matching through overlapping chunks
-- Route maintenance for rebuilding stored routes
-- Last Tour / Last Route reliability improvements
-- Duplicate Trip start/end protection
-- Improved delayed Last Charge recovery and archived-session reconciliation
-- Journey/Charging History refresh and charge-to-trip timestamp fixes
-- Robust handling of `unknown` / `unavailable` numeric source states
-- Configured usable battery capacity used for Trip energy calculations
-- Signed net Trip energy for consumption statistics, including net
-  recuperation
-- Temporary unavailable/unknown vehicle and charging states ignored for
-  transition handling
-- Delayed Last Charge correction for already archived charging sessions
-- German/English Electroverse receipt parsing and gross charging-cost import
-- Explicit 77 kWh default for new installations while preserving existing
-  configured battery capacities
-- Home Assistant review fixes for translations, event-loop safety, entity
-  lifecycle and service metadata
-- Source-selection guards against Ford Triplog self-references
-- Ford Connect recommended as the primary Ford vehicle data source
+- Improved AC/DC charging start and completion handling
+- Delayed Start-SOC stabilization and charging-energy source tracking
+- Ford Last Charge reconciliation for completed sessions
+- SOC-based net recuperation values and statistics
+- Monthly driving statistics and CSV export
+- Monthly charging statistics and CSV export
+- User-defined places for automatic Journey pause assignment
+- Background Journey rebuild with duplicate-run protection
+- Historical duplicate-Trip filtering and maintenance-only overlap reconciliation
+- Vehicle-source health monitoring with 20-minute grace period
+- Dashboard status sensor with dynamic icons
+- Home Assistant Persistent Notification for prolonged vehicle-source outages
 
-## Version 2.4 – Planned
+## Version 2.5+ – Planned
 
-- Route-point export for third-party applications
-- Raw GPS export with timestamps
-- Matched OSRM geometry export
-- Candidate formats: CSV, GPX and GeoJSON
-- Optional storage of additional GPS metadata when provided by the
-  selected source, including altitude, GPS accuracy, speed and course
-- Backward-compatible route storage when a source provides only
-  latitude/longitude
-- More source-independent charging-session completion using available live
-  Ford charging data, including final session energy and charging type
-- Later Last Charge data can enrich or correct an already completed charging
-  session when available
-- Charging-session metadata enrichment and an optional automatically
-  generated memo
-- Separate recuperation fields such as recovered SOC and regenerated energy
-  while retaining the signed net-energy calculation introduced in 2.3
-- Home Assistant notification when the configured vehicle data source is
-  unavailable or authorization has expired for an extended period
-- Optional EVCC charging-status entity as an additional source-independent
-  charging-state signal
+- Multi-vehicle support
+- Route export for third-party applications
+- Optional enriched GPS point metadata
+- Additional charging and reporting improvements
 
 ## 3.x – Research
 

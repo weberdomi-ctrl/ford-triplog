@@ -1,3 +1,144 @@
+# Ford Triplog 2.4.0
+
+**Final release: Build 24404**
+
+Ford Triplog 2.4 focuses on charging-data reliability, recuperation and monthly statistics, reusable Journey places, safer Journey maintenance and vehicle-source health monitoring.
+
+The release keeps the SQLite-only local-first architecture introduced in 2.3. Existing stored Trips, charging sessions, Journeys, Routes, receipts and metadata remain compatible.
+
+## ⚡ Charging and energy handling
+
+Charging-session handling has been extended without replacing the proven live start/stop model.
+
+- Charging type (`AC_BASIC` / `DC_FAST`) is retained when available.
+- Start-SOC can be stabilized after charging begins to reduce BMS-related SOC jumps.
+- The last valid live charging snapshot is preserved if Ford clears values immediately after a manual stop.
+- End-SOC, charging type and charger-energy data are captured at completion when available.
+- Technical energy values remain separated by source instead of silently replacing one another.
+- Ford Last Charge can later confirm or correct the matching completed session.
+- Receipt/billed energy has highest priority for charging-cost calculations.
+
+This improves manual-stop handling, delayed Ford data and consistency between displayed billed energy and billed cost.
+
+## ♻️ Recuperation and driving statistics
+
+Trips now expose SOC-based net recuperation values:
+
+- `soc_recovered`
+- `regenerated_energy_kwh`
+
+The existing signed net-energy and consumption calculation remains unchanged.
+
+New recuperation statistics include:
+
+- total recovered SOC
+- total SOC-derived net recuperated energy
+- recuperation-trip count
+- average recuperation
+- top recuperation Trip
+
+Ford Triplog 2.4 also adds monthly driving statistics with distance, Trip count, Journey count, driving time, net battery energy, average consumption and recuperation, plus a monthly driving-statistics CSV export.
+
+The recuperation values represent net SOC gain over the complete Trip and are not a measurement of every regenerative-energy event during the drive.
+
+## 📊 Monthly charging statistics
+
+A new monthly charging overview separates charging into:
+
+- Home
+- Work
+- External
+
+For each category Ford Triplog tracks energy, cost and charging-session count.
+
+The statistics also provide:
+
+- current-month totals
+- rolling monthly history
+- yearly summaries
+- monthly charging-statistics CSV export
+
+Energy selection follows the same provenance rules as the stored charging sessions, with billed energy preferred where available.
+
+## 📍 User-defined places
+
+Ford Triplog 2.4 introduces reusable user-defined places for Journey pauses.
+
+A place can contain:
+
+- name
+- category
+- description
+- latitude / longitude
+- matching radius
+- optional MDI icon
+
+Places can be created directly from an existing Journey pause.
+
+When a later pause occurs inside the configured radius, Ford Triplog can automatically reuse the saved place information. Manual pause edits remain authoritative.
+
+Near-identical place creation is guarded to reduce accidental duplicates.
+
+## 🧹 Journey rebuild reliability
+
+Journey maintenance received several fixes discovered during full-history rebuild testing.
+
+- Full rebuild runs as a Home Assistant background task instead of blocking the options flow.
+- A central non-queuing guard allows only one Journey maintenance operation at a time.
+- Repeated or queued rebuild requests no longer delete newly rebuilt Journeys and start again.
+- Near-identical historical duplicate Trips are filtered deterministically before rebuilding.
+- Short historical Trip/charging timestamp overlaps can be reconciled during maintenance when the locations match.
+- The additional overlap tolerance is maintenance-only; normal live Journey matching remains unchanged.
+
+The final rebuild test used 326 stored Trips and 51 charging sessions. Two duplicate Trips were identified and skipped, and the remaining history rebuilt cleanly.
+
+## 📡 Vehicle-source health monitoring
+
+Ford Triplog now monitors the configured live vehicle-source entities.
+
+Health states are:
+
+- `healthy`
+- `degraded`
+- `grace_period`
+- `unavailable`
+- `unknown`
+
+A complete outage is declared only when all monitored live entities remain unavailable for 20 minutes.
+
+Ford Last Charge is intentionally excluded from this live-source health check.
+
+New Home Assistant entities provide:
+
+- a connectivity binary sensor for automations
+- a translated status sensor for dashboards and badges
+- dynamic icons for the current health state
+
+After the 20-minute grace period Ford Triplog creates one Home Assistant Persistent Notification for the continuous outage. Recovery resets the notification state so a later independent outage can notify again.
+
+The complete flow was tested in Home Assistant from healthy → grace period → unavailable → notification → staggered recovery → healthy.
+
+## 📤 Export and Home Assistant metadata fixes
+
+- Date-filtered CSV exports now normalize Home Assistant string date values before comparison.
+- The fix applies to Trip, Journey and charging-session exports.
+- Home Assistant state metadata for recuperation and monthly charging sensors was corrected.
+- Startup logging now reports the Ford Triplog version and build number.
+
+## ⬆️ Upgrade notes
+
+Ford Triplog 2.4.0 is designed as a direct upgrade from 2.3.x.
+
+No manual database conversion is required.
+
+SQLite remains the sole productive datastore. Existing legacy JSON data remains only as the already established migration/import source.
+
+The vehicle-source health monitor begins with a 20-minute grace period for a complete source outage, so short Ford Connect interruptions do not immediately create alerts.
+
+EVCC is not used as a fallback vehicle-data source in this release.
+
+------------------------------------------------------------------------
+
 # Ford Triplog 2.3.0
 
 **Final release: Build 23048**
