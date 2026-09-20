@@ -118,6 +118,7 @@ async def async_setup_entry(
                 common_translations,
             ),
             FordTriplogLastJourneyOverviewSensor(
+                coordinator,
                 journey_storage,
                 common_translations,
             ),
@@ -131,6 +132,7 @@ async def async_setup_entry(
                 entry.entry_id,
             ),
             FordTriplogJourneyHistorySensor(
+                coordinator,
                 journey_storage,
                 common_translations,
                 entry.entry_id,
@@ -381,9 +383,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
 
     def __init__(
         self,
+        coordinator,
         storage: FordTriplogJourneyStorage | None,
         translations: dict[str, str],
     ) -> None:
+        self.coordinator = coordinator
         self.storage = storage
         self.translations = translations
         self._journey = None
@@ -1161,12 +1165,13 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
 
     def __init__(
         self,
+        coordinator,
         storage,
         translations,
         entry_id: str,
         receipt_storage=None,
     ) -> None:
-        super().__init__(storage, translations)
+        super().__init__(coordinator, storage, translations)
         self.entry_id = entry_id
         self.receipt_storage = receipt_storage
         self._selected_date = None
