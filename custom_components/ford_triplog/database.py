@@ -283,6 +283,14 @@ class FordTriplogDatabase:
                     )
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS user_places (
+                            place_id TEXT PRIMARY KEY,
+                            data TEXT NOT NULL
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
                         CREATE TABLE IF NOT EXISTS pending_charging_sites (
                             pending_id TEXT PRIMARY KEY,
                             data TEXT NOT NULL
@@ -1884,6 +1892,63 @@ class FordTriplogDatabase:
                 "Unable to read diagnostics from SQLite"
             )
             return None
+
+    async def load_user_places(self) -> list[dict[str, Any]]:
+        """Load all user-defined places from SQLite."""
+
+        self._log_read("user_places")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                rows = db.execute(
+                    "SELECT data FROM user_places ORDER BY place_id ASC"
+                ).fetchall()
+            result: list[dict[str, Any]] = []
+            for (payload,) in rows:
+                try:
+                    data = json.loads(payload)
+                except (TypeError, json.JSONDecodeError):
+                    continue
+                if isinstance(data, dict):
+                    result.append(data)
+            return result
+
+        try:
+            result = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug("SQLite user places loaded: %d", len(result))
+            return result
+        except Exception:
+            _LOGGER.exception("Unable to read user places from SQLite")
+            return []
+
+    async def save_user_places(self, places: list[dict[str, Any]]) -> bool:
+        """Replace the complete user-defined place collection in SQLite."""
+
+        def _write() -> None:
+            rows: list[tuple[str, str]] = []
+            for place in places:
+                place_id = place.get("place_id")
+                if not place_id:
+                    raise ValueError("User place has no place_id")
+                rows.append((str(place_id), json.dumps(place, ensure_ascii=False)))
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("DELETE FROM user_places")
+                if rows:
+                    db.executemany(
+                        "INSERT INTO user_places (place_id, data) VALUES (?, ?)",
+                        rows,
+                    )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("User places saved to SQLite: %d", len(places))
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save user places to SQLite")
+            return False
 
     async def load_user_charging_sites(self) -> list[dict[str, Any]]:
         """Load all user-defined charging sites from SQLite."""

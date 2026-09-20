@@ -859,6 +859,16 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             if not isinstance(override, dict):
                 override = {}
 
+            auto_place = None
+            user_place_storage = getattr(
+                self.coordinator, "user_place_storage", None
+            )
+            if user_place_storage is not None:
+                auto_place = user_place_storage.resolve_cached(
+                    pause_location.get("latitude"),
+                    pause_location.get("longitude"),
+                )
+
             pause_soc_start = self._optional_number(
                 getattr(item, "end_soc", None),
                 1,
@@ -908,9 +918,18 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 "battery_energy_change_kwh": (
                     battery_energy_change_kwh
                 ),
-                "category": override.get("category"),
+                "category": (
+                    override.get("category")
+                    or (auto_place or {}).get("category")
+                ),
                 "title": override.get("title"),
-                "note": override.get("note"),
+                "note": (
+                    override.get("note")
+                    or (auto_place or {}).get("description")
+                ),
+                "user_place_id": (auto_place or {}).get("place_id"),
+                "user_place_name": (auto_place or {}).get("name"),
+                "user_place_distance_m": (auto_place or {}).get("distance_m"),
                 "cost_total": override.get("cost_total"),
                 "currency": override.get("currency"),
                 "edited": bool(override),
@@ -922,6 +941,10 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 pause_entry["location"] = manual_location
                 pause_entry["display_location"] = manual_location
                 pause_entry["location_source"] = "manual"
+            elif auto_place and auto_place.get("name"):
+                pause_entry["location"] = auto_place["name"]
+                pause_entry["display_location"] = auto_place["name"]
+                pause_entry["location_source"] = "user_place"
 
             timeline.append(
                 {
