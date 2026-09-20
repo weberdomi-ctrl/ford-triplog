@@ -1137,6 +1137,9 @@
     "binary_sensor": {
       "trip_active": {
         "name": "Przejazd aktywny"
+      },
+      "vehicle_source_connectivity": {
+        "name": "Łączność ze źródłem danych pojazdu"
       }
     },
     "select": {

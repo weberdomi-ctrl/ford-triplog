@@ -1123,6 +1123,9 @@
     "binary_sensor": {
       "trip_active": {
         "name": "Trip Active"
+      },
+      "vehicle_source_connectivity": {
+        "name": "Vehicle source connectivity"
       }
     },
     "select": {
