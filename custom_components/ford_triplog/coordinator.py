@@ -50,6 +50,7 @@ from pathlib import Path
 from typing import Any
 
 from homeassistant.core import Event, HomeAssistant, State
+from homeassistant.components import persistent_notification
 from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
@@ -309,6 +310,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
         )
         self._vehicle_source_health_timer: asyncio.TimerHandle | None = None
+        self._vehicle_source_outage_notified = False
 
 
         # Smart Trip
@@ -428,6 +430,26 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                     self.vehicle_source_health,
                     ", ".join(unavailable),
                 )
+                if not self._vehicle_source_outage_notified:
+                    minutes = max(
+                        1,
+                        round(self.vehicle_source_unavailable_grace_seconds / 60),
+                    )
+                    persistent_notification.async_create(
+                        self.hass,
+                        (
+                            "Die konfigurierte Fahrzeugdatenquelle ist seit "
+                            f"mehr als {minutes} Minuten nicht verfügbar. "
+                            "Bitte die Fahrzeug-Integration bzw. deren "
+                            "Autorisierung prüfen."
+                        ),
+                        title="Ford Triplog – Fahrzeugdatenquelle nicht verfügbar",
+                        notification_id="ford_triplog_vehicle_source_unavailable",
+                    )
+                    self._vehicle_source_outage_notified = True
+                    _LOGGER.info(
+                        "Vehicle source outage notification created"
+                    )
             else:
                 _LOGGER.info(
                     "Vehicle source health changed: %s -> %s; unavailable=%s",
@@ -435,6 +457,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                     self.vehicle_source_health,
                     ", ".join(unavailable) or "none",
                 )
+                if previous == VEHICLE_SOURCE_HEALTH_UNAVAILABLE:
+                    self._vehicle_source_outage_notified = False
+                    _LOGGER.info(
+                        "Vehicle source outage notification state reset after recovery"
+                    )
 
     def _schedule_coordinator_update(
         self,
