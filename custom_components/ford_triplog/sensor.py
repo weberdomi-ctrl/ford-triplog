@@ -267,8 +267,6 @@ class FordTriplogVehicleSourceStatusSensor(SensorEntity):
         VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
         VEHICLE_SOURCE_HEALTH_UNKNOWN,
     ]
-    _attr_icon = "mdi:car-connected"
-
     def __init__(self, coordinator) -> None:
         self.coordinator = coordinator
 
@@ -286,6 +284,17 @@ class FordTriplogVehicleSourceStatusSensor(SensorEntity):
     @property
     def native_value(self) -> str:
         return self.coordinator.vehicle_source_health
+
+    @property
+    def icon(self) -> str:
+        """Return an icon matching the detailed vehicle-source health state."""
+        return {
+            VEHICLE_SOURCE_HEALTH_HEALTHY: "mdi:car-connected",
+            VEHICLE_SOURCE_HEALTH_DEGRADED: "mdi:car-wrench",
+            VEHICLE_SOURCE_HEALTH_GRACE: "mdi:timer-sand",
+            VEHICLE_SOURCE_HEALTH_UNAVAILABLE: "mdi:car-off",
+            VEHICLE_SOURCE_HEALTH_UNKNOWN: "mdi:help-circle",
+        }.get(self.coordinator.vehicle_source_health, "mdi:help-circle")
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
