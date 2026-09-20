@@ -15,6 +15,16 @@ from .database import FordTriplogDatabase
 
 
 DEFAULT_USER_PLACE_RADIUS_M = 75
+USER_PLACE_DUPLICATE_DISTANCE_M = 10.0
+USER_PLACE_SAME_NAME_DISTANCE_M = 50.0
+
+
+class UserPlaceDuplicateError(ValueError):
+    """Raised when a user-defined place duplicates an existing place."""
+
+    def __init__(self, existing: dict[str, Any]) -> None:
+        self.existing = dict(existing)
+        super().__init__(f"Duplicate user place: {existing.get('name') or 'unknown'}")
 
 
 class FordTriplogUserPlaceStorage:
@@ -50,6 +60,9 @@ class FordTriplogUserPlaceStorage:
     async def async_add(self, place: dict[str, Any]) -> dict[str, Any]:
         places = await self.async_load()
         normalized = self._normalize_place(place, generate_id=True)
+        duplicate = self._find_duplicate(normalized, places)
+        if duplicate is not None:
+            raise UserPlaceDuplicateError(duplicate)
         places.append(normalized)
         await self.async_save(places)
         return normalized
@@ -66,6 +79,13 @@ class FordTriplogUserPlaceStorage:
                 continue
             merged = {**existing, **changes, "place_id": normalized_id}
             normalized = self._normalize_place(merged, generate_id=False)
+            duplicate = self._find_duplicate(
+                normalized,
+                places,
+                exclude_place_id=normalized_id,
+            )
+            if duplicate is not None:
+                raise UserPlaceDuplicateError(duplicate)
             places[index] = normalized
             await self.async_save(places)
             return normalized
@@ -132,6 +152,54 @@ class FordTriplogUserPlaceStorage:
         selected = dict(matches[0][2])
         selected["distance_m"] = round(matches[0][1], 1)
         return selected
+
+
+    @classmethod
+    def _find_duplicate(
+        cls,
+        candidate: dict[str, Any],
+        places: list[dict[str, Any]],
+        *,
+        exclude_place_id: str | None = None,
+    ) -> dict[str, Any] | None:
+        """Return an existing place that is effectively the same location.
+
+        Exact/near-identical coordinates are always treated as duplicates.
+        The same place name is also protected against small GPS drift.
+        """
+        try:
+            candidate_lat = float(candidate["latitude"])
+            candidate_lon = float(candidate["longitude"])
+        except (KeyError, TypeError, ValueError):
+            return None
+
+        candidate_name = cls._clean_optional_text(candidate.get("name")).casefold()
+        for existing in places:
+            existing_id = cls._clean_optional_text(existing.get("place_id"))
+            if exclude_place_id and existing_id == exclude_place_id:
+                continue
+            try:
+                distance = haversine_distance_m(
+                    candidate_lat,
+                    candidate_lon,
+                    float(existing["latitude"]),
+                    float(existing["longitude"]),
+                )
+            except (KeyError, TypeError, ValueError):
+                continue
+
+            if distance <= USER_PLACE_DUPLICATE_DISTANCE_M:
+                return existing
+
+            existing_name = cls._clean_optional_text(existing.get("name")).casefold()
+            if (
+                candidate_name
+                and existing_name == candidate_name
+                and distance <= USER_PLACE_SAME_NAME_DISTANCE_M
+            ):
+                return existing
+
+        return None
 
     @classmethod
     def _normalize_places(

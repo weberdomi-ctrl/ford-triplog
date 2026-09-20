@@ -47,7 +47,11 @@ from homeassistant.util import dt as dt_util
 from .countries import COUNTRIES
 from .pending_charging_site_storage import PendingChargingSiteStorage
 from .user_charging_site_storage import UserChargingSiteStorage
-from .user_place_storage import FordTriplogUserPlaceStorage, DEFAULT_USER_PLACE_RADIUS_M
+from .user_place_storage import (
+    FordTriplogUserPlaceStorage,
+    DEFAULT_USER_PLACE_RADIUS_M,
+    UserPlaceDuplicateError,
+)
 from .receipt_storage import FordTriplogReceiptStorage
 from .ocr_client import (
     FordTriplogOCRAuthenticationError,
@@ -146,6 +150,24 @@ USER_PLACE_BACK = "__back__"
 USER_PLACE_ACTION_SAVE = "save"
 USER_PLACE_ACTION_DELETE = "delete"
 USER_PLACE_ACTION_BACK = "back"
+
+USER_PLACE_ICON_OPTIONS = [
+    selector.SelectOptionDict(value="", label="Kein Icon"),
+    selector.SelectOptionDict(value="mdi:briefcase", label="Arbeit"),
+    selector.SelectOptionDict(value="mdi:office-building", label="Büro"),
+    selector.SelectOptionDict(value="mdi:cart", label="Einkaufen"),
+    selector.SelectOptionDict(value="mdi:store", label="Geschäft"),
+    selector.SelectOptionDict(value="mdi:silverware-fork-knife", label="Restaurant"),
+    selector.SelectOptionDict(value="mdi:coffee", label="Café"),
+    selector.SelectOptionDict(value="mdi:account-tie", label="Kunde"),
+    selector.SelectOptionDict(value="mdi:home", label="Zuhause"),
+    selector.SelectOptionDict(value="mdi:walk", label="Freizeit"),
+    selector.SelectOptionDict(value="mdi:run", label="Sport"),
+    selector.SelectOptionDict(value="mdi:parking", label="Parken"),
+    selector.SelectOptionDict(value="mdi:bed", label="Übernachtung"),
+    selector.SelectOptionDict(value="mdi:ev-station", label="Laden"),
+    selector.SelectOptionDict(value="mdi:map-marker", label="Sonstiger Ort"),
+]
 
 CONF_CHARGE_SELECTION = "charge_selection"
 CONF_CHARGE_COST_TOTAL = "cost_total"
@@ -2693,6 +2715,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         "icon": user_input.get(CONF_USER_PLACE_ICON, ""),
                     }
                 )
+            except UserPlaceDuplicateError:
+                errors["base"] = "user_place_duplicate"
             except (HomeAssistantError, OSError, ValueError):
                 errors["base"] = "user_place_save_failed"
             else:
@@ -2743,7 +2767,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_USER_PLACE_ICON,
                     default="",
-                ): selector.TextSelector(),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=USER_PLACE_ICON_OPTIONS,
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
             }
         )
 
@@ -6129,6 +6159,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         )
                     else:
                         saved = await storage.async_add(changes)
+                except UserPlaceDuplicateError:
+                    errors["base"] = "user_place_duplicate"
                 except (HomeAssistantError, OSError, ValueError, KeyError):
                     errors["base"] = "user_place_save_failed"
                 else:
@@ -6193,7 +6225,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 vol.Optional(
                     CONF_USER_PLACE_ICON,
                     default=str(existing.get("icon") or ""),
-                ): selector.TextSelector(),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=USER_PLACE_ICON_OPTIONS,
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
                 vol.Required(
                     CONF_USER_PLACE_ACTION,
                     default=USER_PLACE_ACTION_SAVE,

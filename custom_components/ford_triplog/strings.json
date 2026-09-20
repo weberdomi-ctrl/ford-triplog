@@ -935,6 +935,7 @@
       "user_place_load_failed": "Custom places could not be loaded.",
       "user_place_not_found": "The selected place was not found.",
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
+      "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
       "user_place_delete_failed": "The place could not be deleted."
     }
   },

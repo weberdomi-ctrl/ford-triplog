@@ -948,6 +948,7 @@
       "user_place_load_failed": "Benutzerdefinierte Orte konnten nicht geladen werden.",
       "user_place_not_found": "Der ausgewählte Ort wurde nicht gefunden.",
       "user_place_save_failed": "Der Ort konnte nicht gespeichert werden. Prüfe Name, Koordinaten und Radius.",
+      "user_place_duplicate": "Ein benutzerdefinierter Ort an dieser Position bzw. mit diesem Namen in unmittelbarer Nähe existiert bereits.",
       "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
       "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar."
     }
