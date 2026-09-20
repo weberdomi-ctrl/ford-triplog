@@ -2360,6 +2360,30 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return None
 
     @staticmethod
+    def _pause_coordinates(
+        current: Any,
+        following: Any,
+    ) -> tuple[float | None, float | None]:
+        """Return the best coordinate pair for a pause."""
+
+        latitude = (
+            getattr(current, "end_latitude", None)
+            if getattr(current, "end_latitude", None) is not None
+            else getattr(following, "start_latitude", None)
+        )
+        longitude = (
+            getattr(current, "end_longitude", None)
+            if getattr(current, "end_longitude", None) is not None
+            else getattr(following, "start_longitude", None)
+        )
+        try:
+            if latitude is None or longitude is None:
+                return None, None
+            return float(latitude), float(longitude)
+        except (TypeError, ValueError):
+            return None, None
+
+    @staticmethod
     def _pause_location(current: Any, following: Any) -> str:
         """Return the most useful automatic location for a pause."""
 
@@ -2424,6 +2448,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 auto_place = self._resolve_user_place_for_pause(
                     current, following
                 )
+                pause_latitude, pause_longitude = self._pause_coordinates(
+                    current, following
+                )
                 location = (
                     override.get("location")
                     or (auto_place or {}).get("name")
@@ -2465,6 +2492,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             or ""
                         ),
                         "user_place_id": (auto_place or {}).get("place_id"),
+                        "latitude": pause_latitude,
+                        "longitude": pause_longitude,
                         "cost_total": override.get("cost_total"),
                         "currency": str(override.get("currency") or ""),
                     }
@@ -2602,19 +2631,130 @@ class FordTriplogOptionsFlow(OptionsFlow):
             and str(receipt.get("target_id") or "") == self._selected_pause_id
         ]
 
+        menu_options = [
+            "pause_edit",
+            "pause_receipts",
+        ]
+        if pause.get("latitude") is not None and pause.get("longitude") is not None:
+            menu_options.append("pause_save_place")
+        menu_options.append("pause_selection")
+
         return self.async_show_menu(
             step_id="pause_detail",
-            menu_options=[
-                "pause_edit",
-                "pause_receipts",
-                "pause_selection",
-            ],
+            menu_options=menu_options,
             description_placeholders={
                 "date": str(pause.get("date") or "—"),
                 "start_time": str(pause.get("start_time") or "—"),
                 "location": str(pause.get("location") or "—"),
                 "title": str(pause.get("title") or "—"),
                 "receipt_count": str(len(receipts)),
+            },
+        )
+
+    async def async_step_pause_save_place(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Save the selected pause location as a user-defined place."""
+
+        pause = await self._async_get_selected_pause_entry()
+        if pause is None:
+            return await self.async_step_pause_selection()
+
+        latitude = pause.get("latitude")
+        longitude = pause.get("longitude")
+        if latitude is None or longitude is None:
+            return self.async_show_form(
+                step_id="pause_save_place",
+                data_schema=vol.Schema({}),
+                errors={"base": "pause_place_no_coordinates"},
+                description_placeholders={
+                    "location": str(pause.get("location") or "—"),
+                    "latitude": "—",
+                    "longitude": "—",
+                },
+            )
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                await self._get_user_place_storage().async_add(
+                    {
+                        "name": user_input.get(CONF_USER_PLACE_NAME),
+                        "category": user_input.get(CONF_USER_PLACE_CATEGORY, ""),
+                        "description": user_input.get(
+                            CONF_USER_PLACE_DESCRIPTION, ""
+                        ),
+                        "latitude": latitude,
+                        "longitude": longitude,
+                        "radius_m": user_input.get(
+                            CONF_USER_PLACE_RADIUS, DEFAULT_USER_PLACE_RADIUS_M
+                        ),
+                        "icon": user_input.get(CONF_USER_PLACE_ICON, ""),
+                    }
+                )
+            except (HomeAssistantError, OSError, ValueError):
+                errors["base"] = "user_place_save_failed"
+            else:
+                # Re-open the pause so the freshly cached place is applied
+                # immediately to its automatic location/category/description.
+                return await self.async_step_pause_detail()
+
+        suggested_name = str(pause.get("location") or "").strip()
+        if suggested_name == "—":
+            suggested_name = ""
+
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_USER_PLACE_NAME,
+                    default=suggested_name,
+                ): selector.TextSelector(),
+                vol.Optional(
+                    CONF_USER_PLACE_CATEGORY,
+                    default=str(pause.get("category") or ""),
+                ): selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            "Arbeit",
+                            "Einkaufen",
+                            "Freizeit",
+                            "Restaurant",
+                            "Kunde",
+                            "Familie",
+                            "Sport",
+                            "Parken",
+                            "Übernachtung",
+                        ],
+                        custom_value=True,
+                        mode=selector.SelectSelectorMode.DROPDOWN,
+                    )
+                ),
+                vol.Optional(
+                    CONF_USER_PLACE_DESCRIPTION,
+                    default=str(pause.get("note") or ""),
+                ): selector.TextSelector(
+                    selector.TextSelectorConfig(multiline=True)
+                ),
+                vol.Required(
+                    CONF_USER_PLACE_RADIUS,
+                    default=DEFAULT_USER_PLACE_RADIUS_M,
+                ): vol.All(vol.Coerce(int), vol.Range(min=10, max=5000)),
+                vol.Optional(
+                    CONF_USER_PLACE_ICON,
+                    default="",
+                ): selector.TextSelector(),
+            }
+        )
+
+        return self.async_show_form(
+            step_id="pause_save_place",
+            data_schema=schema,
+            errors=errors,
+            description_placeholders={
+                "location": str(pause.get("location") or "—"),
+                "latitude": f"{float(latitude):.6f}",
+                "longitude": f"{float(longitude):.6f}",
             },
         )
 

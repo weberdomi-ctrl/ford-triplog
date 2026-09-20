@@ -783,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Edit pause",
           "pause_receipts": "Receipts",
-          "pause_selection": "Back to pauses"
+          "pause_selection": "Back to pauses",
+          "pause_save_place": "Save as custom place"
         },
         "menu_option_descriptions": {
           "pause_edit": "Edit category, title, note, location and costs.",
           "pause_receipts": "Show receipts or attach a new receipt to this pause.",
-          "pause_selection": "Return to the list of detected pauses."
+          "pause_selection": "Return to the list of detected pauses.",
+          "pause_save_place": "Use this pause's coordinates directly and save them as a reusable place."
         }
       },
       "pause_receipts": {
@@ -879,6 +881,17 @@
           "icon": "Icon (optional)",
           "action": "Action"
         }
+      },
+      "pause_save_place": {
+        "title": "Save pause as place",
+        "description": "Coordinates are taken automatically from the pause: {latitude}, {longitude}.\n\nCurrent location: {location}",
+        "data": {
+          "name": "Place / name",
+          "category": "Category",
+          "description": "Description",
+          "radius_m": "Detection radius (m)",
+          "icon": "Icon (optional)"
+        }
       }
     },
     "error": {
@@ -935,7 +948,8 @@
       "user_place_load_failed": "Custom places could not be loaded.",
       "user_place_not_found": "The selected place was not found.",
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
-      "user_place_delete_failed": "The place could not be deleted."
+      "user_place_delete_failed": "The place could not be deleted.",
+      "pause_place_no_coordinates": "No GPS coordinates are available for this pause."
     }
   },
   "entity": {

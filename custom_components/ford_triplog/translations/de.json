@@ -783,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Pause bearbeiten",
           "pause_receipts": "Belege",
-          "pause_selection": "Zurück zu den Pausen"
+          "pause_selection": "Zurück zu den Pausen",
+          "pause_save_place": "Als benutzerdefinierten Ort speichern"
         },
         "menu_option_descriptions": {
           "pause_edit": "Kategorie, Titel, Notiz, Ort und Kosten bearbeiten.",
           "pause_receipts": "Belege anzeigen oder einen neuen Beleg direkt dieser Pause zuordnen.",
-          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren."
+          "pause_selection": "Zur Liste der erkannten Pausen zurückkehren.",
+          "pause_save_place": "Koordinaten direkt aus dieser Pause übernehmen und als wiederverwendbaren Ort speichern."
         }
       },
       "pause_receipts": {
@@ -879,6 +881,17 @@
           "icon": "Icon (optional)",
           "action": "Aktion"
         }
+      },
+      "pause_save_place": {
+        "title": "Pause als Ort speichern",
+        "description": "Die Koordinaten werden automatisch aus der Pause übernommen: {latitude}, {longitude}.\n\nAktueller Ort: {location}",
+        "data": {
+          "name": "Ort / Name",
+          "category": "Kategorie",
+          "description": "Beschreibung",
+          "radius_m": "Erkennungsradius (m)",
+          "icon": "Icon (optional)"
+        }
       }
     },
     "error": {
@@ -935,7 +948,8 @@
       "user_place_load_failed": "Benutzerdefinierte Orte konnten nicht geladen werden.",
       "user_place_not_found": "Der ausgewählte Ort wurde nicht gefunden.",
       "user_place_save_failed": "Der Ort konnte nicht gespeichert werden. Prüfe Name, Koordinaten und Radius.",
-      "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden."
+      "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
+      "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar."
     }
   },
   "entity": {

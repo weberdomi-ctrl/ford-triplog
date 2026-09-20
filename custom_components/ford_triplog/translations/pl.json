@@ -783,12 +783,14 @@
         "menu_options": {
           "pause_edit": "Edytuj przerwę",
           "pause_receipts": "Paragony",
-          "pause_selection": "Wróć do przerw"
+          "pause_selection": "Wróć do przerw",
+          "pause_save_place": "Zapisz jako własne miejsce"
         },
         "menu_option_descriptions": {
           "pause_edit": "Edytuj kategorię, tytuł, notatkę, lokalizację i koszty.",
           "pause_receipts": "Wyświetl paragony lub przypisz nowy paragon bezpośrednio do tej przerwy.",
-          "pause_selection": "Wróć do listy wykrytych przerw."
+          "pause_selection": "Wróć do listy wykrytych przerw.",
+          "pause_save_place": "Przejmij współrzędne bezpośrednio z tej przerwy i zapisz je jako miejsce do ponownego użycia."
         }
       },
       "pause_receipts": {
@@ -879,6 +881,17 @@
           "icon": "Icon (optional)",
           "action": "Action"
         }
+      },
+      "pause_save_place": {
+        "title": "Zapisz przerwę jako miejsce",
+        "description": "Współrzędne są pobierane automatycznie z przerwy: {latitude}, {longitude}.\n\nBieżące miejsce: {location}",
+        "data": {
+          "name": "Miejsce / nazwa",
+          "category": "Kategoria",
+          "description": "Opis",
+          "radius_m": "Promień wykrywania (m)",
+          "icon": "Ikona (opcjonalnie)"
+        }
       }
     },
     "error": {
@@ -935,7 +948,8 @@
       "user_place_load_failed": "Custom places could not be loaded.",
       "user_place_not_found": "The selected place was not found.",
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
-      "user_place_delete_failed": "The place could not be deleted."
+      "user_place_delete_failed": "The place could not be deleted.",
+      "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS."
     }
   },
   "entity": {
