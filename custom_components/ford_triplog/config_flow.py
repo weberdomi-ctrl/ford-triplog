@@ -4666,18 +4666,39 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if not user_input.get("confirm"):
                 errors["base"] = "journey_confirmation_required"
             else:
-                try:
-                    result = await self._get_journey_rebuilder().async_rebuild_journeys(
-                        start_date=user_input.get("start_date"),
-                        end_date=user_input.get("end_date"),
-                    )
-                except (HomeAssistantError, ValueError):
-                    errors["base"] = "journey_operation_failed"
+                rebuilder = self._get_journey_rebuilder()
+
+                if rebuilder.is_running:
+                    errors["base"] = "journey_operation_busy"
                 else:
-                    self._journey_result = self._format_journey_result(
-                        result.to_dict()
+                    start_date = user_input.get("start_date")
+                    end_date = user_input.get("end_date")
+
+                    async def _run_rebuild_background() -> None:
+                        try:
+                            result = await rebuilder.async_rebuild_journeys(
+                                start_date=start_date,
+                                end_date=end_date,
+                            )
+                        except Exception:  # noqa: BLE001
+                            _LOGGER.exception(
+                                "Journey rebuild from options flow failed in background"
+                            )
+                            return
+
+                        _LOGGER.info(
+                            "Journey rebuild from options flow completed in background: %s",
+                            result.to_dict(),
+                        )
+
+                    self.hass.async_create_task(_run_rebuild_background())
+                    _LOGGER.info(
+                        "Journey rebuild started in background from options flow: "
+                        "start_date=%s end_date=%s",
+                        start_date,
+                        end_date,
                     )
-                    return await self.async_step_journey_result()
+                    return await self.async_step_init()
 
         return self.async_show_form(
             step_id="journey_rebuild",

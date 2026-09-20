@@ -950,7 +950,8 @@
       "user_place_save_failed": "Der Ort konnte nicht gespeichert werden. Prüfe Name, Koordinaten und Radius.",
       "user_place_duplicate": "Ein benutzerdefinierter Ort an dieser Position bzw. mit diesem Namen in unmittelbarer Nähe existiert bereits.",
       "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
-      "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar."
+      "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar.",
+      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist."
     }
   },
   "entity": {

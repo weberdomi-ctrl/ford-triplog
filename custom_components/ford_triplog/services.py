@@ -1225,7 +1225,10 @@ async def async_register_services(hass: HomeAssistant) -> None:
             task_key = id(rebuilder)
             active_task = rebuild_tasks.get(task_key)
 
-            if active_task is not None and not active_task.done():
+            if (
+                (active_task is not None and not active_task.done())
+                or rebuilder.is_running
+            ):
                 _LOGGER.warning(
                     "Journey rebuild request ignored because a rebuild is already running"
                 )

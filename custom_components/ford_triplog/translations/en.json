@@ -950,7 +950,8 @@
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
       "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
       "user_place_delete_failed": "The place could not be deleted.",
-      "pause_place_no_coordinates": "No GPS coordinates are available for this pause."
+      "pause_place_no_coordinates": "No GPS coordinates are available for this pause.",
+      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed."
     }
   },
   "entity": {

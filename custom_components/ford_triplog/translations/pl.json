@@ -950,7 +950,8 @@
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
       "user_place_duplicate": "W tej lokalizacji lub w jej bezpośrednim sąsiedztwie istnieje już niestandardowe miejsce o tej nazwie.",
       "user_place_delete_failed": "The place could not be deleted.",
-      "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS."
+      "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS.",
+      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie."
     }
   },
   "entity": {
