@@ -7,3 +7,4 @@ __pycache__/
 home-assistant.log
 dist/
 build/
+custom_components/ford_triplog.zip
