@@ -30,8 +30,9 @@ _LOGGER = logging.getLogger(__name__)
 class FordTriplogMetadataStorage:
     """Store persistent user-maintained metadata."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, vehicle_id: int = 1) -> None:
         self.hass = hass
+        self.vehicle_id = int(vehicle_id)
         self._path = Path(hass.config.path(".storage", STORAGE_DIR, METADATA_FILE))
         self._base_directory = Path(
             hass.config.path(".storage", STORAGE_DIR)
@@ -39,6 +40,7 @@ class FordTriplogMetadataStorage:
         self.database = FordTriplogDatabase(
             hass,
             self._base_directory,
+            self.vehicle_id,
         )
         # SQLite is the only runtime metadata backend.
         self.read_backend = "sqlite"

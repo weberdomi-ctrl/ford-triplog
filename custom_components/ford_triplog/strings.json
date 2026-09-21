@@ -26,8 +26,9 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Select the area you want to edit.",
+        "description": "Current vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the area you want to edit.",
         "menu_options": {
+          "vehicle_context": "Vehicle",
           "settings": "Settings",
           "journey_management": "Manage journeys",
           "route_management": "Route maintenance",
@@ -39,6 +40,7 @@
           "user_places": "Custom places"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
           "settings": "Edit trip, charging and vehicle settings.",
           "journey_management": "Update, rebuild or delete journeys.",
           "route_management": "Re-run OSRM map matching for stored routes while keeping raw GPS points unchanged.",
@@ -52,14 +54,15 @@
       },
       "settings": {
         "title": "Settings",
-        "description": "Select the area you want to configure.",
+        "description": "Vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the area you want to configure.",
         "menu_options": {
           "general_settings": "General settings",
           "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR connection",
           "init": "Back to main menu",
           "osrm_settings": "OSRM route smoothing",
-          "vehicle_sensors": "Vehicle sensors"
+          "vehicle_sensors": "Vehicle sensors",
+          "vehicle_settings": "Vehicle"
         },
         "menu_option_descriptions": {
           "general_settings": "Edit trip, charging, vehicle and tariff options.",
@@ -67,7 +70,8 @@
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog overview.",
           "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection.",
-          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog."
+          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog.",
+          "vehicle_settings": "View the detected vehicle identity and change its display name."
         }
       },
       "import_charging_sites": {
@@ -879,6 +883,26 @@
           "icon": "Icon (optional)",
           "action": "Action"
         }
+      },
+      "vehicle_settings": {
+        "title": "Vehicle",
+        "description": "Internal vehicle ID: {vehicle_id}\nVIN: {vin}\nSource: {source}\nDetected name: {detected_name}",
+        "data": {
+          "vehicle_name": "Vehicle name"
+        },
+        "data_description": {
+          "vehicle_name": "Display name used by Ford Triplog for this vehicle."
+        }
+      },
+      "vehicle_context": {
+        "title": "Vehicle context",
+        "description": "Current vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the vehicle Ford Triplog should use for the following manual actions.",
+        "data": {
+          "vehicle_context": "Vehicle"
+        },
+        "data_description": {
+          "vehicle_context": "This selection is used for vehicle-specific settings, journeys, routes, pauses, charging sessions and exports."
+        }
       }
     },
     "error": {
@@ -937,7 +961,8 @@
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
       "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
       "user_place_delete_failed": "The place could not be deleted.",
-      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed."
+      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed.",
+      "vehicle_context_invalid": "The selected vehicle is not currently available."
     }
   },
   "entity": {

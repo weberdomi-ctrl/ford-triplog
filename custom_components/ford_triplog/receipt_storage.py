@@ -39,8 +39,9 @@ _ALLOWED_EXTENSIONS = {".pdf", ".jpg", ".jpeg", ".png", ".webp"}
 class FordTriplogReceiptStorage:
     """Import, list and remove receipt files."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, vehicle_id: int = 1) -> None:
         self.hass = hass
+        self.vehicle_id = int(vehicle_id)
         self._directory = Path(
             hass.config.path(".storage", STORAGE_DIR, RECEIPTS_DIR)
         )
@@ -51,7 +52,7 @@ class FordTriplogReceiptStorage:
                 "receipt_parser_profiles",
             )
         )
-        self._metadata = FordTriplogMetadataStorage(hass)
+        self._metadata = FordTriplogMetadataStorage(hass, self.vehicle_id)
         self._parser = ReceiptParserEngine(
             Path(__file__).parent / "receipt_parser_profiles",
             (

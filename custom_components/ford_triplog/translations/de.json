@@ -26,8 +26,9 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Aktuelles Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
+          "vehicle_context": "Fahrzeug",
           "settings": "Einstellungen",
           "journey_management": "Touren verwalten",
           "route_management": "Routen-Wartung",
@@ -39,6 +40,7 @@
           "user_places": "Benutzerdefinierte Orte"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
           "route_management": "Gespeicherte Routen erneut mit OSRM berechnen, ohne die Raw-GPS-Punkte zu verändern.",
@@ -52,14 +54,15 @@
       },
       "settings": {
         "title": "Einstellungen",
-        "description": "Wähle den Bereich aus, den du konfigurieren möchtest.",
+        "description": "Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle den Bereich aus, den du konfigurieren möchtest.",
         "menu_options": {
           "general_settings": "Allgemeine Einstellungen",
           "route_tracker_settings": "Routen-Tracker",
           "ocr_settings": "OCR-Verbindung",
           "init": "Zurück zum Hauptmenü",
           "osrm_settings": "OSRM-Routenglättung",
-          "vehicle_sensors": "Fahrzeugsensoren"
+          "vehicle_sensors": "Fahrzeugsensoren",
+          "vehicle_settings": "Fahrzeug"
         },
         "menu_option_descriptions": {
           "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
@@ -67,7 +70,8 @@
           "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und die Verbindung testen.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
           "osrm_settings": "Optionalen lokalen OSRM-Dienst für die Routenglättung einrichten und die Verbindung testen.",
-          "vehicle_sensors": "Die von Ford Triplog verwendeten Fahrzeug-Entitäten ändern."
+          "vehicle_sensors": "Die von Ford Triplog verwendeten Fahrzeug-Entitäten ändern.",
+          "vehicle_settings": "Erkannte Fahrzeugidentität anzeigen und den Fahrzeugnamen ändern."
         }
       },
       "import_charging_sites": {
@@ -892,6 +896,26 @@
           "radius_m": "Erkennungsradius (m)",
           "icon": "Icon (optional)"
         }
+      },
+      "vehicle_settings": {
+        "title": "Fahrzeug",
+        "description": "Interne Fahrzeug-ID: {vehicle_id}\nVIN: {vin}\nQuelle: {source}\nErkannter Name: {detected_name}",
+        "data": {
+          "vehicle_name": "Fahrzeugname"
+        },
+        "data_description": {
+          "vehicle_name": "Anzeigename, den Ford Triplog für dieses Fahrzeug verwendet."
+        }
+      },
+      "vehicle_context": {
+        "title": "Fahrzeug auswählen",
+        "description": "Aktuelles Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle das Fahrzeug aus, das Ford Triplog für die folgenden manuellen Aktionen verwenden soll.",
+        "data": {
+          "vehicle_context": "Fahrzeug"
+        },
+        "data_description": {
+          "vehicle_context": "Diese Auswahl gilt für fahrzeugspezifische Einstellungen, Touren, Routen, Pausen, Ladevorgänge und Exporte."
+        }
       }
     },
     "error": {
@@ -951,7 +975,8 @@
       "user_place_duplicate": "Ein benutzerdefinierter Ort an dieser Position bzw. mit diesem Namen in unmittelbarer Nähe existiert bereits.",
       "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
       "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar.",
-      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist."
+      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist.",
+      "vehicle_context_invalid": "Das ausgewählte Fahrzeug ist aktuell nicht verfügbar."
     }
   },
   "entity": {

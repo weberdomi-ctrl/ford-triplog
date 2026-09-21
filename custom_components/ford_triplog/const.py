@@ -18,8 +18,8 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.4.0"
-BUILD: Final = "24405"
+VERSION: Final = "2.5.0"
+BUILD: Final = "25005"
 
 #
 # Storage
@@ -73,6 +73,8 @@ CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
+CONF_VEHICLE_ID: Final = "vehicle_id"
+CONF_VEHICLE_NAME: Final = "vehicle_name"
 DEFAULT_BATTERY_CAPACITY_KWH: Final = 77.0
 
 # Storage read backend (Phase 2)

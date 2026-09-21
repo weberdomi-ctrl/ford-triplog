@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.3.0
-Phase: Route maintenance
-Build: 23048 - Persist battery capacity default
-Release: 2.3.0
+Version: 2.5.0
+Phase: Multi-vehicle context
+Build: 25005 - Shared vehicle context
+Release: 2.5.0-dev
 
 
 """
@@ -68,6 +68,14 @@ from .osrm_client import (
 from .export import FordTriplogExporter
 from .route_rebuilder import FordTriplogRouteRebuilder
 
+from .vehicle_identity import async_detect_vehicle_identity
+from .vehicle_context import (
+    get_selected_vehicle_id,
+    get_vehicle_runtime,
+    iter_vehicle_runtimes,
+    set_selected_vehicle_id,
+)
+
 from .services import (
     async_download_charging_database,
     async_import_charging_site_database,
@@ -83,6 +91,8 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    CONF_VEHICLE_ID,
+    CONF_VEHICLE_NAME,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_ROUTE_TRACKER_ENABLED,
     CONF_ROUTE_SOURCE_TYPE,
@@ -240,6 +250,7 @@ RECEIPT_TARGET_CHARGE = "charge"
 
 CONF_EXPORT_START_DATE = "start_date"
 CONF_EXPORT_END_DATE = "end_date"
+CONF_VEHICLE_CONTEXT = "vehicle_context"
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -303,14 +314,30 @@ class FordTriplogConfigFlow(
             ):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                await self.async_set_unique_id(DOMAIN)
+                identity = async_detect_vehicle_identity(
+                    self.hass,
+                    user_input,
+                )
+                unique_id = identity.unique_key or (
+                    f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
+                )
+                await self.async_set_unique_id(unique_id)
                 self._abort_if_unique_id_configured()
+
                 entry_data = dict(user_input)
                 entry_data.setdefault(
                     CONF_BATTERY_CAPACITY,
                     DEFAULT_BATTERY_CAPACITY_KWH,
                 )
-                return self.async_create_entry(title=NAME, data=entry_data)
+                if identity.name:
+                    entry_data.setdefault(CONF_VEHICLE_NAME, identity.name)
+
+                title = (
+                    f"{NAME} – {identity.name}"
+                    if identity.name
+                    else NAME
+                )
+                return self.async_create_entry(title=title, data=entry_data)
 
         return self.async_show_form(
             step_id="user",
@@ -401,6 +428,147 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._export_result: dict[str, str] = {}
         self._selected_export_url: str | None = None
         self._export_kind: str = "trips"
+        self._vehicle_context_id: int | None = None
+
+    def _origin_vehicle_id(self) -> int:
+        """Return the vehicle id of the ConfigEntry that opened this flow."""
+
+        runtime_data = self.hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id,
+            {},
+        )
+        raw_vehicle_id = (
+            runtime_data.get("vehicle_id")
+            or self._config_entry.options.get(CONF_VEHICLE_ID)
+            or self._config_entry.data.get(CONF_VEHICLE_ID)
+            or 1
+        )
+        try:
+            vehicle_id = int(raw_vehicle_id)
+        except (TypeError, ValueError):
+            vehicle_id = 1
+        return max(1, vehicle_id)
+
+    def _ensure_vehicle_context_id(self) -> int:
+        """Return a valid shared vehicle context for this options flow."""
+
+        if self._vehicle_context_id is not None:
+            if get_vehicle_runtime(self.hass, self._vehicle_context_id) is not None:
+                return self._vehicle_context_id
+
+        selected = get_selected_vehicle_id(
+            self.hass,
+            fallback=self._origin_vehicle_id(),
+        )
+        self._vehicle_context_id = int(selected or self._origin_vehicle_id())
+        return self._vehicle_context_id
+
+    def _get_context_runtime_data(self) -> dict[str, Any]:
+        """Return runtime data for the currently selected vehicle context."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        if resolved is None:
+            runtime_data = self.hass.data.get(DOMAIN, {}).get(
+                self._config_entry.entry_id,
+                {},
+            )
+            if not isinstance(runtime_data, dict):
+                raise HomeAssistantError("Vehicle runtime is not initialized")
+            return runtime_data
+        return resolved[1]
+
+    def _get_context_entry_id(self) -> str:
+        """Return the ConfigEntry id for the selected vehicle context."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        if resolved is None:
+            return self._config_entry.entry_id
+        return resolved[0]
+
+    def _get_context_config_entry(self) -> ConfigEntry:
+        """Return the ConfigEntry that owns the selected vehicle."""
+
+        entry_id = self._get_context_entry_id()
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            raise HomeAssistantError("Vehicle ConfigEntry is not available")
+        return entry
+
+    def _get_context_config(self) -> dict[str, Any]:
+        """Return merged data/options for the selected vehicle."""
+
+        runtime_data = self._get_context_runtime_data()
+        runtime_config = runtime_data.get("config")
+        if isinstance(runtime_config, dict):
+            return dict(runtime_config)
+
+        entry = self._get_context_config_entry()
+        return {**entry.data, **entry.options}
+
+    def _context_vehicle_name(self) -> str:
+        """Return the display name of the currently selected vehicle."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        runtime_data = self._get_context_runtime_data()
+        vehicle = runtime_data.get("vehicle") or {}
+        config = self._get_context_config()
+        entry = self._get_context_config_entry()
+        return str(
+            config.get(CONF_VEHICLE_NAME)
+            or vehicle.get("name")
+            or vehicle.get("model")
+            or entry.title
+            or f"Vehicle {vehicle_id}"
+        )
+
+    def _vehicle_context_options(self) -> list[selector.SelectOptionDict]:
+        """Return loaded vehicles as selector options."""
+
+        options: list[selector.SelectOptionDict] = []
+        for vehicle_id, entry_id, runtime_data in iter_vehicle_runtimes(self.hass):
+            vehicle = runtime_data.get("vehicle") or {}
+            config = runtime_data.get("config") or {}
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            label = str(
+                config.get(CONF_VEHICLE_NAME)
+                or vehicle.get("name")
+                or vehicle.get("model")
+                or (entry.title if entry is not None else "")
+                or f"Vehicle {vehicle_id}"
+            )
+            vin = str(vehicle.get("vin") or "").strip()
+            if vin:
+                label = f"{label} · {vin}"
+            options.append(
+                selector.SelectOptionDict(
+                    value=str(vehicle_id),
+                    label=label,
+                )
+            )
+
+        if not options:
+            vehicle_id = self._origin_vehicle_id()
+            options.append(
+                selector.SelectOptionDict(
+                    value=str(vehicle_id),
+                    label=f"Vehicle {vehicle_id}",
+                )
+            )
+        return options
+
+    def _reset_vehicle_context_state(self) -> None:
+        """Clear selections that must never leak between vehicles."""
+
+        self._selected_charge_id = None
+        self._selected_pause_journey_id = None
+        self._selected_pause_id = None
+        self._selected_receipt_id = None
+        self._selected_charge_receipt_action = None
+        self._selected_apply_receipt_id = None
+        self._route_tracker_draft = {}
+        self._user_place_storage = None
 
     async def async_step_init(
         self,
@@ -408,9 +576,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the Ford Triplog options menu."""
 
+        vehicle_id = self._ensure_vehicle_context_id()
         return self.async_show_menu(
             step_id="init",
             menu_options=[
+                "vehicle_context",
                 "settings",
                 "journey_management",
                 "route_management",
@@ -421,6 +591,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "user_charging_sites",
                 "charging_site_database",
             ],
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(vehicle_id),
+            },
+        )
+
+    async def async_step_vehicle_context(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select the vehicle used by vehicle-specific manual actions."""
+
+        errors: dict[str, str] = {}
+        options = self._vehicle_context_options()
+        current_id = self._ensure_vehicle_context_id()
+
+        if user_input is not None:
+            try:
+                selected_id = int(user_input.get(CONF_VEHICLE_CONTEXT))
+                set_selected_vehicle_id(self.hass, selected_id)
+            except (TypeError, ValueError):
+                errors["base"] = "vehicle_context_invalid"
+            else:
+                self._vehicle_context_id = selected_id
+                self._reset_vehicle_context_state()
+                return await self.async_step_init()
+
+        valid_values = {str(option["value"]) for option in options}
+        default_value = str(current_id)
+        if default_value not in valid_values:
+            default_value = str(options[0]["value"])
+
+        return self.async_show_form(
+            step_id="vehicle_context",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_VEHICLE_CONTEXT,
+                        default=default_value,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(current_id),
+            },
         )
 
 
@@ -537,13 +759,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_charge_manager(self):
         """Return the Charge Manager for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         manager = runtime_data.get("charge_manager")
 
@@ -2324,13 +2540,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_journey_storage(self):
         """Return Journey storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("journey_storage")
 
@@ -3040,7 +3250,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 else "edit_pause"
             )
             service_data: dict[str, Any] = {
-                "entry_id": self._config_entry.entry_id,
+                "entry_id": self._get_context_entry_id(),
                 "journey_id": self._selected_pause_journey_id,
                 "pause_id": self._selected_pause_id,
             }
@@ -3181,9 +3391,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
         """Return initialized receipt storage for this config entry."""
 
-        runtime_data = self.hass.data.get(DOMAIN, {}).get(
-            self._config_entry.entry_id, {}
-        )
+        runtime_data = self._get_context_runtime_data()
         storage = runtime_data.get("receipt_storage")
         if storage is None:
             raise HomeAssistantError("Receipt storage is not initialized")
@@ -4536,13 +4744,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_journey_rebuilder(self):
         """Return the Journey rebuilder for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         rebuilder = runtime_data.get("journey_rebuilder")
 
@@ -4556,13 +4758,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_route_rebuilder(self) -> FordTriplogRouteRebuilder:
         """Return an OSRM route rebuilder for the current options."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         route_storage = runtime_data.get("route_storage")
         if route_storage is None:
@@ -4570,18 +4766,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "Route storage is not initialized"
             )
 
+        context_config = self._get_context_config()
         return FordTriplogRouteRebuilder(
             self.hass,
             route_storage,
             osrm_url=str(
-                self._options.get(
+                context_config.get(
                     CONF_OSRM_URL,
                     DEFAULT_OSRM_URL,
                 )
                 or ""
             ),
             radius_meters=float(
-                self._options.get(
+                context_config.get(
                     CONF_OSRM_MATCH_RADIUS,
                     DEFAULT_OSRM_MATCH_RADIUS,
                 )
@@ -4927,13 +5124,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_trip_storage(self):
         """Return Ford Triplog storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("storage")
 
@@ -4951,13 +5142,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_journey_storage(self):
         """Return Journey storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("journey_storage")
         if storage is None:
@@ -4970,13 +5155,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_charge_manager(self):
         """Return Charge Manager for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         manager = runtime_data.get("charge_manager")
         if manager is None:
@@ -4989,13 +5168,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_battery_capacity(self) -> float | None:
         """Return configured usable battery capacity for driving exports."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
         coordinator = runtime_data.get("coordinator")
         value = getattr(coordinator, "battery_capacity", None)
         try:
@@ -5464,17 +5637,91 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show settings navigation."""
 
+        vehicle_id = self._ensure_vehicle_context_id()
         return self.async_show_menu(
             step_id="settings",
             menu_options=[
                 "general_settings",
+                "vehicle_settings",
                 "vehicle_sensors",
                 "route_tracker_settings",
                 "osrm_settings",
                 "ocr_settings",
                 "init",
             ],
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(vehicle_id),
+            },
         )
+
+    async def async_step_vehicle_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure the selected vehicle display name and identity."""
+
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+        identity = async_detect_vehicle_identity(
+            self.hass,
+            context_config,
+        )
+        runtime_data = self._get_context_runtime_data()
+        vehicle = runtime_data.get("vehicle") or {}
+        vehicle_id = int(
+            context_config.get(CONF_VEHICLE_ID)
+            or runtime_data.get("vehicle_id")
+            or vehicle.get("vehicle_id")
+            or self._ensure_vehicle_context_id()
+        )
+        vin = str(vehicle.get("vin") or identity.vin or "—")
+        source = str(identity.source or "—")
+        detected_name = str(
+            identity.name
+            or identity.model
+            or vehicle.get("name")
+            or "—"
+        )
+
+        if user_input is not None:
+            updated_options = dict(context_entry.options)
+            updated_options[CONF_VEHICLE_NAME] = str(
+                user_input.get(CONF_VEHICLE_NAME) or ""
+            ).strip()
+
+            self.hass.config_entries.async_update_entry(
+                context_entry,
+                options=updated_options,
+            )
+            return await self.async_step_settings()
+
+        current_name = str(
+            context_config.get(CONF_VEHICLE_NAME)
+            or vehicle.get("name")
+            or identity.name
+            or identity.model
+            or f"Vehicle {vehicle_id}"
+        )
+
+        return self.async_show_form(
+            step_id="vehicle_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_VEHICLE_NAME,
+                        default=current_name,
+                    ): selector.TextSelector()
+                }
+            ),
+            description_placeholders={
+                "vehicle_id": str(vehicle_id),
+                "vin": vin,
+                "source": source,
+                "detected_name": detected_name,
+            },
+        )
+
 
     async def async_step_vehicle_sensors(
         self,
@@ -5483,6 +5730,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure vehicle source entities."""
 
         errors: dict[str, str] = {}
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
         if user_input is not None:
             if _contains_ford_triplog_input(
                 self.hass,
@@ -5498,7 +5747,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(user_input)
 
                 # Optional vehicle sources must explicitly override values from
@@ -5508,11 +5757,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     updated_options[key] = user_input.get(key)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
-
                 return await self.async_step_settings()
         blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
         blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
@@ -5546,7 +5793,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ),
                     }
                 ),
-                self._options,
+                context_config,
             ),
         )
 
@@ -5558,6 +5805,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure and test the optional local OSRM service."""
 
         errors: dict[str, str] = {}
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
 
         if user_input is not None:
             enabled = bool(
@@ -5592,7 +5841,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     errors["base"] = "osrm_invalid_response"
                 else:
                     updated_options = dict(
-                        self._config_entry.options
+                        context_entry.options
                     )
                     updated_options.update(
                         {
@@ -5602,10 +5851,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         }
                     )
                     self.hass.config_entries.async_update_entry(
-                        self._config_entry,
+                        context_entry,
                         options=updated_options,
                     )
-                    self._options.update(updated_options)
                     self._osrm_connection_result = {
                         "status": "OK",
                         "url": client.base_url,
@@ -5620,7 +5868,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     return await self.async_step_osrm_connection_result()
             else:
                 updated_options = dict(
-                    self._config_entry.options
+                    context_entry.options
                 )
                 updated_options.update(
                     {
@@ -5630,10 +5878,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                 )
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._osrm_connection_result = {
                     "status": "Disabled",
                     "url": url or "—",
@@ -5644,19 +5891,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_osrm_connection_result()
 
         current_enabled = bool(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_ENABLED,
                 DEFAULT_OSRM_ENABLED,
             )
         )
         current_url = str(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_URL,
                 DEFAULT_OSRM_URL,
             )
         )
         current_radius = float(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
@@ -5717,11 +5964,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Configure the optional Route Tracker and select its source type."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
         current_enabled = bool(
-            self._options.get(CONF_ROUTE_TRACKER_ENABLED, False)
+            context_config.get(CONF_ROUTE_TRACKER_ENABLED, False)
         )
         current_source_type = str(
-            self._options.get(
+            context_config.get(
                 CONF_ROUTE_SOURCE_TYPE,
                 ROUTE_SOURCE_ABRP,
             )
@@ -5745,14 +5994,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
             }
 
             if not enabled:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(self._route_tracker_draft)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._route_tracker_draft = {}
 
                 return await self.async_step_settings()
@@ -5802,16 +6050,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Configure entities for the selected Route Tracker source."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+
         if not self._route_tracker_draft:
             self._route_tracker_draft = {
                 CONF_ROUTE_TRACKER_ENABLED: bool(
-                    self._options.get(
+                    context_config.get(
                         CONF_ROUTE_TRACKER_ENABLED,
                         False,
                     )
                 ),
                 CONF_ROUTE_SOURCE_TYPE: str(
-                    self._options.get(
+                    context_config.get(
                         CONF_ROUTE_SOURCE_TYPE,
                         ROUTE_SOURCE_ABRP,
                     )
@@ -5840,7 +6091,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if _contains_ford_triplog_input(self.hass, user_input, route_keys):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(self._route_tracker_draft)
 
                 if source_type == ROUTE_SOURCE_ABRP:
@@ -5870,10 +6121,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._route_tracker_draft = {}
 
                 return await self.async_step_settings()
@@ -5885,7 +6135,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_GEOCODED_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_GEOCODED_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5901,7 +6151,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_DEVICE_TRACKER_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_DEVICE_TRACKER_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5917,7 +6167,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_LATITUDE_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_LATITUDE_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5928,7 +6178,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ),
                     vol.Required(
                         CONF_ROUTE_LONGITUDE_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_LONGITUDE_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5956,23 +6206,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Manage general integration settings."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+
         if user_input is not None:
-            updated_options = dict(self._config_entry.options)
+            updated_options = dict(context_entry.options)
             updated_options.update(user_input)
 
             self.hass.config_entries.async_update_entry(
-                self._config_entry,
+                context_entry,
                 options=updated_options,
             )
-            self._options.update(updated_options)
-
             return await self.async_step_settings()
 
         return self.async_show_form(
             step_id="general_settings",
             data_schema=self.add_suggested_values_to_schema(
                 self._build_options_schema(),
-                self._options,
+                context_config,
             ),
         )
 

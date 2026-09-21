@@ -36,10 +36,11 @@ _LOGGER = logging.getLogger(__name__)
 class FordTriplogJourneyStorage:
     """Store journeys independently from trips and charging sessions."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, vehicle_id: int = 1) -> None:
         """Initialize journey storage."""
 
         self.hass = hass
+        self.vehicle_id = int(vehicle_id)
 
         self._base_directory = Path(
             hass.config.path(
@@ -56,10 +57,11 @@ class FordTriplogJourneyStorage:
         self._last_journey_path = (
             self._base_directory / LAST_JOURNEY_FILE
         )
-        self._metadata_storage = FordTriplogMetadataStorage(hass)
+        self._metadata_storage = FordTriplogMetadataStorage(hass, self.vehicle_id)
         self.database = FordTriplogDatabase(
             hass,
             self._base_directory,
+            self.vehicle_id,
         )
         self._archive_lock = asyncio.Lock()
 

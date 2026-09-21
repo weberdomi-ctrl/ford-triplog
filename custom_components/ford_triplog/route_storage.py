@@ -44,8 +44,9 @@ _LOGGER = logging.getLogger(__name__)
 class FordTriplogRouteStorage:
     """Store route point files independently from Trip storage."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, vehicle_id: int = 1) -> None:
         self.hass = hass
+        self.vehicle_id = int(vehicle_id)
         self.base_path = Path(
             hass.config.path(
                 ".storage",
@@ -56,6 +57,7 @@ class FordTriplogRouteStorage:
         self.database = FordTriplogDatabase(
             hass,
             Path(hass.config.path(".storage", STORAGE_DIR)),
+            self.vehicle_id,
         )
 
         # 2.3: SQLite is the only runtime route backend.

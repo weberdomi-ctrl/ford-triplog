@@ -26,8 +26,9 @@
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wybierz obszar, który chcesz skonfigurować.",
+        "description": "Aktualny pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz obszar, który chcesz skonfigurować.",
         "menu_options": {
+          "vehicle_context": "Pojazd",
           "settings": "Ustawienia",
           "journey_management": "Zarządzaj podróżami",
           "route_management": "Konserwacja tras",
@@ -39,6 +40,7 @@
           "user_places": "Custom places"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
           "settings": "Edytuj ustawienia przejazdów, ładowania, pojazdu i taryf.",
           "journey_management": "Aktualizuj, przeliczaj lub usuwaj podróże.",
           "route_management": "Ponownie dopasuj zapisane trasy przez OSRM bez zmiany surowych punktów GPS.",
@@ -52,14 +54,15 @@
       },
       "settings": {
         "title": "Ustawienia",
-        "description": "Wybierz obszar, który chcesz skonfigurować.",
+        "description": "Pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz obszar, który chcesz skonfigurować.",
         "menu_options": {
           "general_settings": "Ustawienia ogólne",
           "route_tracker_settings": "Rejestrator trasy",
           "ocr_settings": "Połączenie OCR",
           "init": "Wróć do menu głównego",
           "osrm_settings": "Wygładzanie trasy OSRM",
-          "vehicle_sensors": "Czujniki pojazdu"
+          "vehicle_sensors": "Czujniki pojazdu",
+          "vehicle_settings": "Pojazd"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
@@ -67,7 +70,8 @@
           "ocr_settings": "Skonfiguruj opcjonalną lokalną usługę OCR i sprawdź połączenie.",
           "init": "Wróć do przeglądu Ford Triplog.",
           "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie.",
-          "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog."
+          "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog.",
+          "vehicle_settings": "Wyświetl wykrytą tożsamość pojazdu i zmień jego nazwę."
         }
       },
       "import_charging_sites": {
@@ -892,6 +896,26 @@
           "radius_m": "Promień wykrywania (m)",
           "icon": "Ikona (opcjonalnie)"
         }
+      },
+      "vehicle_settings": {
+        "title": "Pojazd",
+        "description": "Wewnętrzny identyfikator pojazdu: {vehicle_id}\nVIN: {vin}\nŹródło: {source}\nWykryta nazwa: {detected_name}",
+        "data": {
+          "vehicle_name": "Nazwa pojazdu"
+        },
+        "data_description": {
+          "vehicle_name": "Nazwa wyświetlana używana przez Ford Triplog dla tego pojazdu."
+        }
+      },
+      "vehicle_context": {
+        "title": "Wybierz pojazd",
+        "description": "Aktualny pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz pojazd używany przez Ford Triplog dla kolejnych działań ręcznych.",
+        "data": {
+          "vehicle_context": "Pojazd"
+        },
+        "data_description": {
+          "vehicle_context": "Ten wybór dotyczy ustawień pojazdu, podróży, tras, postojów, ładowań i eksportu."
+        }
       }
     },
     "error": {
@@ -951,7 +975,8 @@
       "user_place_duplicate": "W tej lokalizacji lub w jej bezpośrednim sąsiedztwie istnieje już niestandardowe miejsce o tej nazwie.",
       "user_place_delete_failed": "The place could not be deleted.",
       "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS.",
-      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie."
+      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie.",
+      "vehicle_context_invalid": "Wybrany pojazd nie jest obecnie dostępny."
     }
   },
   "entity": {
