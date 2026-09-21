@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.3.0
-Build: 23026
-Changes: Preserve route rowid when updating stored routes.
+Version: 2.5.0-dev
+Build: 25001
+Changes: Add vehicle registry and vehicle_id database schema for multi-vehicle support.
 """
 
 from __future__ import annotations
@@ -31,9 +31,14 @@ class FordTriplogDatabase:
         self,
         hass: HomeAssistant,
         base_path: Path,
+        vehicle_id: int = 1,
     ) -> None:
         self.hass = hass
         self.db_path = base_path / "ford_triplog.db"
+        normalized_vehicle_id = int(vehicle_id)
+        if normalized_vehicle_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+        self.vehicle_id = normalized_vehicle_id
 
     def _log_read(self, resource: str) -> None:
         """Log a SQLite read at DEBUG level for development diagnostics."""
@@ -201,11 +206,40 @@ class FordTriplogDatabase:
                 )
 
                 with sqlite3.connect(self.db_path) as db:
+                    db.execute("PRAGMA foreign_keys = ON")
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicles (
+                            vehicle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vin TEXT UNIQUE,
+                            name TEXT,
+                            manufacturer TEXT,
+                            model TEXT,
+                            battery_capacity_kwh REAL,
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL
+                        )
+                        """
+                    )
+                    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    db.execute(
+                        """
+                        INSERT OR IGNORE INTO vehicles (
+                            vehicle_id, name, created_at, updated_at
+                        )
+                        VALUES (1, ?, ?, ?)
+                        """,
+                        ("Vehicle 1", now, now),
+                    )
+
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS trips (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -213,8 +247,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_trip (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -222,8 +259,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_trip (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -231,8 +271,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_charge (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -240,8 +283,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS charges (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -249,8 +295,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_charge (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -258,8 +307,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS statistics (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -267,8 +319,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS diagnostics (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -301,8 +356,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS journeys (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -310,8 +368,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_journey (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -319,8 +380,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_journey (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -328,8 +392,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS metadata (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -337,8 +404,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS charge_metadata (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -346,8 +416,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS pause_metadata (
-                            pause_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            pause_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, pause_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -364,10 +437,13 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS receipts (
-                            receipt_id TEXT PRIMARY KEY,
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            receipt_id TEXT NOT NULL,
                             target_type TEXT NOT NULL,
                             target_id TEXT NOT NULL,
-                            data TEXT NOT NULL
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, receipt_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -381,8 +457,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS routes (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -395,10 +474,200 @@ class FordTriplogDatabase:
                         """
                     )
 
+                    # Existing 2.4 databases have no vehicle_id column and
+                    # use the record ID as the sole primary key. Rebuild only
+                    # those tables once and assign all legacy rows to vehicle 1.
+                    vehicle_table_definitions: dict[
+                        str, tuple[str, tuple[str, ...], tuple[str, ...]]
+                    ] = {
+                        "trips": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "current_trip": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "last_trip": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "current_charge": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "charges": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "last_charge": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "statistics": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "diagnostics": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "journeys": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "current_journey": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "last_journey": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "charge_metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "pause_metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, pause_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, pause_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("pause_id", "data"),
+                            ("vehicle_id", "pause_id"),
+                        ),
+                        "receipts": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, receipt_id TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, receipt_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("receipt_id", "target_type", "target_id", "data"),
+                            ("vehicle_id", "receipt_id"),
+                        ),
+                        "routes": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                    }
+
+                    # Commit harmless setup changes before taking a legacy
+                    # database backup. The backup is created only when at least
+                    # one vehicle-scoped table still uses the pre-2.5 schema.
+                    db.commit()
+                    migration_required = False
+                    for table_name, (
+                        _create_sql,
+                        _data_columns,
+                        expected_pk,
+                    ) in vehicle_table_definitions.items():
+                        info = db.execute(
+                            f"PRAGMA table_info({table_name})"
+                        ).fetchall()
+                        columns = {str(row[1]) for row in info}
+                        pk_columns = [
+                            str(row[1])
+                            for row in sorted(
+                                info,
+                                key=lambda item: int(item[5] or 0),
+                            )
+                            if int(row[5] or 0) > 0
+                        ]
+                        if (
+                            "vehicle_id" not in columns
+                            or tuple(pk_columns) != expected_pk
+                        ):
+                            migration_required = True
+                            break
+
+                    if migration_required:
+                        backup_path = self.db_path.with_name(
+                            "ford_triplog_pre_25001.db"
+                        )
+                        if not backup_path.exists():
+                            with sqlite3.connect(backup_path) as backup_db:
+                                db.backup(backup_db)
+                            _LOGGER.info(
+                                "Created SQLite pre-2.5 migration backup: %s",
+                                backup_path,
+                            )
+
+                    # Drop derived views before table renames. SQLite otherwise
+                    # may rewrite their SQL to point at the temporary table.
+                    for view_name in (
+                        "v_top_location_trips",
+                        "v_top_route_trips",
+                        "v_top_trip_trips",
+                        "v_top_journey_journeys",
+                        "v_top_charging_charges",
+                        "v_top_day_journeys",
+                    ):
+                        db.execute(f"DROP VIEW IF EXISTS {view_name}")
+
+                    for table_name, (
+                        create_sql,
+                        data_columns,
+                        expected_pk,
+                    ) in vehicle_table_definitions.items():
+                        info = db.execute(
+                            f"PRAGMA table_info({table_name})"
+                        ).fetchall()
+                        columns = {str(row[1]) for row in info}
+                        pk_columns = [
+                            str(row[1])
+                            for row in sorted(info, key=lambda item: int(item[5] or 0))
+                            if int(row[5] or 0) > 0
+                        ]
+                        schema_ready = (
+                            "vehicle_id" in columns
+                            and tuple(pk_columns) == expected_pk
+                        )
+                        if schema_ready:
+                            continue
+
+                        legacy_name = f"{table_name}_pre_25001"
+                        db.execute(f"DROP TABLE IF EXISTS {legacy_name}")
+                        db.execute(
+                            f"ALTER TABLE {table_name} RENAME TO {legacy_name}"
+                        )
+                        db.execute(create_sql.format(table=table_name))
+                        column_list = ", ".join(data_columns)
+                        db.execute(
+                            f"INSERT INTO {table_name} (vehicle_id, {column_list}) "
+                            f"SELECT 1, {column_list} FROM {legacy_name}"
+                        )
+                        db.execute(f"DROP TABLE {legacy_name}")
+                        _LOGGER.info(
+                            "Migrated SQLite table %s to vehicle-aware schema",
+                            table_name,
+                        )
+
+                    # Recreate indexes that may have been removed while a table
+                    # was rebuilt above.
+                    db.execute("DROP INDEX IF EXISTS idx_receipts_target")
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_receipts_target
+                        ON receipts (vehicle_id, target_type, target_id)
+                        """
+                    )
+
                     db.execute(
                         """
                         CREATE VIEW IF NOT EXISTS v_top_location_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -417,6 +686,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_route_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -437,6 +707,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -450,6 +721,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
                         SELECT
+                            vehicle_id,
                             journey_id,
                             data,
                             json_extract(data, '$.distance_km') AS distance_km
@@ -462,6 +734,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
                         SELECT
+                            vehicle_id,
                             charge_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics
@@ -474,6 +747,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
                         SELECT
+                            vehicle_id,
                             journey_id,
                             data,
                             json_extract(data, '$.date') AS date,
@@ -663,7 +937,7 @@ class FordTriplogDatabase:
                         data
                     )
                     VALUES (?, ?)
-                    ON CONFLICT(trip_id) DO UPDATE SET
+                    ON CONFLICT(vehicle_id, trip_id) DO UPDATE SET
                         data = excluded.data
                     """,
                     (
@@ -2619,7 +2893,7 @@ class FordTriplogDatabase:
                         data
                     )
                     VALUES (?, ?, ?, ?)
-                    ON CONFLICT(receipt_id) DO UPDATE SET
+                    ON CONFLICT(vehicle_id, receipt_id) DO UPDATE SET
                         target_type = excluded.target_type,
                         target_id = excluded.target_id,
                         data = excluded.data
