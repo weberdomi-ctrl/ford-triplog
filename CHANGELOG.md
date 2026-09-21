@@ -42,6 +42,10 @@
 - Fixed date-filtered CSV exports when Home Assistant provides date values as strings.
 - Corrected Home Assistant state metadata for recuperation and monthly charging sensors.
 - Fixed duplicate historical Trip records influencing Journey rebuild results by filtering near-identical duplicates before processing.
+- Fixed multi-day Journeys being assigned completely to the Journey start date in Daily History and Top Day.
+- Daily Journey/Top Day aggregation now assigns individual Journey items to their local calendar day while preserving the original multi-day Journey.
+- History date selection now includes follow-up days that exist only through items of a multi-day Journey.
+- Fixed overnight gaps of a multi-day Journey being counted as duration of the first calendar day.
 
 ### Notes
 
@@ -49,7 +53,7 @@
 - Ford Last Charge is intentionally excluded from live vehicle-source outage detection.
 - A complete source outage is declared only when all monitored live vehicle entities remain unavailable for 20 minutes.
 - EVCC is not used as a fallback vehicle-data source in 2.4.
-- Final public release: Build 24404.
+- Final public release: Build 24405.
 
 ## 2.3.0
 

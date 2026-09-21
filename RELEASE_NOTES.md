@@ -1,6 +1,6 @@
 # Ford Triplog 2.4.0
 
-**Final release: Build 24404**
+**Final release: Build 24405**
 
 Ford Triplog 2.4 focuses on charging-data reliability, recuperation and monthly statistics, reusable Journey places, safer Journey maintenance and vehicle-source health monitoring.
 
@@ -118,6 +118,22 @@ After the 20-minute grace period Ford Triplog creates one Home Assistant Persist
 
 The complete flow was tested in Home Assistant from healthy → grace period → unavailable → notification → staggered recovery → healthy.
 
+## 📅 Multi-day Journey History
+
+Ford Triplog keeps a multi-day Journey as one continuous Journey, but Daily History and Top Day now split its contents by the local calendar date of the individual Journey items.
+
+This fixes cases where a Journey started on one day and continued after midnight, causing all Trips to appear under the Journey start date.
+
+For example, a two-day Journey can now remain one Journey while:
+
+- Trips from day 1 appear in day 1 History
+- Trips from day 2 appear in day 2 History
+- Day-specific distance, duration and counts are calculated from only the items belonging to that day
+- The History date selector includes both calendar days
+- Overnight gaps are not counted as driving/day duration
+
+The underlying Journey itself is not split or rewritten.
+
 ## 📤 Export and Home Assistant metadata fixes
 
 - Date-filtered CSV exports now normalize Home Assistant string date values before comparison.
@@ -136,6 +152,8 @@ SQLite remains the sole productive datastore. Existing legacy JSON data remains 
 The vehicle-source health monitor begins with a 20-minute grace period for a complete source outage, so short Ford Connect interruptions do not immediately create alerts.
 
 EVCC is not used as a fallback vehicle-data source in this release.
+
+Final public release build: **24405**.
 
 ------------------------------------------------------------------------
 
