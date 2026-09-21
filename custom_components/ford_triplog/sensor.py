@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from datetime import datetime, timedelta
+import copy
 import math
 import re
 import logging
@@ -67,6 +68,37 @@ from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
 
 _LOGGER = logging.getLogger(__name__)
+
+
+def _local_calendar_date(value: Any) -> str | None:
+    """Return a timestamp as Home Assistant local calendar date."""
+
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return dt_util.as_local(parsed).date().isoformat()
+
+
+def _interval_seconds(start: Any, end: Any) -> int:
+    """Return a non-negative duration between two timestamps."""
+
+    if not start or not end:
+        return 0
+    try:
+        start_dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return 0
+    if start_dt.tzinfo is None:
+        start_dt = start_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    if end_dt.tzinfo is None:
+        end_dt = end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
+    return max(0, int((end_dt - start_dt).total_seconds()))
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -1552,8 +1584,55 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
 
         return pause_entries
 
+    @staticmethod
+    def _items_for_date(journey: Any, selected_date: str) -> list[Any]:
+        """Return Journey items that started on the selected local date."""
+
+        return [
+            item
+            for item in list(getattr(journey, "items", []) or [])
+            if _local_calendar_date(getattr(item, "start_time", None))
+            == selected_date
+        ]
+
+    @staticmethod
+    def _daily_journey_view(journey: Any, items: list[Any], date_value: str):
+        """Return a shallow Journey view containing only one calendar day."""
+
+        daily = copy.copy(journey)
+        daily.items = list(items)
+        daily.date = date_value
+
+        if not items:
+            return daily
+
+        first_item = items[0]
+        last_item = items[-1]
+        daily.start_time = getattr(first_item, "start_time", None)
+        daily.end_time = getattr(last_item, "end_time", None)
+
+        if getattr(first_item, "item_type", None) == "trip":
+            daily.start_address = getattr(first_item, "start_address", None)
+            daily.start_latitude = getattr(first_item, "start_latitude", None)
+            daily.start_longitude = getattr(first_item, "start_longitude", None)
+        else:
+            daily.start_address = getattr(first_item, "address", None)
+            daily.start_latitude = getattr(first_item, "latitude", None)
+            daily.start_longitude = getattr(first_item, "longitude", None)
+
+        if getattr(last_item, "item_type", None) == "trip":
+            daily.end_address = getattr(last_item, "end_address", None)
+            daily.end_latitude = getattr(last_item, "end_latitude", None)
+            daily.end_longitude = getattr(last_item, "end_longitude", None)
+        else:
+            daily.end_address = getattr(last_item, "address", None)
+            daily.end_latitude = getattr(last_item, "latitude", None)
+            daily.end_longitude = getattr(last_item, "longitude", None)
+
+        return daily
+
     async def _async_refresh(self) -> None:
-        """Load and aggregate all Journeys for the selected History date."""
+        """Load and aggregate Journey content for the selected calendar date."""
 
         if self.storage is None or not self._selected_date:
             self._journey = None
@@ -1563,22 +1642,39 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             return
 
         all_journeys = await self.storage.get_all_journeys()
-        matches = [
-            journey
-            for journey in all_journeys
-            if str(journey.date or "") == self._selected_date
-        ]
-        matches.sort(
-            key=lambda journey: (
-                str(journey.start_time or ""),
-                str(journey.journey_id or ""),
+        daily_matches: list[tuple[Any, list[Any]]] = []
+
+        for journey in all_journeys:
+            day_items = self._items_for_date(journey, self._selected_date)
+            if day_items:
+                daily_matches.append((journey, day_items))
+                continue
+
+            # Backward compatibility for old/empty Journeys that do not have
+            # usable item timestamps.
+            if (
+                not list(getattr(journey, "items", []) or [])
+                and str(journey.date or "") == self._selected_date
+            ):
+                daily_matches.append((journey, []))
+
+        daily_matches.sort(
+            key=lambda pair: (
+                str(
+                    getattr(pair[1][0], "start_time", None)
+                    if pair[1]
+                    else getattr(pair[0], "start_time", "")
+                    or ""
+                ),
+                str(getattr(pair[0], "journey_id", "") or ""),
             )
         )
 
+        matches = [pair[0] for pair in daily_matches]
         self._journeys = matches
         self._attr_native_value = self._selected_date
 
-        if not matches:
+        if not daily_matches:
             self._journey = None
             self._attributes = {
                 "date": self._selected_date,
@@ -1595,113 +1691,193 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             except (TypeError, ValueError):
                 return 0.0
 
-        def _first_non_null(attribute: str):
-            for journey in matches:
-                value = getattr(journey, attribute, None)
-                if value is not None:
-                    return value
-            return None
-
-        def _last_non_null(attribute: str):
-            for journey in reversed(matches):
-                value = getattr(journey, attribute, None)
-                if value is not None:
-                    return value
-            return None
-
         timeline: list[dict[str, Any]] = []
         pause_seconds = 0
         receipts_by_pause = await self._async_pause_receipts_by_id()
+        slices: list[tuple[Any, list[Any], Any]] = []
 
-        for journey in matches:
+        for journey, day_items in daily_matches:
+            daily_journey = (
+                self._daily_journey_view(
+                    journey, day_items, self._selected_date
+                )
+                if day_items
+                else journey
+            )
             journey_timeline, journey_pause_seconds = self._build_timeline(
-                journey
+                daily_journey
             )
             timeline.extend(journey_timeline)
             pause_seconds += int(journey_pause_seconds or 0)
+            slices.append((journey, day_items, daily_journey))
 
-        distance_km = sum(_number(journey.distance_km) for journey in matches)
-        total_duration_seconds = sum(
-            int(journey.total_duration_seconds or 0)
-            for journey in matches
-        )
+        selected_items = [
+            item
+            for _journey, day_items, _daily in slices
+            for item in day_items
+        ]
+        fallback_journeys = [
+            journey
+            for journey, day_items, _daily in slices
+            if not day_items
+        ]
+        trip_items = [
+            item
+            for item in selected_items
+            if getattr(item, "item_type", None) == "trip"
+        ]
+        charge_items = [
+            item
+            for item in selected_items
+            if getattr(item, "item_type", None) == "charge"
+        ]
+
+        distance_km = sum(
+            _number(getattr(item, "distance_km", None))
+            for item in trip_items
+        ) + sum(_number(j.distance_km) for j in fallback_journeys)
         driving_duration_seconds = sum(
-            int(journey.driving_duration_seconds or 0)
-            for journey in matches
+            int(
+                getattr(item, "duration_seconds", None)
+                or _interval_seconds(item.start_time, item.end_time)
+            )
+            for item in trip_items
+        ) + sum(
+            int(j.driving_duration_seconds or 0)
+            for j in fallback_journeys
         )
         charging_duration_seconds = sum(
-            int(journey.charging_duration_seconds or 0)
-            for journey in matches
+            int(
+                getattr(item, "duration_seconds", None)
+                or _interval_seconds(item.start_time, item.end_time)
+            )
+            for item in charge_items
+        ) + sum(
+            int(j.charging_duration_seconds or 0)
+            for j in fallback_journeys
+        )
+        total_duration_seconds = sum(
+            _interval_seconds(daily.start_time, daily.end_time)
+            for _journey, day_items, daily in slices
+            if day_items
+        ) + sum(
+            int(j.total_duration_seconds or 0)
+            for j in fallback_journeys
         )
 
         energy_used_kwh = sum(
-            _number(journey.energy_used_kwh)
-            for journey in matches
-        )
+            _number(getattr(item, "energy_kwh", None))
+            for item in trip_items
+        ) + sum(_number(j.energy_used_kwh) for j in fallback_journeys)
         energy_charged_kwh = sum(
-            _number(journey.energy_charged_kwh)
-            for journey in matches
-        )
-        battery_energy_balance_kwh = sum(
-            _number(journey.battery_energy_balance_kwh)
-            for journey in matches
-        )
-        total_energy_flow_kwh = sum(
-            _number(journey.total_energy_flow_kwh)
-            for journey in matches
-        )
-
+            _number(getattr(item, "energy_kwh", None))
+            for item in charge_items
+        ) + sum(_number(j.energy_charged_kwh) for j in fallback_journeys)
         charging_cost_total = sum(
-            _number(journey.charging_cost_total)
-            for journey in matches
-        )
+            _number(getattr(item, "cost_total", None))
+            for item in charge_items
+        ) + sum(_number(j.charging_cost_total) for j in fallback_journeys)
         charging_energy_cost = sum(
-            _number(journey.charging_energy_cost)
-            for journey in matches
-        )
-        charging_additional_cost = sum(
-            _number(journey.charging_additional_cost)
-            for journey in matches
-        )
-
-        soc_used = sum(
-            _number(journey.soc_used)
-            for journey in matches
-        )
-        soc_charged = sum(
-            _number(journey.soc_charged)
-            for journey in matches
-        )
-        soc_adjustment = sum(
-            _number(journey.soc_adjustment)
-            for journey in matches
-        )
-        soc_adjustment_kwh = sum(
-            _number(journey.soc_adjustment_kwh)
-            for journey in matches
+            _number(getattr(item, "energy_cost", None))
+            for item in charge_items
+        ) + sum(_number(j.charging_energy_cost) for j in fallback_journeys)
+        charging_additional_cost = max(
+            0.0, charging_cost_total - charging_energy_cost
         )
 
-        start_soc = _first_non_null("start_soc")
-        end_soc = _last_non_null("end_soc")
+        ordered_items = sorted(
+            selected_items,
+            key=lambda item: str(getattr(item, "start_time", "") or ""),
+        )
+        start_soc = None
+        end_soc = None
+        for item in ordered_items:
+            start_soc = getattr(item, "start_soc", None)
+            if start_soc is None:
+                start_soc = getattr(item, "end_soc", None)
+            if start_soc is not None:
+                break
+        for item in reversed(ordered_items):
+            end_soc = getattr(item, "end_soc", None)
+            if end_soc is None:
+                end_soc = getattr(item, "start_soc", None)
+            if end_soc is not None:
+                break
 
-        if start_soc is not None and end_soc is not None:
-            try:
-                soc_delta = round(float(end_soc) - float(start_soc), 1)
-            except (TypeError, ValueError):
-                soc_delta = round(
-                    sum(_number(journey.soc_delta) for journey in matches),
-                    1,
-                )
-        else:
-            soc_delta = round(
-                sum(_number(journey.soc_delta) for journey in matches),
-                1,
+        if not ordered_items and fallback_journeys:
+            start_soc = next(
+                (j.start_soc for j in fallback_journeys if j.start_soc is not None),
+                None,
+            )
+            end_soc = next(
+                (j.end_soc for j in reversed(fallback_journeys) if j.end_soc is not None),
+                None,
             )
 
-        battery_energy_delta_kwh = sum(
-            _number(journey.battery_energy_delta_kwh)
-            for journey in matches
+        soc_used = sum(
+            max(
+                0.0,
+                float(getattr(item, "start_soc"))
+                - float(getattr(item, "end_soc")),
+            )
+            for item in trip_items
+            if getattr(item, "start_soc", None) is not None
+            and getattr(item, "end_soc", None) is not None
+        ) + sum(_number(j.soc_used) for j in fallback_journeys)
+        soc_charged = sum(
+            max(
+                0.0,
+                float(getattr(item, "end_soc"))
+                - float(getattr(item, "start_soc")),
+            )
+            for item in charge_items
+            if getattr(item, "start_soc", None) is not None
+            and getattr(item, "end_soc", None) is not None
+        ) + sum(_number(j.soc_charged) for j in fallback_journeys)
+
+        soc_adjustment = 0.0
+        previous_end_soc = None
+        for item in ordered_items:
+            item_start_soc = getattr(item, "start_soc", None)
+            item_end_soc = getattr(item, "end_soc", None)
+            if previous_end_soc is not None and item_start_soc is not None:
+                soc_adjustment += float(item_start_soc) - float(previous_end_soc)
+            if item_end_soc is not None:
+                previous_end_soc = float(item_end_soc)
+            elif item_start_soc is not None:
+                previous_end_soc = float(item_start_soc)
+        soc_adjustment += sum(
+            _number(j.soc_adjustment) for j in fallback_journeys
         )
+
+        soc_delta = (
+            round(float(end_soc) - float(start_soc), 1)
+            if start_soc is not None and end_soc is not None
+            else round(
+                sum(_number(j.soc_delta) for j in fallback_journeys), 1
+            )
+        )
+
+        battery_capacity_kwh = next(
+            (
+                getattr(journey, "battery_capacity_kwh", None)
+                for journey in matches
+                if getattr(journey, "battery_capacity_kwh", None) is not None
+            ),
+            None,
+        )
+        battery_energy_delta_kwh = (
+            soc_delta * float(battery_capacity_kwh) / 100.0
+            if battery_capacity_kwh is not None
+            else 0.0
+        )
+        soc_adjustment_kwh = (
+            soc_adjustment * float(battery_capacity_kwh) / 100.0
+            if battery_capacity_kwh is not None
+            else 0.0
+        )
+        battery_energy_balance_kwh = energy_charged_kwh - energy_used_kwh
+        total_energy_flow_kwh = energy_charged_kwh + abs(energy_used_kwh)
 
         average_consumption = (
             round((energy_used_kwh / distance_km) * 100, 1)
@@ -1715,26 +1891,66 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         )
 
         currencies = {
-            str(journey.currency).strip().upper()
-            for journey in matches
-            if getattr(journey, "currency", None)
-            and str(journey.currency).strip()
+            str(getattr(item, "currency", "")).strip().upper()
+            for item in charge_items
+            if getattr(item, "currency", None)
         }
-        currency = (
-            next(iter(currencies))
-            if len(currencies) == 1
-            else None
+        currencies.update(
+            str(j.currency).strip().upper()
+            for j in fallback_journeys
+            if getattr(j, "currency", None)
+        )
+        currency = next(iter(currencies)) if len(currencies) == 1 else None
+
+        pause_receipt_entries = self._build_pause_receipt_entries(
+            timeline, receipts_by_pause
         )
 
-        battery_capacity_kwh = _first_non_null("battery_capacity_kwh")
-        pause_receipt_entries = self._build_pause_receipt_entries(
-            timeline,
-            receipts_by_pause,
-        )
+        daily_summaries = []
+        for journey, day_items, daily in slices:
+            if day_items:
+                daily_summaries.append(
+                    {
+                        "journey_id": journey.journey_id,
+                        "date": self._selected_date,
+                        "start_time": daily.start_time,
+                        "end_time": daily.end_time,
+                        "distance_km": round(
+                            sum(
+                                _number(getattr(item, "distance_km", None))
+                                for item in day_items
+                                if getattr(item, "item_type", None) == "trip"
+                            ),
+                            1,
+                        ),
+                        "trip_count": sum(
+                            1
+                            for item in day_items
+                            if getattr(item, "item_type", None) == "trip"
+                        ),
+                        "charge_count": sum(
+                            1
+                            for item in day_items
+                            if getattr(item, "item_type", None) == "charge"
+                        ),
+                    }
+                )
+            else:
+                daily_summaries.append(
+                    {
+                        "journey_id": journey.journey_id,
+                        "date": journey.date,
+                        "start_time": journey.start_time,
+                        "end_time": journey.end_time,
+                        "distance_km": journey.distance_km,
+                        "trip_count": journey.trip_count,
+                        "charge_count": journey.charge_count,
+                    }
+                )
 
         self._attributes = {
             "date": self._selected_date,
-            "journey_count": len(matches),
+            "journey_count": len(daily_matches),
             "journey_id": matches[-1].journey_id,
             "distance_km": round(distance_km, 1),
             "total_duration": format_duration(total_duration_seconds),
@@ -1744,16 +1960,14 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             "energy_used_kwh": round(energy_used_kwh, 2),
             "energy_charged_kwh": round(energy_charged_kwh, 2),
             "battery_energy_balance_kwh": round(
-                battery_energy_balance_kwh,
-                2,
+                battery_energy_balance_kwh, 2
             ),
             "total_energy_flow_kwh": round(total_energy_flow_kwh, 2),
             "currency": currency,
             "charging_cost_total": round(charging_cost_total, 2),
             "charging_energy_cost": round(charging_energy_cost, 2),
             "charging_additional_cost": round(
-                charging_additional_cost,
-                2,
+                charging_additional_cost, 2
             ),
             "average_charging_price_per_kwh": average_charging_price,
             "battery_capacity_kwh": battery_capacity_kwh,
@@ -1761,8 +1975,7 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
             "end_soc": end_soc,
             "soc_delta": soc_delta,
             "battery_energy_delta_kwh": round(
-                battery_energy_delta_kwh,
-                2,
+                battery_energy_delta_kwh, 2
             ),
             "soc_used": round(soc_used, 1),
             "soc_charged": round(soc_charged, 1),
@@ -1775,18 +1988,7 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
                 len(entry.get("receipts", []))
                 for entry in pause_receipt_entries
             ),
-            "journeys": [
-                {
-                    "journey_id": journey.journey_id,
-                    "date": journey.date,
-                    "start_time": journey.start_time,
-                    "end_time": journey.end_time,
-                    "distance_km": journey.distance_km,
-                    "trip_count": journey.trip_count,
-                    "charge_count": journey.charge_count,
-                }
-                for journey in matches
-            ],
+            "journeys": daily_summaries,
         }
 
     @property
@@ -2822,84 +3024,164 @@ class FordTriplogTopDaySensor(SensorEntity):
         days: dict[str, dict[str, Any]] = {}
 
         for journey in journeys:
-            date_value = str(
-                self._get(journey, "date", "")
-            ).strip()
-            if not date_value:
-                continue
+            items = self._items(journey)
+            grouped: dict[str, list[Any]] = {}
 
-            row = days.setdefault(
-                date_value,
-                {
-                    "date": date_value,
-                    "journeys": [],
-                    "distance_km": 0.0,
-                    "total_duration_seconds": 0,
-                    "driving_duration_seconds": 0,
-                    "charging_duration_seconds": 0,
-                    "journey_count": 0,
-                    "trip_count": 0,
-                    "charge_count": 0,
-                    "energy_used_kwh": 0.0,
-                    "energy_charged_kwh": 0.0,
-                    "charging_cost_total": 0.0,
-                    "journey_ids": [],
-                    "trip_ids": [],
-                    "charge_ids": [],
-                    "currencies": set(),
-                },
-            )
+            for item in items:
+                date_value = _local_calendar_date(
+                    self._get(item, "start_time")
+                )
+                if date_value:
+                    grouped.setdefault(date_value, []).append(item)
 
-            row["journeys"].append(journey)
-            row["journey_count"] += 1
-            row["distance_km"] += self._optional_number(
-                self._get(journey, "distance_km"),
-                3,
-            )
-            row["total_duration_seconds"] += int(
-                self._get(journey, "total_duration_seconds", 0) or 0
-            )
-            row["driving_duration_seconds"] += int(
-                self._get(journey, "driving_duration_seconds", 0) or 0
-            )
-            row["charging_duration_seconds"] += int(
-                self._get(journey, "charging_duration_seconds", 0) or 0
-            )
-            row["trip_count"] += int(
-                self._get(journey, "trip_count", 0) or 0
-            )
-            row["charge_count"] += int(
-                self._get(journey, "charge_count", 0) or 0
-            )
-            row["energy_used_kwh"] += self._optional_number(
-                self._get(journey, "energy_used_kwh"),
-                3,
-            )
-            row["energy_charged_kwh"] += self._optional_number(
-                self._get(journey, "energy_charged_kwh"),
-                3,
-            )
-            row["charging_cost_total"] += self._optional_number(
-                self._get(journey, "charging_cost_total"),
-                3,
-            )
+            if not grouped:
+                date_value = str(self._get(journey, "date", "")).strip()
+                if not date_value:
+                    continue
+                grouped[date_value] = []
 
-            journey_id = self._get(journey, "journey_id")
-            if journey_id:
-                row["journey_ids"].append(journey_id)
+            for date_value, day_items in grouped.items():
+                row = days.setdefault(
+                    date_value,
+                    {
+                        "date": date_value,
+                        "parts": [],
+                        "distance_km": 0.0,
+                        "total_duration_seconds": 0,
+                        "driving_duration_seconds": 0,
+                        "charging_duration_seconds": 0,
+                        "journey_count": 0,
+                        "trip_count": 0,
+                        "charge_count": 0,
+                        "energy_used_kwh": 0.0,
+                        "energy_charged_kwh": 0.0,
+                        "charging_cost_total": 0.0,
+                        "journey_ids": [],
+                        "trip_ids": [],
+                        "charge_ids": [],
+                        "currencies": set(),
+                    },
+                )
 
-            row["trip_ids"].extend(
-                list(self._get(journey, "trip_ids", []) or [])
-            )
-            row["charge_ids"].extend(
-                list(self._get(journey, "charge_ids", []) or [])
-            )
+                journey_id = self._get(journey, "journey_id")
+                if journey_id and journey_id not in row["journey_ids"]:
+                    row["journey_ids"].append(journey_id)
+                    row["journey_count"] += 1
 
-            currency = str(
-                self._get(journey, "currency", "")
-            ).strip().upper()
-            if currency:
-                row["currencies"].add(currency)
+                if not day_items:
+                    row["distance_km"] += self._optional_number(
+                        self._get(journey, "distance_km"), 3
+                    )
+                    row["total_duration_seconds"] += int(
+                        self._get(journey, "total_duration_seconds", 0) or 0
+                    )
+                    row["driving_duration_seconds"] += int(
+                        self._get(journey, "driving_duration_seconds", 0) or 0
+                    )
+                    row["charging_duration_seconds"] += int(
+                        self._get(journey, "charging_duration_seconds", 0) or 0
+                    )
+                    row["trip_count"] += int(
+                        self._get(journey, "trip_count", 0) or 0
+                    )
+                    row["charge_count"] += int(
+                        self._get(journey, "charge_count", 0) or 0
+                    )
+                    row["energy_used_kwh"] += self._optional_number(
+                        self._get(journey, "energy_used_kwh"), 3
+                    )
+                    row["energy_charged_kwh"] += self._optional_number(
+                        self._get(journey, "energy_charged_kwh"), 3
+                    )
+                    row["charging_cost_total"] += self._optional_number(
+                        self._get(journey, "charging_cost_total"), 3
+                    )
+                    row["trip_ids"].extend(
+                        list(self._get(journey, "trip_ids", []) or [])
+                    )
+                    row["charge_ids"].extend(
+                        list(self._get(journey, "charge_ids", []) or [])
+                    )
+                    currency = str(
+                        self._get(journey, "currency", "")
+                    ).strip().upper()
+                    if currency:
+                        row["currencies"].add(currency)
+                    row["parts"].append(
+                        {
+                            "journey": journey,
+                            "first_item": None,
+                            "last_item": None,
+                            "start_time": self._get(journey, "start_time"),
+                            "end_time": self._get(journey, "end_time"),
+                        }
+                    )
+                    continue
+
+                day_items = sorted(
+                    day_items,
+                    key=lambda item: str(
+                        self._get(item, "start_time", "") or ""
+                    ),
+                )
+                first_item = day_items[0]
+                last_item = day_items[-1]
+                part_start = self._get(first_item, "start_time")
+                part_end = self._get(last_item, "end_time")
+                row["total_duration_seconds"] += _interval_seconds(
+                    part_start, part_end
+                )
+                row["parts"].append(
+                    {
+                        "journey": journey,
+                        "first_item": first_item,
+                        "last_item": last_item,
+                        "start_time": part_start,
+                        "end_time": part_end,
+                    }
+                )
+
+                for item in day_items:
+                    item_type = (
+                        self._get(item, "item_type")
+                        or self._get(item, "type")
+                    )
+                    duration = int(
+                        self._get(item, "duration_seconds", 0)
+                        or _interval_seconds(
+                            self._get(item, "start_time"),
+                            self._get(item, "end_time"),
+                        )
+                    )
+                    item_id = self._get(item, "item_id") or self._get(item, "id")
+
+                    if item_type == "trip":
+                        row["trip_count"] += 1
+                        row["driving_duration_seconds"] += duration
+                        row["distance_km"] += self._optional_number(
+                            self._get(item, "distance_km"), 3
+                        )
+                        row["energy_used_kwh"] += self._optional_number(
+                            self._get(item, "energy_kwh"), 3
+                        )
+                        if item_id:
+                            row["trip_ids"].append(item_id)
+                    elif item_type == "charge":
+                        row["charge_count"] += 1
+                        row["charging_duration_seconds"] += duration
+                        row["energy_charged_kwh"] += self._optional_number(
+                            self._get(item, "energy_kwh"), 3
+                        )
+                        row["charging_cost_total"] += self._optional_number(
+                            self._get(item, "cost_total"), 3
+                        )
+                        if item_id:
+                            row["charge_ids"].append(item_id)
+                        currency = str(
+                            self._get(item, "currency", "")
+                        ).strip().upper()
+                        if currency:
+                            row["currencies"].add(currency)
 
         if not days:
             self._attr_native_value = None
@@ -2915,16 +3197,17 @@ class FordTriplogTopDaySensor(SensorEntity):
             ),
         )
 
-        top_journeys = sorted(
-            top["journeys"],
-            key=lambda journey: (
-                str(self._get(journey, "start_time", "") or ""),
-                str(self._get(journey, "journey_id", "") or ""),
+        top_parts = sorted(
+            top["parts"],
+            key=lambda part: (
+                str(part.get("start_time") or ""),
+                str(
+                    self._get(part.get("journey"), "journey_id", "") or ""
+                ),
             ),
         )
-
-        first_journey = top_journeys[0]
-        last_journey = top_journeys[-1]
+        first_part = top_parts[0]
+        last_part = top_parts[-1]
 
         distance_km = round(top["distance_km"], 1)
         energy_used_kwh = round(top["energy_used_kwh"], 2)
@@ -2948,13 +3231,31 @@ class FordTriplogTopDaySensor(SensorEntity):
         self._attributes = {
             "date": top["date"],
             "distance_km": distance_km,
-            "start_time": self._get(first_journey, "start_time"),
-            "end_time": self._get(last_journey, "end_time"),
-            "start_location": self._journey_start_location(
-                first_journey
+            "start_time": first_part.get("start_time"),
+            "end_time": last_part.get("end_time"),
+            "start_location": (
+                self._compact_location(
+                    self._get(first_part.get("first_item"), "start_location")
+                )
+                or self._compact_location(
+                    self._get(first_part.get("first_item"), "start_address")
+                )
+                or self._journey_start_location(first_part["journey"])
             ),
-            "end_location": self._journey_end_location(
-                last_journey
+            "end_location": (
+                self._compact_location(
+                    self._get(last_part.get("last_item"), "end_location")
+                )
+                or self._compact_location(
+                    self._get(last_part.get("last_item"), "location")
+                )
+                or self._compact_location(
+                    self._get(last_part.get("last_item"), "end_address")
+                )
+                or self._compact_location(
+                    self._get(last_part.get("last_item"), "address")
+                )
+                or self._journey_end_location(last_part["journey"])
             ),
             "total_duration_seconds": top["total_duration_seconds"],
             "total_duration": format_duration(

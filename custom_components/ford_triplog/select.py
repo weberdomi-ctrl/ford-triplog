@@ -168,6 +168,24 @@ class FordTriplogRouteHistoryDateSelect(SelectEntity):
         if self.journey_storage is not None:
             journeys = await self.journey_storage.get_all_journeys()
             for journey in journeys:
+                item_date_found = False
+                for item in list(getattr(journey, "items", []) or []):
+                    value = getattr(item, "start_time", None)
+                    if not value:
+                        continue
+                    timestamp = dt_util.parse_datetime(str(value))
+                    if timestamp is None:
+                        continue
+                    if timestamp.tzinfo is None:
+                        timestamp = timestamp.replace(
+                            tzinfo=dt_util.DEFAULT_TIME_ZONE
+                        )
+                    dates.add(dt_util.as_local(timestamp).date().isoformat())
+                    item_date_found = True
+
+                if item_date_found:
+                    continue
+
                 if journey.date:
                     dates.add(str(journey.date))
                     continue
