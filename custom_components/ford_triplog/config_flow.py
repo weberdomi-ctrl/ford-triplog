@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.5.0
 Phase: Multi-vehicle context
-Build: 25005 - Shared vehicle context
+Build: 25007 - Duplicate VIN test vehicle flow
 Release: 2.5.0-dev
 
 
@@ -68,7 +68,10 @@ from .osrm_client import (
 from .export import FordTriplogExporter
 from .route_rebuilder import FordTriplogRouteRebuilder
 
-from .vehicle_identity import async_detect_vehicle_identity
+from .vehicle_identity import (
+    FordTriplogVehicleIdentity,
+    async_detect_vehicle_identity,
+)
 from .vehicle_context import (
     get_selected_vehicle_id,
     get_vehicle_runtime,
@@ -93,6 +96,8 @@ from .const import (
     CONF_BATTERY_CAPACITY,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
+    CONF_VEHICLE_TEST_ALIAS,
+    CONF_VEHICLE_ALIAS_OF,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_ROUTE_TRACKER_ENABLED,
     CONF_ROUTE_SOURCE_TYPE,
@@ -120,6 +125,8 @@ from .const import (
     VERSION as FORD_TRIPLOG_VERSION,
 )
 
+
+CONF_CREATE_TEST_VEHICLE = "create_test_vehicle"
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
@@ -299,6 +306,107 @@ class FordTriplogConfigFlow(
         """Return the options flow."""
         return FordTriplogOptionsFlow(config_entry)
 
+    def _find_configured_vehicle_entry(
+        self,
+        identity: FordTriplogVehicleIdentity,
+    ) -> ConfigEntry | None:
+        """Return an already configured primary vehicle with this identity."""
+
+        wanted_vin = str(identity.vin or "").strip().upper()
+        wanted_unique = identity.unique_key
+
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if wanted_unique and entry.unique_id == wanted_unique:
+                return entry
+
+            runtime = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+            if not isinstance(runtime, dict):
+                continue
+
+            runtime_identity = runtime.get("vehicle_identity")
+            runtime_vehicle = runtime.get("vehicle") or {}
+            current_vin = str(
+                getattr(runtime_identity, "vin", None)
+                or runtime_vehicle.get("vin")
+                or ""
+            ).strip().upper()
+            if wanted_vin and current_vin == wanted_vin:
+                # Ignore an already-created test alias. The duplicate prompt
+                # refers to the primary physical vehicle.
+                if bool((entry.data or {}).get(CONF_VEHICLE_TEST_ALIAS, False)):
+                    continue
+                return entry
+
+        return None
+
+    @staticmethod
+    def _source_display_name(source: str | None) -> str:
+        """Return a concise source label for config-entry titles."""
+
+        value = str(source or "").strip()
+        normalized = value.lower()
+        if normalized == "fordconnect_query":
+            return "Ford Connect"
+        if normalized == "fordpass":
+            return "FordPass"
+        return value or "Quelle"
+
+    async def _async_create_vehicle_entry(
+        self,
+        user_input: dict[str, Any],
+        identity: FordTriplogVehicleIdentity,
+        *,
+        test_alias: bool = False,
+        alias_of_vehicle_id: int | None = None,
+    ) -> ConfigFlowResult:
+        """Create one Ford Triplog vehicle ConfigEntry."""
+
+        entry_data = dict(user_input)
+        entry_data.setdefault(
+            CONF_BATTERY_CAPACITY,
+            DEFAULT_BATTERY_CAPACITY_KWH,
+        )
+
+        detected_name = str(identity.name or identity.model or "").strip()
+        source_label = self._source_display_name(identity.source)
+
+        if test_alias:
+            entry_data[CONF_VEHICLE_TEST_ALIAS] = True
+            if alias_of_vehicle_id is not None:
+                entry_data[CONF_VEHICLE_ALIAS_OF] = int(alias_of_vehicle_id)
+
+            if detected_name:
+                entry_data.setdefault(
+                    CONF_VEHICLE_NAME,
+                    f"{detected_name} ({source_label})",
+                )
+
+            stable_source = str(identity.source or "source").strip().lower()
+            stable_device = str(
+                identity.device_id
+                or identity.entity_id
+                or "vehicle"
+            ).strip().lower()
+            vin_part = str(identity.vin or "unknown").strip().lower()
+            unique_id = f"vehicle-test:{vin_part}:{stable_source}:{stable_device}"
+        else:
+            if detected_name:
+                entry_data.setdefault(CONF_VEHICLE_NAME, detected_name)
+            unique_id = identity.unique_key or (
+                f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
+            )
+
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+
+        configured_name = str(
+            entry_data.get(CONF_VEHICLE_NAME)
+            or detected_name
+            or NAME
+        ).strip()
+        title = f"{NAME} – {configured_name}" if configured_name else NAME
+        return self.async_create_entry(title=title, data=entry_data)
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
@@ -318,31 +426,100 @@ class FordTriplogConfigFlow(
                     self.hass,
                     user_input,
                 )
-                unique_id = identity.unique_key or (
-                    f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
-                )
-                await self.async_set_unique_id(unique_id)
-                self._abort_if_unique_id_configured()
+                duplicate = self._find_configured_vehicle_entry(identity)
+                if duplicate is not None and identity.vin:
+                    self._pending_vehicle_input = dict(user_input)
+                    self._pending_vehicle_identity = identity
+                    self._pending_duplicate_entry_id = duplicate.entry_id
+                    return await self.async_step_duplicate_vehicle()
 
-                entry_data = dict(user_input)
-                entry_data.setdefault(
-                    CONF_BATTERY_CAPACITY,
-                    DEFAULT_BATTERY_CAPACITY_KWH,
+                return await self._async_create_vehicle_entry(
+                    user_input,
+                    identity,
                 )
-                if identity.name:
-                    entry_data.setdefault(CONF_VEHICLE_NAME, identity.name)
-
-                title = (
-                    f"{NAME} – {identity.name}"
-                    if identity.name
-                    else NAME
-                )
-                return self.async_create_entry(title=title, data=entry_data)
 
         return self.async_show_form(
             step_id="user",
             data_schema=self._build_schema(),
             errors=errors,
+        )
+
+    async def async_step_duplicate_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle an already configured VIN."""
+
+        pending_input = getattr(self, "_pending_vehicle_input", None)
+        identity = getattr(self, "_pending_vehicle_identity", None)
+        duplicate_entry_id = getattr(self, "_pending_duplicate_entry_id", None)
+        duplicate_entry = (
+            self.hass.config_entries.async_get_entry(duplicate_entry_id)
+            if duplicate_entry_id
+            else None
+        )
+
+        if not isinstance(pending_input, dict) or not isinstance(
+            identity,
+            FordTriplogVehicleIdentity,
+        ):
+            return self.async_abort(reason="duplicate_vehicle_context_lost")
+
+        existing_vehicle_id = None
+        existing_name = duplicate_entry.title if duplicate_entry is not None else NAME
+        if duplicate_entry is not None:
+            try:
+                existing_vehicle_id = int(
+                    (duplicate_entry.data or {}).get(CONF_VEHICLE_ID)
+                )
+            except (TypeError, ValueError):
+                existing_vehicle_id = None
+
+        if existing_vehicle_id is None and duplicate_entry is not None:
+            runtime = self.hass.data.get(DOMAIN, {}).get(
+                duplicate_entry.entry_id,
+                {},
+            )
+            try:
+                existing_vehicle_id = int(runtime.get("vehicle_id"))
+            except (TypeError, ValueError, AttributeError):
+                existing_vehicle_id = None
+
+        if user_input is not None:
+            if not bool(user_input.get(CONF_CREATE_TEST_VEHICLE, False)):
+                return self.async_abort(
+                    reason="vehicle_already_configured",
+                    description_placeholders={
+                        "vehicle": existing_name,
+                    },
+                )
+
+            result = await self._async_create_vehicle_entry(
+                pending_input,
+                identity,
+                test_alias=True,
+                alias_of_vehicle_id=existing_vehicle_id,
+            )
+            self._pending_vehicle_input = None
+            self._pending_vehicle_identity = None
+            self._pending_duplicate_entry_id = None
+            return result
+
+        return self.async_show_form(
+            step_id="duplicate_vehicle",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CREATE_TEST_VEHICLE,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            description_placeholders={
+                "vin": str(identity.vin or "—"),
+                "vehicle": existing_name,
+                "source": self._source_display_name(identity.source),
+            },
         )
 
     def _build_schema(self) -> vol.Schema:
@@ -450,11 +627,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return max(1, vehicle_id)
 
     def _ensure_vehicle_context_id(self) -> int:
-        """Return a valid shared vehicle context for this options flow."""
+        """Return the vehicle context locked to this options flow.
+
+        The shared dashboard selector initializes a new options flow, but once
+        the flow has started its vehicle must remain stable. Otherwise a
+        dashboard/context change can make an already selected trip, charge or
+        receipt resolve against another vehicle runtime.
+        """
 
         if self._vehicle_context_id is not None:
-            if get_vehicle_runtime(self.hass, self._vehicle_context_id) is not None:
-                return self._vehicle_context_id
+            selected = int(self._vehicle_context_id)
+            if get_vehicle_runtime(self.hass, selected) is not None:
+                return selected
+            self._vehicle_context_id = None
 
         selected = get_selected_vehicle_id(
             self.hass,
@@ -2212,11 +2397,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_charge_id
         )
         if charge is None:
+            missing_charge_id = str(self._selected_charge_id or "")
             self._selected_charge_id = None
             return self.async_show_form(
                 step_id="charge_receipt_upload",
                 data_schema=vol.Schema({}),
                 errors={"base": "charge_not_found"},
+                description_placeholders={
+                    "charge_id": missing_charge_id,
+                    "date": "—",
+                    "location": "—",
+                    "ocr_status": "—",
+                },
             )
 
         errors: dict[str, str] = {}

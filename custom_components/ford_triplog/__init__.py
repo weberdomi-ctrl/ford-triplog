@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25005
-Changes: Shared vehicle UI context for vehicle-specific options and actions.
+Build: 25010
+Changes: Duplicate-VIN test vehicles and vehicle-style config entries.
 """
 
 from __future__ import annotations
@@ -30,6 +30,8 @@ from .const import (
     CONF_BATTERY_CAPACITY,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
+    CONF_VEHICLE_TEST_ALIAS,
+    CONF_VEHICLE_ALIAS_OF,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
@@ -62,6 +64,7 @@ from .vehicle_identity import (
 )
 from .vehicle_context import (
     ensure_vehicle_context,
+    notify_vehicle_list_updated,
     remove_vehicle_context_if_unloaded,
 )
 
@@ -127,6 +130,9 @@ async def _async_prepare_vehicle(
             DEFAULT_BATTERY_CAPACITY_KWH,
         ),
         preferred_vehicle_id=preferred_vehicle_id,
+        source=identity.source,
+        allow_duplicate_vin=bool(config.get(CONF_VEHICLE_TEST_ALIAS, False)),
+        alias_of_vehicle_id=config.get(CONF_VEHICLE_ALIAS_OF),
     )
     vehicle_id = int(vehicle["vehicle_id"])
 
@@ -336,6 +342,7 @@ async def async_setup_entry(
     hass.data[DOMAIN][entry.entry_id] = {
         "progress_manager": hass.data[DOMAIN]["progress_manager"],
         "storage": storage,
+        "database": storage.database,
         "history": coordinator.history,
         "geo": geo,
         "coordinator": coordinator,
@@ -355,6 +362,7 @@ async def async_setup_entry(
     # Initialize the shared manual/UI vehicle context. A valid existing
     # selection is kept when additional vehicle ConfigEntries are loaded.
     ensure_vehicle_context(hass, vehicle_id)
+    notify_vehicle_list_updated(hass)
 
     entry.async_on_unload(
         entry.add_update_listener(
@@ -410,6 +418,7 @@ async def async_unload_entry(
             hass,
             int(runtime_data.get("vehicle_id") or 1),
         )
+        notify_vehicle_list_updated(hass)
 
         _LOGGER.debug(
             "Ford Triplog unloaded",

@@ -16,10 +16,24 @@
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
           "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Fahrzeug bereits vorhanden",
+        "description": "Die VIN {vin} ist bereits **{vehicle}** zugeordnet. Für diese Einrichtung wurde die Quelle **{source}** erkannt.\n\nIm Normalbetrieb soll das vorhandene Fahrzeug verwendet werden. Für den Mehrfahrzeug-Entwicklungstest kann dieselbe physische VIN ausdrücklich als separates logisches Testfahrzeug angelegt werden.",
+        "data": {
+          "create_test_vehicle": "Als separates Testfahrzeug anlegen"
+        },
+        "data_description": {
+          "create_test_vehicle": "Erzeugt für diese Quelle eine neue vehicle_id, obwohl die VIN bereits vorhanden ist. Nur für Tests verwenden."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
+    },
+    "abort": {
+      "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",
+      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten."
     }
   },
   "options": {
@@ -1180,6 +1194,9 @@
     "select": {
       "route_history_date": {
         "name": "Datum der Historie"
+      },
+      "vehicle_context": {
+        "name": "Fahrzeug"
       }
     }
   },

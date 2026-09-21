@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.5.0-dev
-Build: 25004
-Changes: Enforce vehicle_id isolation for all vehicle-specific SQLite reads and writes.
+Build: 25007
+Changes: Vehicle registry supports explicit duplicate-VIN test aliases.
 """
 
 from __future__ import annotations
@@ -53,12 +53,16 @@ class FordTriplogDatabase:
         model: str | None = None,
         battery_capacity_kwh: float | None = None,
         preferred_vehicle_id: int | None = None,
+        source: str | None = None,
+        allow_duplicate_vin: bool = False,
+        alias_of_vehicle_id: int | None = None,
     ) -> dict[str, Any]:
         """Create or update one vehicle and return its database record.
 
-        A legacy single-vehicle installation may request vehicle 1. If that
-        row is already assigned to another VIN, a new auto-increment ID is
-        allocated instead.
+        Normally a VIN resolves to one primary vehicle row. For development
+        and migration tests the same physical VIN may explicitly be added as a
+        separate logical vehicle. Such rows are marked as aliases and keep a
+        reference to the primary vehicle.
         """
 
         await self.async_setup()
@@ -69,6 +73,7 @@ class FordTriplogDatabase:
             str(manufacturer).strip() if manufacturer else None
         )
         normalized_model = str(model).strip() if model else None
+        normalized_source = str(source).strip() if source else None
         normalized_battery = (
             float(battery_capacity_kwh)
             if battery_capacity_kwh is not None
@@ -82,6 +87,14 @@ class FordTriplogDatabase:
         if preferred_id is not None and preferred_id < 1:
             preferred_id = None
 
+        alias_of_id = (
+            int(alias_of_vehicle_id)
+            if alias_of_vehicle_id is not None
+            else None
+        )
+        if alias_of_id is not None and alias_of_id < 1:
+            alias_of_id = None
+
         def _ensure() -> dict[str, Any]:
             now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
             with sqlite3.connect(self.db_path) as db:
@@ -89,31 +102,63 @@ class FordTriplogDatabase:
                 db.execute("PRAGMA foreign_keys = ON")
 
                 row = None
-                if normalized_vin:
-                    row = db.execute(
-                        "SELECT * FROM vehicles WHERE vin = ?",
-                        (normalized_vin,),
-                    ).fetchone()
 
-                if row is None and preferred_id is not None:
+                # A ConfigEntry that already owns a vehicle_id always keeps it.
+                # This is essential for duplicate-VIN test aliases on restart.
+                if preferred_id is not None:
                     candidate = db.execute(
                         "SELECT * FROM vehicles WHERE vehicle_id = ?",
                         (preferred_id,),
                     ).fetchone()
-                    if candidate is None:
-                        row = None
-                    else:
+                    if candidate is not None:
                         candidate_vin = (
                             str(candidate["vin"]).strip().upper()
                             if candidate["vin"]
                             else None
                         )
                         if (
-                            normalized_vin is None
+                            allow_duplicate_vin
+                            or normalized_vin is None
                             or candidate_vin is None
                             or candidate_vin == normalized_vin
                         ):
                             row = candidate
+
+                # Normal production behaviour: one primary row per VIN.
+                if row is None and normalized_vin and not allow_duplicate_vin:
+                    row = db.execute(
+                        """
+                        SELECT * FROM vehicles
+                        WHERE vin = ? AND alias_of_vehicle_id IS NULL
+                        ORDER BY vehicle_id
+                        LIMIT 1
+                        """,
+                        (normalized_vin,),
+                    ).fetchone()
+
+                resolved_alias_of = alias_of_id
+                if row is None and allow_duplicate_vin and normalized_vin:
+                    if resolved_alias_of is None:
+                        primary = db.execute(
+                            """
+                            SELECT vehicle_id FROM vehicles
+                            WHERE vin = ? AND alias_of_vehicle_id IS NULL
+                            ORDER BY vehicle_id
+                            LIMIT 1
+                            """,
+                            (normalized_vin,),
+                        ).fetchone()
+                        if primary is not None:
+                            resolved_alias_of = int(primary["vehicle_id"])
+
+                    # If there is no primary vehicle after all, fall back to a
+                    # normal primary row instead of creating an orphan alias.
+                    if resolved_alias_of is None:
+                        allow_alias = False
+                    else:
+                        allow_alias = True
+                else:
+                    allow_alias = bool(allow_duplicate_vin and resolved_alias_of)
 
                 if row is None:
                     if preferred_id is not None:
@@ -124,24 +169,30 @@ class FordTriplogDatabase:
                     else:
                         occupied = True
 
+                    values = (
+                        normalized_vin,
+                        normalized_name,
+                        normalized_manufacturer,
+                        normalized_model,
+                        normalized_battery,
+                        normalized_source,
+                        resolved_alias_of if allow_alias else None,
+                        1 if allow_alias else 0,
+                        now,
+                        now,
+                    )
+
                     if preferred_id is not None and not occupied:
                         db.execute(
                             """
                             INSERT INTO vehicles (
                                 vehicle_id, vin, name, manufacturer, model,
-                                battery_capacity_kwh, created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                                battery_capacity_kwh, source,
+                                alias_of_vehicle_id, is_test_alias,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (
-                                preferred_id,
-                                normalized_vin,
-                                normalized_name or f"Vehicle {preferred_id}",
-                                normalized_manufacturer,
-                                normalized_model,
-                                normalized_battery,
-                                now,
-                                now,
-                            ),
+                            (preferred_id, *values),
                         )
                         vehicle_id = preferred_id
                     else:
@@ -149,18 +200,12 @@ class FordTriplogDatabase:
                             """
                             INSERT INTO vehicles (
                                 vin, name, manufacturer, model,
-                                battery_capacity_kwh, created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                battery_capacity_kwh, source,
+                                alias_of_vehicle_id, is_test_alias,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                             """,
-                            (
-                                normalized_vin,
-                                normalized_name,
-                                normalized_manufacturer,
-                                normalized_model,
-                                normalized_battery,
-                                now,
-                                now,
-                            ),
+                            values,
                         )
                         vehicle_id = int(cursor.lastrowid)
                 else:
@@ -173,6 +218,12 @@ class FordTriplogDatabase:
                             manufacturer = COALESCE(?, manufacturer),
                             model = COALESCE(?, model),
                             battery_capacity_kwh = COALESCE(?, battery_capacity_kwh),
+                            source = COALESCE(?, source),
+                            alias_of_vehicle_id = COALESCE(?, alias_of_vehicle_id),
+                            is_test_alias = CASE
+                                WHEN ? THEN 1
+                                ELSE is_test_alias
+                            END,
                             updated_at = ?
                         WHERE vehicle_id = ?
                         """,
@@ -182,6 +233,9 @@ class FordTriplogDatabase:
                             normalized_manufacturer,
                             normalized_model,
                             normalized_battery,
+                            normalized_source,
+                            resolved_alias_of if allow_duplicate_vin else None,
+                            bool(allow_duplicate_vin),
                             now,
                             vehicle_id,
                         ),
@@ -197,6 +251,7 @@ class FordTriplogDatabase:
                 return dict(result)
 
         return await self.hass.async_add_executor_job(_ensure)
+
 
     async def async_get_vehicle(
         self,
@@ -387,21 +442,127 @@ class FordTriplogDatabase:
                 )
 
                 with sqlite3.connect(self.db_path) as db:
-                    db.execute("PRAGMA foreign_keys = ON")
+                    db.row_factory = sqlite3.Row
+
+                    # Build 25007 extends the vehicle registry so the same
+                    # physical VIN can explicitly be used as a second logical
+                    # test vehicle. Normal rows remain unique per VIN through
+                    # a partial unique index; only marked aliases may duplicate
+                    # an existing VIN.
+                    vehicle_info = db.execute(
+                        "PRAGMA table_info(vehicles)"
+                    ).fetchall()
+                    vehicle_columns = {str(row[1]) for row in vehicle_info}
+                    vehicle_registry_upgrade = bool(vehicle_info) and not {
+                        "source",
+                        "alias_of_vehicle_id",
+                        "is_test_alias",
+                    }.issubset(vehicle_columns)
+
+                    if vehicle_registry_upgrade:
+                        backup_path = self.db_path.with_name(
+                            "ford_triplog_pre_25007.db"
+                        )
+                        if not backup_path.exists():
+                            with sqlite3.connect(backup_path) as backup_db:
+                                db.backup(backup_db)
+                            _LOGGER.info(
+                                "Created SQLite pre-25007 vehicle-registry backup: %s",
+                                backup_path,
+                            )
+
+                        db.execute("PRAGMA foreign_keys = OFF")
+                        try:
+                            db.execute("BEGIN IMMEDIATE")
+                            db.execute("DROP TABLE IF EXISTS vehicles_25007_new")
+                            db.execute(
+                                """
+                                CREATE TABLE vehicles_25007_new (
+                                    vehicle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    vin TEXT,
+                                    name TEXT,
+                                    manufacturer TEXT,
+                                    model TEXT,
+                                    battery_capacity_kwh REAL,
+                                    source TEXT,
+                                    alias_of_vehicle_id INTEGER,
+                                    is_test_alias INTEGER NOT NULL DEFAULT 0,
+                                    created_at TEXT NOT NULL,
+                                    updated_at TEXT NOT NULL,
+                                    FOREIGN KEY (alias_of_vehicle_id)
+                                        REFERENCES vehicles(vehicle_id)
+                                )
+                                """
+                            )
+                            db.execute(
+                                """
+                                INSERT INTO vehicles_25007_new (
+                                    vehicle_id, vin, name, manufacturer, model,
+                                    battery_capacity_kwh, source,
+                                    alias_of_vehicle_id, is_test_alias,
+                                    created_at, updated_at
+                                )
+                                SELECT
+                                    vehicle_id, vin, name, manufacturer, model,
+                                    battery_capacity_kwh, NULL, NULL, 0,
+                                    created_at, updated_at
+                                FROM vehicles
+                                """
+                            )
+                            db.execute("DROP TABLE vehicles")
+                            db.execute(
+                                "ALTER TABLE vehicles_25007_new RENAME TO vehicles"
+                            )
+                            db.commit()
+                            _LOGGER.info(
+                                "Migrated SQLite vehicle registry for duplicate-VIN test aliases"
+                            )
+                        except Exception:
+                            db.rollback()
+                            raise
+
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS vehicles (
                             vehicle_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                            vin TEXT UNIQUE,
+                            vin TEXT,
                             name TEXT,
                             manufacturer TEXT,
                             model TEXT,
                             battery_capacity_kwh REAL,
+                            source TEXT,
+                            alias_of_vehicle_id INTEGER,
+                            is_test_alias INTEGER NOT NULL DEFAULT 0,
                             created_at TEXT NOT NULL,
-                            updated_at TEXT NOT NULL
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (alias_of_vehicle_id)
+                                REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_primary_vin
+                        ON vehicles (vin)
+                        WHERE vin IS NOT NULL AND alias_of_vehicle_id IS NULL
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_vehicles_alias_of
+                        ON vehicles (alias_of_vehicle_id)
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_alias_source
+                        ON vehicles (vin, source)
+                        WHERE vin IS NOT NULL
+                          AND source IS NOT NULL
+                          AND alias_of_vehicle_id IS NOT NULL
+                        """
+                    )
+                    db.execute("PRAGMA foreign_keys = ON")
                     now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                     db.execute(
                         """

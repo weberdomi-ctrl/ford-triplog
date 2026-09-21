@@ -16,10 +16,24 @@
           "smart_trip": "Pauses short stops and combines them into one trip.",
           "smart_trip_timeout": "Time until a paused trip is finally completed."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Vehicle already configured",
+        "description": "The VIN {vin} is already assigned to **{vehicle}**. Source detected for this setup: **{source}**.\n\nNormally the existing vehicle should be used. For multi-vehicle development tests, the same physical VIN can explicitly be created as a separate logical test vehicle.",
+        "data": {
+          "create_test_vehicle": "Create as separate test vehicle"
+        },
+        "data_description": {
+          "create_test_vehicle": "Creates a new vehicle_id for this source although the VIN already exists. Use only for testing."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
+    },
+    "abort": {
+      "vehicle_already_configured": "The vehicle {vehicle} is already configured. No second vehicle was created.",
+      "duplicate_vehicle_context_lost": "The duplicate-vehicle setup context was lost. Start adding the vehicle again."
     }
   },
   "options": {
@@ -1166,6 +1180,9 @@
     "select": {
       "route_history_date": {
         "name": "History Date"
+      },
+      "vehicle_context": {
+        "name": "Vehicle"
       }
     }
   },

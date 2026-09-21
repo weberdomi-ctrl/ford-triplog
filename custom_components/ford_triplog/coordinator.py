@@ -52,6 +52,7 @@ from typing import Any
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.components import persistent_notification
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -73,6 +74,7 @@ from .charging_site_lookup import (
 
 from .const import (
     CONF_BATTERY_CAPACITY,
+    CONF_VEHICLE_ID,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_IGNITION,
     CONF_ODOMETER,
@@ -90,12 +92,14 @@ from .const import (
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
     VEHICLE_SOURCE_HEALTH_UNKNOWN,
     SMART_TRIP_TIMEOUT,
+    SIGNAL_VEHICLE_DATA_UPDATED,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
+TRIP_END_ODOMETER_TIMEOUT = 30
 GPS_UPDATE_TIMEOUT = 60
 
 # The MEB battery-management system can revise SOC shortly after charging
@@ -490,6 +494,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         self.async_set_updated_data(data)
+
+        try:
+            vehicle_id = int(self.config.get(CONF_VEHICLE_ID) or 1)
+        except (TypeError, ValueError):
+            vehicle_id = 1
+        async_dispatcher_send(
+            self.hass,
+            SIGNAL_VEHICLE_DATA_UPDATED,
+            max(1, vehicle_id),
+        )
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -2227,12 +2241,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charge_id,
             )
 
-    async def _wait_for_stable_vehicle_state(self):
+    async def _wait_for_stable_vehicle_state(
+        self,
+        *,
+        minimum_odometer: float | None = None,
+        timeout: int = STABLE_TIMEOUT,
+    ):
+        """Wait until the vehicle state is stable.
+
+        For trip finalization, ``minimum_odometer`` can be used to keep
+        waiting while a lagging source (notably FordPass) still exposes the
+        trip's start odometer.  Once the odometer advances, the normal
+        two-sample stabilization rule applies.
+        """
         last = None
         stable = 0
         elapsed = 0
+        minimum = optional_float(minimum_odometer)
 
-        while elapsed < STABLE_TIMEOUT:
+        while elapsed < timeout:
             current = self._read_vehicle_state()
 
             key = (
@@ -2244,20 +2271,48 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug("Vehicle state check %s", key)
 
-            if key == last:
-                stable += 1
-            else:
+            current_odometer = optional_float(current.get("odometer"))
+            odometer_ready = (
+                minimum is None
+                or (
+                    current_odometer is not None
+                    and current_odometer > minimum
+                )
+            )
+
+            if not odometer_ready:
                 stable = 0
+                last = None
+                _LOGGER.debug(
+                    "Waiting for trip-end odometer to advance beyond %s "
+                    "(current=%s, elapsed=%ss/%ss)",
+                    minimum,
+                    current_odometer,
+                    elapsed,
+                    timeout,
+                )
+            else:
+                if key == last:
+                    stable += 1
+                else:
+                    stable = 0
 
-            if stable >= 1:
-                _LOGGER.debug("Vehicle state stabilized after %ss", elapsed)
-                return current
+                if stable >= 1:
+                    _LOGGER.debug(
+                        "Vehicle state stabilized after %ss",
+                        elapsed,
+                    )
+                    return current
 
-            last = key
+                last = key
+
             await asyncio.sleep(STABLE_INTERVAL)
             elapsed += STABLE_INTERVAL
 
-        _LOGGER.warning("Vehicle state timeout reached")
+        _LOGGER.warning(
+            "Vehicle state timeout reached after %ss",
+            timeout,
+        )
         return self._read_vehicle_state()
 
     async def _get_address(self, state):
@@ -2503,7 +2558,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.info("Capturing stable trip end state")
 
-            state = await self._wait_for_stable_vehicle_state()
+            state = await self._wait_for_stable_vehicle_state(
+                minimum_odometer=trip.start_odometer,
+                timeout=TRIP_END_ODOMETER_TIMEOUT,
+            )
             end_time = dt_util.now()
             address = await self._get_address(state)
 

@@ -16,10 +16,24 @@
           "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
           "smart_trip_timeout": "Czas do ostatecznego zakończenia wstrzymanego przejazdu."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Pojazd jest już skonfigurowany",
+        "description": "VIN {vin} jest już przypisany do **{vehicle}**. Dla tej konfiguracji wykryto źródło **{source}**.\n\nW normalnym użyciu należy korzystać z istniejącego pojazdu. Do testów obsługi wielu pojazdów ten sam VIN można świadomie utworzyć jako osobny pojazd testowy.",
+        "data": {
+          "create_test_vehicle": "Utwórz jako osobny pojazd testowy"
+        },
+        "data_description": {
+          "create_test_vehicle": "Tworzy nowy vehicle_id dla tego źródła mimo istniejącego VIN. Używać tylko do testów."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
+    },
+    "abort": {
+      "vehicle_already_configured": "Pojazd {vehicle} jest już skonfigurowany. Nie utworzono drugiego pojazdu.",
+      "duplicate_vehicle_context_lost": "Utracono kontekst konfiguracji duplikatu pojazdu. Rozpocznij dodawanie pojazdu ponownie."
     }
   },
   "options": {
@@ -1180,6 +1194,9 @@
     "select": {
       "route_history_date": {
         "name": "Data historii"
+      },
+      "vehicle_context": {
+        "name": "Pojazd"
       }
     }
   },
