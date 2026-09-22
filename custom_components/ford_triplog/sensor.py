@@ -418,10 +418,11 @@ class FordTriplogLastJourneySensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_trip_update(self, *_args: Any) -> None:
         """Refresh immediately after a completed trip was stored."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
@@ -553,10 +554,11 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
-        """Schedule a thread-safe refresh after a Journey update."""
+        """Schedule a refresh after a Journey update."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
@@ -2086,10 +2088,11 @@ class FordTriplogChargingHistorySensor(SensorEntity):
 
         await self._async_refresh()
 
+    @callback
     def _handle_charge_data_updated(self, *_args: Any) -> None:
-        """Refresh the selected charging History date thread-safely."""
+        """Refresh the selected charging History date."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Reload charging History and publish the new sensor state."""
@@ -2423,10 +2426,11 @@ class FordTriplogLastRouteSensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_update(self, *_args: Any) -> None:
         """Refresh immediately after a completed route was stored."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write the current route state."""
@@ -2651,10 +2655,11 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_vehicle_context_update(self, *_args: Any) -> None:
         """Refresh Route History when the dashboard vehicle changes."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def async_will_remove_from_hass(self) -> None:
         """Remove the shared sensor reference on unload."""
@@ -2887,10 +2892,11 @@ class FordTriplogTopDaySensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
         """Schedule a Top Day refresh after Journey maintenance."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write Top Day."""
@@ -5309,10 +5315,11 @@ class FordTriplogTopJourneySensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
         """Schedule a refresh after Journey data changes."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh Top Journey and write the entity state."""

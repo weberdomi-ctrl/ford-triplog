@@ -6,7 +6,7 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25010
+Build: 25011
 Changes: Duplicate-VIN test vehicles and vehicle-style config entries.
 """
 
