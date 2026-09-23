@@ -6,7 +6,7 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25011
+Build: 25012
 Changes: Duplicate-VIN test vehicles and vehicle-style config entries.
 """
 
@@ -66,6 +66,8 @@ from .vehicle_context import (
     ensure_vehicle_context,
     notify_vehicle_list_updated,
     remove_vehicle_context_if_unloaded,
+    get_selected_vehicle_id,
+    set_selected_vehicle_id,
 )
 
 
@@ -431,8 +433,33 @@ async def entry_update_listener(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> None:
-    """Reload the integration when options change."""
+    """Reload the integration when options change.
+
+    Preserve the shared dashboard vehicle context across the ConfigEntry
+    reload. During an unload the selected vehicle runtime temporarily
+    disappears, so the normal context fallback would otherwise switch the
+    shared UI back to vehicle 1.
+    """
+
+    selected_vehicle_id = get_selected_vehicle_id(hass)
 
     await hass.config_entries.async_reload(
         entry.entry_id,
     )
+
+    if selected_vehicle_id is None:
+        return
+
+    try:
+        set_selected_vehicle_id(
+            hass,
+            int(selected_vehicle_id),
+        )
+    except (TypeError, ValueError):
+        # The selected vehicle may genuinely have disappeared (for example
+        # after deleting/disabling a ConfigEntry). In that case keep the
+        # normal fallback selected by the vehicle context.
+        _LOGGER.debug(
+            "Ford Triplog vehicle context %s could not be restored after reload",
+            selected_vehicle_id,
+        )
