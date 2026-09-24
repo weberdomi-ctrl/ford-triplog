@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25012
-Changes: Duplicate-VIN test vehicles and vehicle-style config entries.
+Build: 25014
+Changes: Remove orphaned vehicle rows left by pre-25013 ConfigEntry deletions.
 """
 
 from __future__ import annotations
@@ -193,6 +193,133 @@ async def _async_prepare_vehicle(
     return vehicle_id, vehicle, identity
 
 
+def _configured_vehicle_ids(hass: HomeAssistant) -> set[int]:
+    """Return vehicle ids still owned by Ford Triplog ConfigEntries.
+
+    Disabled ConfigEntries count as configured. This is important: disabling a
+    vehicle must never be interpreted as deleting its history. Legacy pre-2.5
+    entries without an explicit vehicle id are treated as vehicle 1.
+    """
+
+    vehicle_ids: set[int] = set()
+    for configured_entry in hass.config_entries.async_entries(DOMAIN):
+        merged = {**configured_entry.data, **configured_entry.options}
+        raw_vehicle_id = merged.get(CONF_VEHICLE_ID)
+        try:
+            vehicle_id = int(raw_vehicle_id)
+        except (TypeError, ValueError):
+            vehicle_id = 1 if configured_entry.unique_id in (None, DOMAIN) else None
+        if vehicle_id is not None and vehicle_id >= 1:
+            vehicle_ids.add(vehicle_id)
+    return vehicle_ids
+
+
+def _apply_vehicle_alias_updates(
+    hass: HomeAssistant,
+    *,
+    removed_entry_id: str | None,
+    promoted_vehicle_id: int | None,
+    reparented_vehicle_ids: set[int] | list[int] | tuple[int, ...],
+) -> None:
+    """Keep duplicate-VIN ConfigEntry alias metadata consistent."""
+
+    if promoted_vehicle_id is None:
+        return
+
+    affected = {int(value) for value in reparented_vehicle_ids}
+    affected.add(int(promoted_vehicle_id))
+
+    for other_entry in hass.config_entries.async_entries(DOMAIN):
+        if removed_entry_id is not None and other_entry.entry_id == removed_entry_id:
+            continue
+
+        other_data = dict(other_entry.data)
+        try:
+            other_vehicle_id = int(other_data.get(CONF_VEHICLE_ID))
+        except (TypeError, ValueError):
+            continue
+
+        if other_vehicle_id not in affected:
+            continue
+
+        changed = False
+        if other_vehicle_id == int(promoted_vehicle_id):
+            if other_data.pop(CONF_VEHICLE_ALIAS_OF, None) is not None:
+                changed = True
+            if other_data.pop(CONF_VEHICLE_TEST_ALIAS, None) is not None:
+                changed = True
+        else:
+            if other_data.get(CONF_VEHICLE_ALIAS_OF) != int(promoted_vehicle_id):
+                other_data[CONF_VEHICLE_ALIAS_OF] = int(promoted_vehicle_id)
+                changed = True
+
+        if changed:
+            hass.config_entries.async_update_entry(other_entry, data=other_data)
+
+
+async def _async_cleanup_orphaned_vehicles(
+    hass: HomeAssistant,
+    database: FordTriplogDatabase,
+    current_vehicle_id: int,
+) -> list[int]:
+    """Remove vehicle rows left behind by older builds.
+
+    Build 25013 removes a vehicle when its ConfigEntry is deleted. Vehicles
+    deleted before that build can still exist in SQLite, including dependent
+    trip/charge/journey/route rows. Only rows that are not referenced by any
+    existing Ford Triplog ConfigEntry are considered orphaned.
+    """
+
+    configured_ids = _configured_vehicle_ids(hass)
+    # The current ConfigEntry may have received its vehicle_id only moments
+    # ago in _async_prepare_vehicle(). Keep it explicitly even if Home
+    # Assistant has not yet reflected async_update_entry on the object.
+    configured_ids.add(int(current_vehicle_id))
+    vehicles = await database.async_list_vehicles()
+    orphan_ids = [
+        int(vehicle["vehicle_id"])
+        for vehicle in vehicles
+        if int(vehicle["vehicle_id"]) not in configured_ids
+    ]
+    if not orphan_ids:
+        return []
+
+    removed: list[int] = []
+    for orphan_id in orphan_ids:
+        # Receipt files are outside SQLite and therefore need explicit cleanup.
+        try:
+            receipt_storage = FordTriplogReceiptStorage(hass, orphan_id)
+            await receipt_storage.async_setup()
+            for receipt in await receipt_storage.async_list():
+                receipt_id = str(receipt.get("receipt_id") or "").strip()
+                if receipt_id:
+                    await receipt_storage.async_remove(receipt_id)
+        except (OSError, ValueError):
+            _LOGGER.exception(
+                "Unable to completely remove receipt files for orphaned Ford Triplog vehicle %s",
+                orphan_id,
+            )
+
+        result = await database.async_delete_vehicle(orphan_id)
+        if not result.get("deleted"):
+            continue
+
+        _apply_vehicle_alias_updates(
+            hass,
+            removed_entry_id=None,
+            promoted_vehicle_id=result.get("promoted_vehicle_id"),
+            reparented_vehicle_ids=result.get("reparented_vehicle_ids") or [],
+        )
+        removed.append(orphan_id)
+        _LOGGER.info(
+            "Ford Triplog orphaned vehicle %s removed from SQLite; removed=%s",
+            orphan_id,
+            result.get("deleted_counts") or {},
+        )
+
+    return removed
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -212,6 +339,21 @@ async def async_setup_entry(
     )
 
     await storage.async_setup()
+
+    removed_orphans = await _async_cleanup_orphaned_vehicles(
+        hass,
+        storage.database,
+        vehicle_id,
+    )
+    if removed_orphans:
+        # A stale primary row can promote a configured test alias. Re-read the
+        # ConfigEntry and vehicle row before constructing the runtime.
+        config = _build_config(entry)
+        vehicle = (
+            await storage.database.async_get_vehicle(vehicle_id)
+            or vehicle
+        )
+        notify_vehicle_list_updated(hass)
 
     geo = FordTriplogGeo(
         hass,
@@ -240,6 +382,9 @@ async def async_setup_entry(
         hass=hass,
         storage=route_storage,
         config=config,
+        start_point_correction_callback=(
+            coordinator.async_handle_route_start_candidate
+        ),
     )
     await route_tracker.async_setup()
     coordinator.route_tracker = route_tracker
@@ -427,6 +572,75 @@ async def async_unload_entry(
         )
 
     return unload_ok
+
+
+async def async_remove_entry(
+    hass: HomeAssistant,
+    entry: ConfigEntry,
+) -> None:
+    """Permanently remove one Ford Triplog vehicle.
+
+    Home Assistant calls this hook only when the ConfigEntry itself is
+    deleted. A normal options reload uses ``async_unload_entry`` and therefore
+    keeps the vehicle registry and all history intact.
+    """
+
+    config = _build_config(entry)
+    raw_vehicle_id = config.get(CONF_VEHICLE_ID)
+    try:
+        vehicle_id = int(raw_vehicle_id)
+    except (TypeError, ValueError):
+        # Legacy pre-2.5 entries map to vehicle 1.
+        vehicle_id = 1 if entry.unique_id in (None, DOMAIN) else None
+
+    if vehicle_id is None or vehicle_id < 1:
+        _LOGGER.warning(
+            "Ford Triplog ConfigEntry %s removed without a valid vehicle_id; "
+            "SQLite vehicle cleanup skipped",
+            entry.entry_id,
+        )
+        return
+
+    # Remove managed receipt files before deleting their SQLite metadata.
+    # Failure to remove one file must not leave the vehicle registry behind.
+    try:
+        receipt_storage = FordTriplogReceiptStorage(hass, vehicle_id)
+        await receipt_storage.async_setup()
+        for receipt in await receipt_storage.async_list():
+            receipt_id = str(receipt.get("receipt_id") or "").strip()
+            if receipt_id:
+                await receipt_storage.async_remove(receipt_id)
+    except (OSError, ValueError):
+        _LOGGER.exception(
+            "Unable to completely remove receipt files for Ford Triplog vehicle %s",
+            vehicle_id,
+        )
+
+    base_path = Path(hass.config.path(".storage", STORAGE_DIR))
+    database = FordTriplogDatabase(hass, base_path, vehicle_id)
+    result = await database.async_delete_vehicle(vehicle_id)
+
+    _apply_vehicle_alias_updates(
+        hass,
+        removed_entry_id=entry.entry_id,
+        promoted_vehicle_id=result.get("promoted_vehicle_id"),
+        reparented_vehicle_ids=result.get("reparented_vehicle_ids") or [],
+    )
+
+    remove_vehicle_context_if_unloaded(hass, vehicle_id)
+    notify_vehicle_list_updated(hass)
+
+    if result.get("deleted"):
+        _LOGGER.info(
+            "Ford Triplog vehicle %s permanently removed from SQLite; removed=%s",
+            vehicle_id,
+            result.get("deleted_counts") or {},
+        )
+    else:
+        _LOGGER.debug(
+            "Ford Triplog vehicle %s was already absent from SQLite",
+            vehicle_id,
+        )
 
 
 async def entry_update_listener(

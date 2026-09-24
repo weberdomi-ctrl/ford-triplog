@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.5.0-dev
-Build: 25007
-Changes: Vehicle registry supports explicit duplicate-VIN test aliases.
+Build: 25014
+Changes: Clean up orphaned pre-25013 vehicle registry rows safely.
 """
 
 from __future__ import annotations
@@ -251,6 +251,196 @@ class FordTriplogDatabase:
                 return dict(result)
 
         return await self.hass.async_add_executor_job(_ensure)
+
+
+    async def async_delete_vehicle(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Delete one vehicle and all vehicle-scoped SQLite records.
+
+        This is intended for permanent Home Assistant ConfigEntry removal,
+        not for a normal reload/unload. Global master data such as custom
+        places, charging sites and parser profiles is intentionally kept.
+
+        If the deleted vehicle is the primary row of duplicate-VIN test
+        aliases, the oldest remaining alias is promoted to the new primary
+        row and the other aliases are re-parented to it.
+        """
+
+        await self.async_setup()
+        selected_id = int(vehicle_id or self.vehicle_id)
+        if selected_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+
+        def _delete() -> dict[str, Any]:
+            deleted_counts: dict[str, int] = {}
+            promoted_vehicle_id: int | None = None
+            reparented_vehicle_ids: list[int] = []
+
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                db.execute("PRAGMA foreign_keys = ON")
+
+                vehicle = db.execute(
+                    "SELECT * FROM vehicles WHERE vehicle_id = ?",
+                    (selected_id,),
+                ).fetchone()
+                if vehicle is None:
+                    return {
+                        "deleted": False,
+                        "vehicle_id": selected_id,
+                        "deleted_counts": {},
+                        "promoted_vehicle_id": None,
+                        "reparented_vehicle_ids": [],
+                    }
+
+                parent_id = (
+                    int(vehicle["alias_of_vehicle_id"])
+                    if vehicle["alias_of_vehicle_id"] is not None
+                    else None
+                )
+                children = db.execute(
+                    """
+                    SELECT vehicle_id
+                    FROM vehicles
+                    WHERE alias_of_vehicle_id = ?
+                    ORDER BY vehicle_id
+                    """,
+                    (selected_id,),
+                ).fetchall()
+                child_ids = [int(row["vehicle_id"]) for row in children]
+
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    if child_ids:
+                        if parent_id is not None:
+                            db.execute(
+                                """
+                                UPDATE vehicles
+                                SET alias_of_vehicle_id = ?, updated_at = ?
+                                WHERE alias_of_vehicle_id = ?
+                                """,
+                                (
+                                    parent_id,
+                                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                    selected_id,
+                                ),
+                            )
+                            reparented_vehicle_ids = list(child_ids)
+                        else:
+                            # Keep foreign-key validity while removing a
+                            # primary row: temporarily let the future primary
+                            # reference itself, then point all siblings at it.
+                            promoted_vehicle_id = child_ids[0]
+                            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                            db.execute(
+                                """
+                                UPDATE vehicles
+                                SET alias_of_vehicle_id = ?, updated_at = ?
+                                WHERE vehicle_id = ?
+                                """,
+                                (promoted_vehicle_id, now, promoted_vehicle_id),
+                            )
+                            if len(child_ids) > 1:
+                                placeholders = ",".join("?" for _ in child_ids[1:])
+                                db.execute(
+                                    f"""
+                                    UPDATE vehicles
+                                    SET alias_of_vehicle_id = ?, updated_at = ?
+                                    WHERE vehicle_id IN ({placeholders})
+                                    """,
+                                    (promoted_vehicle_id, now, *child_ids[1:]),
+                                )
+                                reparented_vehicle_ids = list(child_ids[1:])
+
+                    # Delete every vehicle-scoped table generically so future
+                    # schema additions cannot leave orphan data behind.
+                    table_rows = db.execute(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table'
+                          AND name NOT LIKE 'sqlite_%'
+                        """
+                    ).fetchall()
+                    for table_row in table_rows:
+                        table_name = str(table_row["name"])
+                        if table_name == "vehicles":
+                            continue
+                        quoted_table = '"' + table_name.replace('"', '""') + '"'
+                        columns = {
+                            str(row[1])
+                            for row in db.execute(
+                                f"PRAGMA table_info({quoted_table})"
+                            ).fetchall()
+                        }
+                        if "vehicle_id" not in columns:
+                            continue
+                        cursor = db.execute(
+                            f"DELETE FROM {quoted_table} WHERE vehicle_id = ?",
+                            (selected_id,),
+                        )
+                        if cursor.rowcount and cursor.rowcount > 0:
+                            deleted_counts[table_name] = int(cursor.rowcount)
+
+                    db.execute(
+                        "DELETE FROM vehicles WHERE vehicle_id = ?",
+                        (selected_id,),
+                    )
+
+                    if promoted_vehicle_id is not None:
+                        db.execute(
+                            """
+                            UPDATE vehicles
+                            SET alias_of_vehicle_id = NULL,
+                                is_test_alias = 0,
+                                updated_at = ?
+                            WHERE vehicle_id = ?
+                            """,
+                            (
+                                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                promoted_vehicle_id,
+                            ),
+                        )
+
+                    violations = db.execute("PRAGMA foreign_key_check").fetchall()
+                    if violations:
+                        raise RuntimeError(
+                            "Foreign-key violations after deleting Ford Triplog vehicle "
+                            f"{selected_id}: {violations!r}"
+                        )
+
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+
+            return {
+                "deleted": True,
+                "vehicle_id": selected_id,
+                "deleted_counts": deleted_counts,
+                "promoted_vehicle_id": promoted_vehicle_id,
+                "reparented_vehicle_ids": reparented_vehicle_ids,
+            }
+
+        return await self.hass.async_add_executor_job(_delete)
+
+
+    async def async_list_vehicles(self) -> list[dict[str, Any]]:
+        """Return all persistent vehicle registry records ordered by id."""
+
+        await self.async_setup()
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    "SELECT * FROM vehicles ORDER BY vehicle_id"
+                ).fetchall()
+                return [dict(row) for row in rows]
+
+        return await self.hass.async_add_executor_job(_read)
 
 
     async def async_get_vehicle(
