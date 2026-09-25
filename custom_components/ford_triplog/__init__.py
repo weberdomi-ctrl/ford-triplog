@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25017
-Changes: Global OCR/OSRM settings and safer OSRM match acceptance.
+Build: 25018
+Changes: Home-zone GPS tolerance for Trip/Journey start and end detection.
 """
 
 from __future__ import annotations

@@ -19,7 +19,7 @@ DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
 VERSION: Final = "2.5.0"
-BUILD: Final = "25017"
+BUILD: Final = "25018"
 
 #
 # Storage
@@ -133,6 +133,7 @@ CONF_JOURNEY_MAX_GAP_HOURS: Final = "journey_max_gap_hours"
 DEFAULT_JOURNEY_HOME_ZONE: Final = "zone.home"
 DEFAULT_JOURNEY_HOME_TIMEOUT: Final = 15
 DEFAULT_JOURNEY_MAX_GAP_HOURS: Final = 24
+HOME_ZONE_TOLERANCE_METERS: Final = 50.0
 
 # Charging defaults
 

@@ -25,6 +25,7 @@ from .const import (
     DEFAULT_JOURNEY_HOME_TIMEOUT,
     DEFAULT_JOURNEY_HOME_ZONE,
     DEFAULT_JOURNEY_MAX_GAP_HOURS,
+    HOME_ZONE_TOLERANCE_METERS,
     SIGNAL_LAST_JOURNEY_UPDATED,
 )
 from .journey import FordTriplogJourney, JourneyItem
@@ -1098,15 +1099,18 @@ class FordTriplogJourneyManager:
         except (TypeError, ValueError):
             return False
 
-        inside_home = distance <= radius
+        effective_radius = radius + HOME_ZONE_TOLERANCE_METERS
+        inside_home = distance <= effective_radius
         _LOGGER.debug(
             "Journey home-zone check: source=%s item=%s zone=%s "
-            "distance=%.1fm radius=%.1fm inside=%s",
+            "distance=%.1fm radius=%.1fm tolerance=%.1fm effective_radius=%.1fm inside=%s",
             source,
             item_id,
             self.home_zone_entity_id,
             distance,
             radius,
+            HOME_ZONE_TOLERANCE_METERS,
+            effective_radius,
             inside_home,
         )
         return inside_home
@@ -1495,15 +1499,22 @@ class FordTriplogJourneyManager:
             except (TypeError, ValueError):
                 continue
 
-            if distance > radius:
+            effective_radius = radius
+            if zone_state.entity_id == "zone.home":
+                effective_radius += HOME_ZONE_TOLERANCE_METERS
+
+            if distance > effective_radius:
                 continue
 
-            zone_name = str(
-                zone_state.attributes.get(
-                    "friendly_name",
-                    zone_state.name,
-                )
-            ).strip()
+            if zone_state.entity_id == "zone.home":
+                zone_name = "Home"
+            else:
+                zone_name = str(
+                    zone_state.attributes.get(
+                        "friendly_name",
+                        zone_state.name,
+                    )
+                ).strip()
             if not zone_name:
                 continue
 
