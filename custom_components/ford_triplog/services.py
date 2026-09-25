@@ -51,6 +51,7 @@ from .journey import build_pause_id
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .charge_manager import FordTriplogChargeManager
 from .route_storage import FordTriplogRouteStorage
+from .route_rebuilder import FordTriplogRouteRebuilder
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
@@ -1045,80 +1046,49 @@ async def _async_rebuild_last_route(
             "The configured OSRM matching radius is invalid."
         ) from error
 
-    route = await storage.async_load_latest_route()
-    if not isinstance(route, dict):
-        raise ServiceValidationError(
-            "No stored route is available."
-        )
-
-    points = route.get("points")
-    if not isinstance(points, list) or len(points) < 2:
-        raise ServiceValidationError(
-            "The latest route does not contain enough raw GPS points."
-        )
-
-    client = FordTriplogOSRMClient(
+    rebuilder = FordTriplogRouteRebuilder(
         hass,
-        osrm_url,
+        storage,
+        osrm_url=osrm_url,
         radius_meters=radius,
     )
+    summary = await rebuilder.async_rebuild("last")
 
-    try:
-        result = await client.async_match(points)
-    except FordTriplogOSRMError as error:
+    if summary.routes_matched + summary.routes_reconstructed < 1:
         raise ServiceValidationError(
-            f"OSRM route rebuild failed: {error}"
-        ) from error
-
-    if not osrm_confidence_is_acceptable(result.confidence):
-        raise ServiceValidationError(
-            "OSRM route rebuild rejected a low-confidence match; raw GPS route kept."
+            "OSRM route rebuild did not produce an acceptable route; raw GPS route kept."
         )
 
-    matched_route = {
-        "provider": "osrm",
-        "url": osrm_url,
-        "radius_m": radius,
-        "distance_m": result.distance_m,
-        "duration_s": result.duration_s,
-        "confidence": result.confidence,
-        "matched_tracepoints": result.matched_tracepoints,
-        "unmatched_tracepoints": result.unmatched_tracepoints,
-        "geometry": result.geometry,
-    }
+    route = await storage.async_load_latest_route()
+    if not isinstance(route, dict):
+        raise ServiceValidationError("No stored route is available after rebuild.")
 
-    # Preserve all original route metadata and raw points. Only replace/add
-    # the optional matched_route block.
-    await storage.async_save_route(
-        trip_id=str(route.get("trip_id") or ""),
-        source_type=str(route.get("source_type") or ""),
-        points=points,
-        status=str(route.get("status") or "completed"),
-        created_at=route.get("created_at"),
-        matched_route=matched_route,
-    )
+    matched_route = route.get("matched_route")
+    if not isinstance(matched_route, dict):
+        raise ServiceValidationError(
+            "OSRM route rebuild completed without stored OSRM geometry."
+        )
 
-    _LOGGER.info(
-        "Last route rebuilt with OSRM: trip_id=%s raw_points=%s "
-        "matched_points=%s distance=%.1fm confidence=%s",
-        route.get("trip_id"),
-        len(points),
-        len(result.geometry.get("coordinates", [])),
-        result.distance_m,
-        result.confidence,
+    geometry = matched_route.get("geometry")
+    coordinates = (
+        geometry.get("coordinates", [])
+        if isinstance(geometry, dict)
+        else []
     )
 
     return {
         "rebuilt": True,
         "trip_id": route.get("trip_id"),
-        "raw_point_count": len(points),
-        "matched_point_count": len(
-            result.geometry.get("coordinates", [])
+        "match_type": matched_route.get("match_type", "matched"),
+        "raw_point_count": len(route.get("points") or []),
+        "matched_point_count": len(coordinates),
+        "distance_km": round(
+            float(matched_route.get("distance_m") or 0.0) / 1000.0,
+            3,
         ),
-        "distance_km": round(result.distance_m / 1000.0, 3),
-        "confidence": result.confidence,
-        "matched_tracepoints": result.matched_tracepoints,
-        "unmatched_tracepoints": result.unmatched_tracepoints,
+        "confidence": matched_route.get("confidence"),
+        "matched_tracepoints": matched_route.get("matched_tracepoints", 0),
+        "unmatched_tracepoints": matched_route.get("unmatched_tracepoints", 0),
         "radius_m": radius,
     }
 

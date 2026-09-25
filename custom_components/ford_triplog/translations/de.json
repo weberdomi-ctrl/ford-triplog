@@ -269,7 +269,7 @@
       },
       "route_rebuild_result": {
         "title": "Routen-Wartung abgeschlossen",
-        "description": "Modus: {mode}\n\nGespeicherte Routen: {routes_total} · Ausgewählt: {routes_selected} · Verarbeitet: {routes_processed}\n\nOSRM-Matches gespeichert: {routes_matched} · Fehlgeschlagen: {routes_failed} · Übersprungen: {routes_skipped}\n\nLetzte Route: {last_trip_id}"
+        "description": "Modus: {mode}\n\nGespeicherte Routen: {routes_total} · Ausgewählt: {routes_selected} · Verarbeitet: {routes_processed}\n\nOSRM-Matches gespeichert: {routes_matched} · Rekonstruiert: {routes_reconstructed} · Nicht übernommen: {routes_failed} · Übersprungen: {routes_skipped}\n\nLetzte Route: {last_trip_id}"
       },
       "charge_management": {
         "title": "Ladevorgänge",
@@ -675,7 +675,7 @@
       },
       "osrm_settings": {
         "title": "OSRM-Routenglättung",
-        "description": "Ford Triplog kann aufgezeichnete GPS-Routen optional über einen externen lokalen OSRM-Dienst an das OpenStreetMap-Strassennetz anpassen. Diese Einstellung ist global und gilt für alle konfigurierten Fahrzeuge. Ohne aktivierte OSRM-Verbindung bleibt die vorhandene Rohroute vollständig verfügbar.\n\nBeim Speichern wird die Verbindung getestet. Standardmässig wird ein Matching-Radius von 15 Metern verwendet. Sehr unsichere OSRM-Matches werden verworfen und als Rohroute angezeigt.",
+        "description": "Ford Triplog kann aufgezeichnete GPS-Routen optional über einen externen lokalen OSRM-Dienst an das OpenStreetMap-Strassennetz anpassen. Diese Einstellung ist global und gilt für alle konfigurierten Fahrzeuge. Ohne aktivierte OSRM-Verbindung bleibt die vorhandene Rohroute vollständig verfügbar.\n\nBeim Speichern wird die Verbindung getestet. Standardmässig wird ein Matching-Radius von 15 Metern verwendet. Sehr unsichere OSRM-Matches werden verworfen und als Rohroute angezeigt. Sehr dünne Tracks mit höchstens fünf GPS-Punkten werden stattdessen aus Start und Ziel rekonstruiert, wenn die OSRM-Strecke höchstens 20 % von der gemessenen Trip-Distanz abweicht.",
         "data": {
           "osrm_enabled": "OSRM aktivieren",
           "osrm_url": "OSRM-Dienst-URL",

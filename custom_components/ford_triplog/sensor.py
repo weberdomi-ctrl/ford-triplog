@@ -2484,6 +2484,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
         display_coordinates = coordinates
         geometry_source = "raw"
         osrm_distance_km = None
+        osrm_match_type = None
         osrm_confidence = None
         osrm_matched_tracepoints = None
         osrm_unmatched_tracepoints = None
@@ -2533,6 +2534,9 @@ class FordTriplogLastRouteSensor(SensorEntity):
                     except (TypeError, ValueError):
                         osrm_distance_km = None
 
+                    osrm_match_type = matched_route.get(
+                        "match_type", "matched"
+                    )
                     osrm_confidence = matched_route.get("confidence")
                     osrm_matched_tracepoints = matched_route.get(
                         "matched_tracepoints"
@@ -2547,6 +2551,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "trip_id": trip_id,
                 "source_type": source_type,
                 "geometry_source": geometry_source,
+                "osrm_match_type": osrm_match_type,
             },
             "geometry": {
                 "type": "LineString",
@@ -2577,6 +2582,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "latitude": center_latitude,
             "longitude": center_longitude,
             "osrm_distance_km": osrm_distance_km,
+            "osrm_match_type": osrm_match_type,
             "osrm_confidence": osrm_confidence,
             "osrm_matched_tracepoints": osrm_matched_tracepoints,
             "osrm_unmatched_tracepoints": osrm_unmatched_tracepoints,

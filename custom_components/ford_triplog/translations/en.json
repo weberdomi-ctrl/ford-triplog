@@ -269,7 +269,7 @@
       },
       "route_rebuild_result": {
         "title": "Route maintenance completed",
-        "description": "Mode: {mode}\n\nStored routes: {routes_total} · Selected: {routes_selected} · Processed: {routes_processed}\n\nOSRM matches saved: {routes_matched} · Failed: {routes_failed} · Skipped: {routes_skipped}\n\nLatest route: {last_trip_id}"
+        "description": "Mode: {mode}\n\nStored routes: {routes_total} · Selected: {routes_selected} · Processed: {routes_processed}\n\nOSRM matches saved: {routes_matched} · Reconstructed: {routes_reconstructed} · Not accepted: {routes_failed} · Skipped: {routes_skipped}\n\nLatest route: {last_trip_id}"
       },
       "charge_management": {
         "title": "Charging sessions",
@@ -642,7 +642,7 @@
       },
       "osrm_settings": {
         "title": "OSRM route smoothing",
-        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. This setting is global and applies to all configured vehicles. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default. Very low-confidence OSRM matches are rejected and displayed as raw routes.",
+        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. This setting is global and applies to all configured vehicles. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default. Very low-confidence OSRM matches are rejected and displayed as raw routes. Very sparse traces with no more than five GPS points are instead reconstructed from start and destination when the OSRM route differs by no more than 20% from the measured trip distance.",
         "data": {
           "osrm_enabled": "Enable OSRM",
           "osrm_url": "OSRM service URL",

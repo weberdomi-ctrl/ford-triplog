@@ -122,6 +122,7 @@ def _route_feature(
     if geometry_source == "osrm":
         properties.update(
             {
+                "osrm_match_type": matched_route.get("match_type", "matched"),
                 "osrm_confidence": matched_route.get("confidence"),
                 "osrm_matched_tracepoints": matched_route.get(
                     "matched_tracepoints"

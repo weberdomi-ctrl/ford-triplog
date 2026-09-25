@@ -6,7 +6,7 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25016
+Build: 25017
 Changes: Global OCR/OSRM settings and safer OSRM match acceptance.
 """
 

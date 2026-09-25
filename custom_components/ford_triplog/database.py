@@ -4,7 +4,7 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.5.0-dev
-Build: 25016
+Build: 25017
 Changes: Add one global settings record shared by all vehicle ConfigEntries.
 """
 

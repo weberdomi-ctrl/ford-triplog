@@ -3780,9 +3780,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         if self.route_tracker is not None:
             await self.route_tracker.async_finalize(
+                start_latitude=self.current_trip.start_latitude,
+                start_longitude=self.current_trip.start_longitude,
                 end_latitude=end_state.get("latitude"),
                 end_longitude=end_state.get("longitude"),
                 end_timestamp=end_state.get("end_time"),
+                trip_distance_km=self.current_trip.distance_km,
             )
 
         await self._finalize_trip(end_state)

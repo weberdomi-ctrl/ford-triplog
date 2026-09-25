@@ -269,7 +269,7 @@
       },
       "route_rebuild_result": {
         "title": "Konserwacja tras zakończona",
-        "description": "Tryb: {mode}\n\nZapisane trasy: {routes_total} · Wybrane: {routes_selected} · Przetworzone: {routes_processed}\n\nZapisane dopasowania OSRM: {routes_matched} · Nieudane: {routes_failed} · Pominięte: {routes_skipped}\n\nOstatnia trasa: {last_trip_id}"
+        "description": "Tryb: {mode}\n\nZapisane trasy: {routes_total} · Wybrane: {routes_selected} · Przetworzone: {routes_processed}\n\nZapisane dopasowania OSRM: {routes_matched} · Zrekonstruowane: {routes_reconstructed} · Nieprzyjęte: {routes_failed} · Pominięte: {routes_skipped}\n\nOstatnia trasa: {last_trip_id}"
       },
       "charge_management": {
         "title": "Sesje ładowania",
@@ -675,7 +675,7 @@
       },
       "osrm_settings": {
         "title": "Wygładzanie trasy OSRM",
-        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów. Dopasowania OSRM o bardzo niskiej wiarygodności są odrzucane i wyświetlane jako surowa trasa.",
+        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów. Dopasowania OSRM o bardzo niskiej wiarygodności są odrzucane i wyświetlane jako surowa trasa. Bardzo rzadkie ślady z maksymalnie pięcioma punktami GPS są zamiast tego rekonstruowane od startu do celu, jeśli trasa OSRM różni się od zmierzonego dystansu przejazdu o nie więcej niż 20%.",
         "data": {
           "osrm_enabled": "Włącz OSRM",
           "osrm_url": "Adres URL usługi OSRM",
