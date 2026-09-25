@@ -54,6 +54,7 @@ from .route_storage import FordTriplogRouteStorage
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
+    osrm_confidence_is_acceptable,
 )
 from .const import (
     CONF_OSRM_ENABLED,
@@ -1012,21 +1013,19 @@ async def _async_rebuild_last_route(
 
     storage = runtime_data["route_storage"]
 
-    config_entry = hass.config_entries.async_get_entry(entry_id)
-    if config_entry is None:
+    config = runtime_data.get("config")
+    if not isinstance(config, dict):
         raise HomeAssistantError(
-            f"Config entry not found: {entry_id}"
+            f"Runtime configuration not found: {entry_id}"
         )
 
-    options = dict(config_entry.options)
-
-    if not bool(options.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)):
+    if not bool(config.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)):
         raise ServiceValidationError(
-            "OSRM route smoothing is disabled for this config entry."
+            "Global OSRM route smoothing is disabled."
         )
 
     osrm_url = str(
-        options.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
+        config.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
     ).strip().rstrip("/")
 
     if not osrm_url:
@@ -1036,7 +1035,7 @@ async def _async_rebuild_last_route(
 
     try:
         radius = float(
-            options.get(
+            config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
@@ -1070,6 +1069,11 @@ async def _async_rebuild_last_route(
         raise ServiceValidationError(
             f"OSRM route rebuild failed: {error}"
         ) from error
+
+    if not osrm_confidence_is_acceptable(result.confidence):
+        raise ServiceValidationError(
+            "OSRM route rebuild rejected a low-confidence match; raw GPS route kept."
+        )
 
     matched_route = {
         "provider": "osrm",

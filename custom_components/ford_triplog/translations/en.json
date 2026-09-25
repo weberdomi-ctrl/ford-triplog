@@ -428,7 +428,7 @@
       },
       "ocr_settings": {
         "title": "OCR connection",
-        "description": "Ford Triplog can optionally analyze receipts using an external local OCR service. Without an enabled OCR connection, all other functions remain fully available.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
+        "description": "Ford Triplog can optionally analyze receipts using an external local OCR service. This setting is global and applies to all configured vehicles. Without an enabled OCR connection, all other functions remain fully available.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
         "data": {
           "ocr_enabled": "Enable OCR",
           "ocr_url": "OCR service URL",
@@ -642,7 +642,7 @@
       },
       "osrm_settings": {
         "title": "OSRM route smoothing",
-        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default.",
+        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. This setting is global and applies to all configured vehicles. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default. Very low-confidence OSRM matches are rejected and displayed as raw routes.",
         "data": {
           "osrm_enabled": "Enable OSRM",
           "osrm_url": "OSRM service URL",

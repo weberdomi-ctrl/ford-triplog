@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25014
-Changes: Remove orphaned vehicle rows left by pre-25013 ConfigEntry deletions.
+Build: 25016
+Changes: Global OCR/OSRM settings and safer OSRM match acceptance.
 """
 
 from __future__ import annotations
@@ -69,6 +69,7 @@ from .vehicle_context import (
     get_selected_vehicle_id,
     set_selected_vehicle_id,
 )
+from .global_settings import async_load_global_settings
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -340,6 +341,14 @@ async def async_setup_entry(
 
     await storage.async_setup()
 
+    # OCR and OSRM are integration infrastructure, not vehicle properties.
+    # Load/migrate them once and overlay the shared values onto every runtime.
+    global_settings = await async_load_global_settings(
+        hass,
+        storage.database,
+    )
+    config.update(global_settings)
+
     removed_orphans = await _async_cleanup_orphaned_vehicles(
         hass,
         storage.database,
@@ -349,6 +358,7 @@ async def async_setup_entry(
         # A stale primary row can promote a configured test alias. Re-read the
         # ConfigEntry and vehicle row before constructing the runtime.
         config = _build_config(entry)
+        config.update(global_settings)
         vehicle = (
             await storage.database.async_get_vehicle(vehicle_id)
             or vehicle

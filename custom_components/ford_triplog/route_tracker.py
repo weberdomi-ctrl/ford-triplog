@@ -47,6 +47,7 @@ from .route_storage import FordTriplogRouteStorage
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
+    osrm_confidence_is_acceptable,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -437,6 +438,7 @@ class FordTriplogRouteTracker:
                     points,
                     match_result.distance_m,
                     match_result.unmatched_tracepoints,
+                    match_result.confidence,
                 ):
                     matched_route = {
                         "provider": "osrm",
@@ -460,9 +462,12 @@ class FordTriplogRouteTracker:
                     )
                 else:
                     _LOGGER.warning(
-                        "OSRM result rejected as implausible for trip %s; "
-                        "raw route will be used",
+                        "OSRM result rejected for trip %s: confidence=%s "
+                        "distance=%.1fm unmatched=%s; raw route will be used",
                         trip_id,
+                        match_result.confidence,
+                        match_result.distance_m,
+                        match_result.unmatched_tracepoints,
                     )
 
             except FordTriplogOSRMError as err:
@@ -511,8 +516,12 @@ class FordTriplogRouteTracker:
         points: list[dict[str, Any]],
         matched_distance_m: float,
         unmatched_tracepoints: int,
+        confidence: float | None,
     ) -> bool:
         """Apply conservative sanity checks before accepting OSRM geometry."""
+
+        if not osrm_confidence_is_acceptable(confidence):
+            return False
 
         if matched_distance_m <= 0:
             return False

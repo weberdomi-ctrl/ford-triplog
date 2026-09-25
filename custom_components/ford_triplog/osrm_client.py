@@ -41,6 +41,12 @@ DEFAULT_OSRM_PROFILE = "driving"
 OSRM_MATCH_CHUNK_SIZE = 90
 OSRM_MATCH_CHUNK_OVERLAP = 5
 
+# OSRM can return geometrically plausible but effectively guessed matches for
+# sparse traces. Values observed in those cases are close to zero, while
+# reliable traces are normally orders of magnitude higher. Keep the threshold
+# deliberately low so medium-confidence real traces remain usable.
+MIN_OSRM_MATCH_CONFIDENCE = 0.05
+
 
 class FordTriplogOSRMError(Exception):
     """Base exception for local OSRM errors."""
@@ -82,6 +88,22 @@ class FordTriplogOSRMMatchResult:
             },
             "geometry": self.geometry,
         }
+
+
+def osrm_confidence_is_acceptable(confidence: Any) -> bool:
+    """Return True when an OSRM confidence value is safe to display/store.
+
+    ``None`` is kept compatible with servers that omit confidence entirely.
+    Explicit numeric values below the threshold are rejected as guessed
+    matches and the raw GPS geometry remains the fallback.
+    """
+
+    if confidence is None:
+        return True
+    try:
+        return float(confidence) >= MIN_OSRM_MATCH_CONFIDENCE
+    except (TypeError, ValueError):
+        return False
 
 
 class FordTriplogOSRMClient:

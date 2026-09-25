@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.5.0-dev
-Build: 25014
-Changes: Clean up orphaned pre-25013 vehicle registry rows safely.
+Build: 25016
+Changes: Add one global settings record shared by all vehicle ConfigEntries.
 """
 
 from __future__ import annotations
@@ -856,6 +856,15 @@ class FordTriplogDatabase:
                             data TEXT NOT NULL,
                             PRIMARY KEY (vehicle_id, id),
                             FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS global_settings (
+                            id INTEGER PRIMARY KEY CHECK (id = 1),
+                            data TEXT NOT NULL
                         )
                         """
                     )
@@ -3926,6 +3935,73 @@ class FordTriplogDatabase:
                 "Unable to save charge metadata to SQLite"
             )
             return False
+
+    async def save_global_settings(self, data: dict[str, Any]) -> bool:
+        """Persist integration-wide settings shared by all vehicles."""
+
+        def _write() -> None:
+            payload = json.dumps(data, ensure_ascii=False)
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS global_settings (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+                db.execute(
+                    "INSERT OR REPLACE INTO global_settings (id, data) VALUES (1, ?)",
+                    (payload,),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(functools.partial(_write))
+            _LOGGER.debug("Global settings saved to SQLite")
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save global settings to SQLite")
+            return False
+
+    async def load_global_settings(self) -> dict[str, Any] | None:
+        """Load integration-wide settings shared by all vehicles."""
+
+        self._log_read("global_settings")
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    """
+                    CREATE TABLE IF NOT EXISTS global_settings (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        data TEXT NOT NULL
+                    )
+                    """
+                )
+                row = db.execute(
+                    "SELECT data FROM global_settings WHERE id = 1"
+                ).fetchone()
+
+            if row is None:
+                return None
+
+            data = json.loads(row[0])
+            return data if isinstance(data, dict) else None
+
+        try:
+            data = await self.hass.async_add_executor_job(
+                functools.partial(_read)
+            )
+            _LOGGER.debug(
+                "SQLite global settings loaded: %s",
+                "present" if data is not None else "empty",
+            )
+            return data
+        except Exception:
+            _LOGGER.exception("Unable to read global settings from SQLite")
+            return None
+
 
     async def save_metadata(self, data: dict[str, Any]) -> bool:
         """Mirror complete metadata.json into SQLite."""

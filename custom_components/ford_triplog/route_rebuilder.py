@@ -23,7 +23,11 @@ from typing import Any, Literal
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .osrm_client import FordTriplogOSRMClient, FordTriplogOSRMError
+from .osrm_client import (
+    FordTriplogOSRMClient,
+    FordTriplogOSRMError,
+    osrm_confidence_is_acceptable,
+)
 from .route_storage import FordTriplogRouteStorage, SIGNAL_LAST_ROUTE_UPDATED
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,19 +176,21 @@ class FordTriplogRouteRebuilder:
                 points,
                 match_result.distance_m,
                 match_result.unmatched_tracepoints,
+                match_result.confidence,
             )
             if not plausible:
                 result.routes_failed += 1
                 _LOGGER.warning(
                     "OSRM route maintenance rejected trip %s: reason=%s "
                     "raw_points=%s matched_points=%s unmatched=%s "
-                    "distance=%.1fm; stored route remains unchanged",
+                    "distance=%.1fm confidence=%s; stored route remains unchanged",
                     trip_id,
                     reason,
                     len(points),
                     len(match_result.geometry.get("coordinates", [])),
                     match_result.unmatched_tracepoints,
                     match_result.distance_m,
+                    match_result.confidence,
                 )
                 continue
 
@@ -271,6 +277,11 @@ class FordTriplogRouteRebuilder:
         if matched_route.get("provider") != "osrm":
             return False
 
+        if not osrm_confidence_is_acceptable(
+            matched_route.get("confidence")
+        ):
+            return False
+
         geometry = matched_route.get("geometry")
         return (
             isinstance(geometry, dict)
@@ -284,8 +295,12 @@ class FordTriplogRouteRebuilder:
         points: list[dict[str, Any]],
         matched_distance_m: float,
         unmatched_tracepoints: int,
+        confidence: float | None,
     ) -> tuple[bool, str]:
         """Apply the same conservative acceptance rules as live recording."""
+
+        if not osrm_confidence_is_acceptable(confidence):
+            return False, "low_confidence"
 
         if matched_distance_m <= 0:
             return False, "non_positive_distance"

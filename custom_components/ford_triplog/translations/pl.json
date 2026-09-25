@@ -428,7 +428,7 @@
       },
       "ocr_settings": {
         "title": "Połączenie OCR",
-        "description": "Ford Triplog może opcjonalnie analizować paragony za pomocą zewnętrznej lokalnej usługi OCR. Pozostałe funkcje są dostępne bez aktywnego połączenia OCR.\n\nPodczas zapisywania połączenie jest sprawdzane przez punkt końcowy `/health`.",
+        "description": "Ford Triplog może opcjonalnie analizować paragony za pomocą zewnętrznej lokalnej usługi OCR. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Pozostałe funkcje są dostępne bez aktywnego połączenia OCR.\n\nPodczas zapisywania połączenie jest sprawdzane przez punkt końcowy `/health`.",
         "data": {
           "ocr_enabled": "Włącz OCR",
           "ocr_url": "Adres URL usługi OCR",
@@ -675,7 +675,7 @@
       },
       "osrm_settings": {
         "title": "Wygładzanie trasy OSRM",
-        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów.",
+        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów. Dopasowania OSRM o bardzo niskiej wiarygodności są odrzucane i wyświetlane jako surowa trasa.",
         "data": {
           "osrm_enabled": "Włącz OSRM",
           "osrm_url": "Adres URL usługi OSRM",

@@ -83,6 +83,10 @@ from .services import (
     async_download_charging_database,
     async_import_charging_site_database,
 )
+from .global_settings import (
+    async_save_global_settings,
+    get_global_settings,
+)
 
 from .const import (
     CONF_CHARGING,
@@ -114,6 +118,14 @@ from .const import (
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
+    CONF_OCR_ENABLED,
+    CONF_OCR_URL,
+    CONF_OCR_API_KEY,
+    CONF_OCR_TIMEOUT,
+    DEFAULT_OCR_ENABLED,
+    DEFAULT_OCR_URL,
+    DEFAULT_OCR_API_KEY,
+    DEFAULT_OCR_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -244,10 +256,6 @@ CONF_USER_PARSER_CURRENT = "user_parser_current"
 CONF_USER_PARSER_VOLTAGE = "user_parser_voltage"
 CONF_USER_PARSER_POWER = "user_parser_power"
 CONF_USER_PARSER_TEMPERATURE = "user_parser_temperature"
-CONF_OCR_ENABLED = "ocr_enabled"
-CONF_OCR_URL = "ocr_url"
-CONF_OCR_API_KEY = "ocr_api_key"
-CONF_OCR_TIMEOUT = "ocr_timeout"
 CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
 RECEIPT_DETAIL_OPEN = "open"
 RECEIPT_DETAIL_DELETE = "delete"
@@ -691,6 +699,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         entry = self._get_context_config_entry()
         return {**entry.data, **entry.options}
+
+    def _get_global_settings(self) -> dict[str, Any]:
+        """Return integration-wide OCR/OSRM settings."""
+
+        return get_global_settings(self.hass)
+
+    async def _async_update_global_settings(
+        self,
+        updates: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Persist shared OCR/OSRM settings once for all vehicles."""
+
+        runtime_data = self._get_context_runtime_data()
+        database = runtime_data.get("database")
+        if database is None:
+            raise HomeAssistantError("Ford Triplog database is not initialized")
+
+        settings = await async_save_global_settings(
+            self.hass,
+            database,
+            updates,
+        )
+        # Keep this flow's legacy merged options view coherent for helpers that
+        # do not need to distinguish vehicle and integration-wide settings.
+        self._options.update(settings)
+        return settings
 
     def _context_vehicle_name(self) -> str:
         """Return the display name of the currently selected vehicle."""
@@ -1395,7 +1429,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "receipt_summary": receipt_summary,
                 "ocr_status": (
                     ui_text["ocr_enabled"]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
                     else ui_text["ocr_disabled"]
                 ),
             },
@@ -1975,7 +2009,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         }
 
         menu_options = ["charge_receipt_open"]
-        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+        if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
             menu_options.append("charge_receipt_ocr")
         if str(receipt.get("parse_status") or "") == "parsed":
             menu_options.append("charge_receipt_apply")
@@ -2442,7 +2476,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     or (await self._async_get_ui_translations())["receipt"]
                 )
 
-                if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+                if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
                     self._selected_receipt_id = receipt_id
                     return await self.async_step_charge_receipt_detail()
 
@@ -2506,7 +2540,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     (await self._async_get_ui_translations())[
                         "receipt_upload_ocr_enabled"
                     ]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
                     else (await self._async_get_ui_translations())[
                         "receipt_upload_ocr_disabled"
                     ]
@@ -3259,7 +3293,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "receipt_summary": receipt_summary,
                 "ocr_status": (
                     ui_text["ocr_enabled"]
-                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
                     else ui_text["ocr_disabled"]
                 ),
             },
@@ -3596,7 +3630,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show receipt management actions."""
 
         menu_options: list[str] = []
-        if bool(self._options.get(CONF_OCR_ENABLED, False)):
+        if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
             menu_options.append("receipt_ocr")
         menu_options.extend(
             [
@@ -3644,8 +3678,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 except FordTriplogOCRResponseError:
                     errors["base"] = "ocr_invalid_response"
                 else:
-                    updated_options = dict(self._config_entry.options)
-                    updated_options.update(
+                    await self._async_update_global_settings(
                         {
                             CONF_OCR_ENABLED: True,
                             CONF_OCR_URL: client.base_url,
@@ -3653,11 +3686,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             CONF_OCR_TIMEOUT: timeout_seconds,
                         }
                     )
-                    self.hass.config_entries.async_update_entry(
-                        self._config_entry,
-                        options=updated_options,
-                    )
-                    self._options.update(updated_options)
                     self._ocr_connection_result = {
                         "service": health.service,
                         "version": health.version,
@@ -3680,8 +3708,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                     return await self.async_step_ocr_connection_result()
             else:
-                updated_options = dict(self._config_entry.options)
-                updated_options.update(
+                await self._async_update_global_settings(
                     {
                         CONF_OCR_ENABLED: False,
                         CONF_OCR_URL: url,
@@ -3689,11 +3716,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         CONF_OCR_TIMEOUT: timeout_seconds,
                     }
                 )
-                self.hass.config_entries.async_update_entry(
-                    self._config_entry,
-                    options=updated_options,
-                )
-                self._options.update(updated_options)
                 self._ocr_connection_result = {
                     "service": (await self._async_get_ui_translations())[
                         "ocr_service_disabled"
@@ -3706,17 +3728,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 }
                 return await self.async_step_ocr_connection_result()
 
+        global_settings = self._get_global_settings()
         current_enabled = bool(
-            self._options.get(CONF_OCR_ENABLED, False)
+            global_settings.get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)
         )
         current_url = str(
-            self._options.get(CONF_OCR_URL, "http://")
+            global_settings.get(CONF_OCR_URL, DEFAULT_OCR_URL) or "http://"
         )
         current_api_key = str(
-            self._options.get(CONF_OCR_API_KEY, "")
+            global_settings.get(CONF_OCR_API_KEY, DEFAULT_OCR_API_KEY)
         )
         current_timeout = int(
-            self._options.get(CONF_OCR_TIMEOUT, 15)
+            global_settings.get(CONF_OCR_TIMEOUT, DEFAULT_OCR_TIMEOUT)
         )
 
         return self.async_show_form(
@@ -4345,14 +4368,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_ocr_client(self) -> FordTriplogOCRClient:
         """Return a configured client for the external OCR service."""
 
-        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+        if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
             raise HomeAssistantError("OCR is not enabled")
 
         return FordTriplogOCRClient(
             async_get_clientsession(self.hass),
-            str(self._options.get(CONF_OCR_URL) or ""),
-            str(self._options.get(CONF_OCR_API_KEY) or ""),
-            int(self._options.get(CONF_OCR_TIMEOUT, 15)),
+            str(self._get_global_settings().get(CONF_OCR_URL) or ""),
+            str(self._get_global_settings().get(CONF_OCR_API_KEY) or ""),
+            int(self._get_global_settings().get(CONF_OCR_TIMEOUT, DEFAULT_OCR_TIMEOUT)),
         )
 
     async def async_step_receipt_ocr(
@@ -4363,7 +4386,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
 
-        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
+        if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
             return self.async_show_form(
                 step_id="receipt_ocr",
                 data_schema=vol.Schema({}),
@@ -4948,7 +4971,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return rebuilder
 
     def _get_route_rebuilder(self) -> FordTriplogRouteRebuilder:
-        """Return an OSRM route rebuilder for the current options."""
+        """Return an OSRM route rebuilder using global settings."""
 
         runtime_data = self._get_context_runtime_data()
 
@@ -4958,19 +4981,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "Route storage is not initialized"
             )
 
-        context_config = self._get_context_config()
+        global_settings = self._get_global_settings()
         return FordTriplogRouteRebuilder(
             self.hass,
             route_storage,
             osrm_url=str(
-                context_config.get(
+                global_settings.get(
                     CONF_OSRM_URL,
                     DEFAULT_OSRM_URL,
                 )
                 or ""
             ),
             radius_meters=float(
-                context_config.get(
+                global_settings.get(
                     CONF_OSRM_MATCH_RADIUS,
                     DEFAULT_OSRM_MATCH_RADIUS,
                 )
@@ -5997,8 +6020,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure and test the optional local OSRM service."""
 
         errors: dict[str, str] = {}
-        context_entry = self._get_context_config_entry()
-        context_config = self._get_context_config()
 
         if user_input is not None:
             enabled = bool(
@@ -6032,19 +6053,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 except FordTriplogOSRMResponseError:
                     errors["base"] = "osrm_invalid_response"
                 else:
-                    updated_options = dict(
-                        context_entry.options
-                    )
-                    updated_options.update(
+                    await self._async_update_global_settings(
                         {
                             CONF_OSRM_ENABLED: True,
                             CONF_OSRM_URL: client.base_url,
                             CONF_OSRM_MATCH_RADIUS: radius,
                         }
-                    )
-                    self.hass.config_entries.async_update_entry(
-                        context_entry,
-                        options=updated_options,
                     )
                     self._osrm_connection_result = {
                         "status": "OK",
@@ -6059,19 +6073,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                     return await self.async_step_osrm_connection_result()
             else:
-                updated_options = dict(
-                    context_entry.options
-                )
-                updated_options.update(
+                await self._async_update_global_settings(
                     {
                         CONF_OSRM_ENABLED: False,
                         CONF_OSRM_URL: url,
                         CONF_OSRM_MATCH_RADIUS: radius,
                     }
-                )
-                self.hass.config_entries.async_update_entry(
-                    context_entry,
-                    options=updated_options,
                 )
                 self._osrm_connection_result = {
                     "status": "Disabled",
@@ -6082,20 +6089,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 }
                 return await self.async_step_osrm_connection_result()
 
+        global_settings = self._get_global_settings()
         current_enabled = bool(
-            context_config.get(
+            global_settings.get(
                 CONF_OSRM_ENABLED,
                 DEFAULT_OSRM_ENABLED,
             )
         )
         current_url = str(
-            context_config.get(
+            global_settings.get(
                 CONF_OSRM_URL,
                 DEFAULT_OSRM_URL,
             )
         )
         current_radius = float(
-            context_config.get(
+            global_settings.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )

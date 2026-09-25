@@ -19,7 +19,7 @@ DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
 VERSION: Final = "2.5.0"
-BUILD: Final = "25015"
+BUILD: Final = "25016"
 
 #
 # Storage
@@ -109,6 +109,17 @@ CONF_OSRM_MATCH_RADIUS: Final = "osrm_match_radius"
 DEFAULT_OSRM_ENABLED: Final = False
 DEFAULT_OSRM_URL: Final = ""
 DEFAULT_OSRM_MATCH_RADIUS: Final = 15
+
+# Global OCR service settings (shared by all vehicles)
+CONF_OCR_ENABLED: Final = "ocr_enabled"
+CONF_OCR_URL: Final = "ocr_url"
+CONF_OCR_API_KEY: Final = "ocr_api_key"
+CONF_OCR_TIMEOUT: Final = "ocr_timeout"
+
+DEFAULT_OCR_ENABLED: Final = False
+DEFAULT_OCR_URL: Final = ""
+DEFAULT_OCR_API_KEY: Final = ""
+DEFAULT_OCR_TIMEOUT: Final = 15
 
 
 CONF_SMART_TRIP: Final = "smart_trip"

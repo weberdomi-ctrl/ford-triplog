@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from .route_storage import FordTriplogRouteStorage
+from .osrm_client import osrm_confidence_is_acceptable
 
 
 def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
@@ -50,6 +51,9 @@ def _matched_coordinates(route: dict[str, Any]) -> list[list[float]]:
 
     matched_route = route.get("matched_route")
     if not isinstance(matched_route, dict):
+        return []
+
+    if not osrm_confidence_is_acceptable(matched_route.get("confidence")):
         return []
 
     geometry = matched_route.get("geometry")

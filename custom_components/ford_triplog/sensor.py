@@ -64,6 +64,7 @@ from .const import SIGNAL_CHARGE_DATA_UPDATED
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
+from .osrm_client import osrm_confidence_is_acceptable
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
@@ -2488,7 +2489,10 @@ class FordTriplogLastRouteSensor(SensorEntity):
         osrm_unmatched_tracepoints = None
 
         matched_route = route.get("matched_route")
-        if isinstance(matched_route, dict):
+        if (
+            isinstance(matched_route, dict)
+            and osrm_confidence_is_acceptable(matched_route.get("confidence"))
+        ):
             matched_geometry = matched_route.get("geometry")
             matched_coordinates = (
                 matched_geometry.get("coordinates")

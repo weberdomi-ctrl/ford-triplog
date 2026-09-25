@@ -81,9 +81,9 @@
         "menu_option_descriptions": {
           "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
           "route_tracker_settings": "Separate GPS-Quelle für die Routenaufzeichnung konfigurieren. Der bestehende Fahrzeug-Tracker bleibt unverändert.",
-          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und die Verbindung testen.",
+          "ocr_settings": "Globalen lokalen OCR-Dienst für alle Fahrzeuge einrichten und die Verbindung testen.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
-          "osrm_settings": "Optionalen lokalen OSRM-Dienst für die Routenglättung einrichten und die Verbindung testen.",
+          "osrm_settings": "Globalen lokalen OSRM-Dienst für die Routenglättung aller Fahrzeuge einrichten und die Verbindung testen.",
           "vehicle_sensors": "Die von Ford Triplog verwendeten Fahrzeug-Entitäten ändern.",
           "vehicle_settings": "Erkannte Fahrzeugidentität anzeigen und den Fahrzeugnamen ändern."
         }
@@ -332,7 +332,7 @@
           "receipt_import_type": "PDF oder Bild hochladen und einer Pause oder einem Ladevorgang zuordnen.",
           "receipt_list": "Gespeicherte Belege mit Zuordnung und Dateiinformationen anzeigen.",
           "receipt_delete": "Eine Belegdatei und ihre Metadaten dauerhaft löschen.",
-          "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und Verbindung testen.",
+          "ocr_settings": "Globalen lokalen OCR-Dienst für alle Fahrzeuge einrichten und Verbindung testen.",
           "receipt_ocr": "Einen gespeicherten Beleg an den konfigurierten OCR-Dienst senden.",
           "receipt_apply": "Erkannte Abrechnungswerte prüfen, korrigieren und in den zugehörigen Ladevorgang übernehmen."
         }
@@ -428,7 +428,7 @@
       },
       "ocr_settings": {
         "title": "OCR-Verbindung",
-        "description": "Ford Triplog kann Belege optional über einen externen lokalen OCR-Dienst analysieren. Ohne aktivierte OCR-Verbindung bleiben alle anderen Funktionen vollständig verfügbar.\n\nBeim Speichern wird die Verbindung über den Endpunkt `/health` geprüft.",
+        "description": "Ford Triplog kann Belege optional über einen externen lokalen OCR-Dienst analysieren. Diese Einstellung ist global und gilt für alle konfigurierten Fahrzeuge. Ohne aktivierte OCR-Verbindung bleiben alle anderen Funktionen vollständig verfügbar.\n\nBeim Speichern wird die Verbindung über den Endpunkt `/health` geprüft.",
         "data": {
           "ocr_enabled": "OCR aktivieren",
           "ocr_url": "OCR-Dienst-URL",
@@ -675,7 +675,7 @@
       },
       "osrm_settings": {
         "title": "OSRM-Routenglättung",
-        "description": "Ford Triplog kann aufgezeichnete GPS-Routen optional über einen externen lokalen OSRM-Dienst an das OpenStreetMap-Strassennetz anpassen. Ohne aktivierte OSRM-Verbindung bleibt die vorhandene Rohroute vollständig verfügbar.\n\nBeim Speichern wird die Verbindung getestet. Standardmässig wird ein Matching-Radius von 15 Metern verwendet.",
+        "description": "Ford Triplog kann aufgezeichnete GPS-Routen optional über einen externen lokalen OSRM-Dienst an das OpenStreetMap-Strassennetz anpassen. Diese Einstellung ist global und gilt für alle konfigurierten Fahrzeuge. Ohne aktivierte OSRM-Verbindung bleibt die vorhandene Rohroute vollständig verfügbar.\n\nBeim Speichern wird die Verbindung getestet. Standardmässig wird ein Matching-Radius von 15 Metern verwendet. Sehr unsichere OSRM-Matches werden verworfen und als Rohroute angezeigt.",
         "data": {
           "osrm_enabled": "OSRM aktivieren",
           "osrm_url": "OSRM-Dienst-URL",
