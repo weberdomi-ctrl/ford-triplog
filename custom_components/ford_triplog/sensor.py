@@ -59,14 +59,12 @@ from .const import (
     VEHICLE_SOURCE_HEALTH_GRACE,
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
     VEHICLE_SOURCE_HEALTH_UNKNOWN,
-    HOME_ZONE_TOLERANCE_METERS,
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
-from .osrm_client import osrm_confidence_is_acceptable
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
@@ -720,11 +718,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             except (TypeError, ValueError):
                 continue
 
-            effective_radius = zone_radius
-            if state.entity_id == "zone.home":
-                effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-            if distance_m > effective_radius:
+            if distance_m > zone_radius:
                 continue
 
             if state.entity_id == "zone.home":
@@ -2493,16 +2487,12 @@ class FordTriplogLastRouteSensor(SensorEntity):
         display_coordinates = coordinates
         geometry_source = "raw"
         osrm_distance_km = None
-        osrm_match_type = None
         osrm_confidence = None
         osrm_matched_tracepoints = None
         osrm_unmatched_tracepoints = None
 
         matched_route = route.get("matched_route")
-        if (
-            isinstance(matched_route, dict)
-            and osrm_confidence_is_acceptable(matched_route.get("confidence"))
-        ):
+        if isinstance(matched_route, dict):
             matched_geometry = matched_route.get("geometry")
             matched_coordinates = (
                 matched_geometry.get("coordinates")
@@ -2543,9 +2533,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
                     except (TypeError, ValueError):
                         osrm_distance_km = None
 
-                    osrm_match_type = matched_route.get(
-                        "match_type", "matched"
-                    )
                     osrm_confidence = matched_route.get("confidence")
                     osrm_matched_tracepoints = matched_route.get(
                         "matched_tracepoints"
@@ -2560,7 +2547,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "trip_id": trip_id,
                 "source_type": source_type,
                 "geometry_source": geometry_source,
-                "osrm_match_type": osrm_match_type,
             },
             "geometry": {
                 "type": "LineString",
@@ -2591,7 +2577,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "latitude": center_latitude,
             "longitude": center_longitude,
             "osrm_distance_km": osrm_distance_km,
-            "osrm_match_type": osrm_match_type,
             "osrm_confidence": osrm_confidence,
             "osrm_matched_tracepoints": osrm_matched_tracepoints,
             "osrm_unmatched_tracepoints": osrm_unmatched_tracepoints,
@@ -2837,73 +2822,6 @@ class FordTriplogSensorBase(SensorEntity):
     async def _async_handle_update(self) -> None:
         await self.async_update()
         self.async_write_ha_state()
-
-    def _trip_endpoint_location(
-        self,
-        trip: dict[str, Any] | None,
-        prefix: str,
-    ) -> str | None:
-        """Return HA zone name before the stored trip address.
-
-        zone.home gets a small GPS tolerance so points just outside the
-        configured Home Assistant radius still resolve as Home.
-        """
-
-        if not trip:
-            return None
-
-        latitude = trip.get(f"{prefix}_latitude")
-        longitude = trip.get(f"{prefix}_longitude")
-
-        try:
-            point_lat = float(latitude)
-            point_lon = float(longitude)
-        except (TypeError, ValueError):
-            point_lat = None
-            point_lon = None
-
-        if point_lat is not None and point_lon is not None and self.hass is not None:
-            closest: tuple[float, str] | None = None
-            for state in self.hass.states.async_all("zone"):
-                try:
-                    zone_lat = float(state.attributes.get("latitude"))
-                    zone_lon = float(state.attributes.get("longitude"))
-                    zone_radius = max(
-                        0.0,
-                        float(state.attributes.get("radius", 100)),
-                    )
-                    distance_m = haversine_distance_m(
-                        point_lat,
-                        point_lon,
-                        zone_lat,
-                        zone_lon,
-                    )
-                except (TypeError, ValueError):
-                    continue
-
-                effective_radius = zone_radius
-                if state.entity_id == "zone.home":
-                    effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-                if distance_m > effective_radius:
-                    continue
-
-                if state.entity_id == "zone.home":
-                    zone_name = "Home"
-                else:
-                    zone_name = str(
-                        state.attributes.get("friendly_name")
-                        or state.name
-                        or state.entity_id.split(".", 1)[-1]
-                    ).strip()
-
-                if zone_name and (closest is None or distance_m < closest[0]):
-                    closest = (distance_m, zone_name)
-
-            if closest is not None:
-                return closest[1]
-
-        return format_address_short(trip.get(f"{prefix}_address"))
 
     @property
     def native_value(self):
@@ -3563,11 +3481,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
                 zone_longitude,
             )
 
-            effective_radius = zone_radius
-            if state.entity_id == "zone.home":
-                effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-            if distance_m > effective_radius:
+            if distance_m > zone_radius:
                 continue
 
             if matching_distance is None or distance_m < matching_distance:
@@ -5952,7 +5866,11 @@ class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
     _attr_icon = ICON_START
 
     def update_values(self, statistics, last_trip,last_charge):
-        self._value = self._trip_endpoint_location(last_trip, "start")
+        self._value = format_address_short(
+            last_trip.get("start_address")
+            if last_trip
+            else None
+        )
 
 class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     _attr_translation_key = "last_destination"
@@ -5960,7 +5878,11 @@ class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     _attr_icon = ICON_DESTINATION
 
     def update_values(self, statistics, last_trip,last_charge):
-        self._value = self._trip_endpoint_location(last_trip, "end")
+        self._value = format_address_short(
+            last_trip.get("end_address")
+            if last_trip
+            else None
+        )
 
 class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
     """Formatted start time of the last trip."""
@@ -7330,16 +7252,17 @@ class FordTriplogChargingMonthlyStatisticsSensor(FordTriplogSensorBase):
 
 
 class FordTriplogEnergyHistorySensor(SensorEntity):
-    """Read-only 12-month charging summary for all loaded vehicles.
+    """Expose a read-only 12-month charging summary for all loaded vehicles.
 
-    This entity is deliberately independent from ``select.ford_triplog_fahrzeug``.
-    It reads each vehicle runtime directly and exposes a compact machine-readable
-    interface for consumers such as a future Energy History integration.
+    The sensor is deliberately independent from ``select.ford_triplog_fahrzeug``.
+    It reads every loaded vehicle runtime directly and is intended as a compact
+    machine-readable interface for consumers such as a separate Energy History
+    integration.
     """
 
     _attr_has_entity_name = True
     _attr_should_poll = False
-    _attr_translation_key = "energy_history"
+    _attr_name = "Energy History"
     _attr_unique_id = "ford_triplog_energy_history"
     _attr_icon = "mdi:database-clock"
     _unrecorded_attributes = frozenset({"vehicles"})
@@ -7375,21 +7298,24 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
 
     @callback
     def _handle_source_update(self, *_args: Any) -> None:
-        """Schedule a thread-safe refresh without touching the vehicle selector."""
+        """Schedule a refresh without changing the shared vehicle selector."""
         self.hass.add_job(self._async_refresh_and_write)
 
     async def _async_refresh_and_write(self) -> None:
+        """Refresh data and publish the entity state."""
         await self._async_refresh()
         self.async_write_ha_state()
 
     @staticmethod
     def _month_key_offset(now: datetime, offset: int) -> str:
+        """Return a YYYY-MM key relative to *now*."""
         month_index = now.year * 12 + (now.month - 1) + offset
         year, month_zero = divmod(month_index, 12)
         return f"{year:04d}-{month_zero + 1:02d}"
 
     @staticmethod
     def _empty_period() -> dict[str, dict[str, float | int]]:
+        """Return one empty monthly aggregation bucket."""
         return {
             "home": {"energy": 0.0, "cost": 0.0, "count": 0},
             "work": {"energy": 0.0, "cost": 0.0, "count": 0},
@@ -7402,6 +7328,7 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
         currencies: set[str],
         energy_sources: dict[str, int],
     ) -> dict[str, Any]:
+        """Convert an aggregation bucket into stable public attributes."""
         home = period["home"]
         work = period["work"]
         external = period["external"]
@@ -7422,7 +7349,7 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
             + int(external["count"])
         )
 
-        return {
+        result: dict[str, Any] = {
             "home_energy_kwh": round(float(home["energy"]), 2),
             "home_cost": round(float(home["cost"]), 2),
             "home_charge_count": int(home["count"]),
@@ -7435,10 +7362,15 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
             "total_energy_kwh": round(total_energy, 2),
             "total_cost": round(total_cost, 2),
             "total_charge_count": total_count,
-            "currency": next(iter(currencies)) if len(currencies) == 1 else None,
-            "currencies": sorted(currencies) if len(currencies) > 1 else [],
             "energy_source_counts": dict(sorted(energy_sources.items())),
         }
+
+        if len(currencies) == 1:
+            result["currency"] = next(iter(currencies))
+        elif len(currencies) > 1:
+            result["currencies"] = sorted(currencies)
+
+        return result
 
     async def _async_vehicle_summary(
         self,
@@ -7446,6 +7378,7 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
         runtime_data: dict[str, Any],
         month_keys: list[str],
     ) -> dict[str, Any] | None:
+        """Build the 12-month charging summary for one loaded vehicle."""
         history = runtime_data.get("history")
         coordinator = runtime_data.get("coordinator")
         if history is None or coordinator is None:
@@ -7465,10 +7398,7 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
         except (OSError, ValueError):
             sites = []
 
-        monthly_periods = {
-            key: self._empty_period()
-            for key in month_keys
-        }
+        monthly_periods = {key: self._empty_period() for key in month_keys}
         monthly_currencies: dict[str, set[str]] = {
             key: set() for key in month_keys
         }
@@ -7477,6 +7407,8 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
         }
 
         for charge in charges:
+            if not isinstance(charge, dict):
+                continue
             if not charge.get("include_in_statistics", True):
                 continue
 
@@ -7536,7 +7468,11 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
 
         vehicle = runtime_data.get("vehicle") or {}
         identity = runtime_data.get("vehicle_identity")
-        vin = str(vehicle.get("vin") or getattr(identity, "vin", "") or "").strip()
+        vin = str(
+            vehicle.get("vin")
+            or getattr(identity, "vin", "")
+            or ""
+        ).strip()
 
         return {
             "vehicle_id": int(vehicle_id),
@@ -7546,6 +7482,7 @@ class FordTriplogEnergyHistorySensor(SensorEntity):
         }
 
     async def _async_refresh(self) -> None:
+        """Load all vehicle summaries without touching the selector context."""
         now = dt_util.now()
         month_keys = [
             self._month_key_offset(now, offset)
