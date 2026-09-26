@@ -51,11 +51,9 @@ from .journey import build_pause_id
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .charge_manager import FordTriplogChargeManager
 from .route_storage import FordTriplogRouteStorage
-from .route_rebuilder import FordTriplogRouteRebuilder
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
-    osrm_confidence_is_acceptable,
 )
 from .const import (
     CONF_OSRM_ENABLED,
@@ -1014,19 +1012,21 @@ async def _async_rebuild_last_route(
 
     storage = runtime_data["route_storage"]
 
-    config = runtime_data.get("config")
-    if not isinstance(config, dict):
+    config_entry = hass.config_entries.async_get_entry(entry_id)
+    if config_entry is None:
         raise HomeAssistantError(
-            f"Runtime configuration not found: {entry_id}"
+            f"Config entry not found: {entry_id}"
         )
 
-    if not bool(config.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)):
+    options = dict(config_entry.options)
+
+    if not bool(options.get(CONF_OSRM_ENABLED, DEFAULT_OSRM_ENABLED)):
         raise ServiceValidationError(
-            "Global OSRM route smoothing is disabled."
+            "OSRM route smoothing is disabled for this config entry."
         )
 
     osrm_url = str(
-        config.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
+        options.get(CONF_OSRM_URL, DEFAULT_OSRM_URL) or ""
     ).strip().rstrip("/")
 
     if not osrm_url:
@@ -1036,7 +1036,7 @@ async def _async_rebuild_last_route(
 
     try:
         radius = float(
-            config.get(
+            options.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
@@ -1046,49 +1046,75 @@ async def _async_rebuild_last_route(
             "The configured OSRM matching radius is invalid."
         ) from error
 
-    rebuilder = FordTriplogRouteRebuilder(
-        hass,
-        storage,
-        osrm_url=osrm_url,
-        radius_meters=radius,
-    )
-    summary = await rebuilder.async_rebuild("last")
-
-    if summary.routes_matched + summary.routes_reconstructed < 1:
-        raise ServiceValidationError(
-            "OSRM route rebuild did not produce an acceptable route; raw GPS route kept."
-        )
-
     route = await storage.async_load_latest_route()
     if not isinstance(route, dict):
-        raise ServiceValidationError("No stored route is available after rebuild.")
-
-    matched_route = route.get("matched_route")
-    if not isinstance(matched_route, dict):
         raise ServiceValidationError(
-            "OSRM route rebuild completed without stored OSRM geometry."
+            "No stored route is available."
         )
 
-    geometry = matched_route.get("geometry")
-    coordinates = (
-        geometry.get("coordinates", [])
-        if isinstance(geometry, dict)
-        else []
+    points = route.get("points")
+    if not isinstance(points, list) or len(points) < 2:
+        raise ServiceValidationError(
+            "The latest route does not contain enough raw GPS points."
+        )
+
+    client = FordTriplogOSRMClient(
+        hass,
+        osrm_url,
+        radius_meters=radius,
+    )
+
+    try:
+        result = await client.async_match(points)
+    except FordTriplogOSRMError as error:
+        raise ServiceValidationError(
+            f"OSRM route rebuild failed: {error}"
+        ) from error
+
+    matched_route = {
+        "provider": "osrm",
+        "url": osrm_url,
+        "radius_m": radius,
+        "distance_m": result.distance_m,
+        "duration_s": result.duration_s,
+        "confidence": result.confidence,
+        "matched_tracepoints": result.matched_tracepoints,
+        "unmatched_tracepoints": result.unmatched_tracepoints,
+        "geometry": result.geometry,
+    }
+
+    # Preserve all original route metadata and raw points. Only replace/add
+    # the optional matched_route block.
+    await storage.async_save_route(
+        trip_id=str(route.get("trip_id") or ""),
+        source_type=str(route.get("source_type") or ""),
+        points=points,
+        status=str(route.get("status") or "completed"),
+        created_at=route.get("created_at"),
+        matched_route=matched_route,
+    )
+
+    _LOGGER.info(
+        "Last route rebuilt with OSRM: trip_id=%s raw_points=%s "
+        "matched_points=%s distance=%.1fm confidence=%s",
+        route.get("trip_id"),
+        len(points),
+        len(result.geometry.get("coordinates", [])),
+        result.distance_m,
+        result.confidence,
     )
 
     return {
         "rebuilt": True,
         "trip_id": route.get("trip_id"),
-        "match_type": matched_route.get("match_type", "matched"),
-        "raw_point_count": len(route.get("points") or []),
-        "matched_point_count": len(coordinates),
-        "distance_km": round(
-            float(matched_route.get("distance_m") or 0.0) / 1000.0,
-            3,
+        "raw_point_count": len(points),
+        "matched_point_count": len(
+            result.geometry.get("coordinates", [])
         ),
-        "confidence": matched_route.get("confidence"),
-        "matched_tracepoints": matched_route.get("matched_tracepoints", 0),
-        "unmatched_tracepoints": matched_route.get("unmatched_tracepoints", 0),
+        "distance_km": round(result.distance_m / 1000.0, 3),
+        "confidence": result.confidence,
+        "matched_tracepoints": result.matched_tracepoints,
+        "unmatched_tracepoints": result.unmatched_tracepoints,
         "radius_m": radius,
     }
 

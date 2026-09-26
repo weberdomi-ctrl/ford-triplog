@@ -58,14 +58,12 @@ from .const import (
     VEHICLE_SOURCE_HEALTH_GRACE,
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
     VEHICLE_SOURCE_HEALTH_UNKNOWN,
-    HOME_ZONE_TOLERANCE_METERS,
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
-from .osrm_client import osrm_confidence_is_acceptable
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
@@ -716,11 +714,7 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
             except (TypeError, ValueError):
                 continue
 
-            effective_radius = zone_radius
-            if state.entity_id == "zone.home":
-                effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-            if distance_m > effective_radius:
+            if distance_m > zone_radius:
                 continue
 
             if state.entity_id == "zone.home":
@@ -2489,16 +2483,12 @@ class FordTriplogLastRouteSensor(SensorEntity):
         display_coordinates = coordinates
         geometry_source = "raw"
         osrm_distance_km = None
-        osrm_match_type = None
         osrm_confidence = None
         osrm_matched_tracepoints = None
         osrm_unmatched_tracepoints = None
 
         matched_route = route.get("matched_route")
-        if (
-            isinstance(matched_route, dict)
-            and osrm_confidence_is_acceptable(matched_route.get("confidence"))
-        ):
+        if isinstance(matched_route, dict):
             matched_geometry = matched_route.get("geometry")
             matched_coordinates = (
                 matched_geometry.get("coordinates")
@@ -2539,9 +2529,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
                     except (TypeError, ValueError):
                         osrm_distance_km = None
 
-                    osrm_match_type = matched_route.get(
-                        "match_type", "matched"
-                    )
                     osrm_confidence = matched_route.get("confidence")
                     osrm_matched_tracepoints = matched_route.get(
                         "matched_tracepoints"
@@ -2556,7 +2543,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "trip_id": trip_id,
                 "source_type": source_type,
                 "geometry_source": geometry_source,
-                "osrm_match_type": osrm_match_type,
             },
             "geometry": {
                 "type": "LineString",
@@ -2587,7 +2573,6 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "latitude": center_latitude,
             "longitude": center_longitude,
             "osrm_distance_km": osrm_distance_km,
-            "osrm_match_type": osrm_match_type,
             "osrm_confidence": osrm_confidence,
             "osrm_matched_tracepoints": osrm_matched_tracepoints,
             "osrm_unmatched_tracepoints": osrm_unmatched_tracepoints,
@@ -2833,73 +2818,6 @@ class FordTriplogSensorBase(SensorEntity):
     async def _async_handle_update(self) -> None:
         await self.async_update()
         self.async_write_ha_state()
-
-    def _trip_endpoint_location(
-        self,
-        trip: dict[str, Any] | None,
-        prefix: str,
-    ) -> str | None:
-        """Return HA zone name before the stored trip address.
-
-        zone.home gets a small GPS tolerance so points just outside the
-        configured Home Assistant radius still resolve as Home.
-        """
-
-        if not trip:
-            return None
-
-        latitude = trip.get(f"{prefix}_latitude")
-        longitude = trip.get(f"{prefix}_longitude")
-
-        try:
-            point_lat = float(latitude)
-            point_lon = float(longitude)
-        except (TypeError, ValueError):
-            point_lat = None
-            point_lon = None
-
-        if point_lat is not None and point_lon is not None and self.hass is not None:
-            closest: tuple[float, str] | None = None
-            for state in self.hass.states.async_all("zone"):
-                try:
-                    zone_lat = float(state.attributes.get("latitude"))
-                    zone_lon = float(state.attributes.get("longitude"))
-                    zone_radius = max(
-                        0.0,
-                        float(state.attributes.get("radius", 100)),
-                    )
-                    distance_m = haversine_distance_m(
-                        point_lat,
-                        point_lon,
-                        zone_lat,
-                        zone_lon,
-                    )
-                except (TypeError, ValueError):
-                    continue
-
-                effective_radius = zone_radius
-                if state.entity_id == "zone.home":
-                    effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-                if distance_m > effective_radius:
-                    continue
-
-                if state.entity_id == "zone.home":
-                    zone_name = "Home"
-                else:
-                    zone_name = str(
-                        state.attributes.get("friendly_name")
-                        or state.name
-                        or state.entity_id.split(".", 1)[-1]
-                    ).strip()
-
-                if zone_name and (closest is None or distance_m < closest[0]):
-                    closest = (distance_m, zone_name)
-
-            if closest is not None:
-                return closest[1]
-
-        return format_address_short(trip.get(f"{prefix}_address"))
 
     @property
     def native_value(self):
@@ -3559,11 +3477,7 @@ class FordTriplogTopLocationsSensor(FordTriplogSensorBase):
                 zone_longitude,
             )
 
-            effective_radius = zone_radius
-            if state.entity_id == "zone.home":
-                effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-            if distance_m > effective_radius:
+            if distance_m > zone_radius:
                 continue
 
             if matching_distance is None or distance_m < matching_distance:
@@ -5948,7 +5862,11 @@ class FordTriplogLastStartAddressSensor(FordTriplogSensorBase):
     _attr_icon = ICON_START
 
     def update_values(self, statistics, last_trip,last_charge):
-        self._value = self._trip_endpoint_location(last_trip, "start")
+        self._value = format_address_short(
+            last_trip.get("start_address")
+            if last_trip
+            else None
+        )
 
 class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     _attr_translation_key = "last_destination"
@@ -5956,7 +5874,11 @@ class FordTriplogLastEndAddressSensor(FordTriplogSensorBase):
     _attr_icon = ICON_DESTINATION
 
     def update_values(self, statistics, last_trip,last_charge):
-        self._value = self._trip_endpoint_location(last_trip, "end")
+        self._value = format_address_short(
+            last_trip.get("end_address")
+            if last_trip
+            else None
+        )
 
 class FordTriplogLastStartTimeSensor(FordTriplogSensorBase):
     """Formatted start time of the last trip."""

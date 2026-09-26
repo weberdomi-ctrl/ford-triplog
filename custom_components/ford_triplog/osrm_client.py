@@ -41,12 +41,6 @@ DEFAULT_OSRM_PROFILE = "driving"
 OSRM_MATCH_CHUNK_SIZE = 90
 OSRM_MATCH_CHUNK_OVERLAP = 5
 
-# OSRM can return geometrically plausible but effectively guessed matches for
-# sparse traces. Values observed in those cases are close to zero, while
-# reliable traces are normally orders of magnitude higher. Keep the threshold
-# deliberately low so medium-confidence real traces remain usable.
-MIN_OSRM_MATCH_CONFIDENCE = 0.05
-
 
 class FordTriplogOSRMError(Exception):
     """Base exception for local OSRM errors."""
@@ -88,31 +82,6 @@ class FordTriplogOSRMMatchResult:
             },
             "geometry": self.geometry,
         }
-
-
-@dataclass(slots=True)
-class FordTriplogOSRMRouteResult:
-    """Normalized OSRM route result used for sparse-track reconstruction."""
-
-    geometry: dict[str, Any]
-    distance_m: float
-    duration_s: float
-
-
-def osrm_confidence_is_acceptable(confidence: Any) -> bool:
-    """Return True when an OSRM confidence value is safe to display/store.
-
-    ``None`` is kept compatible with servers that omit confidence entirely.
-    Explicit numeric values below the threshold are rejected as guessed
-    matches and the raw GPS geometry remains the fallback.
-    """
-
-    if confidence is None:
-        return True
-    try:
-        return float(confidence) >= MIN_OSRM_MATCH_CONFIDENCE
-    except (TypeError, ValueError):
-        return False
 
 
 class FordTriplogOSRMClient:
@@ -167,81 +136,6 @@ class FordTriplogOSRMClient:
             "distance_m": waypoint.get("distance"),
             "location": waypoint.get("location"),
         }
-
-    async def async_route(
-        self,
-        start_latitude: Any,
-        start_longitude: Any,
-        end_latitude: Any,
-        end_longitude: Any,
-    ) -> FordTriplogOSRMRouteResult:
-        """Build a normal OSRM road route between two authoritative endpoints.
-
-        This is deliberately separate from map matching. It is intended for
-        sparse traces where the recorded GPS points are insufficient for a
-        meaningful confidence score, for example a trip with only start/end
-        positions after a long GPS outage.
-        """
-
-        try:
-            start_lat = float(start_latitude)
-            start_lon = float(start_longitude)
-            end_lat = float(end_latitude)
-            end_lon = float(end_longitude)
-        except (TypeError, ValueError) as err:
-            raise FordTriplogOSRMResponseError(
-                "Valid start/end coordinates are required for OSRM routing"
-            ) from err
-
-        for latitude, longitude in ((start_lat, start_lon), (end_lat, end_lon)):
-            if not (-90.0 <= latitude <= 90.0 and -180.0 <= longitude <= 180.0):
-                raise FordTriplogOSRMResponseError(
-                    "OSRM route endpoint is outside valid coordinate bounds"
-                )
-
-        coordinates = (
-            f"{start_lon:.7f},{start_lat:.7f};"
-            f"{end_lon:.7f},{end_lat:.7f}"
-        )
-        url = (
-            f"{self.base_url}/route/v1/{quote(self.profile)}/{coordinates}"
-            "?geometries=geojson"
-            "&overview=full"
-            "&steps=false"
-            "&alternatives=false"
-        )
-
-        payload = await self._async_get_json(url)
-        if payload.get("code") != "Ok":
-            raise FordTriplogOSRMResponseError(
-                str(
-                    payload.get("message")
-                    or payload.get("code")
-                    or "OSRM route calculation failed"
-                )
-            )
-
-        routes = payload.get("routes")
-        if not isinstance(routes, list) or not routes:
-            raise FordTriplogOSRMResponseError("OSRM returned no route")
-
-        route = routes[0]
-        geometry = route.get("geometry")
-        if (
-            not isinstance(geometry, dict)
-            or geometry.get("type") != "LineString"
-            or not isinstance(geometry.get("coordinates"), list)
-            or len(geometry.get("coordinates", [])) < 2
-        ):
-            raise FordTriplogOSRMResponseError(
-                "OSRM returned no valid route LineString geometry"
-            )
-
-        return FordTriplogOSRMRouteResult(
-            geometry=geometry,
-            distance_m=float(route.get("distance") or 0.0),
-            duration_s=float(route.get("duration") or 0.0),
-        )
 
     async def async_match(
         self,

@@ -7,7 +7,7 @@ Configuration Flow.
 
 Version: 2.5.0
 Phase: Multi-vehicle context
-Build: 25007 - Duplicate VIN test vehicle flow
+Build: 25020 - Home tariff form compatibility fix
 Release: 2.5.0-dev
 
 
@@ -67,6 +67,8 @@ from .osrm_client import (
 
 from .export import FordTriplogExporter
 from .route_rebuilder import FordTriplogRouteRebuilder
+from .home_tariff_storage import FordTriplogHomeTariffStorage
+from .charging_costs import FordTriplogChargingCostCalculator
 
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
@@ -82,10 +84,6 @@ from .vehicle_context import (
 from .services import (
     async_download_charging_database,
     async_import_charging_site_database,
-)
-from .global_settings import (
-    async_save_global_settings,
-    get_global_settings,
 )
 
 from .const import (
@@ -118,14 +116,6 @@ from .const import (
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
-    CONF_OCR_ENABLED,
-    CONF_OCR_URL,
-    CONF_OCR_API_KEY,
-    CONF_OCR_TIMEOUT,
-    DEFAULT_OCR_ENABLED,
-    DEFAULT_OCR_URL,
-    DEFAULT_OCR_API_KEY,
-    DEFAULT_OCR_TIMEOUT,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -216,6 +206,17 @@ CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
 CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
 CONF_HOME_TARIFF_WINTER_PRICE = "home_tariff_winter_price"
 CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
+CONF_HOME_TARIFF_PERIODS = "home_tariff_periods"
+CONF_HOME_TARIFF_SELECTION = "home_tariff_selection"
+CONF_HOME_TARIFF_YEAR = "home_tariff_year"
+CONF_HOME_TARIFF_VALID_FROM = "home_tariff_valid_from"
+CONF_HOME_TARIFF_VALID_TO = "home_tariff_valid_to"
+CONF_HOME_TARIFF_PRICE = "home_tariff_price_per_kwh"
+CONF_HOME_TARIFF_ACTION = "home_tariff_action"
+HOME_TARIFF_ACTION_SAVE = "save"
+HOME_TARIFF_ACTION_DELETE = "delete"
+HOME_TARIFF_ACTION_BACK = "back"
+HOME_TARIFF_SELECTION_BACK = "__back__"
 
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
@@ -256,6 +257,10 @@ CONF_USER_PARSER_CURRENT = "user_parser_current"
 CONF_USER_PARSER_VOLTAGE = "user_parser_voltage"
 CONF_USER_PARSER_POWER = "user_parser_power"
 CONF_USER_PARSER_TEMPERATURE = "user_parser_temperature"
+CONF_OCR_ENABLED = "ocr_enabled"
+CONF_OCR_URL = "ocr_url"
+CONF_OCR_API_KEY = "ocr_api_key"
+CONF_OCR_TIMEOUT = "ocr_timeout"
 CONF_RECEIPT_DETAIL_ACTION = "receipt_detail_action"
 RECEIPT_DETAIL_OPEN = "open"
 RECEIPT_DETAIL_DELETE = "delete"
@@ -614,6 +619,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_export_url: str | None = None
         self._export_kind: str = "trips"
         self._vehicle_context_id: int | None = None
+        self._selected_home_tariff_index: int | None = None
+        self._home_tariff_translations: dict[str, str] | None = None
+        self._home_tariff_storage: FordTriplogHomeTariffStorage | None = None
+        self._home_tariff_periods_cache: list[dict[str, Any]] | None = None
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -699,32 +708,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         entry = self._get_context_config_entry()
         return {**entry.data, **entry.options}
-
-    def _get_global_settings(self) -> dict[str, Any]:
-        """Return integration-wide OCR/OSRM settings."""
-
-        return get_global_settings(self.hass)
-
-    async def _async_update_global_settings(
-        self,
-        updates: dict[str, Any],
-    ) -> dict[str, Any]:
-        """Persist shared OCR/OSRM settings once for all vehicles."""
-
-        runtime_data = self._get_context_runtime_data()
-        database = runtime_data.get("database")
-        if database is None:
-            raise HomeAssistantError("Ford Triplog database is not initialized")
-
-        settings = await async_save_global_settings(
-            self.hass,
-            database,
-            updates,
-        )
-        # Keep this flow's legacy merged options view coherent for helpers that
-        # do not need to distinguish vehicle and integration-wide settings.
-        self._options.update(settings)
-        return settings
 
     def _context_vehicle_name(self) -> str:
         """Return the display name of the currently selected vehicle."""
@@ -1429,7 +1412,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "receipt_summary": receipt_summary,
                 "ocr_status": (
                     ui_text["ocr_enabled"]
-                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
                     else ui_text["ocr_disabled"]
                 ),
             },
@@ -2009,7 +1992,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         }
 
         menu_options = ["charge_receipt_open"]
-        if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("charge_receipt_ocr")
         if str(receipt.get("parse_status") or "") == "parsed":
             menu_options.append("charge_receipt_apply")
@@ -2476,7 +2459,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     or (await self._async_get_ui_translations())["receipt"]
                 )
 
-                if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
+                if not bool(self._options.get(CONF_OCR_ENABLED, False)):
                     self._selected_receipt_id = receipt_id
                     return await self.async_step_charge_receipt_detail()
 
@@ -2540,7 +2523,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     (await self._async_get_ui_translations())[
                         "receipt_upload_ocr_enabled"
                     ]
-                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
                     else (await self._async_get_ui_translations())[
                         "receipt_upload_ocr_disabled"
                     ]
@@ -3293,7 +3276,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "receipt_summary": receipt_summary,
                 "ocr_status": (
                     ui_text["ocr_enabled"]
-                    if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED))
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
                     else ui_text["ocr_disabled"]
                 ),
             },
@@ -3630,7 +3613,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Show receipt management actions."""
 
         menu_options: list[str] = []
-        if bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
+        if bool(self._options.get(CONF_OCR_ENABLED, False)):
             menu_options.append("receipt_ocr")
         menu_options.extend(
             [
@@ -3678,7 +3661,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 except FordTriplogOCRResponseError:
                     errors["base"] = "ocr_invalid_response"
                 else:
-                    await self._async_update_global_settings(
+                    updated_options = dict(self._config_entry.options)
+                    updated_options.update(
                         {
                             CONF_OCR_ENABLED: True,
                             CONF_OCR_URL: client.base_url,
@@ -3686,6 +3670,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             CONF_OCR_TIMEOUT: timeout_seconds,
                         }
                     )
+                    self.hass.config_entries.async_update_entry(
+                        self._config_entry,
+                        options=updated_options,
+                    )
+                    self._options.update(updated_options)
                     self._ocr_connection_result = {
                         "service": health.service,
                         "version": health.version,
@@ -3708,7 +3697,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                     return await self.async_step_ocr_connection_result()
             else:
-                await self._async_update_global_settings(
+                updated_options = dict(self._config_entry.options)
+                updated_options.update(
                     {
                         CONF_OCR_ENABLED: False,
                         CONF_OCR_URL: url,
@@ -3716,6 +3706,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         CONF_OCR_TIMEOUT: timeout_seconds,
                     }
                 )
+                self.hass.config_entries.async_update_entry(
+                    self._config_entry,
+                    options=updated_options,
+                )
+                self._options.update(updated_options)
                 self._ocr_connection_result = {
                     "service": (await self._async_get_ui_translations())[
                         "ocr_service_disabled"
@@ -3728,18 +3723,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 }
                 return await self.async_step_ocr_connection_result()
 
-        global_settings = self._get_global_settings()
         current_enabled = bool(
-            global_settings.get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)
+            self._options.get(CONF_OCR_ENABLED, False)
         )
         current_url = str(
-            global_settings.get(CONF_OCR_URL, DEFAULT_OCR_URL) or "http://"
+            self._options.get(CONF_OCR_URL, "http://")
         )
         current_api_key = str(
-            global_settings.get(CONF_OCR_API_KEY, DEFAULT_OCR_API_KEY)
+            self._options.get(CONF_OCR_API_KEY, "")
         )
         current_timeout = int(
-            global_settings.get(CONF_OCR_TIMEOUT, DEFAULT_OCR_TIMEOUT)
+            self._options.get(CONF_OCR_TIMEOUT, 15)
         )
 
         return self.async_show_form(
@@ -4368,14 +4362,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_ocr_client(self) -> FordTriplogOCRClient:
         """Return a configured client for the external OCR service."""
 
-        if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
             raise HomeAssistantError("OCR is not enabled")
 
         return FordTriplogOCRClient(
             async_get_clientsession(self.hass),
-            str(self._get_global_settings().get(CONF_OCR_URL) or ""),
-            str(self._get_global_settings().get(CONF_OCR_API_KEY) or ""),
-            int(self._get_global_settings().get(CONF_OCR_TIMEOUT, DEFAULT_OCR_TIMEOUT)),
+            str(self._options.get(CONF_OCR_URL) or ""),
+            str(self._options.get(CONF_OCR_API_KEY) or ""),
+            int(self._options.get(CONF_OCR_TIMEOUT, 15)),
         )
 
     async def async_step_receipt_ocr(
@@ -4386,7 +4380,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors: dict[str, str] = {}
 
-        if not bool(self._get_global_settings().get(CONF_OCR_ENABLED, DEFAULT_OCR_ENABLED)):
+        if not bool(self._options.get(CONF_OCR_ENABLED, False)):
             return self.async_show_form(
                 step_id="receipt_ocr",
                 data_schema=vol.Schema({}),
@@ -4971,7 +4965,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return rebuilder
 
     def _get_route_rebuilder(self) -> FordTriplogRouteRebuilder:
-        """Return an OSRM route rebuilder using global settings."""
+        """Return an OSRM route rebuilder for the current options."""
 
         runtime_data = self._get_context_runtime_data()
 
@@ -4981,19 +4975,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "Route storage is not initialized"
             )
 
-        global_settings = self._get_global_settings()
+        context_config = self._get_context_config()
         return FordTriplogRouteRebuilder(
             self.hass,
             route_storage,
             osrm_url=str(
-                global_settings.get(
+                context_config.get(
                     CONF_OSRM_URL,
                     DEFAULT_OSRM_URL,
                 )
                 or ""
             ),
             radius_meters=float(
-                global_settings.get(
+                context_config.get(
                     CONF_OSRM_MATCH_RADIUS,
                     DEFAULT_OSRM_MATCH_RADIUS,
                 )
@@ -5857,6 +5851,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="settings",
             menu_options=[
                 "general_settings",
+                "home_tariff_settings",
                 "vehicle_settings",
                 "vehicle_sensors",
                 "route_tracker_settings",
@@ -6020,6 +6015,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure and test the optional local OSRM service."""
 
         errors: dict[str, str] = {}
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
 
         if user_input is not None:
             enabled = bool(
@@ -6053,12 +6050,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 except FordTriplogOSRMResponseError:
                     errors["base"] = "osrm_invalid_response"
                 else:
-                    await self._async_update_global_settings(
+                    updated_options = dict(
+                        context_entry.options
+                    )
+                    updated_options.update(
                         {
                             CONF_OSRM_ENABLED: True,
                             CONF_OSRM_URL: client.base_url,
                             CONF_OSRM_MATCH_RADIUS: radius,
                         }
+                    )
+                    self.hass.config_entries.async_update_entry(
+                        context_entry,
+                        options=updated_options,
                     )
                     self._osrm_connection_result = {
                         "status": "OK",
@@ -6073,12 +6077,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                     return await self.async_step_osrm_connection_result()
             else:
-                await self._async_update_global_settings(
+                updated_options = dict(
+                    context_entry.options
+                )
+                updated_options.update(
                     {
                         CONF_OSRM_ENABLED: False,
                         CONF_OSRM_URL: url,
                         CONF_OSRM_MATCH_RADIUS: radius,
                     }
+                )
+                self.hass.config_entries.async_update_entry(
+                    context_entry,
+                    options=updated_options,
                 )
                 self._osrm_connection_result = {
                     "status": "Disabled",
@@ -6089,21 +6100,20 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 }
                 return await self.async_step_osrm_connection_result()
 
-        global_settings = self._get_global_settings()
         current_enabled = bool(
-            global_settings.get(
+            context_config.get(
                 CONF_OSRM_ENABLED,
                 DEFAULT_OSRM_ENABLED,
             )
         )
         current_url = str(
-            global_settings.get(
+            context_config.get(
                 CONF_OSRM_URL,
                 DEFAULT_OSRM_URL,
             )
         )
         current_radius = float(
-            global_settings.get(
+            context_config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
@@ -6397,6 +6407,608 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={
                 "source_type": source_type,
             },
+        )
+
+
+    @staticmethod
+    def _normalize_home_tariff_month_day(
+        value: Any,
+        *,
+        expected_year: int | None = None,
+    ) -> str:
+        """Normalize a user-entered tariff date to MM-DD.
+
+        Accept the compact UI format (DD.MM), a full German date
+        (DD.MM.YYYY) and ISO dates (YYYY-MM-DD).  The latter two are useful
+        when users paste values directly from tariff sheets.
+        """
+
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("empty tariff date")
+
+        parsed = None
+        for fmt in ("%d.%m", "%d.%m.", "%d.%m.%Y", "%Y-%m-%d", "%d/%m", "%d/%m/%Y"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            raise ValueError("invalid tariff date")
+
+        # strptime uses 1900 for formats without a year.  Only validate an
+        # embedded year against the separate year field.
+        has_year = bool(re.search(r"\d{4}", text))
+        if has_year and expected_year is not None and parsed.year != expected_year:
+            raise ValueError("tariff date year does not match selected year")
+
+        return f"{parsed.month:02d}-{parsed.day:02d}"
+
+    @staticmethod
+    def _home_tariff_month_day_label(value: str) -> str:
+        """Format MM-DD as DD.MM."""
+
+        try:
+            month, day = str(value).split("-", 1)
+            return f"{int(day):02d}.{int(month):02d}."
+        except (TypeError, ValueError):
+            return str(value or "—")
+
+    async def _async_ensure_home_tariff_periods(self) -> list[dict[str, Any]]:
+        """Load the global SQLite home tariff table into this Options Flow."""
+
+        if self._home_tariff_periods_cache is not None:
+            return [dict(item) for item in self._home_tariff_periods_cache]
+
+        if self._home_tariff_storage is None:
+            self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
+            await self._home_tariff_storage.async_setup()
+
+        self._home_tariff_periods_cache = await self._home_tariff_storage.async_load()
+        return [dict(item) for item in self._home_tariff_periods_cache]
+
+    def _home_tariff_periods(self) -> list[dict[str, Any]]:
+        """Return the already-loaded global home tariff periods."""
+
+        return [dict(item) for item in (self._home_tariff_periods_cache or [])]
+
+    def _home_tariff_currency(self) -> str:
+        """Return configured home tariff currency."""
+
+        periods = self._home_tariff_periods()
+        if periods:
+            currency = str(periods[0].get("currency") or "").strip().upper()
+            if currency:
+                return currency
+
+        entry = self._get_context_config_entry()
+        config = {**entry.data, **entry.options}
+        return str(
+            config.get(CONF_HOME_TARIFF_CURRENCY, "CHF") or "CHF"
+        ).strip().upper()
+
+    def _home_tariff_table(
+        self,
+        translations: dict[str, str],
+    ) -> str:
+        """Return a compact Markdown table for the options description."""
+
+        periods = self._home_tariff_periods()
+        if not periods:
+            return "—"
+
+        lines = [
+            "| {year} | {valid_from} | {valid_to} | {tariff} |".format(
+                year=translations["year"],
+                valid_from=translations["valid_from"],
+                valid_to=translations["valid_to"],
+                tariff=translations["tariff"],
+            ),
+            "|---:|:---:|:---:|---:|",
+        ]
+        for period in periods:
+            lines.append(
+                "| {year} | {valid_from} | {valid_to} | {price:.4f} {currency}/kWh |".format(
+                    year=int(period["year"]),
+                    valid_from=self._home_tariff_month_day_label(
+                        str(period["valid_from"])
+                    ),
+                    valid_to=self._home_tariff_month_day_label(
+                        str(period["valid_to"])
+                    ),
+                    price=float(period["price_per_kwh"]),
+                    currency=str(period.get("currency") or self._home_tariff_currency()),
+                )
+            )
+        return "\n".join(lines)
+
+    def _home_tariff_period_label(
+        self,
+        period: dict[str, Any],
+    ) -> str:
+        """Return one tariff-period selection label."""
+
+        currency = str(period.get("currency") or self._home_tariff_currency())
+        return (
+            f"{int(period['year'])} | "
+            f"{self._home_tariff_month_day_label(str(period['valid_from']))}–"
+            f"{self._home_tariff_month_day_label(str(period['valid_to']))} | "
+            f"{float(period['price_per_kwh']):.4f} {currency}/kWh"
+        )
+
+    async def _async_get_home_tariff_translations(
+        self,
+    ) -> dict[str, str]:
+        """Load labels used by the dynamic tariff table and selectors."""
+
+        if self._home_tariff_translations is not None:
+            return self._home_tariff_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+        defaults = {
+            "year": "Year",
+            "valid_from": "From",
+            "valid_to": "To",
+            "tariff": "Tariff",
+            "save": "Save",
+            "delete": "Delete",
+            "back": "← Back",
+        }
+        self._home_tariff_translations = {
+            key: translations.get(
+                f"component.{DOMAIN}.common.home_tariff_{key}",
+                default,
+            )
+            for key, default in defaults.items()
+        }
+        return self._home_tariff_translations
+
+    async def async_step_home_tariff_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show year-based home tariff management."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        menu_options = ["home_tariff_add"]
+        if periods:
+            menu_options.append("home_tariff_selection")
+
+        context_entry = self._get_context_config_entry()
+        context_config = {**context_entry.data, **context_entry.options}
+        if (
+            not periods
+            and (
+                CONF_HOME_TARIFF_SUMMER_PRICE in context_config
+                or CONF_HOME_TARIFF_WINTER_PRICE in context_config
+            )
+        ):
+            menu_options.append("home_tariff_legacy_import")
+
+        menu_options.append("settings")
+
+        return self.async_show_menu(
+            step_id="home_tariff_settings",
+            menu_options=menu_options,
+            description_placeholders={
+                "tariff_table": self._home_tariff_table(translations),
+                "currency": self._home_tariff_currency(),
+            },
+        )
+
+    async def async_step_home_tariff_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select an existing year-based tariff period."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        if not periods:
+            return await self.async_step_home_tariff_settings()
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_HOME_TARIFF_SELECTION) or ""
+            ).strip()
+            if selected == HOME_TARIFF_SELECTION_BACK:
+                return await self.async_step_home_tariff_settings()
+            try:
+                index = int(selected)
+            except ValueError:
+                index = -1
+            if 0 <= index < len(periods):
+                self._selected_home_tariff_index = index
+                return await self.async_step_home_tariff_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_SELECTION_BACK,
+                label=translations["back"],
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(index),
+                    label=self._home_tariff_period_label(period),
+                )
+                for index, period in enumerate(periods)
+            ],
+        ]
+
+        return self.async_show_form(
+            step_id="home_tariff_selection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_home_tariff_add(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Add a year-based home tariff period."""
+
+        self._selected_home_tariff_index = None
+        _LOGGER.debug("Opening home tariff add form")
+        return await self._async_step_home_tariff_form(
+            user_input,
+            step_id="home_tariff_add",
+        )
+
+    async def async_step_home_tariff_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Edit or delete an existing home tariff period."""
+
+        _LOGGER.debug(
+            "Opening home tariff edit form: index=%s",
+            self._selected_home_tariff_index,
+        )
+        return await self._async_step_home_tariff_form(
+            user_input,
+            step_id="home_tariff_edit",
+        )
+
+    async def _async_step_home_tariff_form(
+        self,
+        user_input: dict[str, Any] | None,
+        *,
+        step_id: str,
+    ) -> ConfigFlowResult:
+        """Render and process the global home tariff form."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        selected: dict[str, Any] | None = None
+        if self._selected_home_tariff_index is not None:
+            if 0 <= self._selected_home_tariff_index < len(periods):
+                selected = periods[self._selected_home_tariff_index]
+            else:
+                self._selected_home_tariff_index = None
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            action = str(
+                user_input.get(CONF_HOME_TARIFF_ACTION)
+                or HOME_TARIFF_ACTION_SAVE
+            )
+            if action == HOME_TARIFF_ACTION_BACK:
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+            if action == HOME_TARIFF_ACTION_DELETE:
+                if self._selected_home_tariff_index is not None:
+                    deleted = periods[self._selected_home_tariff_index]
+                    del periods[self._selected_home_tariff_index]
+                    await self._async_save_home_tariff_periods(periods)
+                    _LOGGER.info(
+                        "Home tariff period deleted: year=%s from=%s to=%s",
+                        deleted.get("year"),
+                        deleted.get("valid_from"),
+                        deleted.get("valid_to"),
+                    )
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+            try:
+                year = int(str(user_input.get(CONF_HOME_TARIFF_YEAR) or "").strip())
+                valid_from = self._normalize_home_tariff_month_day(
+                    user_input.get(CONF_HOME_TARIFF_VALID_FROM),
+                    expected_year=year,
+                )
+                valid_to = self._normalize_home_tariff_month_day(
+                    user_input.get(CONF_HOME_TARIFF_VALID_TO),
+                    expected_year=year,
+                )
+                raw_price = str(
+                    user_input.get(CONF_HOME_TARIFF_PRICE) or ""
+                ).strip().replace(",", ".")
+                price = max(0.0, float(raw_price))
+                start = datetime.strptime(
+                    f"{year:04d}-{valid_from}",
+                    "%Y-%m-%d",
+                ).date()
+                end = datetime.strptime(
+                    f"{year:04d}-{valid_to}",
+                    "%Y-%m-%d",
+                ).date()
+                if not 2000 <= year <= 2100:
+                    errors[CONF_HOME_TARIFF_YEAR] = "invalid_tariff_year"
+                if end < start:
+                    errors[CONF_HOME_TARIFF_VALID_TO] = "invalid_tariff_range"
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_tariff_period"
+
+            exact_match_index: int | None = None
+            if not errors:
+                new_period = {
+                    "year": year,
+                    "valid_from": valid_from,
+                    "valid_to": valid_to,
+                    "price_per_kwh": round(price, 6),
+                    "currency": self._home_tariff_currency(),
+                }
+
+                for index, period in enumerate(periods):
+                    if index == self._selected_home_tariff_index:
+                        continue
+                    if int(period["year"]) != year:
+                        continue
+                    existing_start = str(period["valid_from"])
+                    existing_end = str(period["valid_to"])
+                    if valid_from == existing_start and valid_to == existing_end:
+                        exact_match_index = index
+                        continue
+                    if valid_from <= existing_end and valid_to >= existing_start:
+                        errors["base"] = "overlapping_tariff_period"
+                        break
+
+            if errors:
+                _LOGGER.debug(
+                    "Home tariff form rejected: step=%s input=%s errors=%s",
+                    step_id,
+                    {
+                        CONF_HOME_TARIFF_YEAR: user_input.get(CONF_HOME_TARIFF_YEAR),
+                        CONF_HOME_TARIFF_VALID_FROM: user_input.get(CONF_HOME_TARIFF_VALID_FROM),
+                        CONF_HOME_TARIFF_VALID_TO: user_input.get(CONF_HOME_TARIFF_VALID_TO),
+                        CONF_HOME_TARIFF_PRICE: user_input.get(CONF_HOME_TARIFF_PRICE),
+                    },
+                    errors,
+                )
+            else:
+                if self._selected_home_tariff_index is None:
+                    if exact_match_index is None:
+                        periods.append(new_period)
+                    else:
+                        periods[exact_match_index] = new_period
+                else:
+                    periods[self._selected_home_tariff_index] = new_period
+                periods.sort(
+                    key=lambda item: (
+                        int(item["year"]),
+                        str(item["valid_from"]),
+                        str(item["valid_to"]),
+                    )
+                )
+                await self._async_save_home_tariff_periods(periods)
+                _LOGGER.info(
+                    "Home tariff period saved: year=%s from=%s to=%s price=%.6f %s/kWh",
+                    year,
+                    valid_from,
+                    valid_to,
+                    price,
+                    self._home_tariff_currency(),
+                )
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+        current_year = dt_util.now().year
+        default_year = str(int(selected["year"]) if selected else current_year)
+        default_from = (
+            self._home_tariff_month_day_label(str(selected["valid_from"])).rstrip(".")
+            if selected
+            else "01.01"
+        )
+        default_to = (
+            self._home_tariff_month_day_label(str(selected["valid_to"])).rstrip(".")
+            if selected
+            else "31.12"
+        )
+        default_price = (
+            f"{float(selected['price_per_kwh']):.4f}" if selected else "0.0000"
+        )
+
+        action_options = [
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_ACTION_SAVE,
+                label=translations["save"],
+            )
+        ]
+        if selected is not None:
+            action_options.append(
+                selector.SelectOptionDict(
+                    value=HOME_TARIFF_ACTION_DELETE,
+                    label=translations["delete"],
+                )
+            )
+        action_options.append(
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_ACTION_BACK,
+                label=translations["back"],
+            )
+        )
+
+        # Keep the form schema deliberately simple.  Text selectors avoid
+        # frontend selector serialization differences between Home Assistant
+        # releases while still allowing locale-friendly comma decimal input.
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_YEAR,
+                        default=default_year,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_VALID_FROM,
+                        default=default_from,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_VALID_TO,
+                        default=default_to,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_PRICE,
+                        default=default_price,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_ACTION,
+                        default=HOME_TARIFF_ACTION_SAVE,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=action_options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def _async_save_home_tariff_periods(
+        self,
+        periods: list[dict[str, Any]],
+    ) -> None:
+        """Store global home tariff periods in SQLite and apply them live."""
+
+        if self._home_tariff_storage is None:
+            self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
+            await self._home_tariff_storage.async_setup()
+
+        saved = await self._home_tariff_storage.async_save(periods)
+        self._home_tariff_periods_cache = [dict(item) for item in saved]
+
+        # The tariff table is global. Every loaded vehicle gets the same period
+        # list immediately, while per-vehicle enable/home-zone settings remain
+        # untouched. No ConfigEntry reload is needed.
+        for _vehicle_id, _entry_id, runtime_data in iter_vehicle_runtimes(self.hass):
+            runtime_config = dict(runtime_data.get("config") or {})
+            runtime_config[CONF_HOME_TARIFF_PERIODS] = [dict(item) for item in saved]
+            runtime_data["config"] = runtime_config
+
+            coordinator = runtime_data.get("coordinator")
+            if coordinator is not None:
+                coordinator.config = runtime_config
+                coordinator.charging_cost_calculator = (
+                    FordTriplogChargingCostCalculator(self.hass, runtime_config)
+                )
+
+            charge_manager = runtime_data.get("charge_manager")
+            if charge_manager is not None:
+                charge_manager.config = dict(runtime_config)
+                charge_manager.cost_calculator = (
+                    FordTriplogChargingCostCalculator(self.hass, runtime_config)
+                )
+                await charge_manager.async_recalculate_all_costs()
+
+    async def async_step_home_tariff_legacy_import(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Convert the former fixed summer/winter prices for one year."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        context_entry = self._get_context_config_entry()
+        context_config = {**context_entry.data, **context_entry.options}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                year = int(user_input.get(CONF_HOME_TARIFF_YEAR))
+                if not 2000 <= year <= 2100:
+                    raise ValueError
+                summer = max(
+                    0.0,
+                    float(context_config.get(CONF_HOME_TARIFF_SUMMER_PRICE, 0.28)),
+                )
+                winter = max(
+                    0.0,
+                    float(context_config.get(CONF_HOME_TARIFF_WINTER_PRICE, 0.38)),
+                )
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_tariff_year"
+            else:
+                periods = [
+                    {
+                        "year": year,
+                        "valid_from": "01-01",
+                        "valid_to": "03-31",
+                        "price_per_kwh": round(winter, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                    {
+                        "year": year,
+                        "valid_from": "04-01",
+                        "valid_to": "09-30",
+                        "price_per_kwh": round(summer, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                    {
+                        "year": year,
+                        "valid_from": "10-01",
+                        "valid_to": "12-31",
+                        "price_per_kwh": round(winter, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                ]
+                await self._async_save_home_tariff_periods(periods)
+                return await self.async_step_home_tariff_settings()
+
+        return self.async_show_form(
+            step_id="home_tariff_legacy_import",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_YEAR,
+                        default=dt_util.now().year,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=2000,
+                            max=2100,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
         )
 
 
@@ -8151,38 +8763,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         False,
                     ),
                 ): selector.BooleanSelector(),
-
-                vol.Optional(
-                    CONF_HOME_TARIFF_SUMMER_PRICE,
-                    default=self._options.get(
-                        CONF_HOME_TARIFF_SUMMER_PRICE,
-                        0.28,
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=10,
-                        step=0.001,
-                        unit_of_measurement="/kWh",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-
-                vol.Optional(
-                    CONF_HOME_TARIFF_WINTER_PRICE,
-                    default=self._options.get(
-                        CONF_HOME_TARIFF_WINTER_PRICE,
-                        0.38,
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=10,
-                        step=0.001,
-                        unit_of_measurement="/kWh",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
 
                 vol.Optional(
                     CONF_HOME_TARIFF_CURRENCY,

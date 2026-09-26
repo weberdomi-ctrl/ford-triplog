@@ -25,7 +25,6 @@ from .const import (
     DEFAULT_JOURNEY_HOME_TIMEOUT,
     DEFAULT_JOURNEY_HOME_ZONE,
     DEFAULT_JOURNEY_MAX_GAP_HOURS,
-    HOME_ZONE_TOLERANCE_METERS,
     SIGNAL_LAST_JOURNEY_UPDATED,
 )
 from .journey import FordTriplogJourney, JourneyItem
@@ -222,23 +221,6 @@ class FordTriplogJourneyManager:
         if self.current_journey is None:
             journey = self._new_journey_from_trip(data)
             self.current_journey = journey
-
-            # A Smart Trip can represent an entire Home -> Home round trip as
-            # one trip.  In that case start the normal Home-stay completion
-            # handling immediately instead of waiting for a second trip or a
-            # maintenance rebuild.
-            home_loop_completed = await self._async_handle_home_arrival(
-                journey,
-                data,
-                reason="returned_to_home_zone_single_trip",
-            )
-            if home_loop_completed is not None:
-                return JourneyUpdateResult(
-                    action="completed",
-                    completed_journey=home_loop_completed,
-                    reason="returned_to_home_zone_single_trip",
-                )
-
             await self.storage.save_current_journey(journey)
 
             return JourneyUpdateResult(
@@ -574,19 +556,13 @@ class FordTriplogJourneyManager:
             reason="calendar_day_boundary_ignored",
         )
 
+    @staticmethod
     def is_complete_journey(
-        self,
         journey: FordTriplogJourney,
     ) -> bool:
-        """Return whether a journey has a valid trip boundary.
+        """Return whether a journey starts and ends with at least two trips."""
 
-        Normal journeys need at least two trips.  A single trip is also a
-        complete journey when it starts and ends inside the configured Home
-        zone.  This covers round trips that Smart Trip intentionally keeps as
-        one trip, for example Home -> short stop -> Home.
-        """
-
-        if journey.trip_count < 1:
+        if journey.trip_count < 2:
             return False
 
         item_types = [
@@ -601,34 +577,8 @@ class FordTriplogJourneyManager:
         ):
             return False
 
-        if not all(item_type in {"trip", "charge"} for item_type in item_types):
-            return False
-
-        if journey.trip_count >= 2:
-            return True
-
-        start_home = self._is_location_inside_home(
-            journey.start_latitude,
-            journey.start_longitude,
-            source="journey_start",
-            item_id=journey.journey_id,
-        )
-        end_home = self._is_location_inside_home(
-            journey.end_latitude,
-            journey.end_longitude,
-            source="journey_end",
-            item_id=journey.journey_id,
-        )
-        single_trip_home_loop = start_home and end_home
-
-        if single_trip_home_loop:
-            _LOGGER.debug(
-                "Journey single-trip Home loop accepted as complete: journey=%s trip=%s",
-                journey.journey_id,
-                journey.trip_ids[0] if journey.trip_ids else None,
-            )
-
-        return single_trip_home_loop
+        # Both consecutive trips and consecutive charging sessions are valid.
+        return all(item_type in {"trip", "charge"} for item_type in item_types)
 
     async def _finish_or_discard_current(
         self,
@@ -1148,18 +1098,15 @@ class FordTriplogJourneyManager:
         except (TypeError, ValueError):
             return False
 
-        effective_radius = radius + HOME_ZONE_TOLERANCE_METERS
-        inside_home = distance <= effective_radius
+        inside_home = distance <= radius
         _LOGGER.debug(
             "Journey home-zone check: source=%s item=%s zone=%s "
-            "distance=%.1fm radius=%.1fm tolerance=%.1fm effective_radius=%.1fm inside=%s",
+            "distance=%.1fm radius=%.1fm inside=%s",
             source,
             item_id,
             self.home_zone_entity_id,
             distance,
             radius,
-            HOME_ZONE_TOLERANCE_METERS,
-            effective_radius,
             inside_home,
         )
         return inside_home
@@ -1548,22 +1495,15 @@ class FordTriplogJourneyManager:
             except (TypeError, ValueError):
                 continue
 
-            effective_radius = radius
-            if zone_state.entity_id == "zone.home":
-                effective_radius += HOME_ZONE_TOLERANCE_METERS
-
-            if distance > effective_radius:
+            if distance > radius:
                 continue
 
-            if zone_state.entity_id == "zone.home":
-                zone_name = "Home"
-            else:
-                zone_name = str(
-                    zone_state.attributes.get(
-                        "friendly_name",
-                        zone_state.name,
-                    )
-                ).strip()
+            zone_name = str(
+                zone_state.attributes.get(
+                    "friendly_name",
+                    zone_state.name,
+                )
+            ).strip()
             if not zone_name:
                 continue
 

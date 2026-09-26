@@ -76,7 +76,8 @@
           "init": "Wróć do menu głównego",
           "osrm_settings": "Wygładzanie trasy OSRM",
           "vehicle_sensors": "Czujniki pojazdu",
-          "vehicle_settings": "Pojazd"
+          "vehicle_settings": "Pojazd",
+          "home_tariff_settings": "Taryfy ładowania domowego"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
@@ -85,7 +86,8 @@
           "init": "Wróć do przeglądu Ford Triplog.",
           "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie.",
           "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog.",
-          "vehicle_settings": "Wyświetl wykrytą tożsamość pojazdu i zmień jego nazwę."
+          "vehicle_settings": "Wyświetl wykrytą tożsamość pojazdu i zmień jego nazwę.",
+          "home_tariff_settings": "Zarządzaj rocznymi okresami taryf ładowania w domu."
         }
       },
       "import_charging_sites": {
@@ -269,7 +271,7 @@
       },
       "route_rebuild_result": {
         "title": "Konserwacja tras zakończona",
-        "description": "Tryb: {mode}\n\nZapisane trasy: {routes_total} · Wybrane: {routes_selected} · Przetworzone: {routes_processed}\n\nZapisane dopasowania OSRM: {routes_matched} · Zrekonstruowane: {routes_reconstructed} · Nieprzyjęte: {routes_failed} · Pominięte: {routes_skipped}\n\nOstatnia trasa: {last_trip_id}"
+        "description": "Tryb: {mode}\n\nZapisane trasy: {routes_total} · Wybrane: {routes_selected} · Przetworzone: {routes_processed}\n\nZapisane dopasowania OSRM: {routes_matched} · Nieudane: {routes_failed} · Pominięte: {routes_skipped}\n\nOstatnia trasa: {last_trip_id}"
       },
       "charge_management": {
         "title": "Sesje ładowania",
@@ -428,7 +430,7 @@
       },
       "ocr_settings": {
         "title": "Połączenie OCR",
-        "description": "Ford Triplog może opcjonalnie analizować paragony za pomocą zewnętrznej lokalnej usługi OCR. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Pozostałe funkcje są dostępne bez aktywnego połączenia OCR.\n\nPodczas zapisywania połączenie jest sprawdzane przez punkt końcowy `/health`.",
+        "description": "Ford Triplog może opcjonalnie analizować paragony za pomocą zewnętrznej lokalnej usługi OCR. Pozostałe funkcje są dostępne bez aktywnego połączenia OCR.\n\nPodczas zapisywania połączenie jest sprawdzane przez punkt końcowy `/health`.",
         "data": {
           "ocr_enabled": "Włącz OCR",
           "ocr_url": "Adres URL usługi OCR",
@@ -675,7 +677,7 @@
       },
       "osrm_settings": {
         "title": "Wygładzanie trasy OSRM",
-        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. To ustawienie jest globalne i dotyczy wszystkich skonfigurowanych pojazdów. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów. Dopasowania OSRM o bardzo niskiej wiarygodności są odrzucane i wyświetlane jako surowa trasa. Bardzo rzadkie ślady z maksymalnie pięcioma punktami GPS są zamiast tego rekonstruowane od startu do celu, jeśli trasa OSRM różni się od zmierzonego dystansu przejazdu o nie więcej niż 20%.",
+        "description": "Ford Triplog może opcjonalnie dopasowywać zarejestrowane trasy GPS do sieci dróg OpenStreetMap za pomocą zewnętrznej lokalnej usługi OSRM. Bez aktywnego połączenia OSRM istniejąca surowa trasa pozostaje w pełni dostępna.\n\nPodczas zapisywania połączenie jest testowane. Domyślnie używany jest promień dopasowania 15 metrów.",
         "data": {
           "osrm_enabled": "Włącz OSRM",
           "osrm_url": "Adres URL usługi OSRM",
@@ -930,6 +932,54 @@
         "data_description": {
           "vehicle_context": "Ten wybór dotyczy ustawień pojazdu, podróży, tras, postojów, ładowań i eksportu."
         }
+      },
+      "home_tariff_settings": {
+        "title": "Taryfy ładowania domowego",
+        "description": "Skonfigurowane okresy taryf:\n\n{tariff_table}\n\nWaluta: {currency}. Okresy są przypisane do roku kalendarzowego i nie mogą się nakładać.",
+        "menu_options": {
+          "home_tariff_add": "Dodaj okres taryfy",
+          "home_tariff_selection": "Edytuj okres taryfy",
+          "home_tariff_legacy_import": "Importuj poprzednie taryfy lato/zima",
+          "settings": "Powrót do ustawień"
+        },
+        "menu_option_descriptions": {
+          "home_tariff_add": "Dodaj nowy zakres dat dla roku z ceną za kWh.",
+          "home_tariff_selection": "Zdefiniuj okres taryfy. Pola Od/Do używają formatu dzień.miesiąc, np. 01.04 i 30.09. Okresy w tym samym roku nie mogą się nakładać.",
+          "home_tariff_legacy_import": "Przekształć poprzednie stałe taryfy lato/zima w trzy okresy dla jednego roku.",
+          "settings": "Wróć do ustawień."
+        }
+      },
+      "home_tariff_selection": {
+        "title": "Wybierz okres taryfy",
+        "description": "Wybierz okres do edycji lub usunięcia.",
+        "data": {
+          "home_tariff_selection": "Okres taryfy"
+        }
+      },
+      "home_tariff_edit": {
+        "title": "Edytuj okres taryfy",
+        "description": "Zdefiniuj okres taryfy. Pola Od/Do używają formatu dzień.miesiąc, np. 01.04 i 30.09. Okresy w tym samym roku nie mogą się nakładać.",
+        "data": {
+          "home_tariff_year": "Rok",
+          "home_tariff_valid_from": "Od",
+          "home_tariff_valid_to": "Do",
+          "home_tariff_price_per_kwh": "Taryfa za kWh",
+          "home_tariff_action": "Akcja"
+        },
+        "data_description": {
+          "home_tariff_year": "Rok kalendarzowy, dla którego obowiązuje ten okres.",
+          "home_tariff_valid_from": "Pierwszy ważny dzień w formacie DD.MM, np. 01.04.",
+          "home_tariff_valid_to": "Ostatni ważny dzień w formacie DD.MM, np. 30.09.",
+          "home_tariff_price_per_kwh": "Cena energii za kWh w tym okresie.",
+          "home_tariff_action": "Zapisz, usuń lub wróć bez zmian."
+        }
+      },
+      "home_tariff_legacy_import": {
+        "title": "Importuj poprzednie taryfy",
+        "description": "Wybierz rok. Poprzednia taryfa zimowa zostanie użyta dla 01.01–31.03 i 01.10–31.12, a letnia dla 01.04–30.09.",
+        "data": {
+          "home_tariff_year": "Rok"
+        }
       }
     },
     "error": {
@@ -990,7 +1040,11 @@
       "user_place_delete_failed": "The place could not be deleted.",
       "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS.",
       "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie.",
-      "vehicle_context_invalid": "Wybrany pojazd nie jest obecnie dostępny."
+      "vehicle_context_invalid": "Wybrany pojazd nie jest obecnie dostępny.",
+      "invalid_tariff_period": "Wprowadź prawidłowy rok, daty Od/Do i taryfę.",
+      "invalid_tariff_year": "Wprowadź rok od 2000 do 2100.",
+      "invalid_tariff_range": "Koniec okresu taryfy nie może być wcześniejszy niż początek.",
+      "overlapping_tariff_period": "Ten okres taryfy nakłada się na istniejący okres w tym samym roku."
     }
   },
   "entity": {
@@ -1284,7 +1338,14 @@
     "export_from": "od {date}",
     "export_until": "do {date}",
     "export_range": "{start}–{end}",
-    "receipt_delete": "Usuń paragon"
+    "receipt_delete": "Usuń paragon",
+    "home_tariff_year": "Rok",
+    "home_tariff_valid_from": "Od",
+    "home_tariff_valid_to": "Do",
+    "home_tariff_tariff": "Taryfa",
+    "home_tariff_save": "Zapisz",
+    "home_tariff_delete": "Usuń",
+    "home_tariff_back": "← Wstecz"
   },
   "services": {
     "import_charging_sites": {

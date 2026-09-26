@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+from datetime import date
 from typing import Any
 
 from homeassistant.core import HomeAssistant
@@ -18,6 +19,7 @@ CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
 CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
 CONF_HOME_TARIFF_WINTER_PRICE = "home_tariff_winter_price"
 CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
+CONF_HOME_TARIFF_PERIODS = "home_tariff_periods"
 
 DEFAULT_HOME_ZONE_ENTITY_ID = "zone.home"
 DEFAULT_HOME_TARIFF_SUMMER_PRICE = 0.28
@@ -72,6 +74,102 @@ class FordTriplogChargingCostCalculator:
             )
             or DEFAULT_HOME_TARIFF_CURRENCY
         ).strip().upper()
+        self.home_tariff_periods = self._normalize_tariff_periods(
+            config.get(CONF_HOME_TARIFF_PERIODS)
+        )
+        self._legacy_tariff_configured = (
+            CONF_HOME_TARIFF_SUMMER_PRICE in config
+            or CONF_HOME_TARIFF_WINTER_PRICE in config
+        )
+
+
+    def _normalize_tariff_periods(self, value: Any) -> list[dict[str, Any]]:
+        """Return validated year-based home tariff periods."""
+
+        if not isinstance(value, list):
+            return []
+
+        normalized: list[dict[str, Any]] = []
+        for item in value:
+            if not isinstance(item, dict):
+                continue
+
+            try:
+                year = int(item.get("year"))
+                valid_from = str(item.get("valid_from") or "").strip()
+                valid_to = str(item.get("valid_to") or "").strip()
+                price = max(0.0, float(item.get("price_per_kwh")))
+                start = date.fromisoformat(f"{year:04d}-{valid_from}")
+                end = date.fromisoformat(f"{year:04d}-{valid_to}")
+            except (TypeError, ValueError):
+                continue
+
+            if end < start:
+                continue
+
+            currency = str(
+                item.get("currency") or self.home_tariff_currency
+            ).strip().upper()
+            normalized.append(
+                {
+                    "year": year,
+                    "valid_from": valid_from,
+                    "valid_to": valid_to,
+                    "price_per_kwh": price,
+                    "currency": currency or self.home_tariff_currency,
+                }
+            )
+
+        normalized.sort(
+            key=lambda item: (
+                int(item["year"]),
+                str(item["valid_from"]),
+                str(item["valid_to"]),
+            )
+        )
+        return normalized
+
+    def _tariff_for_date(
+        self,
+        local_date: date,
+    ) -> tuple[str, float, str] | None:
+        """Return the configured home tariff for a local calendar date."""
+
+        if self.home_tariff_periods:
+            iso_month_day = local_date.strftime("%m-%d")
+            for period in self.home_tariff_periods:
+                if int(period["year"]) != local_date.year:
+                    continue
+                if (
+                    str(period["valid_from"])
+                    <= iso_month_day
+                    <= str(period["valid_to"])
+                ):
+                    return (
+                        f"{period['year']}:"
+                        f"{period['valid_from']}-{period['valid_to']}",
+                        float(period["price_per_kwh"]),
+                        str(period.get("currency") or self.home_tariff_currency),
+                    )
+            return None
+
+        # Backward compatibility for installations that already stored the
+        # former fixed summer/winter tariff options. New configurations use
+        # explicit year-based periods instead.
+        if self._legacy_tariff_configured:
+            if 4 <= local_date.month <= 9:
+                return (
+                    "legacy_summer",
+                    self.home_tariff_summer_price,
+                    self.home_tariff_currency,
+                )
+            return (
+                "legacy_winter",
+                self.home_tariff_winter_price,
+                self.home_tariff_currency,
+            )
+
+        return None
 
     @staticmethod
     def _distance_meters(
@@ -220,15 +318,13 @@ class FordTriplogChargingCostCalculator:
             start_time = self._parse_datetime(charge.start_time)
             energy, energy_source = self._pricing_energy(charge)
 
-            if start_time is not None and energy is not None:
+            tariff = None
+            if start_time is not None:
                 local_start = dt_util.as_local(start_time)
+                tariff = self._tariff_for_date(local_start.date())
 
-                if 4 <= local_start.month <= 9:
-                    tariff_name = "summer"
-                    tariff_price = self.home_tariff_summer_price
-                else:
-                    tariff_name = "winter"
-                    tariff_price = self.home_tariff_winter_price
+            if start_time is not None and energy is not None and tariff:
+                tariff_name, tariff_price, tariff_currency = tariff
 
                 charge.energy_cost = round(energy * tariff_price, 4)
                 charge.session_fee = 0.0
@@ -236,7 +332,7 @@ class FordTriplogChargingCostCalculator:
                 charge.blocking_fee = 0.0
                 charge.parking_fee = 0.0
                 charge.other_cost = 0.0
-                charge.currency = self.home_tariff_currency
+                charge.currency = tariff_currency
                 charge.cost_source = "home_tariff"
                 charge.cost_verified = True
 
@@ -258,6 +354,22 @@ class FordTriplogChargingCostCalculator:
                     charge.cost_total or 0.0,
                     charge.currency,
                 )
+            elif cost_source == "home_tariff" and start_time is not None:
+                # A year-based tariff schedule is authoritative. If the
+                # charging date is no longer covered, remove the stale
+                # automatically calculated cost instead of silently using a
+                # tariff from another year or period.
+                charge.energy_cost = None
+                charge.session_fee = None
+                charge.time_fee = None
+                charge.blocking_fee = None
+                charge.parking_fee = None
+                charge.other_cost = None
+                charge.cost_total = None
+                charge.currency = None
+                charge.cost_source = "none"
+                charge.cost_verified = False
+                charge.recalculate_costs()
 
         after = charge.to_dict()
         return after != before

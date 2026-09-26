@@ -47,7 +47,6 @@ from .route_storage import FordTriplogRouteStorage
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
-    osrm_confidence_is_acceptable,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -55,9 +54,6 @@ _LOGGER = logging.getLogger(__name__)
 ABRP_DEBOUNCE_SECONDS = 0.75
 ABRP_MAX_PAIR_DELTA_SECONDS = 2.0
 ROUTE_PERSIST_INTERVAL_SECONDS = 60.0
-SPARSE_ROUTE_MAX_POINTS = 5
-RECONSTRUCTION_DISTANCE_TOLERANCE = 0.20
-RECONSTRUCTION_MIN_TOLERANCE_M = 500.0
 
 
 class FordTriplogRouteTracker:
@@ -396,12 +392,9 @@ class FordTriplogRouteTracker:
     async def async_finalize(
         self,
         *,
-        start_latitude: Any = None,
-        start_longitude: Any = None,
         end_latitude: Any = None,
         end_longitude: Any = None,
         end_timestamp: Any = None,
-        trip_distance_km: Any = None,
     ) -> None:
         """Append authoritative Trip end GPS and complete the route."""
 
@@ -438,142 +431,50 @@ class FordTriplogRouteTracker:
                     self.osrm_url,
                     radius_meters=self.osrm_match_radius,
                 )
+                match_result = await osrm_client.async_match(points)
 
-                # Very sparse traces do not carry enough information for a
-                # meaningful map-match confidence. Reconstruct those trips
-                # from authoritative endpoints and validate the result against
-                # the measured trip distance.
-                if len(points) <= SPARSE_ROUTE_MAX_POINTS:
-                    try:
-                        trip_distance_m = float(trip_distance_km) * 1000.0
-                    except (TypeError, ValueError):
-                        trip_distance_m = 0.0
-
-                    endpoint_values = self._reconstruction_endpoints(
-                        points,
-                        start_latitude,
-                        start_longitude,
-                        end_latitude,
-                        end_longitude,
-                    )
-
-                    if trip_distance_m > 0 and endpoint_values is not None:
-                        (
-                            route_start_lat,
-                            route_start_lon,
-                            route_end_lat,
-                            route_end_lon,
-                        ) = endpoint_values
-                        route_result = await osrm_client.async_route(
-                            route_start_lat,
-                            route_start_lon,
-                            route_end_lat,
-                            route_end_lon,
-                        )
-                        plausible, delta_m, delta_pct = (
-                            self._osrm_reconstruction_is_plausible(
-                                trip_distance_m,
-                                route_result.distance_m,
-                            )
-                        )
-                        if plausible:
-                            matched_route = {
-                                "provider": "osrm",
-                                "match_type": "reconstructed",
-                                "url": self.osrm_url,
-                                "radius_m": self.osrm_match_radius,
-                                "distance_m": route_result.distance_m,
-                                "duration_s": route_result.duration_s,
-                                "confidence": None,
-                                "matched_tracepoints": 0,
-                                "unmatched_tracepoints": len(points),
-                                "reconstruction_trip_distance_m": trip_distance_m,
-                                "reconstruction_distance_delta_m": delta_m,
-                                "reconstruction_distance_delta_pct": delta_pct,
-                                "geometry": route_result.geometry,
-                            }
-                            _LOGGER.info(
-                                "OSRM reconstructed sparse route for trip %s: "
-                                "raw_points=%s trip_distance=%.1fm "
-                                "route_distance=%.1fm delta_pct=%.1f%%",
-                                trip_id,
-                                len(points),
-                                trip_distance_m,
-                                route_result.distance_m,
-                                delta_pct,
-                            )
-                        else:
-                            _LOGGER.info(
-                                "OSRM sparse-route reconstruction rejected for "
-                                "trip %s: raw_points=%s trip_distance=%.1fm "
-                                "route_distance=%.1fm delta_pct=%.1f%%; "
-                                "raw route will be used",
-                                trip_id,
-                                len(points),
-                                trip_distance_m,
-                                route_result.distance_m,
-                                delta_pct,
-                            )
-                    else:
-                        _LOGGER.info(
-                            "OSRM sparse-route reconstruction skipped for trip %s: "
-                            "raw_points=%s trip_distance=%s endpoints=%s; "
-                            "raw route will be used",
-                            trip_id,
-                            len(points),
-                            trip_distance_km,
-                            endpoint_values is not None,
-                        )
-                else:
-                    match_result = await osrm_client.async_match(points)
-
-                    if self._osrm_match_is_plausible(
-                        points,
+                if self._osrm_match_is_plausible(
+                    points,
+                    match_result.distance_m,
+                    match_result.unmatched_tracepoints,
+                ):
+                    matched_route = {
+                        "provider": "osrm",
+                        "url": self.osrm_url,
+                        "radius_m": self.osrm_match_radius,
+                        "distance_m": match_result.distance_m,
+                        "duration_s": match_result.duration_s,
+                        "confidence": match_result.confidence,
+                        "matched_tracepoints": match_result.matched_tracepoints,
+                        "unmatched_tracepoints": match_result.unmatched_tracepoints,
+                        "geometry": match_result.geometry,
+                    }
+                    _LOGGER.info(
+                        "OSRM matched route for trip %s: raw_points=%s "
+                        "matched_points=%s distance=%.1fm confidence=%s",
+                        trip_id,
+                        len(points),
+                        len(match_result.geometry.get("coordinates", [])),
                         match_result.distance_m,
-                        match_result.unmatched_tracepoints,
                         match_result.confidence,
-                    ):
-                        matched_route = {
-                            "provider": "osrm",
-                            "match_type": "matched",
-                            "url": self.osrm_url,
-                            "radius_m": self.osrm_match_radius,
-                            "distance_m": match_result.distance_m,
-                            "duration_s": match_result.duration_s,
-                            "confidence": match_result.confidence,
-                            "matched_tracepoints": match_result.matched_tracepoints,
-                            "unmatched_tracepoints": match_result.unmatched_tracepoints,
-                            "geometry": match_result.geometry,
-                        }
-                        _LOGGER.info(
-                            "OSRM matched route for trip %s: raw_points=%s "
-                            "matched_points=%s distance=%.1fm confidence=%s",
-                            trip_id,
-                            len(points),
-                            len(match_result.geometry.get("coordinates", [])),
-                            match_result.distance_m,
-                            match_result.confidence,
-                        )
-                    else:
-                        _LOGGER.info(
-                            "OSRM result rejected for trip %s: confidence=%s "
-                            "distance=%.1fm unmatched=%s; raw route will be used",
-                            trip_id,
-                            match_result.confidence,
-                            match_result.distance_m,
-                            match_result.unmatched_tracepoints,
-                        )
+                    )
+                else:
+                    _LOGGER.warning(
+                        "OSRM result rejected as implausible for trip %s; "
+                        "raw route will be used",
+                        trip_id,
+                    )
 
             except FordTriplogOSRMError as err:
                 _LOGGER.warning(
-                    "OSRM route processing failed for trip %s: %s; "
+                    "OSRM matching failed for trip %s: %s; "
                     "raw route will be used",
                     trip_id,
                     err,
                 )
             except Exception:
                 _LOGGER.exception(
-                    "Unexpected OSRM route processing error for trip %s; "
+                    "Unexpected OSRM matching error for trip %s; "
                     "raw route will be used",
                     trip_id,
                 )
@@ -606,79 +507,12 @@ class FordTriplogRouteTracker:
         )
 
     @staticmethod
-    def _reconstruction_endpoints(
-        points: list[dict[str, Any]],
-        start_latitude: Any,
-        start_longitude: Any,
-        end_latitude: Any,
-        end_longitude: Any,
-    ) -> tuple[float, float, float, float] | None:
-        """Return authoritative endpoints, falling back to raw route points."""
-
-        candidates: list[tuple[Any, Any, Any, Any]] = [
-            (
-                start_latitude,
-                start_longitude,
-                end_latitude,
-                end_longitude,
-            )
-        ]
-        if points:
-            first = points[0] if isinstance(points[0], dict) else {}
-            last = points[-1] if isinstance(points[-1], dict) else {}
-            candidates.append(
-                (
-                    first.get("latitude"),
-                    first.get("longitude"),
-                    last.get("latitude"),
-                    last.get("longitude"),
-                )
-            )
-
-        for values in candidates:
-            try:
-                start_lat, start_lon, end_lat, end_lon = map(float, values)
-            except (TypeError, ValueError):
-                continue
-            if (
-                -90.0 <= start_lat <= 90.0
-                and -180.0 <= start_lon <= 180.0
-                and -90.0 <= end_lat <= 90.0
-                and -180.0 <= end_lon <= 180.0
-            ):
-                return start_lat, start_lon, end_lat, end_lon
-
-        return None
-
-    @staticmethod
-    def _osrm_reconstruction_is_plausible(
-        trip_distance_m: float,
-        route_distance_m: float,
-    ) -> tuple[bool, float, float]:
-        """Validate a sparse route against measured vehicle trip distance."""
-
-        if trip_distance_m <= 0 or route_distance_m <= 0:
-            return False, 0.0, 0.0
-
-        delta_m = abs(route_distance_m - trip_distance_m)
-        delta_pct = (delta_m / trip_distance_m) * 100.0
-        allowed_delta_m = max(
-            RECONSTRUCTION_MIN_TOLERANCE_M,
-            trip_distance_m * RECONSTRUCTION_DISTANCE_TOLERANCE,
-        )
-        return delta_m <= allowed_delta_m, delta_m, delta_pct
-
-    @staticmethod
     def _osrm_match_is_plausible(
         points: list[dict[str, Any]],
         matched_distance_m: float,
         unmatched_tracepoints: int,
-        confidence: float | None,
     ) -> bool:
         """Apply conservative sanity checks before accepting OSRM geometry."""
-
-        if not osrm_confidence_is_acceptable(confidence):
-            return False
 
         if matched_distance_m <= 0:
             return False

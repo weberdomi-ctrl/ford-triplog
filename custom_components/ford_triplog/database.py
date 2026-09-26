@@ -4,8 +4,8 @@ Ford Triplog
 SQLite storage backend.
 
 Version: 2.5.0-dev
-Build: 25017
-Changes: Add one global settings record shared by all vehicle ConfigEntries.
+Build: 25020
+Changes: Store global home charging tariff periods in SQLite.
 """
 
 from __future__ import annotations
@@ -862,15 +862,6 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
-                        CREATE TABLE IF NOT EXISTS global_settings (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
-                        )
-                        """
-                    )
-
-                    db.execute(
-                        """
                         CREATE TABLE IF NOT EXISTS user_charging_sites (
                             site_id TEXT PRIMARY KEY,
                             data TEXT NOT NULL
@@ -1012,6 +1003,33 @@ class FordTriplogDatabase:
                             migration_id TEXT PRIMARY KEY,
                             completed_at TEXT NOT NULL
                         )
+                        """
+                    )
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS home_charging_tariffs (
+                            tariff_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            valid_from TEXT NOT NULL,
+                            valid_to TEXT NOT NULL,
+                            price_per_kwh REAL NOT NULL CHECK (price_per_kwh >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL,
+                            CHECK (valid_to >= valid_from)
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
+                        ON home_charging_tariffs (valid_from, valid_to)
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_home_charging_tariffs_dates
+                        ON home_charging_tariffs (valid_from, valid_to)
                         """
                     )
 
@@ -1334,6 +1352,111 @@ class FordTriplogDatabase:
                 "Ford Triplog SQLite database initialized: %s",
                 self.db_path,
             )
+
+    async def load_home_charging_tariffs(self) -> list[dict[str, Any]]:
+        """Load global home charging tariff periods from SQLite."""
+
+        await self.async_setup()
+        self._log_read("home_charging_tariffs")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    """
+                    SELECT tariff_id, valid_from, valid_to, price_per_kwh,
+                           currency, created_at, updated_at
+                    FROM home_charging_tariffs
+                    ORDER BY valid_from ASC, valid_to ASC, tariff_id ASC
+                    """
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+        try:
+            rows = await self.hass.async_add_executor_job(_read)
+            _LOGGER.debug(
+                "SQLite home charging tariffs loaded: %d",
+                len(rows),
+            )
+            return rows
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read home charging tariffs from SQLite"
+            )
+            return []
+
+    async def save_home_charging_tariffs(
+        self,
+        tariffs: list[dict[str, Any]],
+    ) -> bool:
+        """Replace the global home charging tariff table atomically."""
+
+        await self.async_setup()
+
+        normalized: list[tuple[str, str, float, str]] = []
+        for item in tariffs or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                valid_from = str(item["valid_from"]).strip()
+                valid_to = str(item["valid_to"]).strip()
+                price = max(0.0, float(item["price_per_kwh"]))
+                currency = str(item.get("currency") or "CHF").strip().upper()
+                # Validate ISO calendar dates without changing storage format.
+                time.strptime(valid_from, "%Y-%m-%d")
+                time.strptime(valid_to, "%Y-%m-%d")
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("Invalid home charging tariff period")
+            if valid_to < valid_from:
+                raise ValueError("Home charging tariff end is before start")
+            normalized.append((valid_from, valid_to, price, currency or "CHF"))
+
+        normalized.sort(key=lambda item: (item[0], item[1]))
+        for index, current in enumerate(normalized):
+            for previous in normalized[:index]:
+                if current[0] <= previous[1] and current[1] >= previous[0]:
+                    raise ValueError("Overlapping home charging tariff periods")
+
+        def _write() -> None:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    db.execute("DELETE FROM home_charging_tariffs")
+                    for valid_from, valid_to, price, currency in normalized:
+                        db.execute(
+                            """
+                            INSERT INTO home_charging_tariffs (
+                                valid_from, valid_to, price_per_kwh, currency,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                valid_from,
+                                valid_to,
+                                price,
+                                currency,
+                                now,
+                                now,
+                            ),
+                        )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+
+        try:
+            await self.hass.async_add_executor_job(_write)
+            _LOGGER.info(
+                "SQLite home charging tariffs saved: %d",
+                len(normalized),
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save home charging tariffs to SQLite"
+            )
+            return False
 
     async def load_storage_mirror_snapshot(
         self,
@@ -3935,73 +4058,6 @@ class FordTriplogDatabase:
                 "Unable to save charge metadata to SQLite"
             )
             return False
-
-    async def save_global_settings(self, data: dict[str, Any]) -> bool:
-        """Persist integration-wide settings shared by all vehicles."""
-
-        def _write() -> None:
-            payload = json.dumps(data, ensure_ascii=False)
-            with sqlite3.connect(self.db_path) as db:
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS global_settings (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        data TEXT NOT NULL
-                    )
-                    """
-                )
-                db.execute(
-                    "INSERT OR REPLACE INTO global_settings (id, data) VALUES (1, ?)",
-                    (payload,),
-                )
-                db.commit()
-
-        try:
-            await self.hass.async_add_executor_job(functools.partial(_write))
-            _LOGGER.debug("Global settings saved to SQLite")
-            return True
-        except Exception:
-            _LOGGER.exception("Unable to save global settings to SQLite")
-            return False
-
-    async def load_global_settings(self) -> dict[str, Any] | None:
-        """Load integration-wide settings shared by all vehicles."""
-
-        self._log_read("global_settings")
-
-        def _read() -> dict[str, Any] | None:
-            with sqlite3.connect(self.db_path) as db:
-                db.execute(
-                    """
-                    CREATE TABLE IF NOT EXISTS global_settings (
-                        id INTEGER PRIMARY KEY CHECK (id = 1),
-                        data TEXT NOT NULL
-                    )
-                    """
-                )
-                row = db.execute(
-                    "SELECT data FROM global_settings WHERE id = 1"
-                ).fetchone()
-
-            if row is None:
-                return None
-
-            data = json.loads(row[0])
-            return data if isinstance(data, dict) else None
-
-        try:
-            data = await self.hass.async_add_executor_job(
-                functools.partial(_read)
-            )
-            _LOGGER.debug(
-                "SQLite global settings loaded: %s",
-                "present" if data is not None else "empty",
-            )
-            return data
-        except Exception:
-            _LOGGER.exception("Unable to read global settings from SQLite")
-            return None
-
 
     async def save_metadata(self, data: dict[str, Any]) -> bool:
         """Mirror complete metadata.json into SQLite."""

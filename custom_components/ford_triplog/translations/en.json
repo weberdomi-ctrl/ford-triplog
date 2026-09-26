@@ -76,7 +76,8 @@
           "init": "Back to main menu",
           "osrm_settings": "OSRM route smoothing",
           "vehicle_sensors": "Vehicle sensors",
-          "vehicle_settings": "Vehicle"
+          "vehicle_settings": "Vehicle",
+          "home_tariff_settings": "Home charging tariffs"
         },
         "menu_option_descriptions": {
           "general_settings": "Edit trip, charging, vehicle and tariff options.",
@@ -85,7 +86,8 @@
           "init": "Return to the Ford Triplog overview.",
           "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection.",
           "vehicle_sensors": "Change the vehicle entities used by Ford Triplog.",
-          "vehicle_settings": "View the detected vehicle identity and change its display name."
+          "vehicle_settings": "View the detected vehicle identity and change its display name.",
+          "home_tariff_settings": "Manage year-specific home charging tariff periods."
         }
       },
       "import_charging_sites": {
@@ -269,7 +271,7 @@
       },
       "route_rebuild_result": {
         "title": "Route maintenance completed",
-        "description": "Mode: {mode}\n\nStored routes: {routes_total} · Selected: {routes_selected} · Processed: {routes_processed}\n\nOSRM matches saved: {routes_matched} · Reconstructed: {routes_reconstructed} · Not accepted: {routes_failed} · Skipped: {routes_skipped}\n\nLatest route: {last_trip_id}"
+        "description": "Mode: {mode}\n\nStored routes: {routes_total} · Selected: {routes_selected} · Processed: {routes_processed}\n\nOSRM matches saved: {routes_matched} · Failed: {routes_failed} · Skipped: {routes_skipped}\n\nLatest route: {last_trip_id}"
       },
       "charge_management": {
         "title": "Charging sessions",
@@ -428,7 +430,7 @@
       },
       "ocr_settings": {
         "title": "OCR connection",
-        "description": "Ford Triplog can optionally analyze receipts using an external local OCR service. This setting is global and applies to all configured vehicles. Without an enabled OCR connection, all other functions remain fully available.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
+        "description": "Ford Triplog can optionally analyze receipts using an external local OCR service. Without an enabled OCR connection, all other functions remain fully available.\n\nWhen saving, the connection is tested using the `/health` endpoint.",
         "data": {
           "ocr_enabled": "Enable OCR",
           "ocr_url": "OCR service URL",
@@ -642,7 +644,7 @@
       },
       "osrm_settings": {
         "title": "OSRM route smoothing",
-        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. This setting is global and applies to all configured vehicles. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default. Very low-confidence OSRM matches are rejected and displayed as raw routes. Very sparse traces with no more than five GPS points are instead reconstructed from start and destination when the OSRM route differs by no more than 20% from the measured trip distance.",
+        "description": "Ford Triplog can optionally match recorded GPS routes to the OpenStreetMap road network using an external local OSRM service. Without an enabled OSRM connection, the existing raw route remains fully available.\n\nWhen saving, the connection is tested. A matching radius of 15 meters is used by default.",
         "data": {
           "osrm_enabled": "Enable OSRM",
           "osrm_url": "OSRM service URL",
@@ -930,6 +932,54 @@
         "data_description": {
           "vehicle_context": "This selection is used for vehicle-specific settings, journeys, routes, pauses, charging sessions and exports."
         }
+      },
+      "home_tariff_settings": {
+        "title": "Home charging tariffs",
+        "description": "Configured tariff periods:\n\n{tariff_table}\n\nCurrency: {currency}. Periods are year-specific and must not overlap.",
+        "menu_options": {
+          "home_tariff_add": "Add tariff period",
+          "home_tariff_selection": "Edit tariff period",
+          "home_tariff_legacy_import": "Import previous summer/winter tariffs",
+          "settings": "Back to settings"
+        },
+        "menu_option_descriptions": {
+          "home_tariff_add": "Add a new global tariff period to the Ford Triplog database.",
+          "home_tariff_selection": "Edit global tariff periods stored in SQLite. From/To use day.month, for example 01.04 and 30.09. Periods within the same year must not overlap.",
+          "home_tariff_legacy_import": "Convert the former fixed summer/winter prices into three periods for one year.",
+          "settings": "Return to settings."
+        }
+      },
+      "home_tariff_selection": {
+        "title": "Select tariff period",
+        "description": "Select the period to edit or delete.",
+        "data": {
+          "home_tariff_selection": "Tariff period"
+        }
+      },
+      "home_tariff_edit": {
+        "title": "Edit tariff period",
+        "description": "Define one tariff period. From/To use day.month, for example 01.04 and 30.09. Periods within the same year must not overlap.",
+        "data": {
+          "home_tariff_year": "Year",
+          "home_tariff_valid_from": "From",
+          "home_tariff_valid_to": "To",
+          "home_tariff_price_per_kwh": "Tariff per kWh",
+          "home_tariff_action": "Action"
+        },
+        "data_description": {
+          "home_tariff_year": "Calendar year for which this tariff period is valid.",
+          "home_tariff_valid_from": "First valid day in DD.MM format, for example 01.04.",
+          "home_tariff_valid_to": "Last valid day in DD.MM format, for example 30.09.",
+          "home_tariff_price_per_kwh": "Energy price per kWh for this period.",
+          "home_tariff_action": "Save, delete or return without changes."
+        }
+      },
+      "home_tariff_legacy_import": {
+        "title": "Import previous tariffs",
+        "description": "Choose the year. The previous winter tariff becomes 01.01–31.03 and 01.10–31.12; the previous summer tariff becomes 01.04–30.09.",
+        "data": {
+          "home_tariff_year": "Year"
+        }
       }
     },
     "error": {
@@ -990,7 +1040,11 @@
       "user_place_delete_failed": "The place could not be deleted.",
       "pause_place_no_coordinates": "No GPS coordinates are available for this pause.",
       "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed.",
-      "vehicle_context_invalid": "The selected vehicle is not currently available."
+      "vehicle_context_invalid": "The selected vehicle is not currently available.",
+      "invalid_tariff_period": "Enter a valid year, From/To date and tariff.",
+      "invalid_tariff_year": "Enter a year between 2000 and 2100.",
+      "invalid_tariff_range": "The end of the tariff period must not be before the start.",
+      "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year."
     }
   },
   "entity": {
@@ -1284,7 +1338,14 @@
     "receipt_upload_ocr_disabled": "disabled – receipt will only be stored",
     "receipt_upload_ocr_enabled": "enabled – receipt will be analyzed automatically",
     "selection_back": "← Back",
-    "unknown_charging_location": "Unknown charging location"
+    "unknown_charging_location": "Unknown charging location",
+    "home_tariff_year": "Year",
+    "home_tariff_valid_from": "From",
+    "home_tariff_valid_to": "To",
+    "home_tariff_tariff": "Tariff",
+    "home_tariff_save": "Save",
+    "home_tariff_delete": "Delete",
+    "home_tariff_back": "← Back"
   },
   "services": {
     "import_charging_sites": {

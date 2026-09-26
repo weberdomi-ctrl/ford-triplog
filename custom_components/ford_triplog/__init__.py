@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25018
-Changes: Home-zone GPS tolerance for Trip/Journey start and end detection.
+Build: 25020
+Changes: Store home-tariff periods globally in SQLite and migrate 25016/25017 options.
 """
 
 from __future__ import annotations
@@ -55,6 +55,8 @@ from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
 from .journey_rebuilder import FordTriplogJourneyRebuilder
 from .charge_manager import FordTriplogChargeManager
+from .charging_costs import CONF_HOME_TARIFF_PERIODS
+from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .receipt_storage import FordTriplogReceiptStorage, FordTriplogReceiptView
 from .route_storage import FordTriplogRouteStorage
 from .route_tracker import FordTriplogRouteTracker
@@ -69,7 +71,6 @@ from .vehicle_context import (
     get_selected_vehicle_id,
     set_selected_vehicle_id,
 )
-from .global_settings import async_load_global_settings
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -341,14 +342,6 @@ async def async_setup_entry(
 
     await storage.async_setup()
 
-    # OCR and OSRM are integration infrastructure, not vehicle properties.
-    # Load/migrate them once and overlay the shared values onto every runtime.
-    global_settings = await async_load_global_settings(
-        hass,
-        storage.database,
-    )
-    config.update(global_settings)
-
     removed_orphans = await _async_cleanup_orphaned_vehicles(
         hass,
         storage.database,
@@ -358,12 +351,21 @@ async def async_setup_entry(
         # A stale primary row can promote a configured test alias. Re-read the
         # ConfigEntry and vehicle row before constructing the runtime.
         config = _build_config(entry)
-        config.update(global_settings)
         vehicle = (
             await storage.database.async_get_vehicle(vehicle_id)
             or vehicle
         )
         notify_vehicle_list_updated(hass)
+
+    # Home charging tariff periods are global Triplog master data. Build 25020
+    # moves them from per-vehicle ConfigEntry options into the central SQLite
+    # database. Existing 25016/25017 periods are imported once.
+    home_tariff_storage = FordTriplogHomeTariffStorage(hass)
+    await home_tariff_storage.async_setup()
+    global_home_tariffs = await home_tariff_storage.async_migrate_config_entries(
+        hass.config_entries.async_entries(DOMAIN)
+    )
+    config[CONF_HOME_TARIFF_PERIODS] = global_home_tariffs
 
     geo = FordTriplogGeo(
         hass,
@@ -511,6 +513,7 @@ async def async_setup_entry(
         "journey_manager": journey_manager,
         "journey_rebuilder": journey_rebuilder,
         "charge_manager": charge_manager,
+        "home_tariff_storage": home_tariff_storage,
         "receipt_storage": receipt_storage,
         "route_storage": route_storage,
         "route_tracker": route_tracker,
@@ -657,12 +660,10 @@ async def entry_update_listener(
     hass: HomeAssistant,
     entry: ConfigEntry,
 ) -> None:
-    """Reload the integration when options change.
+    """Reload the integration after ConfigEntry option changes.
 
-    Preserve the shared dashboard vehicle context across the ConfigEntry
-    reload. During an unload the selected vehicle runtime temporarily
-    disappears, so the normal context fallback would otherwise switch the
-    shared UI back to vehicle 1.
+    Global home tariff periods no longer live in ConfigEntry options and are
+    therefore updated directly through SQLite without invoking this listener.
     """
 
     selected_vehicle_id = get_selected_vehicle_id(hass)
