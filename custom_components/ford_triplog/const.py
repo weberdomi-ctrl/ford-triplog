@@ -18,8 +18,8 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.4.0"
-BUILD: Final = "24405"
+VERSION: Final = "2.5.0"
+BUILD: Final = "25021"
 
 #
 # Storage
@@ -73,6 +73,10 @@ CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
+CONF_VEHICLE_ID: Final = "vehicle_id"
+CONF_VEHICLE_NAME: Final = "vehicle_name"
+CONF_VEHICLE_TEST_ALIAS: Final = "vehicle_test_alias"
+CONF_VEHICLE_ALIAS_OF: Final = "vehicle_alias_of"
 DEFAULT_BATTERY_CAPACITY_KWH: Final = 77.0
 
 # Storage read backend (Phase 2)
@@ -206,6 +210,9 @@ SIGNAL_STATISTICS_UPDATED: Final = "ford_triplog_statistics_updated"
 SIGNAL_STATUS_UPDATED: Final = "ford_triplog_status_updated"
 SIGNAL_LAST_JOURNEY_UPDATED: Final = "ford_triplog_last_journey_updated"
 SIGNAL_CHARGE_DATA_UPDATED: Final = "ford_triplog_charge_data_updated"
+SIGNAL_VEHICLE_CONTEXT_UPDATED: Final = "ford_triplog_vehicle_context_updated"
+SIGNAL_VEHICLE_DATA_UPDATED: Final = "ford_triplog_vehicle_data_updated"
+SIGNAL_VEHICLE_LIST_UPDATED: Final = "ford_triplog_vehicle_list_updated"
 
 #Smart Trip Timeout
 SMART_TRIP_TIMEOUT: Final = 300  # 5 minutes

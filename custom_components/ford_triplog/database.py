@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.3.0
-Build: 23026
-Changes: Preserve route rowid when updating stored routes.
+Version: 2.5.0-dev
+Build: 25020
+Changes: Store global home charging tariff periods in SQLite.
 """
 
 from __future__ import annotations
@@ -31,13 +31,437 @@ class FordTriplogDatabase:
         self,
         hass: HomeAssistant,
         base_path: Path,
+        vehicle_id: int = 1,
     ) -> None:
         self.hass = hass
         self.db_path = base_path / "ford_triplog.db"
+        normalized_vehicle_id = int(vehicle_id)
+        if normalized_vehicle_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+        self.vehicle_id = normalized_vehicle_id
 
     def _log_read(self, resource: str) -> None:
         """Log a SQLite read at DEBUG level for development diagnostics."""
         _LOGGER.debug("SQLite READ: %s", resource)
+
+    async def async_ensure_vehicle(
+        self,
+        *,
+        vin: str | None = None,
+        name: str | None = None,
+        manufacturer: str | None = None,
+        model: str | None = None,
+        battery_capacity_kwh: float | None = None,
+        preferred_vehicle_id: int | None = None,
+        source: str | None = None,
+        allow_duplicate_vin: bool = False,
+        alias_of_vehicle_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Create or update one vehicle and return its database record.
+
+        Normally a VIN resolves to one primary vehicle row. For development
+        and migration tests the same physical VIN may explicitly be added as a
+        separate logical vehicle. Such rows are marked as aliases and keep a
+        reference to the primary vehicle.
+        """
+
+        await self.async_setup()
+
+        normalized_vin = str(vin).strip().upper() if vin else None
+        normalized_name = str(name).strip() if name else None
+        normalized_manufacturer = (
+            str(manufacturer).strip() if manufacturer else None
+        )
+        normalized_model = str(model).strip() if model else None
+        normalized_source = str(source).strip() if source else None
+        normalized_battery = (
+            float(battery_capacity_kwh)
+            if battery_capacity_kwh is not None
+            else None
+        )
+        preferred_id = (
+            int(preferred_vehicle_id)
+            if preferred_vehicle_id is not None
+            else None
+        )
+        if preferred_id is not None and preferred_id < 1:
+            preferred_id = None
+
+        alias_of_id = (
+            int(alias_of_vehicle_id)
+            if alias_of_vehicle_id is not None
+            else None
+        )
+        if alias_of_id is not None and alias_of_id < 1:
+            alias_of_id = None
+
+        def _ensure() -> dict[str, Any]:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                db.execute("PRAGMA foreign_keys = ON")
+
+                row = None
+
+                # A ConfigEntry that already owns a vehicle_id always keeps it.
+                # This is essential for duplicate-VIN test aliases on restart.
+                if preferred_id is not None:
+                    candidate = db.execute(
+                        "SELECT * FROM vehicles WHERE vehicle_id = ?",
+                        (preferred_id,),
+                    ).fetchone()
+                    if candidate is not None:
+                        candidate_vin = (
+                            str(candidate["vin"]).strip().upper()
+                            if candidate["vin"]
+                            else None
+                        )
+                        if (
+                            allow_duplicate_vin
+                            or normalized_vin is None
+                            or candidate_vin is None
+                            or candidate_vin == normalized_vin
+                        ):
+                            row = candidate
+
+                # Normal production behaviour: one primary row per VIN.
+                if row is None and normalized_vin and not allow_duplicate_vin:
+                    row = db.execute(
+                        """
+                        SELECT * FROM vehicles
+                        WHERE vin = ? AND alias_of_vehicle_id IS NULL
+                        ORDER BY vehicle_id
+                        LIMIT 1
+                        """,
+                        (normalized_vin,),
+                    ).fetchone()
+
+                resolved_alias_of = alias_of_id
+                if row is None and allow_duplicate_vin and normalized_vin:
+                    if resolved_alias_of is None:
+                        primary = db.execute(
+                            """
+                            SELECT vehicle_id FROM vehicles
+                            WHERE vin = ? AND alias_of_vehicle_id IS NULL
+                            ORDER BY vehicle_id
+                            LIMIT 1
+                            """,
+                            (normalized_vin,),
+                        ).fetchone()
+                        if primary is not None:
+                            resolved_alias_of = int(primary["vehicle_id"])
+
+                    # If there is no primary vehicle after all, fall back to a
+                    # normal primary row instead of creating an orphan alias.
+                    if resolved_alias_of is None:
+                        allow_alias = False
+                    else:
+                        allow_alias = True
+                else:
+                    allow_alias = bool(allow_duplicate_vin and resolved_alias_of)
+
+                if row is None:
+                    if preferred_id is not None:
+                        occupied = db.execute(
+                            "SELECT 1 FROM vehicles WHERE vehicle_id = ?",
+                            (preferred_id,),
+                        ).fetchone()
+                    else:
+                        occupied = True
+
+                    values = (
+                        normalized_vin,
+                        normalized_name,
+                        normalized_manufacturer,
+                        normalized_model,
+                        normalized_battery,
+                        normalized_source,
+                        resolved_alias_of if allow_alias else None,
+                        1 if allow_alias else 0,
+                        now,
+                        now,
+                    )
+
+                    if preferred_id is not None and not occupied:
+                        db.execute(
+                            """
+                            INSERT INTO vehicles (
+                                vehicle_id, vin, name, manufacturer, model,
+                                battery_capacity_kwh, source,
+                                alias_of_vehicle_id, is_test_alias,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (preferred_id, *values),
+                        )
+                        vehicle_id = preferred_id
+                    else:
+                        cursor = db.execute(
+                            """
+                            INSERT INTO vehicles (
+                                vin, name, manufacturer, model,
+                                battery_capacity_kwh, source,
+                                alias_of_vehicle_id, is_test_alias,
+                                created_at, updated_at
+                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            values,
+                        )
+                        vehicle_id = int(cursor.lastrowid)
+                else:
+                    vehicle_id = int(row["vehicle_id"])
+                    db.execute(
+                        """
+                        UPDATE vehicles
+                        SET vin = COALESCE(?, vin),
+                            name = COALESCE(?, name),
+                            manufacturer = COALESCE(?, manufacturer),
+                            model = COALESCE(?, model),
+                            battery_capacity_kwh = COALESCE(?, battery_capacity_kwh),
+                            source = COALESCE(?, source),
+                            alias_of_vehicle_id = COALESCE(?, alias_of_vehicle_id),
+                            is_test_alias = CASE
+                                WHEN ? THEN 1
+                                ELSE is_test_alias
+                            END,
+                            updated_at = ?
+                        WHERE vehicle_id = ?
+                        """,
+                        (
+                            normalized_vin,
+                            normalized_name,
+                            normalized_manufacturer,
+                            normalized_model,
+                            normalized_battery,
+                            normalized_source,
+                            resolved_alias_of if allow_duplicate_vin else None,
+                            bool(allow_duplicate_vin),
+                            now,
+                            vehicle_id,
+                        ),
+                    )
+
+                db.commit()
+                result = db.execute(
+                    "SELECT * FROM vehicles WHERE vehicle_id = ?",
+                    (vehicle_id,),
+                ).fetchone()
+                if result is None:
+                    raise RuntimeError("Vehicle record disappeared after update")
+                return dict(result)
+
+        return await self.hass.async_add_executor_job(_ensure)
+
+
+    async def async_delete_vehicle(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any]:
+        """Delete one vehicle and all vehicle-scoped SQLite records.
+
+        This is intended for permanent Home Assistant ConfigEntry removal,
+        not for a normal reload/unload. Global master data such as custom
+        places, charging sites and parser profiles is intentionally kept.
+
+        If the deleted vehicle is the primary row of duplicate-VIN test
+        aliases, the oldest remaining alias is promoted to the new primary
+        row and the other aliases are re-parented to it.
+        """
+
+        await self.async_setup()
+        selected_id = int(vehicle_id or self.vehicle_id)
+        if selected_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+
+        def _delete() -> dict[str, Any]:
+            deleted_counts: dict[str, int] = {}
+            promoted_vehicle_id: int | None = None
+            reparented_vehicle_ids: list[int] = []
+
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                db.execute("PRAGMA foreign_keys = ON")
+
+                vehicle = db.execute(
+                    "SELECT * FROM vehicles WHERE vehicle_id = ?",
+                    (selected_id,),
+                ).fetchone()
+                if vehicle is None:
+                    return {
+                        "deleted": False,
+                        "vehicle_id": selected_id,
+                        "deleted_counts": {},
+                        "promoted_vehicle_id": None,
+                        "reparented_vehicle_ids": [],
+                    }
+
+                parent_id = (
+                    int(vehicle["alias_of_vehicle_id"])
+                    if vehicle["alias_of_vehicle_id"] is not None
+                    else None
+                )
+                children = db.execute(
+                    """
+                    SELECT vehicle_id
+                    FROM vehicles
+                    WHERE alias_of_vehicle_id = ?
+                    ORDER BY vehicle_id
+                    """,
+                    (selected_id,),
+                ).fetchall()
+                child_ids = [int(row["vehicle_id"]) for row in children]
+
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    if child_ids:
+                        if parent_id is not None:
+                            db.execute(
+                                """
+                                UPDATE vehicles
+                                SET alias_of_vehicle_id = ?, updated_at = ?
+                                WHERE alias_of_vehicle_id = ?
+                                """,
+                                (
+                                    parent_id,
+                                    time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                    selected_id,
+                                ),
+                            )
+                            reparented_vehicle_ids = list(child_ids)
+                        else:
+                            # Keep foreign-key validity while removing a
+                            # primary row: temporarily let the future primary
+                            # reference itself, then point all siblings at it.
+                            promoted_vehicle_id = child_ids[0]
+                            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                            db.execute(
+                                """
+                                UPDATE vehicles
+                                SET alias_of_vehicle_id = ?, updated_at = ?
+                                WHERE vehicle_id = ?
+                                """,
+                                (promoted_vehicle_id, now, promoted_vehicle_id),
+                            )
+                            if len(child_ids) > 1:
+                                placeholders = ",".join("?" for _ in child_ids[1:])
+                                db.execute(
+                                    f"""
+                                    UPDATE vehicles
+                                    SET alias_of_vehicle_id = ?, updated_at = ?
+                                    WHERE vehicle_id IN ({placeholders})
+                                    """,
+                                    (promoted_vehicle_id, now, *child_ids[1:]),
+                                )
+                                reparented_vehicle_ids = list(child_ids[1:])
+
+                    # Delete every vehicle-scoped table generically so future
+                    # schema additions cannot leave orphan data behind.
+                    table_rows = db.execute(
+                        """
+                        SELECT name
+                        FROM sqlite_master
+                        WHERE type = 'table'
+                          AND name NOT LIKE 'sqlite_%'
+                        """
+                    ).fetchall()
+                    for table_row in table_rows:
+                        table_name = str(table_row["name"])
+                        if table_name == "vehicles":
+                            continue
+                        quoted_table = '"' + table_name.replace('"', '""') + '"'
+                        columns = {
+                            str(row[1])
+                            for row in db.execute(
+                                f"PRAGMA table_info({quoted_table})"
+                            ).fetchall()
+                        }
+                        if "vehicle_id" not in columns:
+                            continue
+                        cursor = db.execute(
+                            f"DELETE FROM {quoted_table} WHERE vehicle_id = ?",
+                            (selected_id,),
+                        )
+                        if cursor.rowcount and cursor.rowcount > 0:
+                            deleted_counts[table_name] = int(cursor.rowcount)
+
+                    db.execute(
+                        "DELETE FROM vehicles WHERE vehicle_id = ?",
+                        (selected_id,),
+                    )
+
+                    if promoted_vehicle_id is not None:
+                        db.execute(
+                            """
+                            UPDATE vehicles
+                            SET alias_of_vehicle_id = NULL,
+                                is_test_alias = 0,
+                                updated_at = ?
+                            WHERE vehicle_id = ?
+                            """,
+                            (
+                                time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+                                promoted_vehicle_id,
+                            ),
+                        )
+
+                    violations = db.execute("PRAGMA foreign_key_check").fetchall()
+                    if violations:
+                        raise RuntimeError(
+                            "Foreign-key violations after deleting Ford Triplog vehicle "
+                            f"{selected_id}: {violations!r}"
+                        )
+
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+
+            return {
+                "deleted": True,
+                "vehicle_id": selected_id,
+                "deleted_counts": deleted_counts,
+                "promoted_vehicle_id": promoted_vehicle_id,
+                "reparented_vehicle_ids": reparented_vehicle_ids,
+            }
+
+        return await self.hass.async_add_executor_job(_delete)
+
+
+    async def async_list_vehicles(self) -> list[dict[str, Any]]:
+        """Return all persistent vehicle registry records ordered by id."""
+
+        await self.async_setup()
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    "SELECT * FROM vehicles ORDER BY vehicle_id"
+                ).fetchall()
+                return [dict(row) for row in rows]
+
+        return await self.hass.async_add_executor_job(_read)
+
+
+    async def async_get_vehicle(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return one vehicle registry record."""
+
+        await self.async_setup()
+        selected_id = int(vehicle_id or self.vehicle_id)
+
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                row = db.execute(
+                    "SELECT * FROM vehicles WHERE vehicle_id = ?",
+                    (selected_id,),
+                ).fetchone()
+                return dict(row) if row is not None else None
+
+        return await self.hass.async_add_executor_job(_read)
 
     async def validate_json_identity(
         self,
@@ -72,27 +496,33 @@ class FordTriplogDatabase:
                     row = None
                     if name == "current_trip":
                         row = db.execute(
-                            "SELECT data FROM current_trip LIMIT 1"
+                            "SELECT data FROM current_trip WHERE vehicle_id = ? LIMIT 1",
+                            (self.vehicle_id,),
                         ).fetchone()
                     elif name == "current_charge":
                         row = db.execute(
-                            "SELECT data FROM current_charge LIMIT 1"
+                            "SELECT data FROM current_charge WHERE vehicle_id = ? LIMIT 1",
+                            (self.vehicle_id,),
                         ).fetchone()
                     elif name == "last_trip":
                         row = db.execute(
-                            "SELECT data FROM last_trip LIMIT 1"
+                            "SELECT data FROM last_trip WHERE vehicle_id = ? LIMIT 1",
+                            (self.vehicle_id,),
                         ).fetchone()
                     elif name == "last_charge":
                         row = db.execute(
-                            "SELECT data FROM last_charge LIMIT 1"
+                            "SELECT data FROM last_charge WHERE vehicle_id = ? LIMIT 1",
+                            (self.vehicle_id,),
                         ).fetchone()
                     elif name == "statistics":
                         row = db.execute(
-                            "SELECT data FROM statistics WHERE id = 1"
+                            "SELECT data FROM statistics WHERE vehicle_id = ? AND id = 1",
+                            (self.vehicle_id,),
                         ).fetchone()
                     elif name == "diagnostics":
                         row = db.execute(
-                            "SELECT data FROM diagnostics WHERE id = 1"
+                            "SELECT data FROM diagnostics WHERE vehicle_id = ? AND id = 1",
+                            (self.vehicle_id,),
                         ).fetchone()
 
                     actual = json.loads(row[0]) if row else None
@@ -116,7 +546,8 @@ class FordTriplogDatabase:
                     table = table_map[name]
                     rows = db.execute(
                         f"SELECT {('trip_id' if name == 'trips' else 'charge_id')}, data "
-                        f"FROM {table}"
+                        f"FROM {table} WHERE vehicle_id = ?",
+                        (self.vehicle_id,),
                     ).fetchall()
 
                     actual_records = {
@@ -201,11 +632,146 @@ class FordTriplogDatabase:
                 )
 
                 with sqlite3.connect(self.db_path) as db:
+                    db.row_factory = sqlite3.Row
+
+                    # Build 25007 extends the vehicle registry so the same
+                    # physical VIN can explicitly be used as a second logical
+                    # test vehicle. Normal rows remain unique per VIN through
+                    # a partial unique index; only marked aliases may duplicate
+                    # an existing VIN.
+                    vehicle_info = db.execute(
+                        "PRAGMA table_info(vehicles)"
+                    ).fetchall()
+                    vehicle_columns = {str(row[1]) for row in vehicle_info}
+                    vehicle_registry_upgrade = bool(vehicle_info) and not {
+                        "source",
+                        "alias_of_vehicle_id",
+                        "is_test_alias",
+                    }.issubset(vehicle_columns)
+
+                    if vehicle_registry_upgrade:
+                        backup_path = self.db_path.with_name(
+                            "ford_triplog_pre_25007.db"
+                        )
+                        if not backup_path.exists():
+                            with sqlite3.connect(backup_path) as backup_db:
+                                db.backup(backup_db)
+                            _LOGGER.info(
+                                "Created SQLite pre-25007 vehicle-registry backup: %s",
+                                backup_path,
+                            )
+
+                        db.execute("PRAGMA foreign_keys = OFF")
+                        try:
+                            db.execute("BEGIN IMMEDIATE")
+                            db.execute("DROP TABLE IF EXISTS vehicles_25007_new")
+                            db.execute(
+                                """
+                                CREATE TABLE vehicles_25007_new (
+                                    vehicle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                                    vin TEXT,
+                                    name TEXT,
+                                    manufacturer TEXT,
+                                    model TEXT,
+                                    battery_capacity_kwh REAL,
+                                    source TEXT,
+                                    alias_of_vehicle_id INTEGER,
+                                    is_test_alias INTEGER NOT NULL DEFAULT 0,
+                                    created_at TEXT NOT NULL,
+                                    updated_at TEXT NOT NULL,
+                                    FOREIGN KEY (alias_of_vehicle_id)
+                                        REFERENCES vehicles(vehicle_id)
+                                )
+                                """
+                            )
+                            db.execute(
+                                """
+                                INSERT INTO vehicles_25007_new (
+                                    vehicle_id, vin, name, manufacturer, model,
+                                    battery_capacity_kwh, source,
+                                    alias_of_vehicle_id, is_test_alias,
+                                    created_at, updated_at
+                                )
+                                SELECT
+                                    vehicle_id, vin, name, manufacturer, model,
+                                    battery_capacity_kwh, NULL, NULL, 0,
+                                    created_at, updated_at
+                                FROM vehicles
+                                """
+                            )
+                            db.execute("DROP TABLE vehicles")
+                            db.execute(
+                                "ALTER TABLE vehicles_25007_new RENAME TO vehicles"
+                            )
+                            db.commit()
+                            _LOGGER.info(
+                                "Migrated SQLite vehicle registry for duplicate-VIN test aliases"
+                            )
+                        except Exception:
+                            db.rollback()
+                            raise
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicles (
+                            vehicle_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vin TEXT,
+                            name TEXT,
+                            manufacturer TEXT,
+                            model TEXT,
+                            battery_capacity_kwh REAL,
+                            source TEXT,
+                            alias_of_vehicle_id INTEGER,
+                            is_test_alias INTEGER NOT NULL DEFAULT 0,
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (alias_of_vehicle_id)
+                                REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_primary_vin
+                        ON vehicles (vin)
+                        WHERE vin IS NOT NULL AND alias_of_vehicle_id IS NULL
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_vehicles_alias_of
+                        ON vehicles (alias_of_vehicle_id)
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_vehicles_alias_source
+                        ON vehicles (vin, source)
+                        WHERE vin IS NOT NULL
+                          AND source IS NOT NULL
+                          AND alias_of_vehicle_id IS NOT NULL
+                        """
+                    )
+                    db.execute("PRAGMA foreign_keys = ON")
+                    now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+                    db.execute(
+                        """
+                        INSERT OR IGNORE INTO vehicles (
+                            vehicle_id, name, created_at, updated_at
+                        )
+                        VALUES (1, ?, ?, ?)
+                        """,
+                        ("Vehicle 1", now, now),
+                    )
+
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS trips (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -213,8 +779,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_trip (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -222,8 +791,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_trip (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -231,8 +803,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_charge (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -240,8 +815,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS charges (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -249,8 +827,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_charge (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -258,8 +839,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS statistics (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -267,8 +851,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS diagnostics (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -301,8 +888,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS journeys (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -310,8 +900,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS current_journey (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -319,8 +912,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS last_journey (
-                            journey_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            journey_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, journey_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -328,8 +924,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS metadata (
-                            id INTEGER PRIMARY KEY CHECK (id = 1),
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            id INTEGER NOT NULL CHECK (id = 1),
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -337,8 +936,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS charge_metadata (
-                            charge_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            charge_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, charge_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -346,8 +948,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS pause_metadata (
-                            pause_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            pause_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, pause_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -364,10 +969,13 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS receipts (
-                            receipt_id TEXT PRIMARY KEY,
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            receipt_id TEXT NOT NULL,
                             target_type TEXT NOT NULL,
                             target_id TEXT NOT NULL,
-                            data TEXT NOT NULL
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, receipt_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -381,8 +989,11 @@ class FordTriplogDatabase:
                     db.execute(
                         """
                         CREATE TABLE IF NOT EXISTS routes (
-                            trip_id TEXT PRIMARY KEY,
-                            data TEXT NOT NULL
+                            vehicle_id INTEGER NOT NULL DEFAULT 1,
+                            trip_id TEXT NOT NULL,
+                            data TEXT NOT NULL,
+                            PRIMARY KEY (vehicle_id, trip_id),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
                         )
                         """
                     )
@@ -397,8 +1008,242 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS home_charging_tariffs (
+                            tariff_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            valid_from TEXT NOT NULL,
+                            valid_to TEXT NOT NULL,
+                            price_per_kwh REAL NOT NULL CHECK (price_per_kwh >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL,
+                            CHECK (valid_to >= valid_from)
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
+                        ON home_charging_tariffs (valid_from, valid_to)
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_home_charging_tariffs_dates
+                        ON home_charging_tariffs (valid_from, valid_to)
+                        """
+                    )
+
+                    # Existing 2.4 databases have no vehicle_id column and
+                    # use the record ID as the sole primary key. Rebuild only
+                    # those tables once and assign all legacy rows to vehicle 1.
+                    vehicle_table_definitions: dict[
+                        str, tuple[str, tuple[str, ...], tuple[str, ...]]
+                    ] = {
+                        "trips": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "current_trip": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "last_trip": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                        "current_charge": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "charges": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "last_charge": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "statistics": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "diagnostics": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "journeys": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "current_journey": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "last_journey": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, journey_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, journey_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("journey_id", "data"),
+                            ("vehicle_id", "journey_id"),
+                        ),
+                        "metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, id INTEGER NOT NULL CHECK (id = 1), data TEXT NOT NULL, PRIMARY KEY (vehicle_id, id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("id", "data"),
+                            ("vehicle_id", "id"),
+                        ),
+                        "charge_metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, charge_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, charge_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("charge_id", "data"),
+                            ("vehicle_id", "charge_id"),
+                        ),
+                        "pause_metadata": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, pause_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, pause_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("pause_id", "data"),
+                            ("vehicle_id", "pause_id"),
+                        ),
+                        "receipts": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, receipt_id TEXT NOT NULL, target_type TEXT NOT NULL, target_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, receipt_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("receipt_id", "target_type", "target_id", "data"),
+                            ("vehicle_id", "receipt_id"),
+                        ),
+                        "routes": (
+                            """CREATE TABLE {table} (vehicle_id INTEGER NOT NULL DEFAULT 1, trip_id TEXT NOT NULL, data TEXT NOT NULL, PRIMARY KEY (vehicle_id, trip_id), FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id))""",
+                            ("trip_id", "data"),
+                            ("vehicle_id", "trip_id"),
+                        ),
+                    }
+
+                    # Commit harmless setup changes before taking a legacy
+                    # database backup. The backup is created only when at least
+                    # one vehicle-scoped table still uses the pre-2.5 schema.
+                    db.commit()
+                    migration_required = False
+                    for table_name, (
+                        _create_sql,
+                        _data_columns,
+                        expected_pk,
+                    ) in vehicle_table_definitions.items():
+                        info = db.execute(
+                            f"PRAGMA table_info({table_name})"
+                        ).fetchall()
+                        columns = {str(row[1]) for row in info}
+                        pk_columns = [
+                            str(row[1])
+                            for row in sorted(
+                                info,
+                                key=lambda item: int(item[5] or 0),
+                            )
+                            if int(row[5] or 0) > 0
+                        ]
+                        if (
+                            "vehicle_id" not in columns
+                            or tuple(pk_columns) != expected_pk
+                        ):
+                            migration_required = True
+                            break
+
+                    if migration_required:
+                        backup_path = self.db_path.with_name(
+                            "ford_triplog_pre_25002.db"
+                        )
+                        if not backup_path.exists():
+                            with sqlite3.connect(backup_path) as backup_db:
+                                db.backup(backup_db)
+                            _LOGGER.info(
+                                "Created SQLite pre-2.5 migration backup: %s",
+                                backup_path,
+                            )
+
+                    # Make the schema rebuild atomic. In Python sqlite3 legacy
+                    # transaction mode, DDL before the first DML statement may
+                    # otherwise be committed independently. An explicit BEGIN
+                    # guarantees that every rename/create/copy/drop below is
+                    # rolled back together if any migration step fails.
+                    db.execute("BEGIN IMMEDIATE")
+
+                    # Drop derived views before table renames. SQLite otherwise
+                    # may rewrite their SQL to point at the temporary table.
+                    for view_name in (
+                        "v_top_location_trips",
+                        "v_top_route_trips",
+                        "v_top_trip_trips",
+                        "v_top_journey_journeys",
+                        "v_top_charging_charges",
+                        "v_top_day_journeys",
+                    ):
+                        db.execute(f"DROP VIEW IF EXISTS {view_name}")
+
+                    for table_name, (
+                        create_sql,
+                        data_columns,
+                        expected_pk,
+                    ) in vehicle_table_definitions.items():
+                        info = db.execute(
+                            f"PRAGMA table_info({table_name})"
+                        ).fetchall()
+                        columns = {str(row[1]) for row in info}
+                        pk_columns = [
+                            str(row[1])
+                            for row in sorted(info, key=lambda item: int(item[5] or 0))
+                            if int(row[5] or 0) > 0
+                        ]
+                        schema_ready = (
+                            "vehicle_id" in columns
+                            and tuple(pk_columns) == expected_pk
+                        )
+                        if schema_ready:
+                            continue
+
+                        legacy_name = f"{table_name}_pre_25002"
+                        db.execute(f"DROP TABLE IF EXISTS {legacy_name}")
+                        db.execute(
+                            f"ALTER TABLE {table_name} RENAME TO {legacy_name}"
+                        )
+                        db.execute(create_sql.format(table=table_name))
+                        column_list = ", ".join(data_columns)
+                        db.execute(
+                            f"INSERT INTO {table_name} (vehicle_id, {column_list}) "
+                            f"SELECT 1, {column_list} FROM {legacy_name}"
+                        )
+                        db.execute(f"DROP TABLE {legacy_name}")
+                        _LOGGER.info(
+                            "Migrated SQLite table %s to vehicle-aware schema",
+                            table_name,
+                        )
+
+                    # Recreate indexes that may have been removed while a table
+                    # was rebuilt above.
+                    db.execute("DROP INDEX IF EXISTS idx_receipts_target")
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_receipts_target
+                        ON receipts (vehicle_id, target_type, target_id)
+                        """
+                    )
+
+                    for view_name in (
+                        "v_top_location_trips",
+                        "v_top_route_trips",
+                        "v_top_trip_trips",
+                        "v_top_journey_journeys",
+                        "v_top_charging_charges",
+                        "v_top_day_journeys",
+                    ):
+                        db.execute(f"DROP VIEW IF EXISTS {view_name}")
+
+                    db.execute(
+                        """
                         CREATE VIEW IF NOT EXISTS v_top_location_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -417,6 +1262,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_route_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -437,6 +1283,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_trip_trips AS
                         SELECT
+                            vehicle_id,
                             trip_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics,
@@ -450,6 +1297,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_journey_journeys AS
                         SELECT
+                            vehicle_id,
                             journey_id,
                             data,
                             json_extract(data, '$.distance_km') AS distance_km
@@ -462,6 +1310,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_charging_charges AS
                         SELECT
+                            vehicle_id,
                             charge_id,
                             data,
                             json_extract(data, '$.include_in_statistics') AS include_in_statistics
@@ -474,6 +1323,7 @@ class FordTriplogDatabase:
                         """
                         CREATE VIEW IF NOT EXISTS v_top_day_journeys AS
                         SELECT
+                            vehicle_id,
                             journey_id,
                             data,
                             json_extract(data, '$.date') AS date,
@@ -502,6 +1352,148 @@ class FordTriplogDatabase:
                 "Ford Triplog SQLite database initialized: %s",
                 self.db_path,
             )
+
+    async def load_home_charging_tariffs(self) -> list[dict[str, Any]]:
+        """Load global home charging tariff periods from SQLite."""
+
+        await self.async_setup()
+        self._log_read("home_charging_tariffs")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    """
+                    SELECT tariff_id, valid_from, valid_to, price_per_kwh,
+                           currency, created_at, updated_at
+                    FROM home_charging_tariffs
+                    ORDER BY valid_from ASC, valid_to ASC, tariff_id ASC
+                    """
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+        try:
+            rows = await self.hass.async_add_executor_job(_read)
+            _LOGGER.debug(
+                "SQLite home charging tariffs loaded: %d",
+                len(rows),
+            )
+            return rows
+        except Exception:
+            _LOGGER.exception(
+                "Unable to read home charging tariffs from SQLite"
+            )
+            return []
+
+    async def save_home_charging_tariffs(
+        self,
+        tariffs: list[dict[str, Any]],
+    ) -> bool:
+        """Replace the global tariff set while preserving stable row IDs."""
+
+        await self.async_setup()
+
+        normalized: list[tuple[int | None, str, str, float, str]] = []
+        seen_ids: set[int] = set()
+        for item in tariffs or []:
+            if not isinstance(item, dict):
+                continue
+            try:
+                raw_id = item.get("tariff_id")
+                tariff_id = int(raw_id) if raw_id not in (None, "") else None
+                if tariff_id is not None and tariff_id <= 0:
+                    raise ValueError
+                valid_from = str(item["valid_from"]).strip()
+                valid_to = str(item["valid_to"]).strip()
+                price = max(0.0, float(item["price_per_kwh"]))
+                currency = str(item.get("currency") or "CHF").strip().upper()
+                # Validate ISO calendar dates without changing storage format.
+                time.strptime(valid_from, "%Y-%m-%d")
+                time.strptime(valid_to, "%Y-%m-%d")
+            except (KeyError, TypeError, ValueError):
+                raise ValueError("Invalid home charging tariff period")
+            if valid_to < valid_from:
+                raise ValueError("Home charging tariff end is before start")
+            if tariff_id is not None:
+                if tariff_id in seen_ids:
+                    raise ValueError("Duplicate home charging tariff ID")
+                seen_ids.add(tariff_id)
+            normalized.append(
+                (tariff_id, valid_from, valid_to, price, currency or "CHF")
+            )
+
+        normalized.sort(key=lambda item: (item[1], item[2], item[0] or 0))
+        for index, current in enumerate(normalized):
+            for previous in normalized[:index]:
+                if current[1] <= previous[2] and current[2] >= previous[1]:
+                    raise ValueError("Overlapping home charging tariff periods")
+
+        def _write() -> None:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                db.execute("BEGIN IMMEDIATE")
+                try:
+                    existing_rows = db.execute(
+                        "SELECT tariff_id, created_at FROM home_charging_tariffs"
+                    ).fetchall()
+                    created_at_by_id = {
+                        int(row["tariff_id"]): str(row["created_at"])
+                        for row in existing_rows
+                    }
+
+                    # Rebuild the small master-data table atomically, but re-use
+                    # each supplied tariff_id explicitly. This keeps IDs stable
+                    # across edits while still making list replacement simple.
+                    db.execute("DELETE FROM home_charging_tariffs")
+                    for tariff_id, valid_from, valid_to, price, currency in normalized:
+                        if tariff_id is None:
+                            db.execute(
+                                """
+                                INSERT INTO home_charging_tariffs (
+                                    valid_from, valid_to, price_per_kwh, currency,
+                                    created_at, updated_at
+                                ) VALUES (?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    valid_from, valid_to, price, currency, now, now,
+                                ),
+                            )
+                        else:
+                            db.execute(
+                                """
+                                INSERT INTO home_charging_tariffs (
+                                    tariff_id, valid_from, valid_to, price_per_kwh,
+                                    currency, created_at, updated_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    tariff_id,
+                                    valid_from,
+                                    valid_to,
+                                    price,
+                                    currency,
+                                    created_at_by_id.get(tariff_id, now),
+                                    now,
+                                ),
+                            )
+                    db.commit()
+                except Exception:
+                    db.rollback()
+                    raise
+
+        try:
+            await self.hass.async_add_executor_job(_write)
+            _LOGGER.info(
+                "SQLite home charging tariffs saved with stable IDs: %d",
+                len(normalized),
+            )
+            return True
+        except Exception:
+            _LOGGER.exception(
+                "Unable to save home charging tariffs to SQLite"
+            )
+            return False
 
     async def load_storage_mirror_snapshot(
         self,
@@ -553,8 +1545,8 @@ class FordTriplogDatabase:
                     placeholders = ",".join("?" for _ in normalized_trip_ids)
                     rows = db.execute(
                         f"SELECT trip_id, data FROM trips "
-                        f"WHERE trip_id IN ({placeholders})",
-                        normalized_trip_ids,
+                        f"WHERE vehicle_id = ? AND trip_id IN ({placeholders})",
+                        [self.vehicle_id, *normalized_trip_ids],
                     ).fetchall()
                     for trip_id, payload in rows:
                         value = _decode(payload)
@@ -565,8 +1557,8 @@ class FordTriplogDatabase:
                     placeholders = ",".join("?" for _ in normalized_charge_ids)
                     rows = db.execute(
                         f"SELECT charge_id, data FROM charges "
-                        f"WHERE charge_id IN ({placeholders})",
-                        normalized_charge_ids,
+                        f"WHERE vehicle_id = ? AND charge_id IN ({placeholders})",
+                        [self.vehicle_id, *normalized_charge_ids],
                     ).fetchall()
                     for charge_id, payload in rows:
                         value = _decode(payload)
@@ -574,16 +1566,16 @@ class FordTriplogDatabase:
                             result["charges"][str(charge_id)] = value
 
                 single_queries = {
-                    "current_trip": "SELECT data FROM current_trip LIMIT 1",
-                    "current_charge": "SELECT data FROM current_charge LIMIT 1",
-                    "last_trip": "SELECT data FROM last_trip LIMIT 1",
-                    "last_charge": "SELECT data FROM last_charge LIMIT 1",
-                    "statistics": "SELECT data FROM statistics WHERE id = 1",
-                    "diagnostics": "SELECT data FROM diagnostics WHERE id = 1",
+                    "current_trip": "SELECT data FROM current_trip WHERE vehicle_id = ? LIMIT 1",
+                    "current_charge": "SELECT data FROM current_charge WHERE vehicle_id = ? LIMIT 1",
+                    "last_trip": "SELECT data FROM last_trip WHERE vehicle_id = ? LIMIT 1",
+                    "last_charge": "SELECT data FROM last_charge WHERE vehicle_id = ? LIMIT 1",
+                    "statistics": "SELECT data FROM statistics WHERE vehicle_id = ? AND id = 1",
+                    "diagnostics": "SELECT data FROM diagnostics WHERE vehicle_id = ? AND id = 1",
                 }
 
                 for key, query in single_queries.items():
-                    row = db.execute(query).fetchone()
+                    row = db.execute(query, (self.vehicle_id,)).fetchone()
                     result[key] = _decode(row[0]) if row else None
 
             return result
@@ -659,14 +1651,16 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT INTO routes (
+                        vehicle_id,
                         trip_id,
                         data
                     )
-                    VALUES (?, ?)
-                    ON CONFLICT(trip_id) DO UPDATE SET
+                    VALUES (?, ?, ?)
+                    ON CONFLICT(vehicle_id, trip_id) DO UPDATE SET
                         data = excluded.data
                     """,
                     (
+                        self.vehicle_id,
                         str(trip_id),
                         payload,
                     ),
@@ -701,7 +1695,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
                 rows = db.execute(
-                    "SELECT trip_id, data FROM routes"
+                    "SELECT trip_id, data FROM routes WHERE vehicle_id = ?",
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: dict[str, dict[str, Any]] = {}
@@ -748,8 +1743,8 @@ class FordTriplogDatabase:
             with sqlite3.connect(self.db_path) as db:
                 rows = db.execute(
                     f"SELECT trip_id, data FROM routes "
-                    f"WHERE trip_id IN ({placeholders})",
-                    normalized_ids,
+                    f"WHERE vehicle_id = ? AND trip_id IN ({placeholders})",
+                    [self.vehicle_id, *normalized_ids],
                 ).fetchall()
 
             by_id: dict[str, dict[str, Any]] = {}
@@ -790,8 +1785,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM routes WHERE trip_id = ?",
-                    (normalized_id,),
+                    "SELECT data FROM routes WHERE vehicle_id = ? AND trip_id = ?",
+                    (self.vehicle_id, normalized_id),
                 ).fetchone()
 
             if row is None:
@@ -822,13 +1817,15 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM routes
-                    WHERE COALESCE(
+                    WHERE vehicle_id = ?
+                      AND COALESCE(
                         json_extract(data, '$.status'),
                         'completed'
                     ) = 'completed'
                     ORDER BY rowid DESC
                     LIMIT 1
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -856,8 +1853,10 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM routes
+                    WHERE vehicle_id = ?
                     ORDER BY rowid ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             routes: list[dict[str, Any]] = []
@@ -903,12 +1902,14 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO trips (
+                        vehicle_id,
                         trip_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(trip_id),
                         payload,
                     ),
@@ -955,7 +1956,9 @@ class FordTriplogDatabase:
                         start_address,
                         end_address
                     FROM v_top_location_trips
-                    """
+                    WHERE vehicle_id = ?
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: list[dict[str, Any]] = []
@@ -997,8 +2000,10 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM v_top_charging_charges
-                    WHERE COALESCE(include_in_statistics, 1) = 1
-                    """
+                    WHERE vehicle_id = ?
+                      AND COALESCE(include_in_statistics, 1) = 1
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: list[dict[str, Any]] = []
@@ -1029,8 +2034,10 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM v_top_day_journeys
-                    WHERE distance_km IS NOT NULL
-                    """
+                    WHERE vehicle_id = ?
+                      AND distance_km IS NOT NULL
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: list[dict[str, Any]] = []
@@ -1061,10 +2068,12 @@ class FordTriplogDatabase:
                     """
                     SELECT journey_id, data
                     FROM v_top_journey_journeys
-                    WHERE distance_km IS NOT NULL
+                    WHERE vehicle_id = ?
+                      AND distance_km IS NOT NULL
                     ORDER BY distance_km DESC, journey_id ASC
                     LIMIT 1
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if not row:
@@ -1094,11 +2103,13 @@ class FordTriplogDatabase:
                     """
                     SELECT trip_id, data
                     FROM v_top_trip_trips
-                    WHERE COALESCE(include_in_statistics, 1) = 1
+                    WHERE vehicle_id = ?
+                      AND COALESCE(include_in_statistics, 1) = 1
                       AND distance_km IS NOT NULL
                     ORDER BY distance_km DESC, trip_id ASC
                     LIMIT 1
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if not row:
@@ -1139,7 +2150,9 @@ class FordTriplogDatabase:
                         start_address,
                         end_address
                     FROM v_top_route_trips
-                    """
+                    WHERE vehicle_id = ?
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: list[dict[str, Any]] = []
@@ -1175,8 +2188,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM trips WHERE trip_id = ?",
-                    (normalized_id,),
+                    "SELECT data FROM trips WHERE vehicle_id = ? AND trip_id = ?",
+                    (self.vehicle_id, normalized_id),
                 ).fetchone()
 
             if row is None:
@@ -1206,10 +2219,12 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM trips
+                    WHERE vehicle_id = ?
                     ORDER BY
                         json_extract(data, '$.start_time') ASC,
                         trip_id ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             trips: list[dict[str, Any]] = []
@@ -1254,8 +2269,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM charges WHERE charge_id = ?",
-                    (normalized_id,),
+                    "SELECT data FROM charges WHERE vehicle_id = ? AND charge_id = ?",
+                    (self.vehicle_id, normalized_id),
                 ).fetchone()
 
             if row is None:
@@ -1298,12 +2313,14 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO current_trip (
+                        vehicle_id,
                         trip_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(trip_id),
                         payload,
                     ),
@@ -1336,7 +2353,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM current_trip LIMIT 1"
+                    "SELECT data FROM current_trip WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -1359,7 +2377,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM current_trip")
+                db.execute("DELETE FROM current_trip WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -1386,7 +2404,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM last_trip LIMIT 1"
+                    "SELECT data FROM last_trip WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -1426,16 +2445,18 @@ class FordTriplogDatabase:
 
             with sqlite3.connect(self.db_path) as db:
                 # last_trip is a single-record cache.
-                db.execute("DELETE FROM last_trip")
+                db.execute("DELETE FROM last_trip WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.execute(
                     """
                     INSERT INTO last_trip (
+                        vehicle_id,
                         trip_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(trip_id),
                         payload,
                     ),
@@ -1484,12 +2505,14 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO current_charge (
+                        vehicle_id,
                         charge_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(charge_id),
                         payload,
                     ),
@@ -1524,7 +2547,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM current_charge LIMIT 1"
+                    "SELECT data FROM current_charge WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -1547,7 +2571,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM current_charge")
+                db.execute("DELETE FROM current_charge WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -1576,7 +2600,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM last_charge LIMIT 1"
+                    "SELECT data FROM last_charge WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -1618,12 +2643,14 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO charges (
+                        vehicle_id,
                         charge_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(charge_id),
                         payload,
                     ),
@@ -1661,8 +2688,8 @@ class FordTriplogDatabase:
         def _delete() -> bool:
             with sqlite3.connect(self.db_path) as db:
                 cursor = db.execute(
-                    "DELETE FROM charges WHERE charge_id = ?",
-                    (normalized_id,),
+                    "DELETE FROM charges WHERE vehicle_id = ? AND charge_id = ?",
+                    (self.vehicle_id, normalized_id),
                 )
                 db.commit()
                 return cursor.rowcount > 0
@@ -1689,7 +2716,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM last_charge")
+                db.execute("DELETE FROM last_charge WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -1725,16 +2752,18 @@ class FordTriplogDatabase:
 
             with sqlite3.connect(self.db_path) as db:
                 # last_charge is a single-record cache.
-                db.execute("DELETE FROM last_charge")
+                db.execute("DELETE FROM last_charge WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.execute(
                     """
                     INSERT INTO last_charge (
+                        vehicle_id,
                         charge_id,
                         data
                     )
-                    VALUES (?, ?)
+                    VALUES (?, ?, ?)
                     """,
                     (
+                        self.vehicle_id,
                         str(charge_id),
                         payload,
                     ),
@@ -1775,12 +2804,13 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO statistics (
+                        vehicle_id,
                         id,
                         data
                     )
-                    VALUES (1, ?)
+                    VALUES (?, 1, ?)
                     """,
-                    (payload,),
+                    (self.vehicle_id, payload),
                 )
                 db.commit()
 
@@ -1808,7 +2838,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM statistics WHERE id = 1"
+                    "SELECT data FROM statistics WHERE vehicle_id = ? AND id = 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -1842,12 +2873,13 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT OR REPLACE INTO diagnostics (
+                        vehicle_id,
                         id,
                         data
                     )
-                    VALUES (1, ?)
+                    VALUES (?, 1, ?)
                     """,
-                    (payload,),
+                    (self.vehicle_id, payload),
                 )
                 db.commit()
 
@@ -1875,7 +2907,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM diagnostics WHERE id = 1"
+                    "SELECT data FROM diagnostics WHERE vehicle_id = ? AND id = 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -2119,10 +3152,10 @@ class FordTriplogDatabase:
             with sqlite3.connect(self.db_path) as db:
                 db.execute(
                     """
-                    INSERT OR REPLACE INTO journeys (journey_id, data)
-                    VALUES (?, ?)
+                    INSERT OR REPLACE INTO journeys (vehicle_id, journey_id, data)
+                    VALUES (?, ?, ?)
                     """,
-                    (str(journey_id), payload),
+                    (self.vehicle_id, str(journey_id), payload),
                 )
                 db.commit()
 
@@ -2144,7 +3177,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
                 rows = db.execute(
-                    "SELECT journey_id, data FROM journeys"
+                    "SELECT journey_id, data FROM journeys WHERE vehicle_id = ?",
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: dict[str, dict[str, Any]] = {}
@@ -2189,8 +3223,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM journeys WHERE journey_id = ?",
-                    (normalized_id,),
+                    "SELECT data FROM journeys WHERE vehicle_id = ? AND journey_id = ?",
+                    (self.vehicle_id, normalized_id),
                 ).fetchone()
 
             if row is None:
@@ -2220,10 +3254,12 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM journeys
+                    WHERE vehicle_id = ?
                     ORDER BY
                         json_extract(data, '$.start_time') ASC,
                         journey_id ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             journeys: list[dict[str, Any]] = []
@@ -2264,10 +3300,12 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM charges
+                    WHERE vehicle_id = ?
                     ORDER BY
                         json_extract(data, '$.start_time') ASC,
                         charge_id ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             charges: list[dict[str, Any]] = []
@@ -2305,7 +3343,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM current_journey LIMIT 1"
+                    "SELECT data FROM current_journey WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -2336,7 +3375,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM last_journey LIMIT 1"
+                    "SELECT data FROM last_journey WHERE vehicle_id = ? LIMIT 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
                 if row is not None:
@@ -2351,11 +3391,13 @@ class FordTriplogDatabase:
                     """
                     SELECT data
                     FROM journeys
-                    WHERE json_extract(data, '$.end_time') IS NOT NULL
+                    WHERE vehicle_id = ?
+                      AND json_extract(data, '$.end_time') IS NOT NULL
                     ORDER BY json_extract(data, '$.end_time') DESC,
                              journey_id DESC
                     LIMIT 1
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:
@@ -2393,8 +3435,8 @@ class FordTriplogDatabase:
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
                 db.execute(
-                    "DELETE FROM journeys WHERE journey_id = ?",
-                    (str(journey_id),),
+                    "DELETE FROM journeys WHERE vehicle_id = ? AND journey_id = ?",
+                    (self.vehicle_id, str(journey_id)),
                 )
                 db.commit()
 
@@ -2410,7 +3452,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM journeys")
+                db.execute("DELETE FROM journeys WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -2430,10 +3472,10 @@ class FordTriplogDatabase:
         def _write() -> None:
             payload = json.dumps(data, ensure_ascii=False)
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM current_journey")
+                db.execute("DELETE FROM current_journey WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.execute(
-                    "INSERT INTO current_journey (journey_id, data) VALUES (?, ?)",
-                    (str(journey_id), payload),
+                    "INSERT INTO current_journey (vehicle_id, journey_id, data) VALUES (?, ?, ?)",
+                    (self.vehicle_id, str(journey_id), payload),
                 )
                 db.commit()
 
@@ -2449,7 +3491,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM current_journey")
+                db.execute("DELETE FROM current_journey WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -2469,10 +3511,10 @@ class FordTriplogDatabase:
         def _write() -> None:
             payload = json.dumps(data, ensure_ascii=False)
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM last_journey")
+                db.execute("DELETE FROM last_journey WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.execute(
-                    "INSERT INTO last_journey (journey_id, data) VALUES (?, ?)",
-                    (str(journey_id), payload),
+                    "INSERT INTO last_journey (vehicle_id, journey_id, data) VALUES (?, ?, ?)",
+                    (self.vehicle_id, str(journey_id), payload),
                 )
                 db.commit()
 
@@ -2488,7 +3530,7 @@ class FordTriplogDatabase:
 
         def _delete() -> None:
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM last_journey")
+                db.execute("DELETE FROM last_journey WHERE vehicle_id = ?", (self.vehicle_id,))
                 db.commit()
 
         try:
@@ -2509,8 +3551,10 @@ class FordTriplogDatabase:
                     """
                     SELECT receipt_id, target_type, target_id, data
                     FROM receipts
+                    WHERE vehicle_id = ?
                     ORDER BY receipt_id ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: list[dict[str, Any]] = []
@@ -2558,9 +3602,9 @@ class FordTriplogDatabase:
                     """
                     SELECT target_type, target_id, data
                     FROM receipts
-                    WHERE receipt_id = ?
+                    WHERE vehicle_id = ? AND receipt_id = ?
                     """,
-                    (str(receipt_id),),
+                    (self.vehicle_id, str(receipt_id)),
                 ).fetchone()
 
             if row is None:
@@ -2613,18 +3657,20 @@ class FordTriplogDatabase:
                 db.execute(
                     """
                     INSERT INTO receipts (
+                        vehicle_id,
                         receipt_id,
                         target_type,
                         target_id,
                         data
                     )
-                    VALUES (?, ?, ?, ?)
-                    ON CONFLICT(receipt_id) DO UPDATE SET
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(vehicle_id, receipt_id) DO UPDATE SET
                         target_type = excluded.target_type,
                         target_id = excluded.target_id,
                         data = excluded.data
                     """,
                     (
+                        self.vehicle_id,
                         receipt_id,
                         str(target_type),
                         str(target_id),
@@ -2660,8 +3706,8 @@ class FordTriplogDatabase:
         def _delete() -> bool:
             with sqlite3.connect(self.db_path) as db:
                 cursor = db.execute(
-                    "DELETE FROM receipts WHERE receipt_id = ?",
-                    (str(receipt_id),),
+                    "DELETE FROM receipts WHERE vehicle_id = ? AND receipt_id = ?",
+                    (self.vehicle_id, str(receipt_id)),
                 )
                 db.commit()
                 return cursor.rowcount > 0
@@ -2684,7 +3730,7 @@ class FordTriplogDatabase:
         """Replace the complete receipt collection in SQLite."""
 
         def _write() -> None:
-            rows: list[tuple[str, str, str, str]] = []
+            rows: list[tuple[int, str, str, str, str]] = []
 
             for receipt in receipts:
                 if not isinstance(receipt, dict):
@@ -2709,6 +3755,7 @@ class FordTriplogDatabase:
 
                 rows.append(
                     (
+                        self.vehicle_id,
                         receipt_id,
                         target_type,
                         target_id,
@@ -2717,17 +3764,18 @@ class FordTriplogDatabase:
                 )
 
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM receipts")
+                db.execute("DELETE FROM receipts WHERE vehicle_id = ?", (self.vehicle_id,))
                 if rows:
                     db.executemany(
                         """
                         INSERT INTO receipts (
+                            vehicle_id,
                             receipt_id,
                             target_type,
                             target_id,
                             data
                         )
-                        VALUES (?, ?, ?, ?)
+                        VALUES (?, ?, ?, ?, ?)
                         """,
                         rows,
                     )
@@ -2896,7 +3944,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, dict[str, Any]]:
             with sqlite3.connect(self.db_path) as db:
                 rows = db.execute(
-                    "SELECT pause_id, data FROM pause_metadata ORDER BY pause_id ASC"
+                    "SELECT pause_id, data FROM pause_metadata WHERE vehicle_id = ? ORDER BY pause_id ASC",
+                    (self.vehicle_id,),
                 ).fetchall()
             result: dict[str, dict[str, Any]] = {}
             for pause_id, payload in rows:
@@ -2937,11 +3986,14 @@ class FordTriplogDatabase:
                 )
 
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM pause_metadata")
+                db.execute("DELETE FROM pause_metadata WHERE vehicle_id = ?", (self.vehicle_id,))
                 if rows:
                     db.executemany(
-                        "INSERT INTO pause_metadata (pause_id, data) VALUES (?, ?)",
-                        rows,
+                        "INSERT INTO pause_metadata (vehicle_id, pause_id, data) VALUES (?, ?, ?)",
+                        [
+                            (self.vehicle_id, pause_id, payload)
+                            for pause_id, payload in rows
+                        ],
                     )
                 db.commit()
 
@@ -2964,8 +4016,10 @@ class FordTriplogDatabase:
                     """
                     SELECT charge_id, data
                     FROM charge_metadata
+                    WHERE vehicle_id = ?
                     ORDER BY charge_id ASC
-                    """
+                    """,
+                    (self.vehicle_id,),
                 ).fetchall()
 
             result: dict[str, dict[str, Any]] = {}
@@ -3013,14 +4067,17 @@ class FordTriplogDatabase:
                 )
 
             with sqlite3.connect(self.db_path) as db:
-                db.execute("DELETE FROM charge_metadata")
+                db.execute("DELETE FROM charge_metadata WHERE vehicle_id = ?", (self.vehicle_id,))
                 if rows:
                     db.executemany(
                         """
-                        INSERT INTO charge_metadata (charge_id, data)
-                        VALUES (?, ?)
+                        INSERT INTO charge_metadata (vehicle_id, charge_id, data)
+                        VALUES (?, ?, ?)
                         """,
-                        rows,
+                        [
+                            (self.vehicle_id, charge_id, payload)
+                            for charge_id, payload in rows
+                        ],
                     )
                 db.commit()
 
@@ -3045,8 +4102,8 @@ class FordTriplogDatabase:
             payload = json.dumps(data, ensure_ascii=False)
             with sqlite3.connect(self.db_path) as db:
                 db.execute(
-                    "INSERT OR REPLACE INTO metadata (id, data) VALUES (1, ?)",
-                    (payload,),
+                    "INSERT OR REPLACE INTO metadata (vehicle_id, id, data) VALUES (?, 1, ?)",
+                    (self.vehicle_id, payload),
                 )
                 db.commit()
         try:
@@ -3066,7 +4123,8 @@ class FordTriplogDatabase:
         def _read() -> dict[str, Any] | None:
             with sqlite3.connect(self.db_path) as db:
                 row = db.execute(
-                    "SELECT data FROM metadata WHERE id = 1"
+                    "SELECT data FROM metadata WHERE vehicle_id = ? AND id = 1",
+                    (self.vehicle_id,),
                 ).fetchone()
 
             if row is None:

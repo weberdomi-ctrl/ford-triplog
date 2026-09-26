@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.3.0
-Phase: Route maintenance
-Build: 23048 - Persist battery capacity default
-Release: 2.3.0
+Version: 2.5.0
+Phase: Multi-vehicle context
+Build: 25020 - Home tariff form compatibility fix
+Release: 2.5.0-dev
 
 
 """
@@ -67,6 +67,19 @@ from .osrm_client import (
 
 from .export import FordTriplogExporter
 from .route_rebuilder import FordTriplogRouteRebuilder
+from .home_tariff_storage import FordTriplogHomeTariffStorage
+from .charging_costs import FordTriplogChargingCostCalculator
+
+from .vehicle_identity import (
+    FordTriplogVehicleIdentity,
+    async_detect_vehicle_identity,
+)
+from .vehicle_context import (
+    get_selected_vehicle_id,
+    get_vehicle_runtime,
+    iter_vehicle_runtimes,
+    set_selected_vehicle_id,
+)
 
 from .services import (
     async_download_charging_database,
@@ -83,6 +96,10 @@ from .const import (
     CONF_SOC,
     CONF_TRACKER,
     CONF_BATTERY_CAPACITY,
+    CONF_VEHICLE_ID,
+    CONF_VEHICLE_NAME,
+    CONF_VEHICLE_TEST_ALIAS,
+    CONF_VEHICLE_ALIAS_OF,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_ROUTE_TRACKER_ENABLED,
     CONF_ROUTE_SOURCE_TYPE,
@@ -110,6 +127,8 @@ from .const import (
     VERSION as FORD_TRIPLOG_VERSION,
 )
 
+
+CONF_CREATE_TEST_VEHICLE = "create_test_vehicle"
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
@@ -187,6 +206,17 @@ CONF_HOME_TARIFF_ENABLED = "home_tariff_enabled"
 CONF_HOME_TARIFF_SUMMER_PRICE = "home_tariff_summer_price"
 CONF_HOME_TARIFF_WINTER_PRICE = "home_tariff_winter_price"
 CONF_HOME_TARIFF_CURRENCY = "home_tariff_currency"
+CONF_HOME_TARIFF_PERIODS = "home_tariff_periods"
+CONF_HOME_TARIFF_SELECTION = "home_tariff_selection"
+CONF_HOME_TARIFF_YEAR = "home_tariff_year"
+CONF_HOME_TARIFF_VALID_FROM = "home_tariff_valid_from"
+CONF_HOME_TARIFF_VALID_TO = "home_tariff_valid_to"
+CONF_HOME_TARIFF_PRICE = "home_tariff_price_per_kwh"
+CONF_HOME_TARIFF_ACTION = "home_tariff_action"
+HOME_TARIFF_ACTION_SAVE = "save"
+HOME_TARIFF_ACTION_DELETE = "delete"
+HOME_TARIFF_ACTION_BACK = "back"
+HOME_TARIFF_SELECTION_BACK = "__back__"
 
 CHARGE_ACTION_SAVE = "save"
 CHARGE_ACTION_CLEAR = "clear"
@@ -240,6 +270,7 @@ RECEIPT_TARGET_CHARGE = "charge"
 
 CONF_EXPORT_START_DATE = "start_date"
 CONF_EXPORT_END_DATE = "end_date"
+CONF_VEHICLE_CONTEXT = "vehicle_context"
 
 
 _LOGGER = logging.getLogger(__name__)
@@ -288,6 +319,107 @@ class FordTriplogConfigFlow(
         """Return the options flow."""
         return FordTriplogOptionsFlow(config_entry)
 
+    def _find_configured_vehicle_entry(
+        self,
+        identity: FordTriplogVehicleIdentity,
+    ) -> ConfigEntry | None:
+        """Return an already configured primary vehicle with this identity."""
+
+        wanted_vin = str(identity.vin or "").strip().upper()
+        wanted_unique = identity.unique_key
+
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            if wanted_unique and entry.unique_id == wanted_unique:
+                return entry
+
+            runtime = self.hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+            if not isinstance(runtime, dict):
+                continue
+
+            runtime_identity = runtime.get("vehicle_identity")
+            runtime_vehicle = runtime.get("vehicle") or {}
+            current_vin = str(
+                getattr(runtime_identity, "vin", None)
+                or runtime_vehicle.get("vin")
+                or ""
+            ).strip().upper()
+            if wanted_vin and current_vin == wanted_vin:
+                # Ignore an already-created test alias. The duplicate prompt
+                # refers to the primary physical vehicle.
+                if bool((entry.data or {}).get(CONF_VEHICLE_TEST_ALIAS, False)):
+                    continue
+                return entry
+
+        return None
+
+    @staticmethod
+    def _source_display_name(source: str | None) -> str:
+        """Return a concise source label for config-entry titles."""
+
+        value = str(source or "").strip()
+        normalized = value.lower()
+        if normalized == "fordconnect_query":
+            return "Ford Connect"
+        if normalized == "fordpass":
+            return "FordPass"
+        return value or "Quelle"
+
+    async def _async_create_vehicle_entry(
+        self,
+        user_input: dict[str, Any],
+        identity: FordTriplogVehicleIdentity,
+        *,
+        test_alias: bool = False,
+        alias_of_vehicle_id: int | None = None,
+    ) -> ConfigFlowResult:
+        """Create one Ford Triplog vehicle ConfigEntry."""
+
+        entry_data = dict(user_input)
+        entry_data.setdefault(
+            CONF_BATTERY_CAPACITY,
+            DEFAULT_BATTERY_CAPACITY_KWH,
+        )
+
+        detected_name = str(identity.name or identity.model or "").strip()
+        source_label = self._source_display_name(identity.source)
+
+        if test_alias:
+            entry_data[CONF_VEHICLE_TEST_ALIAS] = True
+            if alias_of_vehicle_id is not None:
+                entry_data[CONF_VEHICLE_ALIAS_OF] = int(alias_of_vehicle_id)
+
+            if detected_name:
+                entry_data.setdefault(
+                    CONF_VEHICLE_NAME,
+                    f"{detected_name} ({source_label})",
+                )
+
+            stable_source = str(identity.source or "source").strip().lower()
+            stable_device = str(
+                identity.device_id
+                or identity.entity_id
+                or "vehicle"
+            ).strip().lower()
+            vin_part = str(identity.vin or "unknown").strip().lower()
+            unique_id = f"vehicle-test:{vin_part}:{stable_source}:{stable_device}"
+        else:
+            if detected_name:
+                entry_data.setdefault(CONF_VEHICLE_NAME, detected_name)
+            unique_id = identity.unique_key or (
+                f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
+            )
+
+        await self.async_set_unique_id(unique_id)
+        self._abort_if_unique_id_configured()
+
+        configured_name = str(
+            entry_data.get(CONF_VEHICLE_NAME)
+            or detected_name
+            or NAME
+        ).strip()
+        title = f"{NAME} – {configured_name}" if configured_name else NAME
+        return self.async_create_entry(title=title, data=entry_data)
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
@@ -303,19 +435,104 @@ class FordTriplogConfigFlow(
             ):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                await self.async_set_unique_id(DOMAIN)
-                self._abort_if_unique_id_configured()
-                entry_data = dict(user_input)
-                entry_data.setdefault(
-                    CONF_BATTERY_CAPACITY,
-                    DEFAULT_BATTERY_CAPACITY_KWH,
+                identity = async_detect_vehicle_identity(
+                    self.hass,
+                    user_input,
                 )
-                return self.async_create_entry(title=NAME, data=entry_data)
+                duplicate = self._find_configured_vehicle_entry(identity)
+                if duplicate is not None and identity.vin:
+                    self._pending_vehicle_input = dict(user_input)
+                    self._pending_vehicle_identity = identity
+                    self._pending_duplicate_entry_id = duplicate.entry_id
+                    return await self.async_step_duplicate_vehicle()
+
+                return await self._async_create_vehicle_entry(
+                    user_input,
+                    identity,
+                )
 
         return self.async_show_form(
             step_id="user",
             data_schema=self._build_schema(),
             errors=errors,
+        )
+
+    async def async_step_duplicate_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle an already configured VIN."""
+
+        pending_input = getattr(self, "_pending_vehicle_input", None)
+        identity = getattr(self, "_pending_vehicle_identity", None)
+        duplicate_entry_id = getattr(self, "_pending_duplicate_entry_id", None)
+        duplicate_entry = (
+            self.hass.config_entries.async_get_entry(duplicate_entry_id)
+            if duplicate_entry_id
+            else None
+        )
+
+        if not isinstance(pending_input, dict) or not isinstance(
+            identity,
+            FordTriplogVehicleIdentity,
+        ):
+            return self.async_abort(reason="duplicate_vehicle_context_lost")
+
+        existing_vehicle_id = None
+        existing_name = duplicate_entry.title if duplicate_entry is not None else NAME
+        if duplicate_entry is not None:
+            try:
+                existing_vehicle_id = int(
+                    (duplicate_entry.data or {}).get(CONF_VEHICLE_ID)
+                )
+            except (TypeError, ValueError):
+                existing_vehicle_id = None
+
+        if existing_vehicle_id is None and duplicate_entry is not None:
+            runtime = self.hass.data.get(DOMAIN, {}).get(
+                duplicate_entry.entry_id,
+                {},
+            )
+            try:
+                existing_vehicle_id = int(runtime.get("vehicle_id"))
+            except (TypeError, ValueError, AttributeError):
+                existing_vehicle_id = None
+
+        if user_input is not None:
+            if not bool(user_input.get(CONF_CREATE_TEST_VEHICLE, False)):
+                return self.async_abort(
+                    reason="vehicle_already_configured",
+                    description_placeholders={
+                        "vehicle": existing_name,
+                    },
+                )
+
+            result = await self._async_create_vehicle_entry(
+                pending_input,
+                identity,
+                test_alias=True,
+                alias_of_vehicle_id=existing_vehicle_id,
+            )
+            self._pending_vehicle_input = None
+            self._pending_vehicle_identity = None
+            self._pending_duplicate_entry_id = None
+            return result
+
+        return self.async_show_form(
+            step_id="duplicate_vehicle",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CREATE_TEST_VEHICLE,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            description_placeholders={
+                "vin": str(identity.vin or "—"),
+                "vehicle": existing_name,
+                "source": self._source_display_name(identity.source),
+            },
         )
 
     def _build_schema(self) -> vol.Schema:
@@ -401,6 +618,159 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._export_result: dict[str, str] = {}
         self._selected_export_url: str | None = None
         self._export_kind: str = "trips"
+        self._vehicle_context_id: int | None = None
+        self._selected_home_tariff_index: int | None = None
+        self._home_tariff_translations: dict[str, str] | None = None
+        self._home_tariff_storage: FordTriplogHomeTariffStorage | None = None
+        self._home_tariff_periods_cache: list[dict[str, Any]] | None = None
+
+    def _origin_vehicle_id(self) -> int:
+        """Return the vehicle id of the ConfigEntry that opened this flow."""
+
+        runtime_data = self.hass.data.get(DOMAIN, {}).get(
+            self._config_entry.entry_id,
+            {},
+        )
+        raw_vehicle_id = (
+            runtime_data.get("vehicle_id")
+            or self._config_entry.options.get(CONF_VEHICLE_ID)
+            or self._config_entry.data.get(CONF_VEHICLE_ID)
+            or 1
+        )
+        try:
+            vehicle_id = int(raw_vehicle_id)
+        except (TypeError, ValueError):
+            vehicle_id = 1
+        return max(1, vehicle_id)
+
+    def _ensure_vehicle_context_id(self) -> int:
+        """Return the vehicle context locked to this options flow.
+
+        The shared dashboard selector initializes a new options flow, but once
+        the flow has started its vehicle must remain stable. Otherwise a
+        dashboard/context change can make an already selected trip, charge or
+        receipt resolve against another vehicle runtime.
+        """
+
+        if self._vehicle_context_id is not None:
+            selected = int(self._vehicle_context_id)
+            if get_vehicle_runtime(self.hass, selected) is not None:
+                return selected
+            self._vehicle_context_id = None
+
+        selected = get_selected_vehicle_id(
+            self.hass,
+            fallback=self._origin_vehicle_id(),
+        )
+        self._vehicle_context_id = int(selected or self._origin_vehicle_id())
+        return self._vehicle_context_id
+
+    def _get_context_runtime_data(self) -> dict[str, Any]:
+        """Return runtime data for the currently selected vehicle context."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        if resolved is None:
+            runtime_data = self.hass.data.get(DOMAIN, {}).get(
+                self._config_entry.entry_id,
+                {},
+            )
+            if not isinstance(runtime_data, dict):
+                raise HomeAssistantError("Vehicle runtime is not initialized")
+            return runtime_data
+        return resolved[1]
+
+    def _get_context_entry_id(self) -> str:
+        """Return the ConfigEntry id for the selected vehicle context."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        if resolved is None:
+            return self._config_entry.entry_id
+        return resolved[0]
+
+    def _get_context_config_entry(self) -> ConfigEntry:
+        """Return the ConfigEntry that owns the selected vehicle."""
+
+        entry_id = self._get_context_entry_id()
+        entry = self.hass.config_entries.async_get_entry(entry_id)
+        if entry is None:
+            raise HomeAssistantError("Vehicle ConfigEntry is not available")
+        return entry
+
+    def _get_context_config(self) -> dict[str, Any]:
+        """Return merged data/options for the selected vehicle."""
+
+        runtime_data = self._get_context_runtime_data()
+        runtime_config = runtime_data.get("config")
+        if isinstance(runtime_config, dict):
+            return dict(runtime_config)
+
+        entry = self._get_context_config_entry()
+        return {**entry.data, **entry.options}
+
+    def _context_vehicle_name(self) -> str:
+        """Return the display name of the currently selected vehicle."""
+
+        vehicle_id = self._ensure_vehicle_context_id()
+        runtime_data = self._get_context_runtime_data()
+        vehicle = runtime_data.get("vehicle") or {}
+        config = self._get_context_config()
+        entry = self._get_context_config_entry()
+        return str(
+            config.get(CONF_VEHICLE_NAME)
+            or vehicle.get("name")
+            or vehicle.get("model")
+            or entry.title
+            or f"Vehicle {vehicle_id}"
+        )
+
+    def _vehicle_context_options(self) -> list[selector.SelectOptionDict]:
+        """Return loaded vehicles as selector options."""
+
+        options: list[selector.SelectOptionDict] = []
+        for vehicle_id, entry_id, runtime_data in iter_vehicle_runtimes(self.hass):
+            vehicle = runtime_data.get("vehicle") or {}
+            config = runtime_data.get("config") or {}
+            entry = self.hass.config_entries.async_get_entry(entry_id)
+            label = str(
+                config.get(CONF_VEHICLE_NAME)
+                or vehicle.get("name")
+                or vehicle.get("model")
+                or (entry.title if entry is not None else "")
+                or f"Vehicle {vehicle_id}"
+            )
+            vin = str(vehicle.get("vin") or "").strip()
+            if vin:
+                label = f"{label} · {vin}"
+            options.append(
+                selector.SelectOptionDict(
+                    value=str(vehicle_id),
+                    label=label,
+                )
+            )
+
+        if not options:
+            vehicle_id = self._origin_vehicle_id()
+            options.append(
+                selector.SelectOptionDict(
+                    value=str(vehicle_id),
+                    label=f"Vehicle {vehicle_id}",
+                )
+            )
+        return options
+
+    def _reset_vehicle_context_state(self) -> None:
+        """Clear selections that must never leak between vehicles."""
+
+        self._selected_charge_id = None
+        self._selected_pause_journey_id = None
+        self._selected_pause_id = None
+        self._selected_receipt_id = None
+        self._selected_charge_receipt_action = None
+        self._selected_apply_receipt_id = None
+        self._route_tracker_draft = {}
+        self._user_place_storage = None
 
     async def async_step_init(
         self,
@@ -408,9 +778,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show the Ford Triplog options menu."""
 
+        vehicle_id = self._ensure_vehicle_context_id()
         return self.async_show_menu(
             step_id="init",
             menu_options=[
+                "vehicle_context",
                 "settings",
                 "journey_management",
                 "route_management",
@@ -421,6 +793,58 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "user_charging_sites",
                 "charging_site_database",
             ],
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(vehicle_id),
+            },
+        )
+
+    async def async_step_vehicle_context(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select the vehicle used by vehicle-specific manual actions."""
+
+        errors: dict[str, str] = {}
+        options = self._vehicle_context_options()
+        current_id = self._ensure_vehicle_context_id()
+
+        if user_input is not None:
+            try:
+                selected_id = int(user_input.get(CONF_VEHICLE_CONTEXT))
+                set_selected_vehicle_id(self.hass, selected_id)
+            except (TypeError, ValueError):
+                errors["base"] = "vehicle_context_invalid"
+            else:
+                self._vehicle_context_id = selected_id
+                self._reset_vehicle_context_state()
+                return await self.async_step_init()
+
+        valid_values = {str(option["value"]) for option in options}
+        default_value = str(current_id)
+        if default_value not in valid_values:
+            default_value = str(options[0]["value"])
+
+        return self.async_show_form(
+            step_id="vehicle_context",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_VEHICLE_CONTEXT,
+                        default=default_value,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(current_id),
+            },
         )
 
 
@@ -537,13 +961,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_charge_manager(self):
         """Return the Charge Manager for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         manager = runtime_data.get("charge_manager")
 
@@ -1996,11 +2414,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._selected_charge_id
         )
         if charge is None:
+            missing_charge_id = str(self._selected_charge_id or "")
             self._selected_charge_id = None
             return self.async_show_form(
                 step_id="charge_receipt_upload",
                 data_schema=vol.Schema({}),
                 errors={"base": "charge_not_found"},
+                description_placeholders={
+                    "charge_id": missing_charge_id,
+                    "date": "—",
+                    "location": "—",
+                    "ocr_status": "—",
+                },
             )
 
         errors: dict[str, str] = {}
@@ -2324,13 +2749,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_journey_storage(self):
         """Return Journey storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("journey_storage")
 
@@ -3040,7 +3459,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 else "edit_pause"
             )
             service_data: dict[str, Any] = {
-                "entry_id": self._config_entry.entry_id,
+                "entry_id": self._get_context_entry_id(),
                 "journey_id": self._selected_pause_journey_id,
                 "pause_id": self._selected_pause_id,
             }
@@ -3181,9 +3600,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_receipt_storage(self) -> FordTriplogReceiptStorage:
         """Return initialized receipt storage for this config entry."""
 
-        runtime_data = self.hass.data.get(DOMAIN, {}).get(
-            self._config_entry.entry_id, {}
-        )
+        runtime_data = self._get_context_runtime_data()
         storage = runtime_data.get("receipt_storage")
         if storage is None:
             raise HomeAssistantError("Receipt storage is not initialized")
@@ -4536,13 +4953,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_journey_rebuilder(self):
         """Return the Journey rebuilder for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         rebuilder = runtime_data.get("journey_rebuilder")
 
@@ -4556,13 +4967,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_route_rebuilder(self) -> FordTriplogRouteRebuilder:
         """Return an OSRM route rebuilder for the current options."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         route_storage = runtime_data.get("route_storage")
         if route_storage is None:
@@ -4570,18 +4975,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "Route storage is not initialized"
             )
 
+        context_config = self._get_context_config()
         return FordTriplogRouteRebuilder(
             self.hass,
             route_storage,
             osrm_url=str(
-                self._options.get(
+                context_config.get(
                     CONF_OSRM_URL,
                     DEFAULT_OSRM_URL,
                 )
                 or ""
             ),
             radius_meters=float(
-                self._options.get(
+                context_config.get(
                     CONF_OSRM_MATCH_RADIUS,
                     DEFAULT_OSRM_MATCH_RADIUS,
                 )
@@ -4927,13 +5333,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_trip_storage(self):
         """Return Ford Triplog storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("storage")
 
@@ -4951,13 +5351,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_journey_storage(self):
         """Return Journey storage for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         storage = runtime_data.get("journey_storage")
         if storage is None:
@@ -4970,13 +5364,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_charge_manager(self):
         """Return Charge Manager for this config entry."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
 
         manager = runtime_data.get("charge_manager")
         if manager is None:
@@ -4989,13 +5377,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     def _get_export_battery_capacity(self) -> float | None:
         """Return configured usable battery capacity for driving exports."""
 
-        runtime_data = self.hass.data.get(
-            DOMAIN,
-            {},
-        ).get(
-            self._config_entry.entry_id,
-            {},
-        )
+        runtime_data = self._get_context_runtime_data()
         coordinator = runtime_data.get("coordinator")
         value = getattr(coordinator, "battery_capacity", None)
         try:
@@ -5464,17 +5846,92 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Show settings navigation."""
 
+        vehicle_id = self._ensure_vehicle_context_id()
         return self.async_show_menu(
             step_id="settings",
             menu_options=[
                 "general_settings",
+                "home_tariff_settings",
+                "vehicle_settings",
                 "vehicle_sensors",
                 "route_tracker_settings",
                 "osrm_settings",
                 "ocr_settings",
                 "init",
             ],
+            description_placeholders={
+                "vehicle_name": self._context_vehicle_name(),
+                "vehicle_id": str(vehicle_id),
+            },
         )
+
+    async def async_step_vehicle_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Configure the selected vehicle display name and identity."""
+
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+        identity = async_detect_vehicle_identity(
+            self.hass,
+            context_config,
+        )
+        runtime_data = self._get_context_runtime_data()
+        vehicle = runtime_data.get("vehicle") or {}
+        vehicle_id = int(
+            context_config.get(CONF_VEHICLE_ID)
+            or runtime_data.get("vehicle_id")
+            or vehicle.get("vehicle_id")
+            or self._ensure_vehicle_context_id()
+        )
+        vin = str(vehicle.get("vin") or identity.vin or "—")
+        source = str(identity.source or "—")
+        detected_name = str(
+            identity.name
+            or identity.model
+            or vehicle.get("name")
+            or "—"
+        )
+
+        if user_input is not None:
+            updated_options = dict(context_entry.options)
+            updated_options[CONF_VEHICLE_NAME] = str(
+                user_input.get(CONF_VEHICLE_NAME) or ""
+            ).strip()
+
+            self.hass.config_entries.async_update_entry(
+                context_entry,
+                options=updated_options,
+            )
+            return await self.async_step_settings()
+
+        current_name = str(
+            context_config.get(CONF_VEHICLE_NAME)
+            or vehicle.get("name")
+            or identity.name
+            or identity.model
+            or f"Vehicle {vehicle_id}"
+        )
+
+        return self.async_show_form(
+            step_id="vehicle_settings",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_VEHICLE_NAME,
+                        default=current_name,
+                    ): selector.TextSelector()
+                }
+            ),
+            description_placeholders={
+                "vehicle_id": str(vehicle_id),
+                "vin": vin,
+                "source": source,
+                "detected_name": detected_name,
+            },
+        )
+
 
     async def async_step_vehicle_sensors(
         self,
@@ -5483,6 +5940,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure vehicle source entities."""
 
         errors: dict[str, str] = {}
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
         if user_input is not None:
             if _contains_ford_triplog_input(
                 self.hass,
@@ -5498,7 +5957,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             ):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(user_input)
 
                 # Optional vehicle sources must explicitly override values from
@@ -5508,11 +5967,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     updated_options[key] = user_input.get(key)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
-
                 return await self.async_step_settings()
         blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
         blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
@@ -5546,7 +6003,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ),
                     }
                 ),
-                self._options,
+                context_config,
             ),
         )
 
@@ -5558,6 +6015,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Configure and test the optional local OSRM service."""
 
         errors: dict[str, str] = {}
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
 
         if user_input is not None:
             enabled = bool(
@@ -5592,7 +6051,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     errors["base"] = "osrm_invalid_response"
                 else:
                     updated_options = dict(
-                        self._config_entry.options
+                        context_entry.options
                     )
                     updated_options.update(
                         {
@@ -5602,10 +6061,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         }
                     )
                     self.hass.config_entries.async_update_entry(
-                        self._config_entry,
+                        context_entry,
                         options=updated_options,
                     )
-                    self._options.update(updated_options)
                     self._osrm_connection_result = {
                         "status": "OK",
                         "url": client.base_url,
@@ -5620,7 +6078,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     return await self.async_step_osrm_connection_result()
             else:
                 updated_options = dict(
-                    self._config_entry.options
+                    context_entry.options
                 )
                 updated_options.update(
                     {
@@ -5630,10 +6088,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     }
                 )
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._osrm_connection_result = {
                     "status": "Disabled",
                     "url": url or "—",
@@ -5644,19 +6101,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_osrm_connection_result()
 
         current_enabled = bool(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_ENABLED,
                 DEFAULT_OSRM_ENABLED,
             )
         )
         current_url = str(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_URL,
                 DEFAULT_OSRM_URL,
             )
         )
         current_radius = float(
-            self._options.get(
+            context_config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
@@ -5717,11 +6174,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Configure the optional Route Tracker and select its source type."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
         current_enabled = bool(
-            self._options.get(CONF_ROUTE_TRACKER_ENABLED, False)
+            context_config.get(CONF_ROUTE_TRACKER_ENABLED, False)
         )
         current_source_type = str(
-            self._options.get(
+            context_config.get(
                 CONF_ROUTE_SOURCE_TYPE,
                 ROUTE_SOURCE_ABRP,
             )
@@ -5745,14 +6204,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
             }
 
             if not enabled:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(self._route_tracker_draft)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._route_tracker_draft = {}
 
                 return await self.async_step_settings()
@@ -5802,16 +6260,19 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Configure entities for the selected Route Tracker source."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+
         if not self._route_tracker_draft:
             self._route_tracker_draft = {
                 CONF_ROUTE_TRACKER_ENABLED: bool(
-                    self._options.get(
+                    context_config.get(
                         CONF_ROUTE_TRACKER_ENABLED,
                         False,
                     )
                 ),
                 CONF_ROUTE_SOURCE_TYPE: str(
-                    self._options.get(
+                    context_config.get(
                         CONF_ROUTE_SOURCE_TYPE,
                         ROUTE_SOURCE_ABRP,
                     )
@@ -5840,7 +6301,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if _contains_ford_triplog_input(self.hass, user_input, route_keys):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
-                updated_options = dict(self._config_entry.options)
+                updated_options = dict(context_entry.options)
                 updated_options.update(self._route_tracker_draft)
 
                 if source_type == ROUTE_SOURCE_ABRP:
@@ -5870,10 +6331,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     updated_options.pop(CONF_ROUTE_GEOCODED_ENTITY, None)
 
                 self.hass.config_entries.async_update_entry(
-                    self._config_entry,
+                    context_entry,
                     options=updated_options,
                 )
-                self._options.update(updated_options)
                 self._route_tracker_draft = {}
 
                 return await self.async_step_settings()
@@ -5885,7 +6345,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_GEOCODED_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_GEOCODED_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5901,7 +6361,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_DEVICE_TRACKER_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_DEVICE_TRACKER_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5917,7 +6377,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 {
                     vol.Required(
                         CONF_ROUTE_LATITUDE_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_LATITUDE_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5928,7 +6388,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     ),
                     vol.Required(
                         CONF_ROUTE_LONGITUDE_ENTITY,
-                        default=self._options.get(
+                        default=context_config.get(
                             CONF_ROUTE_LONGITUDE_ENTITY,
                         ),
                     ): selector.EntitySelector(
@@ -5950,29 +6410,632 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
 
 
+    @staticmethod
+    def _normalize_home_tariff_month_day(
+        value: Any,
+        *,
+        expected_year: int | None = None,
+    ) -> str:
+        """Normalize a user-entered tariff date to MM-DD.
+
+        Accept the compact UI format (DD.MM), a full German date
+        (DD.MM.YYYY) and ISO dates (YYYY-MM-DD).  The latter two are useful
+        when users paste values directly from tariff sheets.
+        """
+
+        text = str(value or "").strip()
+        if not text:
+            raise ValueError("empty tariff date")
+
+        parsed = None
+        for fmt in ("%d.%m", "%d.%m.", "%d.%m.%Y", "%Y-%m-%d", "%d/%m", "%d/%m/%Y"):
+            try:
+                parsed = datetime.strptime(text, fmt)
+                break
+            except ValueError:
+                continue
+
+        if parsed is None:
+            raise ValueError("invalid tariff date")
+
+        # strptime uses 1900 for formats without a year.  Only validate an
+        # embedded year against the separate year field.
+        has_year = bool(re.search(r"\d{4}", text))
+        if has_year and expected_year is not None and parsed.year != expected_year:
+            raise ValueError("tariff date year does not match selected year")
+
+        return f"{parsed.month:02d}-{parsed.day:02d}"
+
+    @staticmethod
+    def _home_tariff_month_day_label(value: str) -> str:
+        """Format MM-DD as DD.MM."""
+
+        try:
+            month, day = str(value).split("-", 1)
+            return f"{int(day):02d}.{int(month):02d}."
+        except (TypeError, ValueError):
+            return str(value or "—")
+
+    async def _async_ensure_home_tariff_periods(self) -> list[dict[str, Any]]:
+        """Load the global SQLite home tariff table into this Options Flow."""
+
+        if self._home_tariff_periods_cache is not None:
+            return [dict(item) for item in self._home_tariff_periods_cache]
+
+        if self._home_tariff_storage is None:
+            self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
+            await self._home_tariff_storage.async_setup()
+
+        self._home_tariff_periods_cache = await self._home_tariff_storage.async_load()
+        return [dict(item) for item in self._home_tariff_periods_cache]
+
+    def _home_tariff_periods(self) -> list[dict[str, Any]]:
+        """Return the already-loaded global home tariff periods."""
+
+        return [dict(item) for item in (self._home_tariff_periods_cache or [])]
+
+    def _home_tariff_currency(self) -> str:
+        """Return configured home tariff currency."""
+
+        periods = self._home_tariff_periods()
+        if periods:
+            currency = str(periods[0].get("currency") or "").strip().upper()
+            if currency:
+                return currency
+
+        entry = self._get_context_config_entry()
+        config = {**entry.data, **entry.options}
+        return str(
+            config.get(CONF_HOME_TARIFF_CURRENCY, "CHF") or "CHF"
+        ).strip().upper()
+
+    def _home_tariff_table(
+        self,
+        translations: dict[str, str],
+    ) -> str:
+        """Return a compact Markdown table for the options description."""
+
+        periods = self._home_tariff_periods()
+        if not periods:
+            return "—"
+
+        lines = [
+            "| {year} | {valid_from} | {valid_to} | {tariff} |".format(
+                year=translations["year"],
+                valid_from=translations["valid_from"],
+                valid_to=translations["valid_to"],
+                tariff=translations["tariff"],
+            ),
+            "|---:|:---:|:---:|---:|",
+        ]
+        for period in periods:
+            lines.append(
+                "| {year} | {valid_from} | {valid_to} | {price:.4f} {currency}/kWh |".format(
+                    year=int(period["year"]),
+                    valid_from=self._home_tariff_month_day_label(
+                        str(period["valid_from"])
+                    ),
+                    valid_to=self._home_tariff_month_day_label(
+                        str(period["valid_to"])
+                    ),
+                    price=float(period["price_per_kwh"]),
+                    currency=str(period.get("currency") or self._home_tariff_currency()),
+                )
+            )
+        return "\n".join(lines)
+
+    def _home_tariff_period_label(
+        self,
+        period: dict[str, Any],
+    ) -> str:
+        """Return one tariff-period selection label."""
+
+        currency = str(period.get("currency") or self._home_tariff_currency())
+        return (
+            f"{int(period['year'])} | "
+            f"{self._home_tariff_month_day_label(str(period['valid_from']))}–"
+            f"{self._home_tariff_month_day_label(str(period['valid_to']))} | "
+            f"{float(period['price_per_kwh']):.4f} {currency}/kWh"
+        )
+
+    async def _async_get_home_tariff_translations(
+        self,
+    ) -> dict[str, str]:
+        """Load labels used by the dynamic tariff table and selectors."""
+
+        if self._home_tariff_translations is not None:
+            return self._home_tariff_translations
+
+        translations = await async_get_translations(
+            self.hass,
+            self.hass.config.language,
+            "common",
+            {DOMAIN},
+        )
+        defaults = {
+            "year": "Year",
+            "valid_from": "From",
+            "valid_to": "To",
+            "tariff": "Tariff",
+            "save": "Save",
+            "delete": "Delete",
+            "back": "← Back",
+        }
+        self._home_tariff_translations = {
+            key: translations.get(
+                f"component.{DOMAIN}.common.home_tariff_{key}",
+                default,
+            )
+            for key, default in defaults.items()
+        }
+        return self._home_tariff_translations
+
+    async def async_step_home_tariff_settings(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Show year-based home tariff management."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        menu_options = ["home_tariff_add"]
+        if periods:
+            menu_options.append("home_tariff_selection")
+
+        context_entry = self._get_context_config_entry()
+        context_config = {**context_entry.data, **context_entry.options}
+        if (
+            not periods
+            and (
+                CONF_HOME_TARIFF_SUMMER_PRICE in context_config
+                or CONF_HOME_TARIFF_WINTER_PRICE in context_config
+            )
+        ):
+            menu_options.append("home_tariff_legacy_import")
+
+        menu_options.append("settings")
+
+        return self.async_show_menu(
+            step_id="home_tariff_settings",
+            menu_options=menu_options,
+            description_placeholders={
+                "tariff_table": self._home_tariff_table(translations),
+                "currency": self._home_tariff_currency(),
+            },
+        )
+
+    async def async_step_home_tariff_selection(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select an existing year-based tariff period."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        if not periods:
+            return await self.async_step_home_tariff_settings()
+
+        if user_input is not None:
+            selected = str(
+                user_input.get(CONF_HOME_TARIFF_SELECTION) or ""
+            ).strip()
+            if selected == HOME_TARIFF_SELECTION_BACK:
+                return await self.async_step_home_tariff_settings()
+            try:
+                index = int(selected)
+            except ValueError:
+                index = -1
+            if 0 <= index < len(periods):
+                self._selected_home_tariff_index = index
+                return await self.async_step_home_tariff_edit()
+
+        options = [
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_SELECTION_BACK,
+                label=translations["back"],
+            ),
+            *[
+                selector.SelectOptionDict(
+                    value=str(index),
+                    label=self._home_tariff_period_label(period),
+                )
+                for index, period in enumerate(periods)
+            ],
+        ]
+
+        return self.async_show_form(
+            step_id="home_tariff_selection",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_SELECTION,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.LIST,
+                        )
+                    )
+                }
+            ),
+        )
+
+    async def async_step_home_tariff_add(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Add a year-based home tariff period."""
+
+        self._selected_home_tariff_index = None
+        _LOGGER.debug("Opening home tariff add form")
+        return await self._async_step_home_tariff_form(
+            user_input,
+            step_id="home_tariff_add",
+        )
+
+    async def async_step_home_tariff_edit(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Edit or delete an existing home tariff period."""
+
+        _LOGGER.debug(
+            "Opening home tariff edit form: index=%s",
+            self._selected_home_tariff_index,
+        )
+        return await self._async_step_home_tariff_form(
+            user_input,
+            step_id="home_tariff_edit",
+        )
+
+    async def _async_step_home_tariff_form(
+        self,
+        user_input: dict[str, Any] | None,
+        *,
+        step_id: str,
+    ) -> ConfigFlowResult:
+        """Render and process the global home tariff form."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        periods = self._home_tariff_periods()
+        translations = await self._async_get_home_tariff_translations()
+        selected: dict[str, Any] | None = None
+        if self._selected_home_tariff_index is not None:
+            if 0 <= self._selected_home_tariff_index < len(periods):
+                selected = periods[self._selected_home_tariff_index]
+            else:
+                self._selected_home_tariff_index = None
+
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            action = str(
+                user_input.get(CONF_HOME_TARIFF_ACTION)
+                or HOME_TARIFF_ACTION_SAVE
+            )
+            if action == HOME_TARIFF_ACTION_BACK:
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+            if action == HOME_TARIFF_ACTION_DELETE:
+                if self._selected_home_tariff_index is not None:
+                    deleted = periods[self._selected_home_tariff_index]
+                    del periods[self._selected_home_tariff_index]
+                    await self._async_save_home_tariff_periods(periods)
+                    _LOGGER.info(
+                        "Home tariff period deleted: year=%s from=%s to=%s",
+                        deleted.get("year"),
+                        deleted.get("valid_from"),
+                        deleted.get("valid_to"),
+                    )
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+            try:
+                year = int(str(user_input.get(CONF_HOME_TARIFF_YEAR) or "").strip())
+                valid_from = self._normalize_home_tariff_month_day(
+                    user_input.get(CONF_HOME_TARIFF_VALID_FROM),
+                    expected_year=year,
+                )
+                valid_to = self._normalize_home_tariff_month_day(
+                    user_input.get(CONF_HOME_TARIFF_VALID_TO),
+                    expected_year=year,
+                )
+                raw_price = str(
+                    user_input.get(CONF_HOME_TARIFF_PRICE) or ""
+                ).strip().replace(",", ".")
+                price = max(0.0, float(raw_price))
+                start = datetime.strptime(
+                    f"{year:04d}-{valid_from}",
+                    "%Y-%m-%d",
+                ).date()
+                end = datetime.strptime(
+                    f"{year:04d}-{valid_to}",
+                    "%Y-%m-%d",
+                ).date()
+                if not 2000 <= year <= 2100:
+                    errors[CONF_HOME_TARIFF_YEAR] = "invalid_tariff_year"
+                if end < start:
+                    errors[CONF_HOME_TARIFF_VALID_TO] = "invalid_tariff_range"
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_tariff_period"
+
+            exact_match_index: int | None = None
+            if not errors:
+                new_period = {
+                    "year": year,
+                    "valid_from": valid_from,
+                    "valid_to": valid_to,
+                    "price_per_kwh": round(price, 6),
+                    "currency": self._home_tariff_currency(),
+                }
+
+                for index, period in enumerate(periods):
+                    if index == self._selected_home_tariff_index:
+                        continue
+                    if int(period["year"]) != year:
+                        continue
+                    existing_start = str(period["valid_from"])
+                    existing_end = str(period["valid_to"])
+                    if valid_from == existing_start and valid_to == existing_end:
+                        exact_match_index = index
+                        continue
+                    if valid_from <= existing_end and valid_to >= existing_start:
+                        errors["base"] = "overlapping_tariff_period"
+                        break
+
+            if errors:
+                _LOGGER.debug(
+                    "Home tariff form rejected: step=%s input=%s errors=%s",
+                    step_id,
+                    {
+                        CONF_HOME_TARIFF_YEAR: user_input.get(CONF_HOME_TARIFF_YEAR),
+                        CONF_HOME_TARIFF_VALID_FROM: user_input.get(CONF_HOME_TARIFF_VALID_FROM),
+                        CONF_HOME_TARIFF_VALID_TO: user_input.get(CONF_HOME_TARIFF_VALID_TO),
+                        CONF_HOME_TARIFF_PRICE: user_input.get(CONF_HOME_TARIFF_PRICE),
+                    },
+                    errors,
+                )
+            else:
+                if self._selected_home_tariff_index is None:
+                    if exact_match_index is None:
+                        periods.append(new_period)
+                    else:
+                        periods[exact_match_index] = new_period
+                else:
+                    periods[self._selected_home_tariff_index] = new_period
+                periods.sort(
+                    key=lambda item: (
+                        int(item["year"]),
+                        str(item["valid_from"]),
+                        str(item["valid_to"]),
+                    )
+                )
+                await self._async_save_home_tariff_periods(periods)
+                _LOGGER.info(
+                    "Home tariff period saved: year=%s from=%s to=%s price=%.6f %s/kWh",
+                    year,
+                    valid_from,
+                    valid_to,
+                    price,
+                    self._home_tariff_currency(),
+                )
+                self._selected_home_tariff_index = None
+                return await self.async_step_home_tariff_settings()
+
+        current_year = dt_util.now().year
+        default_year = str(int(selected["year"]) if selected else current_year)
+        default_from = (
+            self._home_tariff_month_day_label(str(selected["valid_from"])).rstrip(".")
+            if selected
+            else "01.01"
+        )
+        default_to = (
+            self._home_tariff_month_day_label(str(selected["valid_to"])).rstrip(".")
+            if selected
+            else "31.12"
+        )
+        default_price = (
+            f"{float(selected['price_per_kwh']):.4f}" if selected else "0.0000"
+        )
+
+        action_options = [
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_ACTION_SAVE,
+                label=translations["save"],
+            )
+        ]
+        if selected is not None:
+            action_options.append(
+                selector.SelectOptionDict(
+                    value=HOME_TARIFF_ACTION_DELETE,
+                    label=translations["delete"],
+                )
+            )
+        action_options.append(
+            selector.SelectOptionDict(
+                value=HOME_TARIFF_ACTION_BACK,
+                label=translations["back"],
+            )
+        )
+
+        # Keep the form schema deliberately simple.  Text selectors avoid
+        # frontend selector serialization differences between Home Assistant
+        # releases while still allowing locale-friendly comma decimal input.
+        return self.async_show_form(
+            step_id=step_id,
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_YEAR,
+                        default=default_year,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_VALID_FROM,
+                        default=default_from,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_VALID_TO,
+                        default=default_to,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_PRICE,
+                        default=default_price,
+                    ): selector.TextSelector(),
+                    vol.Required(
+                        CONF_HOME_TARIFF_ACTION,
+                        default=HOME_TARIFF_ACTION_SAVE,
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=action_options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def _async_save_home_tariff_periods(
+        self,
+        periods: list[dict[str, Any]],
+    ) -> None:
+        """Store global home tariff periods in SQLite and apply them live."""
+
+        if self._home_tariff_storage is None:
+            self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
+            await self._home_tariff_storage.async_setup()
+
+        saved = await self._home_tariff_storage.async_save(periods)
+        self._home_tariff_periods_cache = [dict(item) for item in saved]
+
+        # The tariff table is global. Every loaded vehicle gets the same period
+        # list immediately, while per-vehicle enable/home-zone settings remain
+        # untouched. No ConfigEntry reload is needed.
+        for _vehicle_id, _entry_id, runtime_data in iter_vehicle_runtimes(self.hass):
+            runtime_config = dict(runtime_data.get("config") or {})
+            runtime_config[CONF_HOME_TARIFF_PERIODS] = [dict(item) for item in saved]
+            runtime_data["config"] = runtime_config
+
+            coordinator = runtime_data.get("coordinator")
+            if coordinator is not None:
+                coordinator.config = runtime_config
+                coordinator.charging_cost_calculator = (
+                    FordTriplogChargingCostCalculator(self.hass, runtime_config)
+                )
+
+            charge_manager = runtime_data.get("charge_manager")
+            if charge_manager is not None:
+                charge_manager.config = dict(runtime_config)
+                charge_manager.cost_calculator = (
+                    FordTriplogChargingCostCalculator(self.hass, runtime_config)
+                )
+                await charge_manager.async_recalculate_all_costs()
+
+    async def async_step_home_tariff_legacy_import(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Convert the former fixed summer/winter prices for one year."""
+
+        await self._async_ensure_home_tariff_periods()
+
+        context_entry = self._get_context_config_entry()
+        context_config = {**context_entry.data, **context_entry.options}
+        errors: dict[str, str] = {}
+
+        if user_input is not None:
+            try:
+                year = int(user_input.get(CONF_HOME_TARIFF_YEAR))
+                if not 2000 <= year <= 2100:
+                    raise ValueError
+                summer = max(
+                    0.0,
+                    float(context_config.get(CONF_HOME_TARIFF_SUMMER_PRICE, 0.28)),
+                )
+                winter = max(
+                    0.0,
+                    float(context_config.get(CONF_HOME_TARIFF_WINTER_PRICE, 0.38)),
+                )
+            except (TypeError, ValueError):
+                errors["base"] = "invalid_tariff_year"
+            else:
+                periods = [
+                    {
+                        "year": year,
+                        "valid_from": "01-01",
+                        "valid_to": "03-31",
+                        "price_per_kwh": round(winter, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                    {
+                        "year": year,
+                        "valid_from": "04-01",
+                        "valid_to": "09-30",
+                        "price_per_kwh": round(summer, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                    {
+                        "year": year,
+                        "valid_from": "10-01",
+                        "valid_to": "12-31",
+                        "price_per_kwh": round(winter, 6),
+                        "currency": self._home_tariff_currency(),
+                    },
+                ]
+                await self._async_save_home_tariff_periods(periods)
+                return await self.async_step_home_tariff_settings()
+
+        return self.async_show_form(
+            step_id="home_tariff_legacy_import",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_HOME_TARIFF_YEAR,
+                        default=dt_util.now().year,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=2000,
+                            max=2100,
+                            step=1,
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+
     async def async_step_general_settings(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
         """Manage general integration settings."""
 
+        context_entry = self._get_context_config_entry()
+        context_config = self._get_context_config()
+
         if user_input is not None:
-            updated_options = dict(self._config_entry.options)
+            updated_options = dict(context_entry.options)
             updated_options.update(user_input)
 
             self.hass.config_entries.async_update_entry(
-                self._config_entry,
+                context_entry,
                 options=updated_options,
             )
-            self._options.update(updated_options)
-
             return await self.async_step_settings()
 
         return self.async_show_form(
             step_id="general_settings",
             data_schema=self.add_suggested_values_to_schema(
                 self._build_options_schema(),
-                self._options,
+                context_config,
             ),
         )
 
@@ -7700,38 +8763,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         False,
                     ),
                 ): selector.BooleanSelector(),
-
-                vol.Optional(
-                    CONF_HOME_TARIFF_SUMMER_PRICE,
-                    default=self._options.get(
-                        CONF_HOME_TARIFF_SUMMER_PRICE,
-                        0.28,
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=10,
-                        step=0.001,
-                        unit_of_measurement="/kWh",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
-
-                vol.Optional(
-                    CONF_HOME_TARIFF_WINTER_PRICE,
-                    default=self._options.get(
-                        CONF_HOME_TARIFF_WINTER_PRICE,
-                        0.38,
-                    ),
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=0,
-                        max=10,
-                        step=0.001,
-                        unit_of_measurement="/kWh",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
 
                 vol.Optional(
                     CONF_HOME_TARIFF_CURRENCY,

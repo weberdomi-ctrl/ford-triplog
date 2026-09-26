@@ -16,18 +16,33 @@
           "smart_trip": "Pauses short stops and combines them into one trip.",
           "smart_trip_timeout": "Time until a paused trip is finally completed."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Vehicle already configured",
+        "description": "The VIN {vin} is already assigned to **{vehicle}**. Source detected for this setup: **{source}**.\n\nNormally the existing vehicle should be used. For multi-vehicle development tests, the same physical VIN can explicitly be created as a separate logical test vehicle.",
+        "data": {
+          "create_test_vehicle": "Create as separate test vehicle"
+        },
+        "data_description": {
+          "create_test_vehicle": "Creates a new vehicle_id for this source although the VIN already exists. Use only for testing."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
+    },
+    "abort": {
+      "vehicle_already_configured": "The vehicle {vehicle} is already configured. No second vehicle was created.",
+      "duplicate_vehicle_context_lost": "The duplicate-vehicle setup context was lost. Start adding the vehicle again."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Select the area you want to edit.",
+        "description": "Current vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the area you want to edit.",
         "menu_options": {
+          "vehicle_context": "Vehicle",
           "settings": "Settings",
           "journey_management": "Manage journeys",
           "route_management": "Route maintenance",
@@ -39,6 +54,7 @@
           "user_places": "Custom places"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
           "settings": "Edit trip, charging and vehicle settings.",
           "journey_management": "Update, rebuild or delete journeys.",
           "route_management": "Re-run OSRM map matching for stored routes while keeping raw GPS points unchanged.",
@@ -52,14 +68,16 @@
       },
       "settings": {
         "title": "Settings",
-        "description": "Select the area you want to configure.",
+        "description": "Vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the area you want to configure.",
         "menu_options": {
           "general_settings": "General settings",
           "route_tracker_settings": "Route Tracker",
           "ocr_settings": "OCR connection",
           "init": "Back to main menu",
           "osrm_settings": "OSRM route smoothing",
-          "vehicle_sensors": "Vehicle sensors"
+          "vehicle_sensors": "Vehicle sensors",
+          "vehicle_settings": "Vehicle",
+          "home_tariff_settings": "Home charging tariffs"
         },
         "menu_option_descriptions": {
           "general_settings": "Edit trip, charging, vehicle and tariff options.",
@@ -67,7 +85,9 @@
           "ocr_settings": "Configure the optional local OCR service and test the connection.",
           "init": "Return to the Ford Triplog overview.",
           "osrm_settings": "Configure the optional local OSRM service for route smoothing and test the connection.",
-          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog."
+          "vehicle_sensors": "Change the vehicle entities used by Ford Triplog.",
+          "vehicle_settings": "View the detected vehicle identity and change its display name.",
+          "home_tariff_settings": "Manage year-specific home charging tariff periods."
         }
       },
       "import_charging_sites": {
@@ -892,6 +912,74 @@
           "radius_m": "Detection radius (m)",
           "icon": "Icon (optional)"
         }
+      },
+      "vehicle_settings": {
+        "title": "Vehicle",
+        "description": "Internal vehicle ID: {vehicle_id}\nVIN: {vin}\nSource: {source}\nDetected name: {detected_name}",
+        "data": {
+          "vehicle_name": "Vehicle name"
+        },
+        "data_description": {
+          "vehicle_name": "Display name used by Ford Triplog for this vehicle."
+        }
+      },
+      "vehicle_context": {
+        "title": "Vehicle context",
+        "description": "Current vehicle: {vehicle_name} (ID {vehicle_id})\n\nSelect the vehicle Ford Triplog should use for the following manual actions.",
+        "data": {
+          "vehicle_context": "Vehicle"
+        },
+        "data_description": {
+          "vehicle_context": "This selection is used for vehicle-specific settings, journeys, routes, pauses, charging sessions and exports."
+        }
+      },
+      "home_tariff_settings": {
+        "title": "Home charging tariffs",
+        "description": "Configured tariff periods:\n\n{tariff_table}\n\nCurrency: {currency}. Periods are year-specific and must not overlap.",
+        "menu_options": {
+          "home_tariff_add": "Add tariff period",
+          "home_tariff_selection": "Edit tariff period",
+          "home_tariff_legacy_import": "Import previous summer/winter tariffs",
+          "settings": "Back to settings"
+        },
+        "menu_option_descriptions": {
+          "home_tariff_add": "Add a new global tariff period to the Ford Triplog database.",
+          "home_tariff_selection": "Edit global tariff periods stored in SQLite. From/To use day.month, for example 01.04 and 30.09. Periods within the same year must not overlap.",
+          "home_tariff_legacy_import": "Convert the former fixed summer/winter prices into three periods for one year.",
+          "settings": "Return to settings."
+        }
+      },
+      "home_tariff_selection": {
+        "title": "Select tariff period",
+        "description": "Select the period to edit or delete.",
+        "data": {
+          "home_tariff_selection": "Tariff period"
+        }
+      },
+      "home_tariff_edit": {
+        "title": "Edit tariff period",
+        "description": "Define one tariff period. From/To use day.month, for example 01.04 and 30.09. Periods within the same year must not overlap.",
+        "data": {
+          "home_tariff_year": "Year",
+          "home_tariff_valid_from": "From",
+          "home_tariff_valid_to": "To",
+          "home_tariff_price_per_kwh": "Tariff per kWh",
+          "home_tariff_action": "Action"
+        },
+        "data_description": {
+          "home_tariff_year": "Calendar year for which this tariff period is valid.",
+          "home_tariff_valid_from": "First valid day in DD.MM format, for example 01.04.",
+          "home_tariff_valid_to": "Last valid day in DD.MM format, for example 30.09.",
+          "home_tariff_price_per_kwh": "Energy price per kWh for this period.",
+          "home_tariff_action": "Save, delete or return without changes."
+        }
+      },
+      "home_tariff_legacy_import": {
+        "title": "Import previous tariffs",
+        "description": "Choose the year. The previous winter tariff becomes 01.01–31.03 and 01.10–31.12; the previous summer tariff becomes 01.04–30.09.",
+        "data": {
+          "home_tariff_year": "Year"
+        }
       }
     },
     "error": {
@@ -951,7 +1039,12 @@
       "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
       "user_place_delete_failed": "The place could not be deleted.",
       "pause_place_no_coordinates": "No GPS coordinates are available for this pause.",
-      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed."
+      "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed.",
+      "vehicle_context_invalid": "The selected vehicle is not currently available.",
+      "invalid_tariff_period": "Enter a valid year, From/To date and tariff.",
+      "invalid_tariff_year": "Enter a year between 2000 and 2100.",
+      "invalid_tariff_range": "The end of the tariff period must not be before the start.",
+      "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year."
     }
   },
   "entity": {
@@ -1155,6 +1248,9 @@
     "select": {
       "route_history_date": {
         "name": "History Date"
+      },
+      "vehicle_context": {
+        "name": "Vehicle"
       }
     }
   },
@@ -1242,7 +1338,14 @@
     "receipt_upload_ocr_disabled": "disabled – receipt will only be stored",
     "receipt_upload_ocr_enabled": "enabled – receipt will be analyzed automatically",
     "selection_back": "← Back",
-    "unknown_charging_location": "Unknown charging location"
+    "unknown_charging_location": "Unknown charging location",
+    "home_tariff_year": "Year",
+    "home_tariff_valid_from": "From",
+    "home_tariff_valid_to": "To",
+    "home_tariff_tariff": "Tariff",
+    "home_tariff_save": "Save",
+    "home_tariff_delete": "Delete",
+    "home_tariff_back": "← Back"
   },
   "services": {
     "import_charging_sites": {

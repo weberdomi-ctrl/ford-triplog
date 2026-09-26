@@ -23,6 +23,7 @@ from .const import (
     DOMAIN,
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
 )
+from .vehicle_context import CoordinatorVehicleRuntimeProxy
 
 
 async def async_setup_entry(
@@ -33,8 +34,14 @@ async def async_setup_entry(
     """Set up Ford Triplog binary sensors."""
 
     data = hass.data[DOMAIN][entry.entry_id]
+    try:
+        vehicle_id = int(data.get("vehicle_id") or 1)
+    except (TypeError, ValueError):
+        vehicle_id = 1
+    if vehicle_id != 1:
+        return
 
-    coordinator = data["coordinator"]
+    coordinator = CoordinatorVehicleRuntimeProxy(hass, entry.entry_id)
 
     async_add_entities(
         [

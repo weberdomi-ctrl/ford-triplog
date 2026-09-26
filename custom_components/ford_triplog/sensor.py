@@ -52,6 +52,7 @@ from .const import (
     VERSION,
     SIGNAL_LAST_JOURNEY_UPDATED,
     SIGNAL_LAST_TRIP_UPDATED,
+    SIGNAL_VEHICLE_CONTEXT_UPDATED,
     VEHICLE_SOURCE_HEALTH_HEALTHY,
     VEHICLE_SOURCE_HEALTH_DEGRADED,
     VEHICLE_SOURCE_HEALTH_GRACE,
@@ -66,6 +67,10 @@ from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
+from .vehicle_context import (
+    CoordinatorVehicleRuntimeProxy,
+    VehicleRuntimeProxy,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -109,15 +114,30 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
 
-    coordinator = data["coordinator"]
-    history = data["history"]
-    storage = data["storage"]
-    database = storage.database
+    # Ford Triplog exposes one shared dashboard/device entity set. Vehicle 1
+    # owns those entities; their data source follows the central vehicle
+    # context through runtime proxies. Additional vehicle ConfigEntries feed
+    # data into the same UI instead of creating duplicate entity IDs.
+    try:
+        vehicle_id = int(data.get("vehicle_id") or 1)
+    except (TypeError, ValueError):
+        vehicle_id = 1
+    if vehicle_id != 1:
+        _LOGGER.debug(
+            "Skipping shared Ford Triplog sensor entities for vehicle %s",
+            vehicle_id,
+        )
+        return
+
+    coordinator = CoordinatorVehicleRuntimeProxy(hass, entry.entry_id)
+    history = VehicleRuntimeProxy(hass, "history", entry.entry_id)
+    storage = VehicleRuntimeProxy(hass, "storage", entry.entry_id)
+    database = VehicleRuntimeProxy(hass, "database", entry.entry_id)
     read_backend = "sqlite"
-    journey_storage = data.get("journey_storage")
-    route_storage = data.get("route_storage")
-    charge_manager = data.get("charge_manager")
-    receipt_storage = data.get("receipt_storage")
+    journey_storage = VehicleRuntimeProxy(hass, "journey_storage", entry.entry_id)
+    route_storage = VehicleRuntimeProxy(hass, "route_storage", entry.entry_id)
+    charge_manager = VehicleRuntimeProxy(hass, "charge_manager", entry.entry_id)
+    receipt_storage = VehicleRuntimeProxy(hass, "receipt_storage", entry.entry_id)
 
     translations = await async_get_translations(
         hass,
@@ -389,12 +409,20 @@ class FordTriplogLastJourneySensor(SensorEntity):
                 self._handle_trip_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_trip_update,
+            )
+        )
         await self._async_refresh()
 
+    @callback
     def _handle_trip_update(self, *_args: Any) -> None:
         """Refresh immediately after a completed trip was stored."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
@@ -517,12 +545,20 @@ class FordTriplogLastJourneyOverviewSensor(SensorEntity):
                 self._handle_journey_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_journey_update,
+            )
+        )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
-        """Schedule a thread-safe refresh after a Journey update."""
+        """Schedule a refresh after a Journey update."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh the sensor and write the new state."""
@@ -1467,6 +1503,13 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
                 self._handle_journey_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_journey_update,
+            )
+        )
 
         await self._async_refresh()
 
@@ -1475,7 +1518,7 @@ class FordTriplogJourneyHistorySensor(FordTriplogLastJourneyOverviewSensor):
         if data.get("journey_history_sensor") is self:
             data.pop("journey_history_sensor", None)
 
-    async def async_set_selected_date(self, selected_date: str) -> None:
+    async def async_set_selected_date(self, selected_date: str | None) -> None:
         self._selected_date = selected_date
         await self._async_refresh()
         self.async_write_ha_state()
@@ -2035,13 +2078,21 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 self._handle_charge_data_updated,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_charge_data_updated,
+            )
+        )
 
         await self._async_refresh()
 
+    @callback
     def _handle_charge_data_updated(self, *_args: Any) -> None:
-        """Refresh the selected charging History date thread-safely."""
+        """Refresh the selected charging History date."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Reload charging History and publish the new sensor state."""
@@ -2054,7 +2105,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
         if data.get("charging_history_sensor") is self:
             data.pop("charging_history_sensor", None)
 
-    async def async_set_selected_date(self, selected_date: str) -> None:
+    async def async_set_selected_date(self, selected_date: str | None) -> None:
         self._selected_date = selected_date
         await self._async_refresh()
         self.async_write_ha_state()
@@ -2366,12 +2417,20 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 self._handle_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_update,
+            )
+        )
         await self._async_refresh()
 
+    @callback
     def _handle_update(self, *_args: Any) -> None:
         """Refresh immediately after a completed route was stored."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write the current route state."""
@@ -2581,6 +2640,13 @@ class FordTriplogRouteHistorySensor(SensorEntity):
 
         data = self.hass.data[DOMAIN][self.entry_id]
         data["route_history_sensor"] = self
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_vehicle_context_update,
+            )
+        )
 
         self._selected_date = data.get(self._selection_key)
         _LOGGER.debug(
@@ -2589,6 +2655,12 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         )
         await self._async_refresh()
 
+    @callback
+    def _handle_vehicle_context_update(self, *_args: Any) -> None:
+        """Refresh Route History when the dashboard vehicle changes."""
+
+        self.hass.async_create_task(self._async_refresh_and_write())
+
     async def async_will_remove_from_hass(self) -> None:
         """Remove the shared sensor reference on unload."""
 
@@ -2596,7 +2668,7 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         if data.get("route_history_sensor") is self:
             data.pop("route_history_sensor", None)
 
-    async def async_set_selected_date(self, selected_date: str) -> None:
+    async def async_set_selected_date(self, selected_date: str | None) -> None:
         """Set the selected date and refresh the history immediately."""
 
         self._selected_date = selected_date
@@ -2811,12 +2883,20 @@ class FordTriplogTopDaySensor(SensorEntity):
                 self._handle_journey_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_journey_update,
+            )
+        )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
         """Schedule a Top Day refresh after Journey maintenance."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh and write Top Day."""
@@ -5226,12 +5306,20 @@ class FordTriplogTopJourneySensor(SensorEntity):
                 self._handle_journey_update,
             )
         )
+        self.async_on_remove(
+            async_dispatcher_connect(
+                self.hass,
+                SIGNAL_VEHICLE_CONTEXT_UPDATED,
+                self._handle_journey_update,
+            )
+        )
         await self._async_refresh()
 
+    @callback
     def _handle_journey_update(self, *_args: Any) -> None:
         """Schedule a refresh after Journey data changes."""
 
-        self.hass.add_job(self._async_refresh_and_write)
+        self.hass.async_create_task(self._async_refresh_and_write())
 
     async def _async_refresh_and_write(self) -> None:
         """Refresh Top Journey and write the entity state."""

@@ -52,6 +52,7 @@ from typing import Any
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.components import persistent_notification
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from homeassistant.util import dt as dt_util
 
@@ -73,6 +74,7 @@ from .charging_site_lookup import (
 
 from .const import (
     CONF_BATTERY_CAPACITY,
+    CONF_VEHICLE_ID,
     DEFAULT_BATTERY_CAPACITY_KWH,
     CONF_IGNITION,
     CONF_ODOMETER,
@@ -90,12 +92,14 @@ from .const import (
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
     VEHICLE_SOURCE_HEALTH_UNKNOWN,
     SMART_TRIP_TIMEOUT,
+    SIGNAL_VEHICLE_DATA_UPDATED,
 )
 
 _LOGGER = logging.getLogger(__name__)
 
 STABLE_INTERVAL = 2
 STABLE_TIMEOUT = 20
+TRIP_END_ODOMETER_TIMEOUT = 30
 GPS_UPDATE_TIMEOUT = 60
 
 # The MEB battery-management system can revise SOC shortly after charging
@@ -108,6 +112,14 @@ CHARGE_START_SOC_TYPE_WAIT_SECONDS = 30
 CHARGE_START_SOC_TYPE_POLL_SECONDS = 5
 TRIP_END_GPS_MAX_DISTANCE_METERS = 250
 TRIP_END_ROUTE_MAX_AGE_SECONDS = 20
+
+# A vehicle tracker may still expose its last known position when a new
+# trip begins after a connectivity gap. Treat such a start point as
+# provisional and allow the first fresh Route Tracker point to correct it.
+TRIP_START_GPS_STALE_SECONDS = 60
+TRIP_START_GPS_CORRECTION_WINDOW_SECONDS = 60
+TRIP_START_GPS_CORRECTION_DISTANCE_METERS = 250
+TRIP_START_GPS_FRESH_TOLERANCE_SECONDS = 5
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -328,6 +340,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # infrastructure has been initialized.
         self.journey_rebuilder: Any | None = None
         self.route_tracker: Any | None = None
+
+        # Build 25015: remember one stale vehicle GPS start long enough for
+        # the first fresh Route Tracker point to correct the Trip origin.
+        self._trip_start_gps_provisional: dict[str, Any] | None = None
        
 
     @staticmethod
@@ -490,6 +506,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         self.async_set_updated_data(data)
+
+        try:
+            vehicle_id = int(self.config.get(CONF_VEHICLE_ID) or 1)
+        except (TypeError, ValueError):
+            vehicle_id = 1
+        async_dispatcher_send(
+            self.hass,
+            SIGNAL_VEHICLE_DATA_UPDATED,
+            max(1, vehicle_id),
+        )
 
     async def async_setup(self):
         await self.storage.async_setup()
@@ -2227,12 +2253,25 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charge_id,
             )
 
-    async def _wait_for_stable_vehicle_state(self):
+    async def _wait_for_stable_vehicle_state(
+        self,
+        *,
+        minimum_odometer: float | None = None,
+        timeout: int = STABLE_TIMEOUT,
+    ):
+        """Wait until the vehicle state is stable.
+
+        For trip finalization, ``minimum_odometer`` can be used to keep
+        waiting while a lagging source (notably FordPass) still exposes the
+        trip's start odometer.  Once the odometer advances, the normal
+        two-sample stabilization rule applies.
+        """
         last = None
         stable = 0
         elapsed = 0
+        minimum = optional_float(minimum_odometer)
 
-        while elapsed < STABLE_TIMEOUT:
+        while elapsed < timeout:
             current = self._read_vehicle_state()
 
             key = (
@@ -2244,20 +2283,48 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.debug("Vehicle state check %s", key)
 
-            if key == last:
-                stable += 1
-            else:
+            current_odometer = optional_float(current.get("odometer"))
+            odometer_ready = (
+                minimum is None
+                or (
+                    current_odometer is not None
+                    and current_odometer > minimum
+                )
+            )
+
+            if not odometer_ready:
                 stable = 0
+                last = None
+                _LOGGER.debug(
+                    "Waiting for trip-end odometer to advance beyond %s "
+                    "(current=%s, elapsed=%ss/%ss)",
+                    minimum,
+                    current_odometer,
+                    elapsed,
+                    timeout,
+                )
+            else:
+                if key == last:
+                    stable += 1
+                else:
+                    stable = 0
 
-            if stable >= 1:
-                _LOGGER.debug("Vehicle state stabilized after %ss", elapsed)
-                return current
+                if stable >= 1:
+                    _LOGGER.debug(
+                        "Vehicle state stabilized after %ss",
+                        elapsed,
+                    )
+                    return current
 
-            last = key
+                last = key
+
             await asyncio.sleep(STABLE_INTERVAL)
             elapsed += STABLE_INTERVAL
 
-        _LOGGER.warning("Vehicle state timeout reached")
+        _LOGGER.warning(
+            "Vehicle state timeout reached after %ss",
+            timeout,
+        )
         return self._read_vehicle_state()
 
     async def _get_address(self, state):
@@ -2419,6 +2486,162 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             distance,
         )
 
+    @staticmethod
+    def _normalized_datetime(value: Any) -> datetime | None:
+        """Return one timezone-aware datetime when possible."""
+
+        if isinstance(value, datetime):
+            parsed = value
+        else:
+            parsed = dt_util.parse_datetime(str(value or ""))
+
+        if parsed is None:
+            return None
+
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=dt_util.UTC)
+
+        return parsed
+
+    def _trip_start_gps_is_stale(
+        self,
+        trip: Trip,
+        state: dict[str, Any],
+    ) -> bool:
+        """Mark a valid but old vehicle GPS start as provisional."""
+
+        latitude = optional_float(state.get("latitude"))
+        longitude = optional_float(state.get("longitude"))
+        start_time = self._normalized_datetime(trip.start_time)
+        gps_time = self._normalized_datetime(state.get("gps_updated_at"))
+
+        self._trip_start_gps_provisional = None
+
+        if (
+            latitude is None
+            or longitude is None
+            or start_time is None
+            or gps_time is None
+        ):
+            return False
+
+        age_seconds = (start_time - gps_time).total_seconds()
+        if age_seconds <= TRIP_START_GPS_STALE_SECONDS:
+            return False
+
+        self._trip_start_gps_provisional = {
+            "trip_id": trip.trip_id,
+            "latitude": latitude,
+            "longitude": longitude,
+            "start_time": trip.start_time,
+            "gps_updated_at": state.get("gps_updated_at"),
+        }
+
+        _LOGGER.info(
+            "Trip start GPS is %.0fs old; marking start provisional for %ss",
+            age_seconds,
+            TRIP_START_GPS_CORRECTION_WINDOW_SECONDS,
+        )
+        return True
+
+    async def async_handle_route_start_candidate(
+        self,
+        trip_id: str,
+        point: dict[str, Any],
+    ) -> bool | None:
+        """Correct one stale Trip start from the first fresh route point.
+
+        ``True`` means the provisional start was replaced, ``False`` means the
+        first fresh point confirmed/resolved it without replacement, and
+        ``None`` asks the Route Tracker to keep waiting for a fresh point.
+        """
+
+        provisional = self._trip_start_gps_provisional
+        if not isinstance(provisional, dict):
+            return False
+
+        if str(provisional.get("trip_id") or "") != str(trip_id):
+            return False
+
+        trip = self.current_trip
+        if trip is None or str(trip.trip_id or "") != str(trip_id):
+            return None
+
+        start_time = self._normalized_datetime(trip.start_time)
+        point_time = self._normalized_datetime(point.get("timestamp"))
+
+        if start_time is None or point_time is None:
+            return None
+
+        delta_seconds = (point_time - start_time).total_seconds()
+
+        # Ignore a source value that is itself older than the Trip start.
+        # A small tolerance avoids rejecting near-simultaneous HA updates.
+        if delta_seconds < -TRIP_START_GPS_FRESH_TOLERANCE_SECONDS:
+            return None
+
+        if delta_seconds > TRIP_START_GPS_CORRECTION_WINDOW_SECONDS:
+            self._trip_start_gps_provisional = None
+            _LOGGER.debug(
+                "Trip start GPS correction window expired for trip %s",
+                trip_id,
+            )
+            return False
+
+        latitude = optional_float(point.get("latitude"))
+        longitude = optional_float(point.get("longitude"))
+        original_latitude = optional_float(provisional.get("latitude"))
+        original_longitude = optional_float(provisional.get("longitude"))
+
+        if (
+            latitude is None
+            or longitude is None
+            or original_latitude is None
+            or original_longitude is None
+        ):
+            return None
+
+        distance = self._distance_meters(
+            original_latitude,
+            original_longitude,
+            latitude,
+            longitude,
+        )
+
+        # The first fresh point is close enough to the stale vehicle position:
+        # keep the original Trip start and stop looking for another correction.
+        if distance <= TRIP_START_GPS_CORRECTION_DISTANCE_METERS:
+            self._trip_start_gps_provisional = None
+            _LOGGER.info(
+                "Fresh route GPS confirmed provisional Trip start %s "
+                "(distance %.0fm)",
+                trip_id,
+                distance,
+            )
+            return False
+
+        trip.start_latitude = latitude
+        trip.start_longitude = longitude
+        trip.start_address = await self._get_address(
+            {
+                "latitude": latitude,
+                "longitude": longitude,
+            }
+        )
+
+        await self.storage.save_current_trip(trip.to_dict())
+        self._trip_start_gps_provisional = None
+
+        _LOGGER.info(
+            "Corrected stale Trip start GPS for %s: %.0fm difference; "
+            "using fresh route point %s",
+            trip_id,
+            distance,
+            point.get("timestamp"),
+        )
+
+        return True
+
     async def start_trip(self):
         
         # Smart Trip: Resume paused trip
@@ -2467,12 +2690,21 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             address=addr,
         )
 
+        provisional_start = self._trip_start_gps_is_stale(
+            self.current_trip,
+            state,
+        )
+
         if self.route_tracker is not None and self.current_trip.trip_id:
             await self.route_tracker.async_start(
                 self.current_trip.trip_id,
                 start_latitude=state.get("latitude"),
                 start_longitude=state.get("longitude"),
-                start_timestamp=self.current_trip.start_time,
+                start_timestamp=(
+                    state.get("gps_updated_at")
+                    or self.current_trip.start_time
+                ),
+                provisional_start=provisional_start,
             )
 
         await self.storage.save_current_trip(self.current_trip.to_dict())
@@ -2503,7 +2735,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             _LOGGER.info("Capturing stable trip end state")
 
-            state = await self._wait_for_stable_vehicle_state()
+            state = await self._wait_for_stable_vehicle_state(
+                minimum_odometer=trip.start_odometer,
+                timeout=TRIP_END_ODOMETER_TIMEOUT,
+            )
             end_time = dt_util.now()
             address = await self._get_address(state)
 
@@ -3129,8 +3364,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         self.current_trip = None
-
-    
+        self._trip_start_gps_provisional = None
 
         self._schedule_coordinator_update(state)
 

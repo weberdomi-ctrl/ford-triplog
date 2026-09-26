@@ -16,18 +16,33 @@
           "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
           "smart_trip_timeout": "Czas do ostatecznego zakończenia wstrzymanego przejazdu."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Pojazd jest już skonfigurowany",
+        "description": "VIN {vin} jest już przypisany do **{vehicle}**. Dla tej konfiguracji wykryto źródło **{source}**.\n\nW normalnym użyciu należy korzystać z istniejącego pojazdu. Do testów obsługi wielu pojazdów ten sam VIN można świadomie utworzyć jako osobny pojazd testowy.",
+        "data": {
+          "create_test_vehicle": "Utwórz jako osobny pojazd testowy"
+        },
+        "data_description": {
+          "create_test_vehicle": "Tworzy nowy vehicle_id dla tego źródła mimo istniejącego VIN. Używać tylko do testów."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
+    },
+    "abort": {
+      "vehicle_already_configured": "Pojazd {vehicle} jest już skonfigurowany. Nie utworzono drugiego pojazdu.",
+      "duplicate_vehicle_context_lost": "Utracono kontekst konfiguracji duplikatu pojazdu. Rozpocznij dodawanie pojazdu ponownie."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wybierz obszar, który chcesz skonfigurować.",
+        "description": "Aktualny pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz obszar, który chcesz skonfigurować.",
         "menu_options": {
+          "vehicle_context": "Pojazd",
           "settings": "Ustawienia",
           "journey_management": "Zarządzaj podróżami",
           "route_management": "Konserwacja tras",
@@ -39,6 +54,7 @@
           "user_places": "Custom places"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
           "settings": "Edytuj ustawienia przejazdów, ładowania, pojazdu i taryf.",
           "journey_management": "Aktualizuj, przeliczaj lub usuwaj podróże.",
           "route_management": "Ponownie dopasuj zapisane trasy przez OSRM bez zmiany surowych punktów GPS.",
@@ -52,14 +68,16 @@
       },
       "settings": {
         "title": "Ustawienia",
-        "description": "Wybierz obszar, który chcesz skonfigurować.",
+        "description": "Pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz obszar, który chcesz skonfigurować.",
         "menu_options": {
           "general_settings": "Ustawienia ogólne",
           "route_tracker_settings": "Rejestrator trasy",
           "ocr_settings": "Połączenie OCR",
           "init": "Wróć do menu głównego",
           "osrm_settings": "Wygładzanie trasy OSRM",
-          "vehicle_sensors": "Czujniki pojazdu"
+          "vehicle_sensors": "Czujniki pojazdu",
+          "vehicle_settings": "Pojazd",
+          "home_tariff_settings": "Taryfy ładowania domowego"
         },
         "menu_option_descriptions": {
           "general_settings": "Edytuj opcje przejazdów, ładowania, pojazdu i taryf.",
@@ -67,7 +85,9 @@
           "ocr_settings": "Skonfiguruj opcjonalną lokalną usługę OCR i sprawdź połączenie.",
           "init": "Wróć do przeglądu Ford Triplog.",
           "osrm_settings": "Skonfiguruj opcjonalną lokalną usługę OSRM do wygładzania trasy i sprawdź połączenie.",
-          "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog."
+          "vehicle_sensors": "Zmień encje pojazdu używane przez Ford Triplog.",
+          "vehicle_settings": "Wyświetl wykrytą tożsamość pojazdu i zmień jego nazwę.",
+          "home_tariff_settings": "Zarządzaj rocznymi okresami taryf ładowania w domu."
         }
       },
       "import_charging_sites": {
@@ -892,6 +912,74 @@
           "radius_m": "Promień wykrywania (m)",
           "icon": "Ikona (opcjonalnie)"
         }
+      },
+      "vehicle_settings": {
+        "title": "Pojazd",
+        "description": "Wewnętrzny identyfikator pojazdu: {vehicle_id}\nVIN: {vin}\nŹródło: {source}\nWykryta nazwa: {detected_name}",
+        "data": {
+          "vehicle_name": "Nazwa pojazdu"
+        },
+        "data_description": {
+          "vehicle_name": "Nazwa wyświetlana używana przez Ford Triplog dla tego pojazdu."
+        }
+      },
+      "vehicle_context": {
+        "title": "Wybierz pojazd",
+        "description": "Aktualny pojazd: {vehicle_name} (ID {vehicle_id})\n\nWybierz pojazd używany przez Ford Triplog dla kolejnych działań ręcznych.",
+        "data": {
+          "vehicle_context": "Pojazd"
+        },
+        "data_description": {
+          "vehicle_context": "Ten wybór dotyczy ustawień pojazdu, podróży, tras, postojów, ładowań i eksportu."
+        }
+      },
+      "home_tariff_settings": {
+        "title": "Taryfy ładowania domowego",
+        "description": "Skonfigurowane okresy taryf:\n\n{tariff_table}\n\nWaluta: {currency}. Okresy są przypisane do roku kalendarzowego i nie mogą się nakładać.",
+        "menu_options": {
+          "home_tariff_add": "Dodaj okres taryfy",
+          "home_tariff_selection": "Edytuj okres taryfy",
+          "home_tariff_legacy_import": "Importuj poprzednie taryfy lato/zima",
+          "settings": "Powrót do ustawień"
+        },
+        "menu_option_descriptions": {
+          "home_tariff_add": "Dodaj nowy zakres dat dla roku z ceną za kWh.",
+          "home_tariff_selection": "Zdefiniuj okres taryfy. Pola Od/Do używają formatu dzień.miesiąc, np. 01.04 i 30.09. Okresy w tym samym roku nie mogą się nakładać.",
+          "home_tariff_legacy_import": "Przekształć poprzednie stałe taryfy lato/zima w trzy okresy dla jednego roku.",
+          "settings": "Wróć do ustawień."
+        }
+      },
+      "home_tariff_selection": {
+        "title": "Wybierz okres taryfy",
+        "description": "Wybierz okres do edycji lub usunięcia.",
+        "data": {
+          "home_tariff_selection": "Okres taryfy"
+        }
+      },
+      "home_tariff_edit": {
+        "title": "Edytuj okres taryfy",
+        "description": "Zdefiniuj okres taryfy. Pola Od/Do używają formatu dzień.miesiąc, np. 01.04 i 30.09. Okresy w tym samym roku nie mogą się nakładać.",
+        "data": {
+          "home_tariff_year": "Rok",
+          "home_tariff_valid_from": "Od",
+          "home_tariff_valid_to": "Do",
+          "home_tariff_price_per_kwh": "Taryfa za kWh",
+          "home_tariff_action": "Akcja"
+        },
+        "data_description": {
+          "home_tariff_year": "Rok kalendarzowy, dla którego obowiązuje ten okres.",
+          "home_tariff_valid_from": "Pierwszy ważny dzień w formacie DD.MM, np. 01.04.",
+          "home_tariff_valid_to": "Ostatni ważny dzień w formacie DD.MM, np. 30.09.",
+          "home_tariff_price_per_kwh": "Cena energii za kWh w tym okresie.",
+          "home_tariff_action": "Zapisz, usuń lub wróć bez zmian."
+        }
+      },
+      "home_tariff_legacy_import": {
+        "title": "Importuj poprzednie taryfy",
+        "description": "Wybierz rok. Poprzednia taryfa zimowa zostanie użyta dla 01.01–31.03 i 01.10–31.12, a letnia dla 01.04–30.09.",
+        "data": {
+          "home_tariff_year": "Rok"
+        }
       }
     },
     "error": {
@@ -951,7 +1039,12 @@
       "user_place_duplicate": "W tej lokalizacji lub w jej bezpośrednim sąsiedztwie istnieje już niestandardowe miejsce o tej nazwie.",
       "user_place_delete_failed": "The place could not be deleted.",
       "pause_place_no_coordinates": "Dla tej przerwy nie są dostępne współrzędne GPS.",
-      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie."
+      "journey_operation_busy": "Operacja konserwacji podróży jest już w toku. Poczekaj na jej zakończenie.",
+      "vehicle_context_invalid": "Wybrany pojazd nie jest obecnie dostępny.",
+      "invalid_tariff_period": "Wprowadź prawidłowy rok, daty Od/Do i taryfę.",
+      "invalid_tariff_year": "Wprowadź rok od 2000 do 2100.",
+      "invalid_tariff_range": "Koniec okresu taryfy nie może być wcześniejszy niż początek.",
+      "overlapping_tariff_period": "Ten okres taryfy nakłada się na istniejący okres w tym samym roku."
     }
   },
   "entity": {
@@ -1155,6 +1248,9 @@
     "select": {
       "route_history_date": {
         "name": "Data historii"
+      },
+      "vehicle_context": {
+        "name": "Pojazd"
       }
     }
   },
@@ -1242,7 +1338,14 @@
     "export_from": "od {date}",
     "export_until": "do {date}",
     "export_range": "{start}–{end}",
-    "receipt_delete": "Usuń paragon"
+    "receipt_delete": "Usuń paragon",
+    "home_tariff_year": "Rok",
+    "home_tariff_valid_from": "Od",
+    "home_tariff_valid_to": "Do",
+    "home_tariff_tariff": "Taryfa",
+    "home_tariff_save": "Zapisz",
+    "home_tariff_delete": "Usuń",
+    "home_tariff_back": "← Wstecz"
   },
   "services": {
     "import_charging_sites": {

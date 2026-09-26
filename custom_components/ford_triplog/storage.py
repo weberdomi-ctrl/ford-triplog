@@ -35,8 +35,9 @@ STORAGE_SCHEMA = 1
 class FordTriplogStorage:
     """Persistent SQLite storage manager for Ford Triplog."""
 
-    def __init__(self, hass: HomeAssistant) -> None:
+    def __init__(self, hass: HomeAssistant, vehicle_id: int = 1) -> None:
         self.hass = hass
+        self.vehicle_id = int(vehicle_id)
         self.base_path = Path(hass.config.path(".storage", "ford_triplog"))
 
         # These directories are retained for legacy import/rollback only.
@@ -46,7 +47,7 @@ class FordTriplogStorage:
         self.charges_path = self.base_path / "charges"
         self.cache_path = self.base_path / "cache"
 
-        self.database = FordTriplogDatabase(hass, self.base_path)
+        self.database = FordTriplogDatabase(hass, self.base_path, self.vehicle_id)
 
         # Step 1 of the 2.3 storage cleanup: this storage class is always
         # SQLite-backed. Other storage classes are migrated in later steps.

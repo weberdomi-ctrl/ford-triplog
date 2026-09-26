@@ -16,18 +16,33 @@
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
           "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
         }
+      },
+      "duplicate_vehicle": {
+        "title": "Fahrzeug bereits vorhanden",
+        "description": "Die VIN {vin} ist bereits **{vehicle}** zugeordnet. Für diese Einrichtung wurde die Quelle **{source}** erkannt.\n\nIm Normalbetrieb soll das vorhandene Fahrzeug verwendet werden. Für den Mehrfahrzeug-Entwicklungstest kann dieselbe physische VIN ausdrücklich als separates logisches Testfahrzeug angelegt werden.",
+        "data": {
+          "create_test_vehicle": "Als separates Testfahrzeug anlegen"
+        },
+        "data_description": {
+          "create_test_vehicle": "Erzeugt für diese Quelle eine neue vehicle_id, obwohl die VIN bereits vorhanden ist. Nur für Tests verwenden."
+        }
       }
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
+    },
+    "abort": {
+      "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",
+      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten."
     }
   },
   "options": {
     "step": {
       "init": {
         "title": "Ford Triplog",
-        "description": "Wähle den Bereich aus, den du bearbeiten möchtest.",
+        "description": "Aktuelles Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle den Bereich aus, den du bearbeiten möchtest.",
         "menu_options": {
+          "vehicle_context": "Fahrzeug",
           "settings": "Einstellungen",
           "journey_management": "Touren verwalten",
           "route_management": "Routen-Wartung",
@@ -39,6 +54,7 @@
           "user_places": "Benutzerdefinierte Orte"
         },
         "menu_option_descriptions": {
+          "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
           "settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
           "journey_management": "Touren aktualisieren, neu berechnen oder löschen.",
           "route_management": "Gespeicherte Routen erneut mit OSRM berechnen, ohne die Raw-GPS-Punkte zu verändern.",
@@ -52,14 +68,16 @@
       },
       "settings": {
         "title": "Einstellungen",
-        "description": "Wähle den Bereich aus, den du konfigurieren möchtest.",
+        "description": "Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle den Bereich aus, den du konfigurieren möchtest.",
         "menu_options": {
           "general_settings": "Allgemeine Einstellungen",
           "route_tracker_settings": "Routen-Tracker",
           "ocr_settings": "OCR-Verbindung",
           "init": "Zurück zum Hauptmenü",
           "osrm_settings": "OSRM-Routenglättung",
-          "vehicle_sensors": "Fahrzeugsensoren"
+          "vehicle_sensors": "Fahrzeugsensoren",
+          "vehicle_settings": "Fahrzeug",
+          "home_tariff_settings": "Heimladetarife"
         },
         "menu_option_descriptions": {
           "general_settings": "Fahrten-, Lade-, Fahrzeug- und Tarifoptionen bearbeiten.",
@@ -67,7 +85,9 @@
           "ocr_settings": "Optionalen lokalen OCR-Dienst einrichten und die Verbindung testen.",
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
           "osrm_settings": "Optionalen lokalen OSRM-Dienst für die Routenglättung einrichten und die Verbindung testen.",
-          "vehicle_sensors": "Die von Ford Triplog verwendeten Fahrzeug-Entitäten ändern."
+          "vehicle_sensors": "Die von Ford Triplog verwendeten Fahrzeug-Entitäten ändern.",
+          "vehicle_settings": "Erkannte Fahrzeugidentität anzeigen und den Fahrzeugnamen ändern.",
+          "home_tariff_settings": "Jahresbezogene Tarifzeiträume für das Laden zuhause verwalten."
         }
       },
       "import_charging_sites": {
@@ -892,6 +912,92 @@
           "radius_m": "Erkennungsradius (m)",
           "icon": "Icon (optional)"
         }
+      },
+      "vehicle_settings": {
+        "title": "Fahrzeug",
+        "description": "Interne Fahrzeug-ID: {vehicle_id}\nVIN: {vin}\nQuelle: {source}\nErkannter Name: {detected_name}",
+        "data": {
+          "vehicle_name": "Fahrzeugname"
+        },
+        "data_description": {
+          "vehicle_name": "Anzeigename, den Ford Triplog für dieses Fahrzeug verwendet."
+        }
+      },
+      "vehicle_context": {
+        "title": "Fahrzeug auswählen",
+        "description": "Aktuelles Fahrzeug: {vehicle_name} (ID {vehicle_id})\n\nWähle das Fahrzeug aus, das Ford Triplog für die folgenden manuellen Aktionen verwenden soll.",
+        "data": {
+          "vehicle_context": "Fahrzeug"
+        },
+        "data_description": {
+          "vehicle_context": "Diese Auswahl gilt für fahrzeugspezifische Einstellungen, Touren, Routen, Pausen, Ladevorgänge und Exporte."
+        }
+      },
+      "home_tariff_settings": {
+        "title": "Heimladetarife",
+        "description": "Gespeicherte Tarifzeiträume:\n\n{tariff_table}\n\nWährung: {currency}. Die Zeiträume gelten pro Kalenderjahr und dürfen sich nicht überschneiden.",
+        "menu_options": {
+          "home_tariff_add": "Tarifzeitraum hinzufügen",
+          "home_tariff_selection": "Tarifzeitraum bearbeiten",
+          "home_tariff_legacy_import": "Bisherige Sommer-/Wintertarife übernehmen",
+          "settings": "Zurück zu den Einstellungen"
+        },
+        "menu_option_descriptions": {
+          "home_tariff_add": "Einen neuen globalen Tarifzeitraum in der Ford-Triplog-Datenbank erfassen.",
+          "home_tariff_selection": "Globale Tarifzeiträume in SQLite bearbeiten. Von/Bis wird als Tag.Monat eingegeben, z. B. 01.04 und 30.09. Zeiträume im selben Jahr dürfen sich nicht überschneiden.",
+          "home_tariff_legacy_import": "Die bisherigen festen Sommer-/Winterpreise in drei Zeiträume für ein Jahr umwandeln.",
+          "settings": "Zu den Einstellungen zurückkehren."
+        }
+      },
+      "home_tariff_selection": {
+        "title": "Tarifzeitraum auswählen",
+        "description": "Wähle den Zeitraum aus, den du bearbeiten oder löschen möchtest.",
+        "data": {
+          "home_tariff_selection": "Tarifzeitraum"
+        }
+      },
+      "home_tariff_edit": {
+        "title": "Tarifzeitraum bearbeiten",
+        "description": "Definiere einen Tarifzeitraum. Von/Bis wird als Tag.Monat eingegeben, z. B. 01.04 und 30.09. Zeiträume im selben Jahr dürfen sich nicht überschneiden.",
+        "data": {
+          "home_tariff_year": "Jahr",
+          "home_tariff_valid_from": "Von",
+          "home_tariff_valid_to": "Bis",
+          "home_tariff_price_per_kwh": "Tarif pro kWh",
+          "home_tariff_action": "Aktion"
+        },
+        "data_description": {
+          "home_tariff_year": "Kalenderjahr, für das dieser Tarifzeitraum gilt.",
+          "home_tariff_valid_from": "Erster gültiger Tag im Format TT.MM, z. B. 01.04.",
+          "home_tariff_valid_to": "Letzter gültiger Tag im Format TT.MM, z. B. 30.09.",
+          "home_tariff_price_per_kwh": "Energiepreis pro kWh für diesen Zeitraum.",
+          "home_tariff_action": "Speichern, löschen oder ohne Änderung zurückkehren."
+        }
+      },
+      "home_tariff_legacy_import": {
+        "title": "Bisherige Tarife übernehmen",
+        "description": "Wähle das Jahr. Der bisherige Wintertarif wird für 01.01–31.03 und 01.10–31.12 übernommen, der Sommertarif für 01.04–30.09.",
+        "data": {
+          "home_tariff_year": "Jahr"
+        }
+      },
+      "home_tariff_add": {
+        "title": "Tarifzeitraum hinzufügen",
+        "description": "Definiere einen neuen Tarifzeitraum. Von/Bis wird als Tag.Monat eingegeben, z. B. 01.04 und 30.09. Zeiträume im selben Jahr dürfen sich nicht überschneiden.",
+        "data": {
+          "home_tariff_year": "Jahr",
+          "home_tariff_valid_from": "Von",
+          "home_tariff_valid_to": "Bis",
+          "home_tariff_price_per_kwh": "Tarif pro kWh",
+          "home_tariff_action": "Aktion"
+        },
+        "data_description": {
+          "home_tariff_year": "Kalenderjahr, für das dieser Tarifzeitraum gilt.",
+          "home_tariff_valid_from": "Erster gültiger Tag im Format TT.MM, z. B. 01.04.",
+          "home_tariff_valid_to": "Letzter gültiger Tag im Format TT.MM, z. B. 30.09.",
+          "home_tariff_price_per_kwh": "Energiepreis pro kWh für diesen Zeitraum.",
+          "home_tariff_action": "Speichern, löschen oder ohne Änderung zurückkehren."
+        }
       }
     },
     "error": {
@@ -951,7 +1057,12 @@
       "user_place_duplicate": "Ein benutzerdefinierter Ort an dieser Position bzw. mit diesem Namen in unmittelbarer Nähe existiert bereits.",
       "user_place_delete_failed": "Der Ort konnte nicht gelöscht werden.",
       "pause_place_no_coordinates": "Für diese Pause sind keine GPS-Koordinaten verfügbar.",
-      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist."
+      "journey_operation_busy": "Eine Tour-Wartung läuft bereits. Bitte warten, bis sie abgeschlossen ist.",
+      "vehicle_context_invalid": "Das ausgewählte Fahrzeug ist aktuell nicht verfügbar.",
+      "invalid_tariff_period": "Gib ein gültiges Jahr, Von-/Bis-Datum und einen Tarif ein.",
+      "invalid_tariff_year": "Gib ein Jahr zwischen 2000 und 2100 ein.",
+      "invalid_tariff_range": "Das Ende des Tarifzeitraums darf nicht vor dem Beginn liegen.",
+      "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr."
     }
   },
   "entity": {
@@ -1155,6 +1266,9 @@
     "select": {
       "route_history_date": {
         "name": "Datum der Historie"
+      },
+      "vehicle_context": {
+        "name": "Fahrzeug"
       }
     }
   },
@@ -1242,7 +1356,14 @@
     "export_from": "ab {date}",
     "export_until": "bis {date}",
     "export_range": "{start} bis {end}",
-    "receipt_delete": "Beleg löschen"
+    "receipt_delete": "Beleg löschen",
+    "home_tariff_year": "Jahr",
+    "home_tariff_valid_from": "Von",
+    "home_tariff_valid_to": "Bis",
+    "home_tariff_tariff": "Tarif",
+    "home_tariff_save": "Speichern",
+    "home_tariff_delete": "Löschen",
+    "home_tariff_back": "← Zurück"
   },
   "services": {
     "import_charging_sites": {

@@ -20,7 +20,7 @@ import asyncio
 import logging
 import time
 from datetime import datetime
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from homeassistant.core import Event, HomeAssistant, State
 from homeassistant.helpers.event import async_track_state_change_event
@@ -64,10 +64,17 @@ class FordTriplogRouteTracker:
         hass: HomeAssistant,
         storage: FordTriplogRouteStorage,
         config: dict[str, Any],
+        *,
+        start_point_correction_callback: Callable[
+            [str, dict[str, Any]], Awaitable[bool | None]
+        ] | None = None,
     ) -> None:
         self.hass = hass
         self.storage = storage
         self.config = config
+        self.start_point_correction_callback = (
+            start_point_correction_callback
+        )
 
         self.enabled = bool(
             config.get(CONF_ROUTE_TRACKER_ENABLED, False)
@@ -117,6 +124,7 @@ class FordTriplogRouteTracker:
         self._persist_lock = asyncio.Lock()
         self._last_persist_monotonic: float | None = None
         self._route_created_at: str | None = None
+        self._provisional_start_trip_id: str | None = None
 
     async def async_setup(self) -> None:
         """Set up route storage and source listeners."""
@@ -237,6 +245,7 @@ class FordTriplogRouteTracker:
                     if self.points
                     else None
                 )
+                self._provisional_start_trip_id = None
 
                 if paused:
                     self.paused_trip_id = trip_id
@@ -266,6 +275,7 @@ class FordTriplogRouteTracker:
         self._last_coordinate = None
         self.route_source_type = self.source_type
         self._route_created_at = dt_util.now().isoformat()
+        self._provisional_start_trip_id = None
 
         self._append_external_point(
             start_latitude,
@@ -292,6 +302,7 @@ class FordTriplogRouteTracker:
         start_latitude: Any = None,
         start_longitude: Any = None,
         start_timestamp: Any = None,
+        provisional_start: bool = False,
     ) -> None:
         """Start or resume recording points for one Trip ID."""
 
@@ -341,10 +352,15 @@ class FordTriplogRouteTracker:
         self.route_source_type = self.source_type
         self._route_created_at = dt_util.now().isoformat()
 
-        self._append_external_point(
+        start_point_added = self._append_external_point(
             start_latitude,
             start_longitude,
             start_timestamp,
+        )
+        self._provisional_start_trip_id = (
+            trip_id
+            if provisional_start and start_point_added
+            else None
         )
 
         # Fix 06: create the recovery file immediately.
@@ -481,6 +497,7 @@ class FordTriplogRouteTracker:
         self._last_coordinate = None
         self._route_created_at = None
         self._last_persist_monotonic = None
+        self._provisional_start_trip_id = None
         self.route_source_type = self.source_type
 
         _LOGGER.info(
@@ -659,13 +676,55 @@ class FordTriplogRouteTracker:
         if coordinate_key == self._last_coordinate:
             return
 
-        self.points.append(
-            {
-                "timestamp": timestamp,
-                "latitude": latitude,
-                "longitude": longitude,
-            }
-        )
+        point = {
+            "timestamp": timestamp,
+            "latitude": latitude,
+            "longitude": longitude,
+        }
+
+        if self._provisional_start_trip_id == self.active_trip_id:
+            correction_result: bool | None = False
+            callback = self.start_point_correction_callback
+
+            if callback is not None and self.active_trip_id is not None:
+                try:
+                    correction_result = await callback(
+                        self.active_trip_id,
+                        dict(point),
+                    )
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception(
+                        "Trip start GPS correction callback failed for %s",
+                        self.active_trip_id,
+                    )
+                    correction_result = False
+
+            if correction_result is None:
+                # The source event is older than the Trip start. Keep waiting
+                # for the first genuinely fresh point and do not add another
+                # stale coordinate to the route.
+                return
+
+            self._provisional_start_trip_id = None
+
+            if correction_result is True:
+                if self.points:
+                    self.points[0] = point
+                else:
+                    self.points.append(point)
+                self._last_coordinate = coordinate_key
+
+                await self._persist_current_route(
+                    "active",
+                    force=True,
+                )
+                _LOGGER.info(
+                    "Route Tracker replaced provisional start for trip %s",
+                    self.active_trip_id,
+                )
+                return
+
+        self.points.append(point)
         self._last_coordinate = coordinate_key
 
         # Dense sources such as the Home Assistant Companion App can update
