@@ -18,19 +18,19 @@
 
 <p align="center">
 
-**Automatic Trip Logging • Journey Management • GPS Route Tracking • Daily History • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
+**Automatic Trip Logging • Multi-Vehicle Support • Journey Management • GPS Route Tracking • Daily History • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
 
 ------------------------------------------------------------------------
 
 Ford Triplog is a Home Assistant custom integration that automatically
-records every trip and charging session of your Ford electric vehicle.
+records trips and charging sessions of your Ford electric vehicles.
 
 Ford Triplog reads configurable Ford vehicle entities from Home Assistant
 and creates a permanent local driving history including detailed trip
 statistics, charging history, GPS routes, energy calculations and charging
 location recognition.
 
-For Ford Triplog 2.4, Ford Connect is the recommended vehicle data source.
+For Ford Triplog 2.5, Ford Connect is the recommended vehicle data source.
 Compatible FordPass entities can still be used where available.
 
 All data is stored locally inside Home Assistant.
@@ -55,6 +55,26 @@ Your data always remains under your control.
 - State of Charge (SOC) consumption
 - Estimated energy consumption
 - Smart Trip support
+
+## 🚙 Multi-Vehicle Support
+
+Ford Triplog 2.5 introduces vehicle-aware operation for multiple vehicles.
+
+Vehicle-specific history is separated through a persistent internal `vehicle_id`, while shared Ford Triplog Dashboard and History entities follow the currently selected vehicle.
+
+Features include:
+
+- Persistent vehicle-aware SQLite storage
+- Vehicle-specific Trips, charging sessions, Journeys and Routes
+- Vehicle-specific statistics, metadata and receipts
+- Central vehicle selection through `select.ford_triplog_fahrzeug`
+- Shared Dashboard, History and Top Statistics entities that refresh when the selected vehicle changes
+- Automatic migration of existing single-vehicle data
+- Automatic pre-2.5 SQLite backup before schema migration
+
+Existing installations are migrated automatically. No manual database conversion is required.
+
+------------------------------------------------------------------------
 
 ## 🛣️ Journey Management
 
@@ -368,11 +388,16 @@ Ford Triplog includes guarded maintenance functions for stored history.
 
 ## 🗃️ Local SQLite Storage
 
-Ford Triplog 2.4 continues to use the SQLite-only storage architecture completed in 2.3.
+Ford Triplog 2.5 continues the SQLite-only storage architecture completed in 2.3 and extends it with vehicle-aware data separation.
 
-SQLite is now the sole productive Ford Triplog datastore.
+SQLite remains the sole productive Ford Triplog datastore.
+
+Vehicle-specific records are associated with an internal `vehicle_id`, allowing history from multiple vehicles to coexist inside the same local database.
 
 - New and changed Triplog records are written to SQLite
+- Vehicle-specific Trips, charging sessions, Journeys, Routes, statistics, metadata and receipts are separated by `vehicle_id`
+- Existing pre-2.5 SQLite data is migrated automatically to the vehicle-aware schema
+- A pre-2.5 SQLite backup is created automatically before schema migration
 - Parallel JSON production writes are removed
 - Existing JSON data remains available as a migration/import source
 - Persistent migration markers prevent completed legacy imports from
@@ -401,7 +426,7 @@ writing every individual GPS point directly to SQLite.
 - HACS
 - A compatible Ford vehicle data integration exposing the required Home
   Assistant entities
-  - Ford Connect is recommended for Ford Triplog 2.4
+  - Ford Connect is recommended for Ford Triplog 2.5
   - FordPass can be used where compatible entities are available
 - Python 3.12+
 
@@ -426,7 +451,7 @@ Ford Triplog waits for valid numeric source values and ignores temporary
 `unknown` / `unavailable` states. Drive the vehicle once after setup if the
 vehicle integration has not yet published current telemetry.
 
-Ford Connect is the recommended source for Ford Triplog 2.4. FordPass can
+Ford Connect is the recommended source for Ford Triplog 2.5. FordPass can
 still be used where available, but it is a community-maintained unofficial
 integration and can be affected by Ford backend changes.
 
@@ -491,18 +516,30 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - Dashboard status sensor with dynamic icons
 - Home Assistant Persistent Notification for prolonged vehicle-source outages
 
-## Version 2.5+ – Planned
+## Version 2.5 – Pre-release
 
 - Multi-vehicle support
+- Vehicle-aware SQLite storage using `vehicle_id`
+- Automatic pre-2.5 SQLite migration backup
+- Automatic migration of existing single-vehicle history
+- Central vehicle selection through `select.ford_triplog_fahrzeug`
+- Vehicle-aware Dashboard, History and Top Statistics
+- Improved refresh handling after vehicle changes
+- Improved tariff-import duplicate detection when source IDs change
+
+## Version 2.6+ – Planned
+
 - Route export for third-party applications
 - Optional enriched GPS point metadata
 - Additional charging and reporting improvements
+- Further multi-vehicle refinements
 
 ## 3.x – Research
 
 - Manufacturer-neutral Triplog core with vehicle-specific adapters
-- Read-only vehicle data adapters beyond Ford where technically feasible
-- Further research into a possible JAC vehicle-data adapter
+- Ford remains the focus of Ford Triplog
+- Additional vehicle integrations may inform a later common adapter interface
+- The JAC Home Assistant connector remains a separate project and is not part of Ford Triplog
 
 Complete roadmap:
 

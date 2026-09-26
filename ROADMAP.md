@@ -354,48 +354,93 @@ Version 2.4 consolidates charging-data reliability improvements, new energy/stat
 
 ## Deferred beyond 2.4
 
-The following earlier 2.4 ideas were not required for the final 2.4 release and remain candidates for future development:
+The following earlier 2.4 ideas were not required for the final 2.4 release and remain candidates for later Ford Triplog development:
 
 - Route export for third-party applications
 - Raw GPS export with timestamps
 - GPX / GeoJSON route export
 - Optional enriched GPS point metadata such as altitude, accuracy, speed and course
 - Further charging metadata presentation improvements
-- Multi-vehicle support
 
 ---
 
-# Version 2.5+ – Planned
+# Version 2.5 – Multi-Vehicle Architecture
 
-Potential next development areas:
+Status: **Pre-release testing**
 
-- Multi-vehicle support
+Version 2.5 introduces vehicle-aware storage and a shared vehicle context so multiple vehicles can be used inside one Ford Triplog installation without mixing their historical data.
+
+## Implemented – Vehicle-aware SQLite Storage
+
+- Persistent internal `vehicle_id`
+- Vehicle-aware Trips and current/last Trip state
+- Vehicle-aware charging sessions and current/last Charge state
+- Vehicle-aware Journeys and current/last Journey state
+- Vehicle-aware Routes
+- Vehicle-aware statistics and diagnostics
+- Vehicle-aware charging and pause metadata
+- Vehicle-aware receipt metadata
+- Existing SQLite history is migrated automatically
+- A pre-2.5 SQLite backup is created automatically before schema migration
+
+## Implemented – Shared Vehicle Selection
+
+Ford Triplog exposes a shared vehicle-selection entity:
+
+`select.ford_triplog_fahrzeug`
+
+The selected vehicle controls the shared Ford Triplog views and statistics.
+
+Vehicle changes refresh the relevant shared entities so one Dashboard can be used with more than one configured vehicle.
+
+## Implemented – Vehicle-context Reliability
+
+- Shared Dashboard entities follow the selected vehicle
+- History reads follow the selected vehicle
+- Top Statistics follow the selected vehicle
+- Last Trip, Last Journey and Last Route refresh after vehicle changes
+- Top Journey stale-value handling fixed during the 2.5 test cycle
+- Additional vehicle-context and SQLite-isolation fixes from multi-vehicle testing
+
+## Implemented – Tariff Import Duplicate Protection
+
+Tariff imports no longer treat a changed external source ID by itself as a new tariff period.
+
+Equivalent tariff data can therefore be imported repeatedly without creating duplicate tariff entries solely because the source generated different IDs.
+
+---
+
+# Version 2.6+ – Planned
+
+Potential Ford-focused development areas:
+
 - Route export and route-data portability
 - Optional enriched GPS point metadata
 - Additional database-backed reporting
 - Maintenance tracking
 - Further charging and energy reporting improvements
+- Further multi-vehicle refinements
 
 ---
 
-
 # Version 3.x – Manufacturer-neutral Research
 
-Longer-term research may separate the Triplog core from individual
-vehicle integrations.
+Longer-term research may separate the Triplog processing core from individual vehicle data sources.
 
 Potential direction:
 
 - Manufacturer-neutral Triplog core
 - Vehicle-specific read-only adapters
-- Ford adapter based on the current Ford data-source model
-- Research into additional vehicle backends where stable read-only data
-  access is technically feasible
-- Continued investigation of a possible JAC adapter/API source
+- Ford adapter based on the current configurable Ford data-source model
+- Stable interface between vehicle integrations and Triplog processing
+- Shared Trip, charging, Journey, statistics and reporting logic
+
+Ford Triplog remains Ford-focused during the current 2.x development line.
+
+The JAC Home Assistant connector is developed as a separate project and is not part of Ford Triplog. Experience from additional vehicle integrations may later help define a manufacturer-neutral adapter interface.
 
 Additional future development areas include:
 
-- Multi-vehicle support and improvements
 - Maintenance tracking
 - Long-term history improvements
 - Additional database-backed reporting options
@@ -419,5 +464,6 @@ Additional future development areas include:
 | 2.2 | Released | CSV exports, maintenance tools, pause receipts, History reliability and continued JSON/SQLite validation |
 | 2.3 | Released | SQLite-only storage, direct device-tracker GPS, improved trip-end GPS, dense OSRM matching and Route maintenance |
 | 2.4 | Released | Charging reliability, recuperation/monthly statistics, user-defined places, Journey rebuild reliability and vehicle-source health |
-| 2.5+ | Planned | Multi-vehicle, route export/data portability, enriched GPS metadata and further reporting |
+| 2.5 | Pre-release | Multi-vehicle architecture, vehicle-aware SQLite storage, shared vehicle selection and tariff-import reliability |
+| 2.6+ | Planned | Route portability, enriched GPS metadata, reporting and further Ford-focused improvements |
 | 3.x | Research | Manufacturer-neutral Triplog core and vehicle adapters |

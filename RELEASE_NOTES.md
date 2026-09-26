@@ -1,3 +1,101 @@
+# Ford Triplog 2.5.0 Pre-release
+
+Ford Triplog 2.5 introduces the vehicle-aware architecture required for multi-vehicle operation.
+
+The release keeps the local-first SQLite architecture from 2.3/2.4, but extends the main Triplog data model so vehicle-specific history can coexist safely inside one Ford Triplog installation.
+
+## 🚙 Multi-vehicle support
+
+Ford Triplog now maintains a persistent vehicle context and separates vehicle-specific data through an internal `vehicle_id`.
+
+Vehicle-aware data includes:
+
+- Trips
+- charging sessions
+- Journeys
+- GPS Routes
+- statistics
+- current/last state records
+- metadata and receipts
+
+This prevents history and statistics from different vehicles being mixed while retaining one shared Ford Triplog installation.
+
+## 🔀 Vehicle selection
+
+A shared Home Assistant select entity is available:
+
+`select.ford_triplog_fahrzeug`
+
+Changing the selected vehicle updates the shared Ford Triplog Dashboard, History and statistics entities.
+
+This allows the same Dashboard entities to be reused for different vehicles instead of requiring a complete duplicate set of shared Triplog sensors for every vehicle.
+
+The 2.5 pre-release also fixes stale values discovered during vehicle-switch testing, including Top Journey and other vehicle-dependent statistics.
+
+## 🗃️ Vehicle-aware SQLite migration
+
+Existing Ford Triplog 2.4 databases are migrated automatically to the new vehicle-aware schema.
+
+Before the schema is changed, Ford Triplog creates a pre-2.5 SQLite backup.
+
+The migration covers the main persistent vehicle-specific tables, including Trip, Charge, Journey, Route, statistics, metadata and receipt-related data.
+
+Existing single-vehicle history is preserved and becomes part of the migrated vehicle context.
+
+No manual database conversion is required.
+
+## ⚡ Tariff import reliability
+
+Tariff duplicate detection has been improved for sources that assign different internal IDs when the same tariff data is imported again.
+
+A changed source ID alone no longer causes an otherwise identical tariff period to be treated as a new tariff.
+
+This prevents repeated imports from creating duplicate tariff entries.
+
+## 🔄 Vehicle-context refresh reliability
+
+The pre-release testing cycle includes fixes for shared entity refresh after vehicle selection changes.
+
+Relevant Dashboard and History data now reloads for the newly selected vehicle instead of retaining values from the previously selected vehicle.
+
+This includes fixes around:
+
+- Top Journey
+- vehicle-dependent Top Statistics
+- Last Trip / Last Journey / Last Route
+- History views
+- shared Ford Triplog sensor state
+
+## 🧪 Pre-release testing
+
+Please especially test:
+
+- Home Assistant restart
+- upgrade from an existing 2.4 installation
+- automatic SQLite migration and backup creation
+- vehicle selection through `select.ford_triplog_fahrzeug`
+- switching repeatedly between configured vehicles
+- Last Trip, Last Journey and Last Route
+- Daily History
+- Top Trip, Top Journey and Top Day
+- charging start and completion
+- tariff import repeated with the same source data
+- CSV/statistics views after changing vehicles
+
+Please report any case where data from one vehicle remains visible after another vehicle has been selected.
+
+## ⬆️ Upgrade notes
+
+Ford Triplog 2.5 is designed as a direct upgrade from 2.4.
+
+The SQLite schema is migrated automatically and a pre-2.5 database backup is created before the migration.
+
+No manual migration is required.
+
+Because this is a pre-release, creating a current Home Assistant backup before upgrading is recommended.
+
+------------------------------------------------------------------------
+
 # Ford Triplog 2.4.0
 
 **Final release: Build 24405**
