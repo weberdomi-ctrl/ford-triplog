@@ -1389,15 +1389,20 @@ class FordTriplogDatabase:
         self,
         tariffs: list[dict[str, Any]],
     ) -> bool:
-        """Replace the global home charging tariff table atomically."""
+        """Replace the global tariff set while preserving stable row IDs."""
 
         await self.async_setup()
 
-        normalized: list[tuple[str, str, float, str]] = []
+        normalized: list[tuple[int | None, str, str, float, str]] = []
+        seen_ids: set[int] = set()
         for item in tariffs or []:
             if not isinstance(item, dict):
                 continue
             try:
+                raw_id = item.get("tariff_id")
+                tariff_id = int(raw_id) if raw_id not in (None, "") else None
+                if tariff_id is not None and tariff_id <= 0:
+                    raise ValueError
                 valid_from = str(item["valid_from"]).strip()
                 valid_to = str(item["valid_to"]).strip()
                 price = max(0.0, float(item["price_per_kwh"]))
@@ -1409,37 +1414,69 @@ class FordTriplogDatabase:
                 raise ValueError("Invalid home charging tariff period")
             if valid_to < valid_from:
                 raise ValueError("Home charging tariff end is before start")
-            normalized.append((valid_from, valid_to, price, currency or "CHF"))
+            if tariff_id is not None:
+                if tariff_id in seen_ids:
+                    raise ValueError("Duplicate home charging tariff ID")
+                seen_ids.add(tariff_id)
+            normalized.append(
+                (tariff_id, valid_from, valid_to, price, currency or "CHF")
+            )
 
-        normalized.sort(key=lambda item: (item[0], item[1]))
+        normalized.sort(key=lambda item: (item[1], item[2], item[0] or 0))
         for index, current in enumerate(normalized):
             for previous in normalized[:index]:
-                if current[0] <= previous[1] and current[1] >= previous[0]:
+                if current[1] <= previous[2] and current[2] >= previous[1]:
                     raise ValueError("Overlapping home charging tariff periods")
 
         def _write() -> None:
             now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
             with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
                 db.execute("BEGIN IMMEDIATE")
                 try:
+                    existing_rows = db.execute(
+                        "SELECT tariff_id, created_at FROM home_charging_tariffs"
+                    ).fetchall()
+                    created_at_by_id = {
+                        int(row["tariff_id"]): str(row["created_at"])
+                        for row in existing_rows
+                    }
+
+                    # Rebuild the small master-data table atomically, but re-use
+                    # each supplied tariff_id explicitly. This keeps IDs stable
+                    # across edits while still making list replacement simple.
                     db.execute("DELETE FROM home_charging_tariffs")
-                    for valid_from, valid_to, price, currency in normalized:
-                        db.execute(
-                            """
-                            INSERT INTO home_charging_tariffs (
-                                valid_from, valid_to, price_per_kwh, currency,
-                                created_at, updated_at
-                            ) VALUES (?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                valid_from,
-                                valid_to,
-                                price,
-                                currency,
-                                now,
-                                now,
-                            ),
-                        )
+                    for tariff_id, valid_from, valid_to, price, currency in normalized:
+                        if tariff_id is None:
+                            db.execute(
+                                """
+                                INSERT INTO home_charging_tariffs (
+                                    valid_from, valid_to, price_per_kwh, currency,
+                                    created_at, updated_at
+                                ) VALUES (?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    valid_from, valid_to, price, currency, now, now,
+                                ),
+                            )
+                        else:
+                            db.execute(
+                                """
+                                INSERT INTO home_charging_tariffs (
+                                    tariff_id, valid_from, valid_to, price_per_kwh,
+                                    currency, created_at, updated_at
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                """,
+                                (
+                                    tariff_id,
+                                    valid_from,
+                                    valid_to,
+                                    price,
+                                    currency,
+                                    created_at_by_id.get(tariff_id, now),
+                                    now,
+                                ),
+                            )
                     db.commit()
                 except Exception:
                     db.rollback()
@@ -1448,7 +1485,7 @@ class FordTriplogDatabase:
         try:
             await self.hass.async_add_executor_job(_write)
             _LOGGER.info(
-                "SQLite home charging tariffs saved: %d",
+                "SQLite home charging tariffs saved with stable IDs: %d",
                 len(normalized),
             )
             return True

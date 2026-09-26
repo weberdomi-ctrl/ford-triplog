@@ -6,7 +6,7 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25020
+Build: 25021
 Changes: Store home-tariff periods globally in SQLite and migrate 25016/25017 options.
 """
 
@@ -357,7 +357,7 @@ async def async_setup_entry(
         )
         notify_vehicle_list_updated(hass)
 
-    # Home charging tariff periods are global Triplog master data. Build 25020
+    # Home charging tariff periods are global Triplog master data. Build 25021
     # moves them from per-vehicle ConfigEntry options into the central SQLite
     # database. Existing 25016/25017 periods are imported once.
     home_tariff_storage = FordTriplogHomeTariffStorage(hass)
