@@ -81,6 +81,7 @@ from .const import (
     CONF_TRACKER,
     CONF_SOC,
     CONF_CHARGING,
+    CONF_PLUG_STATUS,
     CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
@@ -249,6 +250,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.last_ignition = False
         self.last_charging = False
+
+        # Optional Ford EV plug-state capability. This is auto-detected at
+        # runtime for Ford Connect/FordPass and is not part of the config flow.
+        # A valid CONNECTED state keeps one physical plug session open across
+        # COMPLETED/READY -> IN_PROGRESS cycles such as preconditioning.
+        self.plug_entity: str | None = config.get(CONF_PLUG_STATUS)
+        self.last_plug_connected: bool | None = None
 
         # FordPass 'Last Charge' sensor (Version 1.5 preparation).
         self.last_charge_entity: str | None = config.get(CONF_LAST_CHARGE)
@@ -557,6 +565,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.config.get("tracker"),
                 self.config.get("soc"),
                 self.config.get("charging"),
+                self.plug_entity,
                 self.last_charge_entity,
             ) if e
         ]
@@ -566,6 +575,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         self.vehicle_state = self._read_vehicle_state()
+        self.last_plug_connected = self._normalize_plug_connected(
+            self.vehicle_state.get("plug_status")
+        )
         self._evaluate_vehicle_source_health()
 
         if self.last_charge_entity:
@@ -593,6 +605,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             and self.current_charge.end_time
         ):
             self._resume_pending_charge_from_recovery()
+
+        # If Home Assistant was offline during the physical unplug, the plug
+        # state can already be DISCONNECTED when this coordinator starts and no
+        # future state edge is guaranteed. Close that recovered local session
+        # immediately. Pending Ford Last Charge reconciliation has its own
+        # recovery path above and must not be started twice.
+        if (
+            self.current_charge is not None
+            and self.plug_entity
+            and self.last_plug_connected is False
+            and not self.current_charge.fordpass_pending
+        ):
+            _LOGGER.info(
+                "Recovered charging session %s while EV plug is already "
+                "disconnected; finalizing it",
+                self.current_charge.charge_id,
+            )
+            await self.finish_charge()
 
     def _smart_trip_recovery_payload(self) -> dict[str, Any] | None:
         """Return JSON-safe Smart Trip pause recovery metadata."""
@@ -931,6 +961,84 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return None
         return normalized
 
+    @staticmethod
+    def _normalize_plug_connected(value: Any) -> bool | None:
+        """Return a stable boolean for the optional EV plug-state sensor."""
+
+        normalized = str(value or "").strip().upper().replace("-", "_")
+        if normalized in {
+            "",
+            "UNKNOWN",
+            "UNAVAILABLE",
+            "UNSUPPORTED",
+            "NONE",
+            "NULL",
+        }:
+            return None
+        if normalized in {
+            "CONNECTED",
+            "PLUGGED",
+            "PLUGGED_IN",
+            "PLUGGEDIN",
+            "ON",
+            "TRUE",
+            "1",
+        }:
+            return True
+        if normalized in {
+            "DISCONNECTED",
+            "UNPLUGGED",
+            "NOT_CONNECTED",
+            "NOT_PLUGGED_IN",
+            "NOTPLUGGEDIN",
+            "OFF",
+            "FALSE",
+            "0",
+        }:
+            return False
+        return None
+
+    def _effective_plug_connected(self, current: bool | None) -> bool | None:
+        """Return current plug state, retaining the last valid state on gaps."""
+        return current if current is not None else self.last_plug_connected
+
+    def _prepare_plug_session_resume(self, charge: Charge) -> bool:
+        """Prepare an existing plugged charge for another transfer segment."""
+
+        if charge.completion_time is None:
+            return False
+
+        previous_segment_energy = optional_float(
+            charge.charger_energy_output_kwh
+        )
+        if previous_segment_energy is not None and previous_segment_energy > 0:
+            charge.charging_energy_accumulated_kwh = round(
+                max(0.0, charge.charging_energy_accumulated_kwh)
+                + previous_segment_energy,
+                3,
+            )
+
+        charge.charging_resume_count += 1
+        charge.charger_energy_output_kwh = None
+        charge.energy_added_kwh_charging_status = (
+            round(charge.charging_energy_accumulated_kwh, 2)
+            if charge.charging_energy_accumulated_kwh > 0
+            else None
+        )
+        charge.completion_time = None
+        charge.completion_soc = None
+        charge.last_live_charging_status = None
+        charge.last_live_charging_updated_at = None
+
+        _LOGGER.info(
+            "Charging resumed within the same plug session: charge=%s "
+            "resume=%s accumulated_energy=%s kWh",
+            charge.charge_id,
+            charge.charging_resume_count,
+            charge.charging_energy_accumulated_kwh,
+        )
+        return True
+
     def _read_vehicle_state(self):
         data = {}
 
@@ -939,6 +1047,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "odometer",
             "soc",
             "charging",
+            CONF_PLUG_STATUS,
             CONF_LAST_CHARGE,
         ):
             entity_id = self.config.get(key)
@@ -996,7 +1105,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
 
     async def _state_changed(self, event: Event):
-        if event.data.get("entity_id") == self.config.get("tracker"):
+        event_entity_id = event.data.get("entity_id")
+        if event_entity_id == self.config.get("tracker"):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
@@ -1024,38 +1134,73 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             else charging_state == "IN_PROGRESS"
         )
 
-        if (
-            self.current_charge is not None
-            and charging_state == "IN_PROGRESS"
-            and self._capture_live_charging_snapshot(
-                self.current_charge,
-                self.vehicle_state,
-            )
-        ):
-            await self.storage.save_current_charge(
-                self.current_charge.to_dict()
-            )
-
-        if (
-            self.last_charge_entity
-            and event.data.get("entity_id") == self.last_charge_entity
-        ):
-            self._handle_last_charge_state_change(
-                event.data.get("new_state")
-            )
+        plug_raw = self.vehicle_state.get("plug_status")
+        plug_connected = self._normalize_plug_connected(plug_raw)
+        effective_plug_connected = self._effective_plug_connected(
+            plug_connected
+        )
 
         # Claim state transitions before awaiting any handler. Multiple watched
         # Home Assistant entities can update within a few milliseconds. If the
         # previous state were updated only after an await, a second callback
         # could observe the same edge and start/finish the same Trip twice.
-        # Unknown/unavailable source states are not transitions.  Ford Connect
-        # can briefly publish unavailable/Unsupported when its API request
-        # fails.  Keeping the last known boolean state prevents a running trip
-        # or charging session from being split by that temporary data gap.
+        # Unknown/unavailable source states are not transitions.
         trip_started = ignition is True and not self.last_ignition
         trip_stopped = ignition is False and self.last_ignition
         charge_started = charging is True and not self.last_charging
         charge_stopped = charging is False and self.last_charging
+        plug_disconnected = bool(
+            self.plug_entity
+            and event_entity_id == self.plug_entity
+            and plug_connected is False
+            and self.current_charge is not None
+        )
+
+        # A second IN_PROGRESS edge while the cable is still connected is a
+        # resume of the same physical plug session (for example cabin
+        # preconditioning after the target SOC was reached). Commit the prior
+        # transfer segment before its raw energy counter is replaced.
+        if (
+            charge_started
+            and self.plug_entity
+            and self.current_charge is not None
+            and self.current_charge.completion_time is not None
+            and not self.waiting_for_last_charge
+            and not self.current_charge.fordpass_pending
+            and effective_plug_connected is True
+        ):
+            if self._prepare_plug_session_resume(self.current_charge):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+
+        # Preserve live and COMPLETED snapshots even while the plug-aware
+        # lifecycle intentionally keeps current_charge open. This also captures
+        # late ChargerEnergyOutput updates after the first COMPLETED edge.
+        if self.current_charge is not None and charging_state == "IN_PROGRESS":
+            if self._capture_live_charging_snapshot(
+                self.current_charge,
+                self.vehicle_state,
+            ):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+        elif self.current_charge is not None and charging_state == "COMPLETED":
+            if self._capture_charging_completion_snapshot(
+                self.current_charge,
+                self.vehicle_state,
+            ):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+
+        if (
+            self.last_charge_entity
+            and event_entity_id == self.last_charge_entity
+        ):
+            self._handle_last_charge_state_change(
+                event.data.get("new_state")
+            )
 
         if ignition is not None:
             self.last_ignition = ignition
@@ -1073,17 +1218,56 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charging_raw,
             )
 
+        if plug_connected is not None:
+            self.last_plug_connected = plug_connected
+        elif self.plug_entity and event_entity_id == self.plug_entity:
+            _LOGGER.debug(
+                "Ignoring unavailable plug state and retaining last valid state: %r",
+                plug_raw,
+            )
+
         # Trip handling
         if trip_started:
             await self.start_trip()
         elif trip_stopped:
             await self.finish_trip()
 
-        # Charge handling
-        if charge_started:
-            await self.start_charge()
-        elif charge_stopped:
+        # Charge handling. Without an auto-detected plug sensor (for example
+        # JAC), the proven charging-state lifecycle remains unchanged. With a
+        # Ford plug sensor, COMPLETED/READY only pauses energy transfer while
+        # CONNECTED; an explicit DISCONNECTED closes the physical plug session.
+        if plug_disconnected:
+            _LOGGER.info(
+                "EV plug disconnected; finalizing charging session %s",
+                self.current_charge.charge_id if self.current_charge else "unknown",
+            )
             await self.finish_charge()
+        elif charge_started:
+            if (
+                self.plug_entity
+                and self.current_charge is not None
+                and not self.waiting_for_last_charge
+                and not self.current_charge.fordpass_pending
+            ):
+                _LOGGER.debug(
+                    "Charging IN_PROGRESS resumed with existing plug session %s",
+                    self.current_charge.charge_id,
+                )
+            else:
+                # Preserve the original start path. In particular, start_charge
+                # finalizes a previous session that is still waiting for delayed
+                # Ford Last Charge data before it creates the new session.
+                await self.start_charge()
+        elif charge_stopped:
+            if self.plug_entity and effective_plug_connected is True:
+                _LOGGER.info(
+                    "Charging transfer stopped while EV plug remains connected; "
+                    "keeping session %s open (state=%s)",
+                    self.current_charge.charge_id if self.current_charge else "unknown",
+                    charging_state or "UNKNOWN",
+                )
+            else:
+                await self.finish_charge()
 
         self._schedule_coordinator_update(self.vehicle_state)
 
@@ -2964,7 +3148,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 # rather than the maximum so a stale previous-session value
                 # can be replaced by the current session value.
                 charge.charger_energy_output_kwh = charger_energy
-                charge.energy_added_kwh_charging_status = charger_energy
+                charge.energy_added_kwh_charging_status = round(
+                    max(0.0, charge.charging_energy_accumulated_kwh)
+                    + charger_energy,
+                    2,
+                )
                 changed = True
 
         if changed:
@@ -2988,12 +3176,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _capture_charging_completion_snapshot(
         charge: Charge,
         state: dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """Capture the charging entity while it still reports COMPLETED."""
 
         charging_status = str(state.get("charging") or "").strip().upper()
         if charging_status != "COMPLETED":
-            return
+            return False
+
+        before = (
+            charge.completion_time,
+            charge.completion_soc,
+            charge.charging_type,
+            charge.charger_energy_output_kwh,
+            charge.energy_added_kwh_charging_status,
+        )
 
         if charge.completion_time is None:
             charge.completion_time = (
@@ -3019,7 +3215,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         if charger_energy is not None and charger_energy >= 0:
             charge.charger_energy_output_kwh = charger_energy
-            charge.energy_added_kwh_charging_status = charger_energy
+            charge.energy_added_kwh_charging_status = round(
+                max(0.0, charge.charging_energy_accumulated_kwh)
+                + charger_energy,
+                2,
+            )
+
+        after = (
+            charge.completion_time,
+            charge.completion_soc,
+            charge.charging_type,
+            charge.charger_energy_output_kwh,
+            charge.energy_added_kwh_charging_status,
+        )
+        return after != before
 
     def _update_charge_energy_values(self, charge: Charge) -> None:
         """Reconcile vehicle-energy sources without discarding provenance."""
@@ -3048,8 +3257,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 )
 
         energy_charging_status = optional_float(
-            charge.charger_energy_output_kwh
+            charge.energy_added_kwh_charging_status
         )
+        if energy_charging_status is None:
+            energy_charging_status = optional_float(
+                charge.charger_energy_output_kwh
+            )
         if energy_charging_status is not None:
             energy_charging_status = round(energy_charging_status, 2)
 

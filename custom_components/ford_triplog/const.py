@@ -19,7 +19,7 @@ DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
 VERSION: Final = "2.5.0"
-BUILD: Final = "25021"
+BUILD: Final = "25022"
 
 #
 # Storage
@@ -27,7 +27,7 @@ BUILD: Final = "25021"
 
 STORAGE_SCHEMA_VERSION: Final = 1
 TRIP_SCHEMA_VERSION: Final = 2
-CHARGE_SCHEMA_VERSION: Final = 6
+CHARGE_SCHEMA_VERSION: Final = 7
 
 STORAGE_DIR: Final = "ford_triplog"
 TRIPS_DIR: Final = "trips"
@@ -71,6 +71,10 @@ CONF_ODOMETER: Final = "odometer"
 CONF_TRACKER: Final = "tracker"
 CONF_SOC: Final = "soc"
 CONF_CHARGING: Final = "charging"
+# Runtime-only optional plug-state source. It is auto-detected from the
+# selected Ford vehicle device and is intentionally not exposed in the
+# config flow.
+CONF_PLUG_STATUS: Final = "plug_status"
 CONF_LAST_CHARGE: Final = "last_charge"
 CONF_BATTERY_CAPACITY: Final = "battery_capacity_kwh"
 CONF_VEHICLE_ID: Final = "vehicle_id"
