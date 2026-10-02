@@ -121,6 +121,8 @@ TRIP_START_GPS_STALE_SECONDS = 60
 TRIP_START_GPS_CORRECTION_WINDOW_SECONDS = 60
 TRIP_START_GPS_CORRECTION_DISTANCE_METERS = 250
 TRIP_START_GPS_FRESH_TOLERANCE_SECONDS = 5
+TRIP_START_GPS_MAX_PLAUSIBLE_SPEED_MPS = 60.0
+TRIP_START_GPS_PLAUSIBILITY_BUFFER_METERS = 250
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -352,6 +354,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Build 25015: remember one stale vehicle GPS start long enough for
         # the first fresh Route Tracker point to correct the Trip origin.
         self._trip_start_gps_provisional: dict[str, Any] | None = None
+        # Build 25023: retain the authoritative vehicle start until the trip
+        # is finalized. If the auxiliary Route Tracker later proves to be
+        # detached from the vehicle, the original start can be restored.
+        self._trip_start_gps_original: dict[str, Any] | None = None
        
 
     @staticmethod
@@ -2700,6 +2706,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         gps_time = self._normalized_datetime(state.get("gps_updated_at"))
 
         self._trip_start_gps_provisional = None
+        self._trip_start_gps_original = None
 
         if (
             latitude is None
@@ -2720,6 +2727,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "start_time": trip.start_time,
             "gps_updated_at": state.get("gps_updated_at"),
         }
+        self._trip_start_gps_original = dict(self._trip_start_gps_provisional)
 
         _LOGGER.info(
             "Trip start GPS is %.0fs old; marking start provisional for %ss",
@@ -2732,12 +2740,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self,
         trip_id: str,
         point: dict[str, Any],
-    ) -> bool | None:
+    ) -> bool | str | None:
         """Correct one stale Trip start from the first fresh route point.
 
         ``True`` means the provisional start was replaced, ``False`` means the
-        first fresh point confirmed/resolved it without replacement, and
-        ``None`` asks the Route Tracker to keep waiting for a fresh point.
+        first fresh point confirmed/resolved it without replacement, ``None``
+        asks the Route Tracker to keep waiting for a fresh point, and
+        ``"reject"`` means the auxiliary route source is implausibly far
+        from the vehicle and must be ignored for the rest of this Trip.
         """
 
         provisional = self._trip_start_gps_provisional
@@ -2803,6 +2813,40 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 distance,
             )
             return False
+
+        # A detached phone/device tracker can be many kilometres away while
+        # the vehicle is moved independently (for example during a workshop
+        # visit). Do not let such a point replace the authoritative vehicle
+        # start. Allow generous physically plausible movement since the last
+        # vehicle GPS update before declaring the route source detached.
+        vehicle_gps_time = self._normalized_datetime(
+            provisional.get("gps_updated_at")
+        )
+        elapsed_from_vehicle_gps = (
+            max(0.0, (point_time - vehicle_gps_time).total_seconds())
+            if vehicle_gps_time is not None
+            else max(0.0, delta_seconds)
+        )
+        plausible_distance = max(
+            float(TRIP_START_GPS_CORRECTION_DISTANCE_METERS),
+            (
+                elapsed_from_vehicle_gps
+                * TRIP_START_GPS_MAX_PLAUSIBLE_SPEED_MPS
+                + TRIP_START_GPS_PLAUSIBILITY_BUFFER_METERS
+            ),
+        )
+
+        if distance > plausible_distance:
+            self._trip_start_gps_provisional = None
+            _LOGGER.warning(
+                "Route Tracker start differs implausibly from vehicle GPS "
+                "for trip %s: %.0fm > %.0fm plausible limit; keeping "
+                "vehicle start and rejecting auxiliary route source",
+                trip_id,
+                distance,
+                plausible_distance,
+            )
+            return "reject"
 
         trip.start_latitude = latitude
         trip.start_longitude = longitude
@@ -3578,6 +3622,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.current_trip = None
         self._trip_start_gps_provisional = None
+        self._trip_start_gps_original = None
 
         self._schedule_coordinator_update(state)
 
@@ -3858,9 +3903,81 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             except (TypeError, ValueError):
                 distance = None
 
-        # Both sources are available: timestamp decides. The distance check
-        # remains diagnostic only and must not make an older point win.
+        # Both sources are available. If they disagree spatially, the vehicle
+        # tracker is authoritative: an auxiliary phone/device tracker may not
+        # be travelling with the vehicle (for example during a workshop visit).
+        # Only when both sources agree within the configured limit does the
+        # newer timestamp decide.
         if route_valid and vehicle_valid:
+            source_mismatch = (
+                distance is not None
+                and distance > TRIP_END_GPS_MAX_DISTANCE_METERS
+            )
+
+            if source_mismatch:
+                end_state["latitude"] = vehicle_latitude
+                end_state["longitude"] = vehicle_longitude
+                end_state["gps_updated_at"] = vehicle_timestamp
+                end_state["address"] = fresh_gps_state.get("address")
+
+                original = self._trip_start_gps_original
+                if (
+                    isinstance(original, dict)
+                    and self.current_trip is not None
+                    and str(original.get("trip_id") or "")
+                    == str(self.current_trip.trip_id or "")
+                ):
+                    start_latitude = optional_float(original.get("latitude"))
+                    start_longitude = optional_float(original.get("longitude"))
+                    if start_latitude is not None and start_longitude is not None:
+                        self.current_trip.start_latitude = start_latitude
+                        self.current_trip.start_longitude = start_longitude
+                        self.current_trip.start_address = await self._get_address(
+                            {
+                                "latitude": start_latitude,
+                                "longitude": start_longitude,
+                            }
+                        )
+                        await self.storage.save_current_trip(
+                            self.current_trip.to_dict()
+                        )
+                        _LOGGER.warning(
+                            "Restored original vehicle Trip start for %s "
+                            "after Route Tracker source mismatch",
+                            self.current_trip.trip_id,
+                        )
+
+                if self.route_tracker is not None:
+                    self.route_tracker.reject_current_source(
+                        reason="vehicle_route_gps_mismatch",
+                        start_latitude=(
+                            self.current_trip.start_latitude
+                            if self.current_trip is not None
+                            else None
+                        ),
+                        start_longitude=(
+                            self.current_trip.start_longitude
+                            if self.current_trip is not None
+                            else None
+                        ),
+                        start_timestamp=(
+                            self.current_trip.start_time
+                            if self.current_trip is not None
+                            else None
+                        ),
+                    )
+
+                _LOGGER.warning(
+                    "Trip-end GPS sources differ by %.0fm (limit %sm); "
+                    "using vehicle GPS and discarding auxiliary route "
+                    "points, route=%s vehicle=%s",
+                    distance,
+                    TRIP_END_GPS_MAX_DISTANCE_METERS,
+                    route_timestamp,
+                    vehicle_timestamp,
+                )
+                return end_state
+
             use_route = (
                 route_time is not None
                 and (
@@ -3884,31 +4001,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 selected = "vehicle"
                 selected_time = vehicle_timestamp
 
-            if distance is not None and distance > TRIP_END_GPS_MAX_DISTANCE_METERS:
-                _LOGGER.warning(
-                    "Trip-end GPS sources differ by %.0fm (limit %sm); "
-                    "using newer %s GPS (%s), route=%s vehicle=%s",
-                    distance,
-                    TRIP_END_GPS_MAX_DISTANCE_METERS,
-                    selected,
-                    selected_time,
-                    route_timestamp,
-                    vehicle_timestamp,
-                )
-            else:
-                _LOGGER.info(
-                    "Trip-end GPS selection: using newer %s GPS (%s), "
-                    "route=%s vehicle=%s%s",
-                    selected,
-                    selected_time,
-                    route_timestamp,
-                    vehicle_timestamp,
-                    (
-                        f", distance={distance:.0f}m"
-                        if distance is not None
-                        else ""
-                    ),
-                )
+            _LOGGER.info(
+                "Trip-end GPS selection: using newer %s GPS (%s), "
+                "route=%s vehicle=%s%s",
+                selected,
+                selected_time,
+                route_timestamp,
+                vehicle_timestamp,
+                (
+                    f", distance={distance:.0f}m"
+                    if distance is not None
+                    else ""
+                ),
+            )
 
             return end_state
 

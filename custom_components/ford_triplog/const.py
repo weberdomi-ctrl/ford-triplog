@@ -19,7 +19,7 @@ DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
 VERSION: Final = "2.5.0"
-BUILD: Final = "25022"
+BUILD: Final = "25023"
 
 #
 # Storage

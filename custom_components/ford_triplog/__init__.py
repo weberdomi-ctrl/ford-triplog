@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25022
-Changes: Auto-detect Ford EV plug status and keep one charge open until unplug.
+Build: 25023
+Changes: Reject detached Route Tracker GPS and keep vehicle GPS authoritative.
 """
 
 from __future__ import annotations
