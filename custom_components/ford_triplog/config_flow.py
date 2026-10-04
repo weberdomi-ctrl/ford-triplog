@@ -7306,23 +7306,40 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return selected.get(key, fallback)
             return self._financing_prefill.get(key, fallback)
 
-        schema = vol.Schema({
-            vol.Optional("provider", default=d("provider")): selector.TextSelector(),
-            vol.Optional("contract_number", default=d("contract_number")): selector.TextSelector(),
-            vol.Required("start_date", default=d("start_date", dt_util.now().date().isoformat())): selector.DateSelector(),
-            vol.Optional("end_date", default=d("end_date")): selector.TextSelector(),
+        # TextSelector defaults must be strings. Document parsers deliberately
+        # return numeric types for calculations, so normalize only at the UI
+        # boundary. This avoids Home Assistant's "expected str" validation.
+        def text_d(key: str, fallback: str = "") -> str:
+            value = d(key, fallback)
+            return "" if value is None else str(value)
+
+        schema_fields: dict[Any, Any] = {
+            vol.Optional("provider", default=text_d("provider")): selector.TextSelector(),
+            vol.Optional("contract_number", default=text_d("contract_number")): selector.TextSelector(),
+            vol.Optional("end_date", default=text_d("end_date")): selector.TextSelector(),
             vol.Required("duration_months", default=d("duration_months", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
-            vol.Optional("purchase_price", default=d("purchase_price")): selector.TextSelector(),
+            vol.Optional("purchase_price", default=text_d("purchase_price")): selector.TextSelector(),
             vol.Required("first_payment", default=d("first_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
             vol.Required("regular_payment", default=d("regular_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
             vol.Required("number_of_payments", default=d("number_of_payments", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
-            vol.Optional("residual_value", default=d("residual_value")): selector.TextSelector(),
-            vol.Optional("interest_rate", default=d("interest_rate")): selector.TextSelector(),
-            vol.Optional("annual_mileage", default=d("annual_mileage")): selector.TextSelector(),
-            vol.Optional("excess_km_rate", default=d("excess_km_rate")): selector.TextSelector(),
+            vol.Optional("residual_value", default=text_d("residual_value")): selector.TextSelector(),
+            vol.Optional("interest_rate", default=text_d("interest_rate")): selector.TextSelector(),
+            vol.Optional("annual_mileage", default=text_d("annual_mileage")): selector.TextSelector(),
+            vol.Optional("excess_km_rate", default=text_d("excess_km_rate")): selector.TextSelector(),
             vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
-            vol.Optional("notes", default=d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-        })
+            vol.Optional("notes", default=text_d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+        }
+
+        # Never present today's date as if it had been recognized from a
+        # contract. Existing records keep their date; imported/manual new
+        # records stay blank until a real start date is supplied.
+        start_date = d("start_date", None)
+        if start_date:
+            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.DateSelector()
+        else:
+            schema_fields[vol.Required("start_date")] = selector.DateSelector()
+
+        schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="financing_add_leasing" if selected is None else "financing_edit_leasing", data_schema=schema, errors=errors)
 
     async def async_step_financing_edit_leasing(

@@ -140,7 +140,6 @@ def extract_financing_fields(raw_text: str) -> dict[str, Any]:
         ("contract_number", r"(?:Leasing[- ]?(?:Nr\.?|Nummer)|Vertrags(?:nummer|nr\.?)?)\s*[:#]?\s*([A-Z0-9./-]{4,})", str),
         ("duration_months", r"(?:Leasingdauer|Vertragsdauer|Laufzeit)\s*[:]?\s*(\d{1,3})\s*(?:Monate|Mt\.?|months)?", int),
         ("purchase_price", r"(?:Barkaufpreis|Kaufpreis|Fahrzeugpreis)\s*[:]?\s*(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", _money),
-        ("residual_value", r"(?:Restwert)\s*[:]?\s*(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", _money),
         ("interest_rate", r"(?:Nominal(?:zins|er Jahreszins)|Jahreszinssatz(?:\s+nominal)?|Jahreszins[^0-9]{0,20})\s*[:]?\s*([0-9]+(?:[.,]\d+)?)\s*%", lambda x: float(x.replace(",", "."))),
         ("annual_mileage", r"(?:Jährliche\s+Fahrleistung|Jahresfahrleistung|Kilometerleistung pro Jahr|km/Jahr)\s*[:]?\s*([0-9'’ .]+)", lambda x: int(re.sub(r"\D", "", x))),
         ("excess_km_rate", r"(?:Mehrkilometer(?:kosten)?|Mehr-km)[^0-9]{0,60}(?:CHF\s*)?([0-9]+(?:[.,]\d+)?)", lambda x: float(x.replace(",", "."))),
@@ -169,6 +168,14 @@ def extract_financing_fields(raw_text: str) -> dict[str, Any]:
             result["start_date"] = datetime.strptime(raw_date, "%d.%m.%Y").date().isoformat()
         except ValueError:
             pass
+
+    # Rest values can also be printed as net + VAT + gross. Prefer the
+    # largest monetary amount close to the Restwert label, just like rates.
+    residual_value = _payment_total_after_label(
+        compact, r"Restwert(?:\s+(?:inkl\.?|exkl\.?)\s*(?:MWST|MwSt\.?))?", window=140
+    )
+    if residual_value is not None:
+        result["residual_value"] = residual_value
 
     # Prefer the gross/total amounts. On Ford Credit/BANK-now contracts the
     # row contains net + VAT + gross, e.g. 4625.35 + 374.65 = 5000.00 and
