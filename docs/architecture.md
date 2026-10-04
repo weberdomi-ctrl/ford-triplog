@@ -1,60 +1,123 @@
 # Architecture
 
-Ford Triplog is designed as a lightweight extension for the Home Assistant FordPass integration.
+Ford Triplog is a local-first Home Assistant custom integration for automatic
+Trip, charging, Journey and route history.
 
-The integration continuously monitors vehicle state changes and automatically creates a permanent local history of trips and charging sessions.
+Ford Triplog remains Ford-focused, but version 2.5 uses an entity-based
+multi-vehicle architecture. Ford Connect is the recommended source for Ford
+vehicles. Compatible FordPass entities and other Home Assistant vehicle data
+sources can also be used when they expose the required entities.
 
-All processing is performed locally inside Home Assistant.
+All persistent Triplog data is stored locally inside Home Assistant.
 
 ---
 
 # Design Goals
 
-Ford Triplog was designed with the following principles:
+Ford Triplog is designed around the following principles:
 
 - Local-first
-- Privacy-first
+- Privacy-conscious
 - Reliable recovery
 - Minimal configuration
 - Native Home Assistant integration
+- Multi-vehicle isolation
 - Low resource usage
+- Backward-compatible storage migration
 - Easy future expansion
 
 ---
 
 # High-Level Architecture
 
+```text
+                 Home Assistant vehicle data sources
+                Ford Connect / FordPass / compatible sources
+                                  │
+               ┌──────────────────┴──────────────────┐
+               │                                     │
+               ▼                                     ▼
+        Vehicle ConfigEntry 1                 Vehicle ConfigEntry N
+               │                                     │
+               ▼                                     ▼
+       Vehicle Runtime / Coordinator          Vehicle Runtime / Coordinator
+               │                                     │
+               └──────────────────┬──────────────────┘
+                                  │
+                         Shared Vehicle Context
+                                  │
+            ┌─────────────────────┼─────────────────────┐
+            │                     │                     │
+            ▼                     ▼                     ▼
+      Trip Manager         Charging Manager       Route Tracker
+            │                     │                     │
+            └───────────────┬─────┴───────────────┬─────┘
+                            ▼                     ▼
+                     Journey Manager       Location Resolution
+                            │                     │
+                            └──────────┬──────────┘
+                                       ▼
+                              SQLite Storage
+                         vehicle_id-scoped records
+                                       │
+                                       ▼
+                       Shared Home Assistant entities
+                    Vehicle selector / History / Sensors
 ```
-                     FordPass Integration
-                             │
-                             │
-        ┌────────────────────┴────────────────────┐
-        │                                         │
-        ▼                                         ▼
- Vehicle Sensors                         Device Tracker
-        │                                         │
-        └────────────────────┬────────────────────┘
-                             │
-                             ▼
-                        Coordinator
-                             │
-         ┌───────────────────┼───────────────────┐
-         │                   │                   │
-         ▼                   ▼                   ▼
-    Trip Manager      Charging Manager      Location Resolver
-         │                   │                   │
-         └───────────────┬───┴───────────────────┘
-                         ▼
-                   Journey Manager
-                         │
-                         ▼
-                   Storage Manager
-                         │
-             ┌───────────┴───────────┐
-             ▼                       ▼
-      JSON + SQLite           Home Assistant
-        Storage                   Sensors
-```
+
+Ford Triplog 2.5 keeps one shared dashboard entity set. Additional vehicle
+ConfigEntries provide independent vehicle runtimes and data sources instead of
+duplicating the complete public sensor set for every vehicle.
+
+---
+
+# Multi-Vehicle Runtime
+
+Each configured vehicle receives its own Home Assistant ConfigEntry and a
+stable internal `vehicle_id`.
+
+Where the source integration exposes enough registry metadata, Ford Triplog can
+discover vehicle identity information such as:
+
+- VIN
+- Display name
+- Manufacturer
+- Model
+- Source integration
+
+The vehicle identity is stored in SQLite and used to keep historical records
+attached to the correct vehicle.
+
+Operational state is kept separate per vehicle, including:
+
+- Current Trip
+- Last Trip
+- Current charging session
+- Last charging session
+- Current Journey
+- Last Journey
+- Routes
+- Statistics
+- Vehicle-specific metadata
+
+Existing pre-2.5 data is migrated to the original vehicle automatically.
+
+---
+
+# Shared Vehicle Context
+
+Ford Triplog exposes one shared **Vehicle** selector for dashboard and History
+context.
+
+Changing the selected vehicle switches the data shown by the shared Ford
+Triplog entities without changing their entity IDs.
+
+The same vehicle context is used by vehicle-specific options and manual
+maintenance actions.
+
+Once an options flow has started, its vehicle context is locked for that flow
+so a later dashboard vehicle change cannot make an already selected Trip,
+charging session, receipt or pause resolve against another vehicle.
 
 ---
 
@@ -62,138 +125,219 @@ Ford Triplog was designed with the following principles:
 
 ## Coordinator
 
-The coordinator is responsible for collecting all required vehicle data.
+Each vehicle runtime has its own coordinator.
 
-It monitors:
+The coordinator collects the configured vehicle data and evaluates state
+changes. Depending on the configured source, this can include:
 
 - Vehicle position
 - Ignition
 - Odometer
 - State of Charge
+- Charging state
+- Last Charge information
 
-Whenever one of these values changes, the coordinator evaluates whether a trip or charging session has started, changed or finished.
+For supported Ford Connect/FordPass devices, Ford Triplog can also discover a
+physical EV plug-state entity automatically from the same Home Assistant
+device. This source is runtime-only and is not exposed as a manual
+configuration field.
+
+Whenever relevant values change, the coordinator evaluates whether a Trip or
+charging session has started, changed, paused, resumed or finished.
+
+Temporary `unknown`, `unavailable`, unsupported or missing source states are
+handled defensively and are not treated as real driving/charging transitions.
 
 ---
 
 ## Trip Manager
 
-The Trip Manager controls the complete trip lifecycle.
+The Trip Manager controls the complete Trip lifecycle for one vehicle.
 
 Responsibilities include:
 
-- Detect trip start
-- Detect trip end
+- Detect Trip start
+- Detect Trip end
 - Smart Trip handling
 - Distance calculation
 - Duration calculation
 - Average speed calculation
-- Energy estimation
+- SOC and energy estimation
+- Recuperation handling
 - Statistics update
+- Start/end position handling
+- Recovery after restart
 
-Each completed trip is written immediately to local storage.
+Each completed Trip is written to SQLite with its `vehicle_id`.
+
+---
+
+## Route Tracker
+
+The optional Route Tracker records a higher-resolution route from a separate
+Home Assistant position source.
+
+Supported source types include:
+
+- ABRP latitude/longitude entities
+- Home Assistant Companion App Geocoded Location
+- Direct Home Assistant `device_tracker` GPS
+
+Route data is linked to the corresponding Trip ID and vehicle.
+
+Dense route traces can be kept in memory while active and are protected by
+periodic SQLite snapshots. Important lifecycle transitions force an immediate
+snapshot.
+
+### Vehicle / auxiliary-GPS consistency guard
+
+A phone tracker is only a valid vehicle route source while the phone is
+actually travelling with the vehicle.
+
+Ford Triplog 2.5 therefore compares the auxiliary Route Tracker with vehicle
+GPS before accepting the completed route.
+
+When both sources differ by more than 250 m:
+
+- Vehicle GPS becomes authoritative.
+- Auxiliary phone/device-tracker route points are discarded from the completed route.
+- A provisional Trip start that was incorrectly replaced by the auxiliary source is restored to the original vehicle start.
+- An implausible OSRM route is not accepted.
+
+This prevents workshop or service movements from creating phantom routes when
+the configured phone remains somewhere else.
+
+When both sources remain geographically consistent, normal Route Tracker and
+OSRM processing continues unchanged.
 
 ---
 
 ## Charging Manager
 
-The Charging Manager detects charging sessions independently from trips.
+The Charging Manager records charging sessions independently for each vehicle.
 
-It records:
+It can record:
 
 - Start time
 - End time
 - Start SOC
 - End SOC
-- Charged energy
+- Vehicle energy estimate
 - Billed energy
 - Charging duration
 - Charging losses
+- Charging location
+- Charging provider
 - Home tariff calculation
 - Charging cost calculation
 - Cost aggregation
+- Receipt-derived values
+- Last Charge reconciliation
 
-Whenever possible, charging sessions are linked to the previous trip.
+### Physical plug-aware Ford sessions
+
+For compatible Ford Connect/FordPass devices, an automatically discovered
+physical plug state can distinguish a completed charging phase from a real
+unplug event.
+
+While the plug remains connected, transitions such as:
+
+`IN_PROGRESS -> COMPLETED/READY -> IN_PROGRESS`
+
+can remain one physical charging session. This covers later transfer segments
+caused by preconditioning or battery management.
+
+An explicit physical disconnect ends the session.
+
+If plug-state support is unavailable, Ford Triplog retains the established
+charging-state lifecycle for that vehicle source.
 
 ---
 
-
 ## Journey Manager
 
-The Journey Manager groups related trips and charging sessions into a single Journey.
+The Journey Manager groups related Trips and charging sessions for one vehicle
+into a single Journey.
 
 Responsibilities include:
 
 - Automatic Journey creation
-- Assignment of trips and charging sessions
+- Assignment of Trips and charging sessions
+- Pause detection
 - Journey completion detection
 - Home-zone recognition
 - Journey timeout handling
 - Maximum Journey Gap handling
 - Journey statistics
 - Journey energy balance
-- Journey charging cost aggregation
+- Journey charging-cost aggregation
 - Average charging price calculation
 - Journey rebuild and recovery
 
-A Journey may contain multiple trips and charging sessions, providing a complete view of a driving session.
+Journeys never mix records from different `vehicle_id` values.
 
 ---
 
 ## Charging Location Resolver
 
-The Charging Location Resolver determines where a charging session occurred.
+The Charging Location Resolver enriches charging sessions with known location
+information.
 
-The resolver uses the following priority:
+The effective resolution chain is:
 
-```
-FordPass
-
-↓
-
-User Charging Locations
-
-↓
-
-OpenStreetMap Database
-
-↓
-
-Reverse Geocoding
+```text
+Vehicle / Last Charge charging information
+                    ↓
+       User charging locations
+                    ↓
+       OpenStreetMap database
+                    ↓
+       Address / reverse-geocoding fallback
 ```
 
-This priority allows FordPass information to be used whenever available while still providing reliable fallback methods.
+User-defined charging locations can override OSM matches. Unresolved charging
+locations can be retained for later manual assignment.
 
 ---
 
 ## Storage Manager
 
-The Storage Manager provides a backend-independent interface for persistent local storage.
+Ford Triplog 2.5 uses SQLite as the sole productive Triplog datastore.
 
-Ford Triplog 2.1 introduced JSON and SQLite as selectable local read backends. Ford Triplog 2.2 continues this parallel-storage transition: compatible data is written to both formats. JSON remains the default read backend after an upgrade; SQLite can be enabled explicitly in Ford Triplog settings.
+The JSON/SQLite transition from 2.1/2.2 was completed in 2.3. Legacy JSON data
+is retained only as a migration/import source where applicable.
 
-Responsibilities:
+Responsibilities include:
 
-- Save and load trips, charging sessions and Journeys
-- Save and load route history
+- Save and load Trips
+- Save and load charging sessions
+- Save and load Journeys
+- Save and load Routes
+- Save current/last state
 - Save statistics and diagnostics
+- Save vehicle identity
 - Save charging and pause metadata
-- Save receipts and user receipt parser profiles
-- Link receipts to charging sessions and Journey pauses
 - Save user-defined and pending charging locations
-- Backend-neutral archive access for CSV export
-- Consistent deletion and rebuild of invalid charging records
-- Data migration and mirroring
-- Recovery
+- Save user-defined Journey places
+- Link receipts to charging sessions and Journey pauses
+- Backend-neutral CSV export
+- Maintenance and rebuild operations
+- Migration and recovery
 
-Backend-neutral archive access allows statistics and Journey rebuild operations to use the selected read backend without depending on JSON archive files.
+Most operational records are scoped by `vehicle_id`.
+
+Home charging tariff periods are stored centrally in SQLite so the same tariff
+table does not need to be duplicated across vehicle ConfigEntries.
+
+Receipt files themselves remain on the Home Assistant filesystem; their
+metadata and record links are stored by Ford Triplog.
 
 ---
 
-
 ## Receipt Management
 
-Receipt management stores documents locally and links their metadata to
-the corresponding Ford Triplog record.
+Receipt management stores documents locally and links their metadata to the
+corresponding Ford Triplog record.
 
 Receipts can be associated with:
 
@@ -202,62 +346,53 @@ Receipts can be associated with:
 
 Multiple receipts can be linked to the same charging session or pause.
 
-Charging receipts can optionally use OCR and parser profiles for
-automatic charging-data extraction. Pause receipts are stored and linked
-without requiring OCR.
+Charging receipts can optionally use OCR and parser profiles for automatic
+billing-data extraction. Pause receipts do not require OCR.
 
-Receipt files remain local to Home Assistant. Dashboard access uses
-authenticated signed Home Assistant URLs instead of exposing local
-filesystem paths.
+When billing information is applied from a charging receipt, billed values
+remain the preferred source for charging-cost calculations.
 
-Journey History exposes pause receipt information for the selected
-History date so dedicated dashboard cards can display the pause context
-and open its associated documents.
+Dashboard access uses authenticated Home Assistant URLs instead of exposing
+local filesystem paths.
 
 ---
 
 ## Export
 
-Ford Triplog 2.2 provides backend-neutral CSV export for the main
-historical data sets.
+Ford Triplog can export stored history through the Home Assistant options flow.
 
 Supported exports include:
 
 - Trips
 - Journeys
 - Charging sessions
+- Monthly driving statistics
+- Monthly charging statistics
 
-The export layer reads records through the Storage Manager and converts
-them into practical flattened CSV columns rather than exposing internal
-JSON structures.
-
-Optional date filtering can limit the exported records.
-
-Generated files can be downloaded directly through Home Assistant. Users
-therefore do not need direct access to the Home Assistant VM, container
-or local storage directory.
+Exports can be limited by date where supported and are generated from the local
+SQLite data.
 
 ---
 
 ## Maintenance Operations
 
-Ford Triplog 2.2 includes guarded maintenance operations for stored
-history.
+Ford Triplog includes guarded maintenance operations for stored history.
 
-Invalid or clearly suspicious charging sessions can be selected for
-deletion. Deletion requires explicit confirmation.
+Examples include:
 
-After a charging session is removed, dependent derived data is updated
-consistently:
+- Update or rebuild Journeys
+- Delete selected Journeys while retaining source Trips/charges
+- Delete clearly invalid charging sessions after confirmation
+- Rebuild the latest Route
+- Rebuild raw/failed Routes
+- Rebuild all stored Routes
 
-- Journeys are rebuilt where required
-- Statistics are recalculated
-- The stored last charging session is refreshed when required
-- Existing receipt files are preserved instead of being deleted
-  implicitly
+Maintenance runs in the selected vehicle context and does not mix vehicles.
 
-These operations use the Storage Manager so JSON and SQLite remain
-consistent during the 2.2 parallel-storage phase.
+Journey rebuild uses a central non-queuing guard so multiple rebuild operations
+cannot run over one another.
+
+Raw GPS route points remain preserved when OSRM geometry is rebuilt.
 
 ---
 
@@ -265,292 +400,199 @@ consistent during the 2.2 parallel-storage phase.
 
 ## Trip Recording
 
-```
-Ignition ON
-
-↓
-
-Vehicle starts moving
-
-↓
-
-Trip starts
-
-↓
-
-Vehicle position updates
-
-↓
-
-Distance calculated
-
-↓
-
-Statistics updated
-
-↓
-
-Trip finished
-
-↓
-
-Trip stored
+```text
+Ignition / vehicle state changes
+              ↓
+        Trip starts
+              ↓
+   Vehicle data monitored
+              ↓
+ Route Tracker records optional
+      auxiliary GPS points
+              ↓
+       Smart Trip logic
+              ↓
+ Vehicle/route GPS validated
+              ↓
+         Trip finishes
+              ↓
+ SQLite record + vehicle_id
+              ↓
+ Journey/statistics refresh
 ```
 
 ---
 
 ## Charging Recording
 
-```
+```text
 Charging detected
-
-↓
-
-Charging starts
-
-↓
-
-SOC monitored
-
-↓
-
-Charging ends
-
-↓
-
-Energy calculated
-
-↓
-
-Charging location resolved
-
-↓
-
-Charging stored
+       ↓
+Session starts
+       ↓
+SOC / energy monitored
+       ↓
+Charging may pause / complete
+       ↓
+Physical plug still connected?
+   │                 │
+  Yes               No / unsupported
+   │                 │
+Resume may stay       Existing lifecycle /
+in same session       disconnect ends session
+       └──────────────┬──────────────┘
+                      ↓
+       Location / cost reconciliation
+                      ↓
+        SQLite record + vehicle_id
 ```
 
 ---
 
+## Vehicle Context Switching
 
-## Journey Recording
-
-```
-Trip starts
-
-↓
-
-Journey created
-
-↓
-
-Trips added
-
-↓
-
-Charging sessions added
-
-↓
-
-Vehicle returns home
-or timeout expires
-
-↓
-
-Journey completed
-
-↓
-
-Journey stored
-```
-
----
-
-# Charging Location Resolution
-
-```
-FordPass Location
-        │
-        ▼
-Available?
-
-Yes ─────────► Use FordPass
-
-No
-
-↓
-
-User Charging Locations
-
-↓
-
-Match?
-
-Yes ─────────► Use User Location
-
-No
-
-↓
-
-OSM Database
-
-↓
-
-Match?
-
-Yes ─────────► Use OSM
-
-No
-
-↓
-
-Reverse Geocoding
+```text
+Vehicle selector changed
+          ↓
+selected_vehicle_id updated
+          ↓
+Shared runtime proxies resolve
+the selected vehicle
+          ↓
+History / Last Trip / Last Charge /
+Journey / Route / statistics refresh
 ```
 
 ---
 
 # Local Storage
 
-Ford Triplog stores its persistent data locally inside Home Assistant.
+Ford Triplog stores its persistent history locally inside Home Assistant.
 
-Version 2.1 introduced a local SQLite database alongside the existing JSON storage. Version 2.2 continues the parallel JSON/SQLite validation phase.
+Typical SQLite-backed data includes:
 
-Typical data includes:
-
-- Journeys
+- Vehicles and identity
 - Trips
 - Charging sessions
+- Journeys
 - GPS routes
+- Current/last caches
 - Statistics and diagnostics
 - Charging locations
+- Journey places
 - Charging and pause metadata
-- Charging and pause receipts
-- Receipt OCR/parser state
-- User-created receipt parser profiles
-- CSV export files
-- OpenStreetMap databases
-- Configuration
+- Receipt metadata and parser state
+- Global home charging tariff periods
+- Migration state
 
-## Storage Backends
+Additional local files include:
 
-JSON remains the default read backend after upgrading to 2.1. Existing users are not switched automatically to SQLite.
+- Receipt documents
+- Generated CSV exports
+- OpenStreetMap charging databases
 
-Users who want SQLite reads can enable the backend explicitly in Ford Triplog settings. Changing the backend reloads the integration.
-
-During the 2.1/2.2 migration period:
-
-- Compatible data is written to JSON and SQLite
-- Existing data is migrated or mirrored into SQLite
-- Historical Trips, Charges, Journeys and Routes can be read from SQLite
-- Journey rebuild uses the selected backend
-- Statistics are recalculated from the selected backend after setup or reload
-- JSON remains available as a compatibility and fallback path
-
-The SQLite database is local to Home Assistant. No external database server is required.
+No external database server is required.
 
 ---
 
 # Recovery
 
-Recovery has been designed to survive unexpected situations such as:
+Recovery is designed to survive situations such as:
 
 - Home Assistant restart
+- Integration reload
 - System reboot
 - Power failure
-- FordPass temporary outage
+- Temporary vehicle-source outage
 
-When Home Assistant starts again, Ford Triplog restores its previous state and continues recording without losing historical data.
+Recovery includes vehicle-scoped restoration of active state and route
+snapshots where available.
 
-Recovery also includes:
+The source-health monitor distinguishes:
 
-- Active Journey restoration
-- Journey reconstruction after restart
+- Healthy
+- Degraded
+- Grace period
+- Unavailable
+- Unknown
+
+A complete live-source outage is only declared after the configured 20-minute
+grace behaviour used by Ford Triplog 2.4/2.5.
 
 ---
 
 # Smart Trip
 
-Smart Trip prevents unnecessary fragmentation of journeys.
+Smart Trip prevents short stops from unnecessarily fragmenting Trip history.
 
 Example:
 
-```
+```text
 Home
-
-↓
-
-Coffee Stop (2 min)
-
-↓
-
-Supermarket (4 min)
-
-↓
-
+  ↓
+Coffee stop
+  ↓
+Supermarket
+  ↓
 Office
 ```
 
-Instead of creating multiple short trips, Smart Trip merges short stops into a single trip.
+Short ignition-off periods can be held as a paused Trip and resumed when the
+vehicle continues within the configured timeout.
 
-That trip is then automatically assigned to a Journey together with any subsequent trips and charging sessions.
-
-The timeout is fully configurable.
+The resulting Trip is then assigned to the vehicle's Journey.
 
 ---
 
 # Performance
 
-Ford Triplog has been designed for minimal system load.
+Ford Triplog is designed for low runtime overhead.
 
-Characteristics:
+Characteristics include:
 
-- Event-driven architecture
-- No continuous polling
-- Local JSON and SQLite storage
-- Backend-neutral historical reads and exports
-- SQL-backed queries and views for frequently used statistics
-- Fast geohash-based charging lookup
-- Minimal memory usage
-- Native Home Assistant coordinator pattern
-
-Under normal operation, CPU and memory usage remain very low.
+- Event-driven Home Assistant entity listeners
+- No independent high-frequency polling loop
+- SQLite-only productive storage
+- Vehicle-scoped SQL queries
+- Cached location data where appropriate
+- Coalesced coordinator updates
+- Push-driven Home Assistant sensors
+- Route snapshots instead of a SQLite write for every GPS point
 
 ---
 
-# Privacy
+# Privacy and External Communication
 
-All processing happens locally.
+Trip, charging, Journey, Route, statistics and cost data is stored locally in
+Home Assistant. Ford Triplog does not use a separate Triplog cloud backend.
 
-Nothing is uploaded except the communication already performed by the FordPass integration itself.
+External communication can still occur when a configured feature requires it:
 
-Ford Triplog never transmits:
+- The selected vehicle integration communicates with its vehicle/backend.
+- Reverse geocoding can send coordinates to OpenStreetMap Nominatim.
+- OpenStreetMap charging databases can be downloaded on request.
+- OSRM receives route coordinates when the user enables an OSRM service.
+- OCR receives receipt content when the user enables and runs an OCR service.
 
-- Trip history
-- Charging history
-- Statistics
-- Charging locations
-- User-defined charging locations
-- Receipt documents
-- CSV exports
-
-Receipt dashboard links are authenticated through Home Assistant. Export
-files are generated locally and are only downloaded when explicitly
-requested by the user.
-
-This makes the integration suitable for users who prefer complete local control over their driving history.
+Receipt files and generated CSV exports remain local unless the user explicitly
+uses a configured external service or downloads them.
 
 ---
 
 # Extensibility
 
-The architecture has been designed to support future features without major structural changes.
+The 2.5 architecture is prepared for further vehicle-aware features without
+changing the established storage model.
 
-Planned extensions include:
+Planned 2.6 development areas include:
 
-- SQLite-only production storage after completion of the parallel-storage transition
-- Multi-vehicle support
-- Maintenance tracking
-- Long-term history improvements
-- Further SQL-based statistics and aggregation
-- Additional route validation and GPS plausibility checks
+- Vehicle operating-cost records
+- Monthly and yearly total cost
+- Cost per kilometre
+- Vehicle-specific recurring and one-time costs
+- Charging-cost integration using stored effective/billed costs
+- Receipt support for vehicle costs
+- Additional maintenance tracking and reporting
 
-Because the core components are separated into dedicated managers, future functionality can be added with minimal impact on the existing architecture.
+Longer-term research may further separate the Triplog core from
+manufacturer-specific vehicle adapters.
