@@ -51,7 +51,8 @@
           "user_charging_sites": "Custom charging locations",
           "charging_site_database": "OpenStreetMap charging locations",
           "export": "Export data",
-          "user_places": "Custom places"
+          "user_places": "Custom places",
+          "financing_management": "Vehicle financing"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -63,7 +64,8 @@
           "user_charging_sites": "View and manage custom charging locations.",
           "charging_site_database": "Download or import the charging location database.",
           "export": "Export stored Ford Triplog data as a CSV file.",
-          "user_places": "Manage places for automatic pause assignment."
+          "user_places": "Manage places for automatic pause assignment.",
+          "financing_management": "Manage leasing, financing and vehicle purchase costs."
         }
       },
       "settings": {
@@ -985,6 +987,83 @@
           "home_tariff_price_per_kwh": "Energy price per kWh for this period.",
           "home_tariff_action": "Save, delete or return without changes."
         }
+      },
+      "financing_management": {
+        "title": "Vehicle financing",
+        "description": "Vehicle: {vehicle_name}\\n\\nManage financing contracts. Real payments and TCO are calculated separately.",
+        "menu_options": {
+          "financing_add_leasing": "Add leasing contract",
+          "financing_edit": "Edit contract",
+          "financing_delete": "Delete contract",
+          "init": "Back to main menu"
+        }
+      },
+      "financing_add_leasing": {
+        "title": "Add leasing contract",
+        "description": "Real payments follow the contract; TCO spreads the total payments evenly across the contract term.",
+        "data": {
+          "provider": "Provider",
+          "contract_number": "Contract number",
+          "start_date": "Contract start",
+          "end_date": "Contract end (optional, YYYY-MM-DD)",
+          "duration_months": "Duration in months",
+          "purchase_price": "Cash purchase price",
+          "first_payment": "First leasing payment / special payment",
+          "regular_payment": "Regular leasing payment",
+          "number_of_payments": "Number of leasing payments",
+          "residual_value": "Residual value",
+          "interest_rate": "Nominal interest rate %",
+          "annual_mileage": "Annual mileage km",
+          "excess_km_rate": "Excess mileage rate",
+          "currency": "Currency",
+          "notes": "Notes",
+          "financing_id": "Contract"
+        },
+        "data_description": {
+          "first_payment": "Actual first payment, e.g. CHF 5,000.",
+          "regular_payment": "Regular payment from the second payment onward.",
+          "residual_value": "Shown separately and not automatically counted as TCO cost."
+        }
+      },
+      "financing_edit_leasing": {
+        "title": "Edit leasing contract",
+        "description": "Real payments follow the contract; TCO spreads the total payments evenly across the contract term.",
+        "data": {
+          "provider": "Provider",
+          "contract_number": "Contract number",
+          "start_date": "Contract start",
+          "end_date": "Contract end (optional, YYYY-MM-DD)",
+          "duration_months": "Duration in months",
+          "purchase_price": "Cash purchase price",
+          "first_payment": "First leasing payment / special payment",
+          "regular_payment": "Regular leasing payment",
+          "number_of_payments": "Number of leasing payments",
+          "residual_value": "Residual value",
+          "interest_rate": "Nominal interest rate %",
+          "annual_mileage": "Annual mileage km",
+          "excess_km_rate": "Excess mileage rate",
+          "currency": "Currency",
+          "notes": "Notes",
+          "financing_id": "Contract"
+        },
+        "data_description": {
+          "first_payment": "Actual first payment, e.g. CHF 5,000.",
+          "regular_payment": "Regular payment from the second payment onward.",
+          "residual_value": "Shown separately and not automatically counted as TCO cost."
+        }
+      },
+      "financing_edit": {
+        "title": "Select contract",
+        "data": {
+          "financing_id": "Contract"
+        }
+      },
+      "financing_delete": {
+        "title": "Delete contract",
+        "description": "Select the contract to delete.",
+        "data": {
+          "financing_id": "Contract"
+        }
       }
     },
     "error": {
@@ -1048,7 +1127,11 @@
       "invalid_tariff_period": "Enter a valid year, From/To date and tariff.",
       "invalid_tariff_year": "Enter a year between 2000 and 2100.",
       "invalid_tariff_range": "The end of the tariff period must not be before the start.",
-      "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year."
+      "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year.",
+      "invalid_financing_data": "Invalid financing contract data."
+    },
+    "abort": {
+      "no_financing_contracts": "No financing contracts exist."
     }
   },
   "entity": {

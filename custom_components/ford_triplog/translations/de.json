@@ -51,7 +51,8 @@
           "user_charging_sites": "Eigene Ladeorte",
           "charging_site_database": "OpenStreetMap-Ladeorte",
           "export": "Daten exportieren",
-          "user_places": "Benutzerdefinierte Orte"
+          "user_places": "Benutzerdefinierte Orte",
+          "financing_management": "Fahrzeugfinanzierung"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -63,7 +64,8 @@
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
           "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren.",
-          "user_places": "Orte für automatische Pausen-Zuordnung verwalten."
+          "user_places": "Orte für automatische Pausen-Zuordnung verwalten.",
+          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten."
         }
       },
       "settings": {
@@ -998,6 +1000,83 @@
           "home_tariff_price_per_kwh": "Energiepreis pro kWh für diesen Zeitraum.",
           "home_tariff_action": "Speichern, löschen oder ohne Änderung zurückkehren."
         }
+      },
+      "financing_management": {
+        "title": "Fahrzeugfinanzierung",
+        "description": "Fahrzeug: {vehicle_name}\\n\\nFinanzierungsverträge verwalten. Reale Zahlungen und TCO werden getrennt berechnet.",
+        "menu_options": {
+          "financing_add_leasing": "Leasingvertrag hinzufügen",
+          "financing_edit": "Vertrag bearbeiten",
+          "financing_delete": "Vertrag löschen",
+          "init": "Zurück zum Hauptmenü"
+        }
+      },
+      "financing_add_leasing": {
+        "title": "Leasingvertrag hinzufügen",
+        "description": "Reale Zahlungen werden vertragsgetreu erfasst; für TCO wird der Gesamtbetrag gleichmässig über die Laufzeit verteilt.",
+        "data": {
+          "provider": "Leasinggeber",
+          "contract_number": "Vertragsnummer",
+          "start_date": "Vertragsbeginn",
+          "end_date": "Vertragsende (optional, JJJJ-MM-TT)",
+          "duration_months": "Laufzeit in Monaten",
+          "purchase_price": "Barkaufpreis",
+          "first_payment": "1. Leasingrate / Sonderzahlung",
+          "regular_payment": "Reguläre Leasingrate",
+          "number_of_payments": "Anzahl Leasingraten",
+          "residual_value": "Restwert",
+          "interest_rate": "Nominalzins in %",
+          "annual_mileage": "Jahresfahrleistung km",
+          "excess_km_rate": "Mehrkilometer-Preis",
+          "currency": "Währung",
+          "notes": "Bemerkungen",
+          "financing_id": "Vertrag"
+        },
+        "data_description": {
+          "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
+          "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet."
+        }
+      },
+      "financing_edit_leasing": {
+        "title": "Leasingvertrag bearbeiten",
+        "description": "Reale Zahlungen werden vertragsgetreu erfasst; für TCO wird der Gesamtbetrag gleichmässig über die Laufzeit verteilt.",
+        "data": {
+          "provider": "Leasinggeber",
+          "contract_number": "Vertragsnummer",
+          "start_date": "Vertragsbeginn",
+          "end_date": "Vertragsende (optional, JJJJ-MM-TT)",
+          "duration_months": "Laufzeit in Monaten",
+          "purchase_price": "Barkaufpreis",
+          "first_payment": "1. Leasingrate / Sonderzahlung",
+          "regular_payment": "Reguläre Leasingrate",
+          "number_of_payments": "Anzahl Leasingraten",
+          "residual_value": "Restwert",
+          "interest_rate": "Nominalzins in %",
+          "annual_mileage": "Jahresfahrleistung km",
+          "excess_km_rate": "Mehrkilometer-Preis",
+          "currency": "Währung",
+          "notes": "Bemerkungen",
+          "financing_id": "Vertrag"
+        },
+        "data_description": {
+          "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
+          "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet."
+        }
+      },
+      "financing_edit": {
+        "title": "Vertrag auswählen",
+        "data": {
+          "financing_id": "Vertrag"
+        }
+      },
+      "financing_delete": {
+        "title": "Vertrag löschen",
+        "description": "Den zu löschenden Vertrag auswählen.",
+        "data": {
+          "financing_id": "Vertrag"
+        }
       }
     },
     "error": {
@@ -1062,7 +1141,11 @@
       "invalid_tariff_period": "Gib ein gültiges Jahr, Von-/Bis-Datum und einen Tarif ein.",
       "invalid_tariff_year": "Gib ein Jahr zwischen 2000 und 2100 ein.",
       "invalid_tariff_range": "Das Ende des Tarifzeitraums darf nicht vor dem Beginn liegen.",
-      "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr."
+      "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr.",
+      "invalid_financing_data": "Ungültige Vertragsdaten."
+    },
+    "abort": {
+      "no_financing_contracts": "Keine Finanzierungsverträge vorhanden."
     }
   },
   "entity": {

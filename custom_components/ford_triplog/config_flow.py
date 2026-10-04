@@ -69,6 +69,7 @@ from .export import FordTriplogExporter
 from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
+from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
 
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
@@ -124,6 +125,7 @@ from .const import (
     DEFAULT_JOURNEY_MAX_GAP_HOURS,
     DOMAIN,
     NAME,
+    STORAGE_DIR,
     VERSION as FORD_TRIPLOG_VERSION,
 )
 
@@ -623,6 +625,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._home_tariff_translations: dict[str, str] | None = None
         self._home_tariff_storage: FordTriplogHomeTariffStorage | None = None
         self._home_tariff_periods_cache: list[dict[str, Any]] | None = None
+        self._vehicle_financing_storage: FordTriplogVehicleFinancingStorage | None = None
+        self._selected_financing_id: int | None = None
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -788,6 +792,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "route_management",
                 "pause_management",
                 "charge_management",
+                "financing_management",
                 "export",
                 "user_places",
                 "user_charging_sites",
@@ -7011,6 +7016,166 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors=errors,
         )
 
+
+    async def _async_financing_storage(self) -> FordTriplogVehicleFinancingStorage:
+        """Return financing storage for the vehicle locked to this options flow."""
+        vehicle_id = self._ensure_vehicle_context_id()
+        if self._vehicle_financing_storage is None:
+            base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+            self._vehicle_financing_storage = FordTriplogVehicleFinancingStorage(
+                self.hass, base_path, vehicle_id
+            )
+            await self._vehicle_financing_storage.async_setup()
+        return self._vehicle_financing_storage
+
+    async def async_step_financing_management(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage vehicle financing contracts."""
+        return self.async_show_menu(
+            step_id="financing_management",
+            menu_options=[
+                "financing_add_leasing",
+                "financing_edit",
+                "financing_delete",
+                "init",
+            ],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_financing_add_leasing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a leasing contract."""
+        self._selected_financing_id = None
+        return await self._async_step_leasing_form(user_input)
+
+    async def async_step_financing_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Select a financing contract to edit."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            self._selected_financing_id = int(user_input["financing_id"])
+            return await self._async_step_leasing_form(None)
+        options = [
+            selector.SelectOptionDict(
+                value=str(item["financing_id"]),
+                label=f"{item['financing_type'].title()} · {item['start_date']} · {item.get('provider') or '-'}",
+            )
+            for item in contracts
+        ]
+        return self.async_show_form(
+            step_id="financing_edit",
+            data_schema=vol.Schema({
+                vol.Required("financing_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options)
+                )
+            }),
+        )
+
+    async def async_step_financing_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delete a financing contract after explicit selection."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            financing_id = int(user_input["financing_id"])
+            db_path = storage.database.db_path
+            vehicle_id = storage.database.vehicle_id
+            def _delete() -> None:
+                import sqlite3
+                with sqlite3.connect(db_path) as db:
+                    db.execute(
+                        "DELETE FROM vehicle_financing WHERE vehicle_id=? AND financing_id=?",
+                        (vehicle_id, financing_id),
+                    )
+                    db.commit()
+            await self.hass.async_add_executor_job(_delete)
+            return await self.async_step_financing_management()
+        options = [
+            selector.SelectOptionDict(
+                value=str(item["financing_id"]),
+                label=f"{item['financing_type'].title()} · {item['start_date']} · {item.get('provider') or '-'}",
+            )
+            for item in contracts
+        ]
+        return self.async_show_form(
+            step_id="financing_delete",
+            data_schema=vol.Schema({
+                vol.Required("financing_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options)
+                )
+            }),
+        )
+
+    async def _async_step_leasing_form(
+        self, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        """Create or edit one leasing contract."""
+        storage = await self._async_financing_storage()
+        selected: dict[str, Any] | None = None
+        if self._selected_financing_id is not None:
+            selected = next(
+                (x for x in await storage.async_load()
+                 if int(x["financing_id"]) == self._selected_financing_id),
+                None,
+            )
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                data["financing_type"] = "leasing"
+                if self._selected_financing_id is not None:
+                    data["financing_id"] = self._selected_financing_id
+                # Empty optional text/number fields become NULL in SQLite.
+                for key in ("provider", "contract_number", "end_date", "notes"):
+                    if not str(data.get(key) or "").strip():
+                        data[key] = None
+                for key in ("purchase_price", "residual_value", "interest_rate", "annual_mileage", "excess_km_rate"):
+                    if data.get(key) in ("", None):
+                        data[key] = None
+                saved = await storage.async_save(data)
+                calculate_leasing_summary(saved)
+            except (ValueError, TypeError, KeyError):
+                errors["base"] = "invalid_financing_data"
+            else:
+                self._selected_financing_id = None
+                return await self.async_step_financing_management()
+
+        def d(key: str, fallback: Any = "") -> Any:
+            return selected.get(key, fallback) if selected else fallback
+
+        schema = vol.Schema({
+            vol.Optional("provider", default=d("provider")): selector.TextSelector(),
+            vol.Optional("contract_number", default=d("contract_number")): selector.TextSelector(),
+            vol.Required("start_date", default=d("start_date", dt_util.now().date().isoformat())): selector.DateSelector(),
+            vol.Optional("end_date", default=d("end_date")): selector.TextSelector(),
+            vol.Required("duration_months", default=d("duration_months", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("purchase_price", default=d("purchase_price")): selector.TextSelector(),
+            vol.Required("first_payment", default=d("first_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Required("regular_payment", default=d("regular_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Required("number_of_payments", default=d("number_of_payments", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("residual_value", default=d("residual_value")): selector.TextSelector(),
+            vol.Optional("interest_rate", default=d("interest_rate")): selector.TextSelector(),
+            vol.Optional("annual_mileage", default=d("annual_mileage")): selector.TextSelector(),
+            vol.Optional("excess_km_rate", default=d("excess_km_rate")): selector.TextSelector(),
+            vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
+            vol.Optional("notes", default=d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+        })
+        return self.async_show_form(step_id="financing_add_leasing" if selected is None else "financing_edit_leasing", data_schema=schema, errors=errors)
+
+    async def async_step_financing_edit_leasing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the edit leasing form submission."""
+        return await self._async_step_leasing_form(user_input)
 
     async def async_step_general_settings(
         self,
