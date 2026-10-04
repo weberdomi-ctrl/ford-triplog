@@ -579,13 +579,14 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
 
 
 class FordTriplogCostOverviewTCOSensor(SensorEntity):
-    """Current-month TCO overview across all cost groups."""
+    """Current-month TCO overview with rolling 12-month and yearly history."""
     _attr_has_entity_name = True
     _attr_translation_key = "cost_overview_tco"
     _attr_unique_id = "ford_triplog_cost_overview_tco"
     _attr_icon = "mdi:calculator-variant"
     _attr_native_unit_of_measurement = "CHF/month"
     _attr_should_poll = True
+    _unrecorded_attributes = frozenset({"monthly_breakdown", "yearly_summary"})
 
     def __init__(self, hass: HomeAssistant) -> None:
         self._value=None; self._attrs={}
@@ -595,10 +596,18 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
         self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
         self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
         self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_CHARGE_DATA_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_LAST_TRIP_UPDATED, self._changed))
         await self.async_update()
+
     @callback
     def _changed(self,*_args): self.hass.async_create_task(self._refresh())
     async def _refresh(self): await self.async_update(); self.async_write_ha_state()
+
+    @staticmethod
+    def _month_key_offset(now: datetime, offset: int) -> str:
+        idx=now.year*12+(now.month-1)+offset
+        y,m0=divmod(idx,12)
+        return f"{y:04d}-{m0+1:02d}"
 
     async def async_update(self) -> None:
         from pathlib import Path
@@ -608,70 +617,113 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
         from .vehicle_insurance import FordTriplogVehicleInsuranceStorage
         from .vehicle_tax import FordTriplogVehicleTaxStorage
         from .vehicle_expense import FordTriplogVehicleExpenseStorage, allocated_amount_for_period
+
         vid=get_selected_vehicle_id(self.hass, fallback=1)
         if vid is None: self._value=None; self._attrs={}; return
         base=Path(self.hass.config.path('.storage', STORAGE_DIR)); now=dt_util.now()
-        ps=date(now.year,now.month,1); pe=date(now.year,now.month,monthrange(now.year,now.month)[1])
-        financing=0.0
-        for r in await FordTriplogVehicleFinancingStorage(self.hass,base,vid).async_load():
-            try: financing += leasing_tco_for_month(r,now.year,now.month)
-            except (ValueError,TypeError,KeyError): pass
-        today=now.date().isoformat()
-        insurance=0.0
+
+        financing_rows=await FordTriplogVehicleFinancingStorage(self.hass,base,vid).async_load()
         insurance_rows=await FordTriplogVehicleInsuranceStorage(self.hass,base,vid).async_load()
-        active_ins=[r for r in insurance_rows if str(r.get('valid_from') or '') <= today <= str(r.get('valid_to') or '')]
-        if active_ins:
-            r=max(active_ins,key=lambda x:(str(x.get('valid_from') or ''),int(x.get('insurance_id') or 0)))
-            try: insurance=float(r.get('period_premium') or 0)/12.0
-            except (TypeError,ValueError): pass
-        road_tax=0.0
         tax_rows=await FordTriplogVehicleTaxStorage(self.hass,base,vid).async_load()
-        active_tax=[r for r in tax_rows if str(r.get('valid_from') or '') <= today <= str(r.get('valid_to') or '')]
-        if active_tax:
-            r=max(active_tax,key=lambda x:(str(x.get('valid_from') or ''),int(x.get('tax_id') or 0)))
-            try: road_tax=float(r.get('annual_tax') or 0)/12.0
-            except (TypeError,ValueError): pass
-        variable={'maintenance':0.0,'toll':0.0,'other':0.0}
-        exp_store=FordTriplogVehicleExpenseStorage(self.hass,base,vid)
-        for r in await exp_store.async_load():
-            g=str(r.get('expense_group') or '')
-            if g in variable:
-                try: variable[g]+=allocated_amount_for_period(r,ps,pe)
-                except (ValueError,TypeError): pass
-        charging=0.0
+        expense_rows=await FordTriplogVehicleExpenseStorage(self.hass,base,vid).async_load()
+
         registry=er.async_get(self.hass)
+        charging_monthly={}; charging_yearly={}
         eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_charging_monthly_statistics')
         if eid:
             st=self.hass.states.get(eid)
             if st:
-                try: charging=float(st.attributes.get('total_cost_month') or 0)
-                except (TypeError,ValueError): pass
-        # Distance is taken from the existing monthly driving statistics sensor so
-        # cost/km uses exactly the same trip basis as the dashboard statistics.
-        distance_km=0.0
+                mb=st.attributes.get('monthly_breakdown') or {}
+                ys=st.attributes.get('yearly_summary') or {}
+                charging_monthly={str(k):float((v or {}).get('total_cost') or 0) for k,v in mb.items() if isinstance(v,dict)}
+                charging_yearly={str(k):float((v or {}).get('total_cost') or 0) for k,v in ys.items() if isinstance(v,dict)}
+                if st.attributes.get('month'):
+                    charging_monthly[str(st.attributes['month'])]=float(st.attributes.get('total_cost_month') or 0)
+
+        distance_monthly={}; distance_yearly={}
         driving_eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_driving_monthly_statistics')
         if driving_eid:
-            driving_state=self.hass.states.get(driving_eid)
-            if driving_state:
-                try:
-                    distance_km=float(driving_state.attributes.get('distance_month_km') or driving_state.state or 0)
-                except (TypeError,ValueError):
-                    distance_km=0.0
+            st=self.hass.states.get(driving_eid)
+            if st:
+                mb=st.attributes.get('monthly_breakdown') or {}
+                ys=st.attributes.get('yearly_summary') or {}
+                distance_monthly={str(k):float((v or {}).get('distance_km') or 0) for k,v in mb.items() if isinstance(v,dict)}
+                distance_yearly={str(k):float((v or {}).get('distance_km') or 0) for k,v in ys.items() if isinstance(v,dict)}
+                if st.attributes.get('month'):
+                    distance_monthly[str(st.attributes['month'])]=float(st.attributes.get('distance_month_km') or st.state or 0)
 
-        fixed=financing+insurance+road_tax
-        variable_total=sum(variable.values())+charging
-        total=fixed+variable_total
-        fixed_per_km=(fixed/distance_km) if distance_km > 0 else None
-        total_per_km=(total/distance_km) if distance_km > 0 else None
-        self._value=round(total,2)
-        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF',
-            'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
-            'fixed_costs':round(fixed,2),'maintenance_repairs':round(variable['maintenance'],2),
-            'tolls_vignettes':round(variable['toll'],2),'other_costs':round(variable['other'],2),
-            'charging':round(charging,2),'variable_costs':round(variable_total,2),
-            'total_costs':round(total,2),'distance_km':round(distance_km,1),
-            'fixed_cost_per_km':round(fixed_per_km,4) if fixed_per_km is not None else None,
-            'total_cost_per_km':round(total_per_km,4) if total_per_km is not None else None}
+        def active_row(rows, on_date, id_key):
+            iso=on_date.isoformat()
+            active=[r for r in rows if str(r.get('valid_from') or '') <= iso <= str(r.get('valid_to') or '')]
+            return max(active,key=lambda x:(str(x.get('valid_from') or ''),int(x.get(id_key) or 0))) if active else None
+
+        def calc_period(ps,pe,charging,distance):
+            financing=0.0
+            # Financing is monthly TCO. Sum every calendar month touched by period.
+            cursor=date(ps.year,ps.month,1)
+            while cursor <= pe:
+                try:
+                    for r in financing_rows: financing += leasing_tco_for_month(r,cursor.year,cursor.month)
+                except (ValueError,TypeError,KeyError): pass
+                cursor=date(cursor.year+1,1,1) if cursor.month==12 else date(cursor.year,cursor.month+1,1)
+
+            insurance=0.0; road_tax=0.0
+            cursor=date(ps.year,ps.month,1)
+            while cursor <= pe:
+                mid=date(cursor.year,cursor.month,min(15,monthrange(cursor.year,cursor.month)[1]))
+                r=active_row(insurance_rows,mid,'insurance_id')
+                if r:
+                    try: insurance += float(r.get('period_premium') or 0)/12.0
+                    except (TypeError,ValueError): pass
+                r=active_row(tax_rows,mid,'tax_id')
+                if r:
+                    try: road_tax += float(r.get('annual_tax') or 0)/12.0
+                    except (TypeError,ValueError): pass
+                cursor=date(cursor.year+1,1,1) if cursor.month==12 else date(cursor.year,cursor.month+1,1)
+
+            variable={'maintenance':0.0,'toll':0.0,'other':0.0}
+            for r in expense_rows:
+                g=str(r.get('expense_group') or '')
+                if g in variable:
+                    try: variable[g]+=allocated_amount_for_period(r,ps,pe)
+                    except (ValueError,TypeError): pass
+            fixed=financing+insurance+road_tax
+            variable_total=sum(variable.values())+charging
+            total=fixed+variable_total
+            return {
+                'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
+                'fixed_costs':round(fixed,2),'maintenance_repairs':round(variable['maintenance'],2),
+                'tolls_vignettes':round(variable['toll'],2),'other_costs':round(variable['other'],2),
+                'charging':round(charging,2),'variable_costs':round(variable_total,2),
+                'total_costs':round(total,2),'distance_km':round(distance,1),
+                'fixed_cost_per_km':round(fixed/distance,4) if distance>0 else None,
+                'total_cost_per_km':round(total/distance,4) if distance>0 else None,
+            }
+
+        month_keys=[self._month_key_offset(now,o) for o in range(-11,1)]
+        monthly=[]
+        for key in month_keys:
+            y,m=map(int,key.split('-')); ps=date(y,m,1); pe=date(y,m,monthrange(y,m)[1])
+            row=calc_period(ps,pe,charging_monthly.get(key,0.0),distance_monthly.get(key,0.0))
+            row={'month':key,**row}; monthly.append(row)
+
+        # Match the existing charging/driving history convention: preceding calendar years.
+        years=sorted({str(now.year-1),str(now.year-2)} | set(charging_yearly) | set(distance_yearly), reverse=True)
+        yearly=[]
+        for ys in years:
+            try: y=int(ys)
+            except ValueError: continue
+            if y>=now.year: continue
+            ps=date(y,1,1); pe=date(y,12,31)
+            row=calc_period(ps,pe,charging_yearly.get(ys,0.0),distance_yearly.get(ys,0.0))
+            yearly.append({'year':ys,**row})
+
+        current=monthly[-1]
+        self._value=current['total_costs']
+        self._attrs={'vehicle_id':vid,'month':current['month'],'currency':'CHF',
+                     **{k:v for k,v in current.items() if k!='month'},
+                     'monthly_breakdown':monthly,'yearly_summary':yearly}
+
     @property
     def native_value(self): return self._value
     @property
