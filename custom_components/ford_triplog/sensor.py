@@ -51,6 +51,7 @@ from .icons import (
 from .const import (
     DOMAIN,
     VERSION,
+    STORAGE_DIR,
     SIGNAL_LAST_JOURNEY_UPDATED,
     SIGNAL_LAST_TRIP_UPDATED,
     SIGNAL_VEHICLE_CONTEXT_UPDATED,
@@ -179,6 +180,7 @@ async def async_setup_entry(
         [
             FordTriplogVehicleSourceStatusSensor(coordinator),
             FordTriplogVehicleDetailsSensor(hass),
+            FordTriplogInsuranceTCOSensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -311,6 +313,102 @@ async def async_setup_entry(
 
 
     )
+
+
+class FordTriplogInsuranceTCOSensor(SensorEntity):
+    """Monthly insurance TCO for the currently selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "insurance_tco"
+    _attr_unique_id = "ford_triplog_insurance_tco"
+    _attr_icon = "mdi:shield-car"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        await self.async_update()
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_insurance import FordTriplogVehicleInsuranceStorage
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+
+        store = FordTriplogVehicleInsuranceStorage(
+            self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
+        )
+        rows = await store.async_load()
+        today = dt_util.now().date().isoformat()
+        active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
+        if not active:
+            self._value = None
+            self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_policy"}
+            return
+
+        policy = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("insurance_id") or 0)))
+        try:
+            annual = float(policy.get("period_premium") or 0)
+        except (TypeError, ValueError):
+            annual = 0.0
+        self._value = round(annual / 12.0, 2)
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "annual_premium": round(annual, 2),
+            "currency": policy.get("currency") or "CHF",
+            "provider": policy.get("provider"),
+            "policy_number": policy.get("policy_number"),
+            "valid_from": policy.get("valid_from"),
+            "valid_to": policy.get("valid_to"),
+            "payment_frequency": policy.get("payment_frequency"),
+            "payment_amount": policy.get("payment_amount"),
+            "first_payment_date": policy.get("first_payment_date"),
+            "notes": policy.get("notes"),
+        }
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
 
 
 class FordTriplogVehicleDetailsSensor(SensorEntity):

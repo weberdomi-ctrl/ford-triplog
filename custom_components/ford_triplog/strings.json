@@ -1483,6 +1483,9 @@
       },
       "vehicle_details": {
         "name": "Vehicle details"
+      },
+      "insurance_tco": {
+        "name": "Insurance TCO"
       }
     },
     "binary_sensor": {
