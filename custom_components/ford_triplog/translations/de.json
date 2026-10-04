@@ -1003,7 +1003,7 @@
       },
       "financing_management": {
         "title": "Fahrzeugfinanzierung",
-        "description": "Fahrzeug: {vehicle_name}\\n\\nFinanzierungsverträge verwalten. Reale Zahlungen und TCO werden getrennt berechnet.",
+        "description": "Fahrzeug: {vehicle_name}. Finanzierungen verwalten. Reale Zahlungen und TCO werden getrennt berechnet.",
         "menu_options": {
           "financing_edit": "Vertrag bearbeiten",
           "financing_delete": "Vertrag löschen",

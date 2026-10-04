@@ -7101,7 +7101,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             "Financing document OCR failed; continuing with manual review"
                         )
                 return await self._async_step_leasing_form(None)
-            except (HomeAssistantError, OSError, ValueError):
+            except ValueError as err:
+                # HA file_upload removes its temporary file when the upload
+                # context is left. A repeated submit can therefore contain the
+                # already-consumed upload id. If the document was imported on
+                # the previous submit, continue with our persistent copy instead
+                # of failing the financing flow.
+                if str(err) == "File does not exist" and self._financing_document:
+                    _LOGGER.debug(
+                        "Financing upload temp file already consumed; using stored document %s",
+                        self._financing_document.get("document_filename"),
+                    )
+                    return await self._async_step_leasing_form(None)
+                _LOGGER.exception("Unable to import financing document")
+                errors["base"] = "financing_document_import_failed"
+            except (HomeAssistantError, OSError):
                 _LOGGER.exception("Unable to import financing document")
                 errors["base"] = "financing_document_import_failed"
 

@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.6.0-dev.2
-Build: 26002
+Version: 2.6.0-dev.4
+Build: 26004
 Changes: Reject detached Route Tracker GPS and keep vehicle GPS authoritative.
 """
 
