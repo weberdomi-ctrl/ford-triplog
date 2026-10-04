@@ -55,6 +55,97 @@ class FordTriplogVehicleIdentity:
         return None
 
 
+_SUPPORTED_PLUG_STATUS_SOURCES = {"fordconnect_query", "fordpass"}
+
+
+def _registry_token(value: Any) -> str:
+    """Return a registry value normalized for capability matching."""
+    return "".join(char for char in str(value or "").lower() if char.isalnum())
+
+
+def _plug_status_candidate_score(entity_entry: Any) -> int:
+    """Return how likely one registry entity is the Ford EV plug sensor."""
+    values = {
+        "entity_id": _registry_token(getattr(entity_entry, "entity_id", None)),
+        "unique_id": _registry_token(getattr(entity_entry, "unique_id", None)),
+        "translation_key": _registry_token(
+            getattr(entity_entry, "translation_key", None)
+        ),
+        "original_name": _registry_token(
+            getattr(entity_entry, "original_name", None)
+        ),
+        "name": _registry_token(getattr(entity_entry, "name", None)),
+    }
+
+    score = 0
+    for key, value in values.items():
+        if not value:
+            continue
+        if value == "elvehplug" or value.endswith("elvehplug"):
+            score = max(score, 120 if key == "translation_key" else 110)
+        elif "xevplugchargerstatus" in value:
+            score = max(score, 105)
+        elif value in {"evplugstatus", "evsteckerstatus"}:
+            score = max(score, 90)
+        elif "plugstatus" in value and ("ev" in value or "veh" in value):
+            score = max(score, 70)
+
+    return score
+
+
+def async_detect_vehicle_plug_entity(
+    hass: HomeAssistant,
+    config: dict[str, Any],
+    identity: FordTriplogVehicleIdentity | None = None,
+) -> str | None:
+    """Auto-detect the optional Ford EV plug-status entity.
+
+    The capability is deliberately limited to Ford Connect/FordPass and is
+    discovered on the same Home Assistant device as the configured vehicle
+    entities. Other vehicle adapters, such as JAC, keep the existing charging
+    lifecycle and do not need an additional configuration field.
+    """
+    resolved_identity = identity or async_detect_vehicle_identity(hass, config)
+    source = str(resolved_identity.source or "").strip().lower()
+    if source not in _SUPPORTED_PLUG_STATUS_SOURCES:
+        return None
+
+    entity_registry = er.async_get(hass)
+
+    device_id = resolved_identity.device_id
+    if not device_id:
+        charging_entity_id = config.get(CONF_CHARGING)
+        charging_entry = (
+            entity_registry.async_get(str(charging_entity_id))
+            if charging_entity_id
+            else None
+        )
+        device_id = getattr(charging_entry, "device_id", None)
+
+    if not device_id:
+        return None
+
+    candidates: list[tuple[int, str]] = []
+    for entity_entry in er.async_entries_for_device(
+        entity_registry,
+        device_id=device_id,
+        include_disabled_entities=False,
+    ):
+        if str(getattr(entity_entry, "platform", "") or "").lower() != source:
+            continue
+        if not str(getattr(entity_entry, "entity_id", "")).startswith("sensor."):
+            continue
+        score = _plug_status_candidate_score(entity_entry)
+        if score > 0:
+            candidates.append((score, str(entity_entry.entity_id)))
+
+    if not candidates:
+        return None
+
+    candidates.sort(key=lambda item: (-item[0], item[1]))
+    return candidates[0][1]
+
+
 def _extract_vin(value: Any) -> str | None:
     """Extract a VIN from a registry value."""
     if value is None:

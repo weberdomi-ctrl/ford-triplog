@@ -6,8 +6,8 @@ Track your Ford.
 Home Assistant integration setup.
 
 Version: 2.5.0
-Build: 25021
-Changes: Store home-tariff periods globally in SQLite and migrate 25016/25017 options.
+Build: 25023
+Changes: Reject detached Route Tracker GPS and keep vehicle GPS authoritative.
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ PLATFORMS: list[Platform] = [
 
 from .const import (
     CONF_BATTERY_CAPACITY,
+    CONF_PLUG_STATUS,
     CONF_VEHICLE_ID,
     CONF_VEHICLE_NAME,
     CONF_VEHICLE_TEST_ALIAS,
@@ -63,6 +64,7 @@ from .route_tracker import FordTriplogRouteTracker
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
     async_detect_vehicle_identity,
+    async_detect_vehicle_plug_entity,
 )
 from .vehicle_context import (
     ensure_vehicle_context,
@@ -334,6 +336,24 @@ async def async_setup_entry(
         entry,
         config,
     )
+
+    # Ford Connect/FordPass expose a separate EV plug-state sensor. Detect it
+    # automatically on the already selected vehicle device instead of adding
+    # another user-facing config-flow field. Other adapters keep the existing
+    # charging-state-only lifecycle.
+    plug_entity = async_detect_vehicle_plug_entity(hass, config, identity)
+    if plug_entity:
+        config[CONF_PLUG_STATUS] = plug_entity
+        _LOGGER.info(
+            "Ford Triplog plug-status capability detected: %s",
+            plug_entity,
+        )
+    else:
+        config.pop(CONF_PLUG_STATUS, None)
+        _LOGGER.debug(
+            "Ford Triplog plug-status capability not available for source=%s",
+            identity.source or "unknown",
+        )
 
     storage = FordTriplogStorage(
         hass,

@@ -7,8 +7,8 @@ Configuration Flow.
 
 Version: 2.5.0
 Phase: Multi-vehicle context
-Build: 25020 - Home tariff form compatibility fix
-Release: 2.5.0-dev
+Build: 25023
+Release: 2.5.0
 
 
 """
