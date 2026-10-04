@@ -578,6 +578,18 @@ class FordTriplogConfigFlow(
         )
 
 
+def _financing_add_months_iso(start_date: str, months: int) -> str:
+    """Return ISO date after adding whole calendar months."""
+    import calendar
+    from datetime import date as _date
+    value = _date.fromisoformat(start_date)
+    total = value.year * 12 + (value.month - 1) + int(months)
+    year, month0 = divmod(total, 12)
+    month = month0 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return _date(year, month, day).isoformat()
+
+
 class FordTriplogOptionsFlow(OptionsFlow):
     """Ford Triplog options."""
 
@@ -7045,6 +7057,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             menu_options=[
                 "financing_add",
                 "financing_edit",
+                "financing_documents",
                 "financing_delete",
                 "init",
             ],
@@ -7284,8 +7297,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     data["financing_id"] = self._selected_financing_id
                 elif self._financing_document:
                     data.update(self._financing_document)
-                # Empty optional text/number fields become NULL in SQLite.
-                for key in ("provider", "contract_number", "end_date", "notes"):
+                # Contract end is derived exclusively from start date + duration.
+                # Never trust a manually edited/displayed end date.
+                data["end_date"] = _financing_add_months_iso(
+                    str(data["start_date"]), int(data["duration_months"])
+                )
+                # Empty optional text fields become NULL in SQLite.
+                for key in ("provider", "contract_number", "notes"):
                     if not str(data.get(key) or "").strip():
                         data[key] = None
                 for key in ("purchase_price", "residual_value", "interest_rate", "annual_mileage", "excess_km_rate"):
@@ -7313,11 +7331,28 @@ class FordTriplogOptionsFlow(OptionsFlow):
             value = d(key, fallback)
             return "" if value is None else str(value)
 
+        start_date = d("start_date", None)
+        duration = int(d("duration_months", 48) or 48)
+        calculated_end = ""
+        if start_date:
+            try:
+                calculated_end = _financing_add_months_iso(str(start_date), duration)
+            except (ValueError, TypeError):
+                calculated_end = ""
+
         schema_fields: dict[Any, Any] = {
             vol.Optional("provider", default=text_d("provider")): selector.TextSelector(),
             vol.Optional("contract_number", default=text_d("contract_number")): selector.TextSelector(),
-            vol.Optional("end_date", default=text_d("end_date")): selector.TextSelector(),
-            vol.Required("duration_months", default=d("duration_months", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+        }
+        if start_date:
+            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.DateSelector()
+        else:
+            schema_fields[vol.Required("start_date")] = selector.DateSelector()
+        schema_fields.update({
+            vol.Required("duration_months", default=duration): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+            # Displayed directly below duration for clarity. It is overwritten
+            # from start_date + duration_months on every save.
+            vol.Optional("end_date", default=calculated_end): selector.TextSelector(),
             vol.Optional("purchase_price", default=text_d("purchase_price")): selector.TextSelector(),
             vol.Required("first_payment", default=d("first_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
             vol.Required("regular_payment", default=d("regular_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
@@ -7328,16 +7363,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("excess_km_rate", default=text_d("excess_km_rate")): selector.TextSelector(),
             vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
             vol.Optional("notes", default=text_d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
-        }
-
-        # Never present today's date as if it had been recognized from a
-        # contract. Existing records keep their date; imported/manual new
-        # records stay blank until a real start date is supplied.
-        start_date = d("start_date", None)
-        if start_date:
-            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.DateSelector()
-        else:
-            schema_fields[vol.Required("start_date")] = selector.DateSelector()
+        })
 
         schema = vol.Schema(schema_fields)
         return self.async_show_form(step_id="financing_add_leasing" if selected is None else "financing_edit_leasing", data_schema=schema, errors=errors)
@@ -7347,6 +7373,70 @@ class FordTriplogOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         """Handle the edit leasing form submission."""
         return await self._async_step_leasing_form(user_input)
+
+    async def async_step_financing_documents(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select a financing contract whose additional documents are managed."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            self._selected_financing_id = int(user_input["financing_id"])
+            return await self.async_step_financing_documents_menu()
+        options = [selector.SelectOptionDict(value=str(x["financing_id"]), label=f"{x['financing_type'].title()} · {x['start_date']} · {x.get('provider') or '-'}") for x in contracts]
+        return self.async_show_form(step_id="financing_documents", data_schema=vol.Schema({vol.Required("financing_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def async_step_financing_documents_menu(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage additional documents for the selected financing contract."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        return self.async_show_menu(
+            step_id="financing_documents_menu",
+            menu_options=["financing_document_add", "financing_document_delete", "financing_management"],
+            description_placeholders={"document_count": str(len(items))},
+        )
+
+    async def async_step_financing_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Attach an additional document without changing contract values."""
+        errors: dict[str, str] = {}
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["financing_file"]) as uploaded_path:
+                    docs = FordTriplogFinancingDocumentStorage(self.hass)
+                    document = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                await docs.async_attach(
+                    financing_id=self._selected_financing_id,
+                    filename=document["filename"],
+                    original_filename=document["original_filename"],
+                    media_type=document["media_type"],
+                    note=str(user_input.get("note") or "").strip() or None,
+                )
+                return await self.async_step_financing_documents_menu()
+            except (ValueError, HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to attach financing document")
+                errors["base"] = "financing_document_import_failed"
+        return self.async_show_form(step_id="financing_document_add", data_schema=vol.Schema({
+            vol.Required("financing_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+            vol.Optional("note"): selector.TextSelector(),
+        }), errors=errors)
+
+    async def async_step_financing_document_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Delete one additional financing document."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        if not items:
+            return await self.async_step_financing_documents_menu()
+        if user_input is not None:
+            await docs.async_delete_attachment(int(user_input["document_id"]), self._selected_financing_id)
+            return await self.async_step_financing_documents_menu()
+        options = [selector.SelectOptionDict(value=str(x["document_id"]), label=f"{x['original_filename']} · {x['created_at'][:10]}") for x in items]
+        return self.async_show_form(step_id="financing_document_delete", data_schema=vol.Schema({vol.Required("document_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
 
     async def async_step_general_settings(
         self,

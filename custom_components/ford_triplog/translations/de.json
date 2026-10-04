@@ -1008,7 +1008,8 @@
           "financing_edit": "Vertrag bearbeiten",
           "financing_delete": "Vertrag löschen",
           "init": "Zurück zum Hauptmenü",
-          "financing_add": "Finanzierung hinzufügen"
+          "financing_add": "Finanzierung hinzufügen",
+          "financing_documents": "Belege verwalten"
         }
       },
       "financing_add_leasing": {
@@ -1018,7 +1019,7 @@
           "provider": "Leasinggeber",
           "contract_number": "Vertragsnummer",
           "start_date": "Vertragsbeginn",
-          "end_date": "Vertragsende (optional, JJJJ-MM-TT)",
+          "end_date": "Vertragsende (automatisch)",
           "duration_months": "Laufzeit in Monaten",
           "purchase_price": "Barkaufpreis",
           "first_payment": "1. Leasingrate / Sonderzahlung",
@@ -1035,7 +1036,8 @@
         "data_description": {
           "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
           "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
-          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet."
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet.",
+          "end_date": "Wird aus Vertragsbeginn und Laufzeit berechnet und beim Speichern automatisch gesetzt."
         }
       },
       "financing_edit_leasing": {
@@ -1045,7 +1047,7 @@
           "provider": "Leasinggeber",
           "contract_number": "Vertragsnummer",
           "start_date": "Vertragsbeginn",
-          "end_date": "Vertragsende (optional, JJJJ-MM-TT)",
+          "end_date": "Vertragsende (automatisch)",
           "duration_months": "Laufzeit in Monaten",
           "purchase_price": "Barkaufpreis",
           "first_payment": "1. Leasingrate / Sonderzahlung",
@@ -1062,7 +1064,8 @@
         "data_description": {
           "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
           "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
-          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet."
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet.",
+          "end_date": "Wird aus Vertragsbeginn und Laufzeit berechnet und beim Speichern automatisch gesetzt."
         }
       },
       "financing_edit": {
@@ -1092,6 +1095,37 @@
         "description": "PDF oder Bild hochladen. {ocr_status} Anschliessend werden alle Werte vor dem Speichern zur Kontrolle angezeigt.",
         "data": {
           "financing_file": "Vertrag / Beleg"
+        }
+      },
+      "financing_documents": {
+        "title": "Finanzierungsbelege",
+        "description": "Finanzierung auswählen, an die zusätzliche Belege angehängt werden sollen.",
+        "data": {
+          "financing_id": "Vertrag"
+        }
+      },
+      "financing_documents_menu": {
+        "title": "Belege verwalten",
+        "description": "Zusätzliche Belege: {document_count}. Diese Belege ändern keine Vertragswerte.",
+        "menu_options": {
+          "financing_document_add": "Beleg hinzufügen",
+          "financing_document_delete": "Beleg löschen",
+          "financing_management": "Zurück zur Finanzierung"
+        }
+      },
+      "financing_document_add": {
+        "title": "Beleg hinzufügen",
+        "description": "PDF oder Bild an den bestehenden Vertrag anhängen. Vertragswerte werden nicht verändert.",
+        "data": {
+          "financing_file": "Beleg",
+          "note": "Bemerkung"
+        }
+      },
+      "financing_document_delete": {
+        "title": "Beleg löschen",
+        "description": "Zusätzlichen Beleg auswählen. Der ursprüngliche Hauptvertrag bleibt erhalten.",
+        "data": {
+          "document_id": "Beleg"
         }
       }
     },

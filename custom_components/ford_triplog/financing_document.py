@@ -6,6 +6,8 @@ import functools
 import mimetypes
 import re
 import shutil
+import sqlite3
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -47,6 +49,51 @@ class FordTriplogFinancingDocumentStorage:
             "media_type": mimetypes.guess_type(supplied_name)[0] or "application/octet-stream",
             "content": content,
         }
+
+    async def async_attach(self, financing_id: int, filename: str, original_filename: str, media_type: str | None, note: str | None = None) -> int:
+        """Link an already imported file as an additional financing document."""
+        from .database import FordTriplogDatabase
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db = FordTriplogDatabase(self.hass, base_path)
+        await db.async_setup()
+        def _write() -> int:
+            with sqlite3.connect(db.db_path) as conn:
+                cur = conn.execute("INSERT INTO vehicle_financing_documents (financing_id, filename, original_filename, media_type, note, created_at) VALUES (?, ?, ?, ?, ?, ?)", (int(financing_id), filename, original_filename, media_type, note, time.strftime("%Y-%m-%dT%H:%M:%S%z")))
+                conn.commit()
+                return int(cur.lastrowid)
+        return await self.hass.async_add_executor_job(_write)
+
+    async def async_list_for_financing(self, financing_id: int) -> list[dict[str, Any]]:
+        """List additional documents linked to a financing contract."""
+        from .database import FordTriplogDatabase
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db = FordTriplogDatabase(self.hass, base_path)
+        await db.async_setup()
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(db.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                rows = conn.execute("SELECT * FROM vehicle_financing_documents WHERE financing_id=? ORDER BY created_at, document_id", (int(financing_id),)).fetchall()
+                return [dict(x) for x in rows]
+        return await self.hass.async_add_executor_job(_read)
+
+    async def async_delete_attachment(self, document_id: int, financing_id: int) -> None:
+        """Delete one additional attachment and its persisted file."""
+        from .database import FordTriplogDatabase
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db = FordTriplogDatabase(self.hass, base_path)
+        await db.async_setup()
+        def _delete() -> str | None:
+            with sqlite3.connect(db.db_path) as conn:
+                row = conn.execute("SELECT filename FROM vehicle_financing_documents WHERE document_id=? AND financing_id=?", (int(document_id), int(financing_id))).fetchone()
+                if row is None:
+                    return None
+                conn.execute("DELETE FROM vehicle_financing_documents WHERE document_id=? AND financing_id=?", (int(document_id), int(financing_id)))
+                conn.commit()
+                return str(row[0])
+        filename = await self.hass.async_add_executor_job(_delete)
+        if filename:
+            path = self.directory / filename
+            await self.hass.async_add_executor_job(path.unlink, True)
 
 
 def extract_pdf_text(content: bytes, max_pages: int = 5) -> str:

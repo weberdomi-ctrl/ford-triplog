@@ -995,7 +995,8 @@
           "financing_edit": "Edit contract",
           "financing_delete": "Delete contract",
           "init": "Back to main menu",
-          "financing_add": "Add financing"
+          "financing_add": "Add financing",
+          "financing_documents": "Manage documents"
         }
       },
       "financing_add_leasing": {
@@ -1005,7 +1006,7 @@
           "provider": "Provider",
           "contract_number": "Contract number",
           "start_date": "Contract start",
-          "end_date": "Contract end (optional, YYYY-MM-DD)",
+          "end_date": "Contract end (automatic)",
           "duration_months": "Duration in months",
           "purchase_price": "Cash purchase price",
           "first_payment": "First leasing payment / special payment",
@@ -1022,7 +1023,8 @@
         "data_description": {
           "first_payment": "Actual first payment, e.g. CHF 5,000.",
           "regular_payment": "Regular payment from the second payment onward.",
-          "residual_value": "Shown separately and not automatically counted as TCO cost."
+          "residual_value": "Shown separately and not automatically counted as TCO cost.",
+          "end_date": "Calculated from contract start and duration and set automatically when saved."
         }
       },
       "financing_edit_leasing": {
@@ -1032,7 +1034,7 @@
           "provider": "Provider",
           "contract_number": "Contract number",
           "start_date": "Contract start",
-          "end_date": "Contract end (optional, YYYY-MM-DD)",
+          "end_date": "Contract end (automatic)",
           "duration_months": "Duration in months",
           "purchase_price": "Cash purchase price",
           "first_payment": "First leasing payment / special payment",
@@ -1049,7 +1051,8 @@
         "data_description": {
           "first_payment": "Actual first payment, e.g. CHF 5,000.",
           "regular_payment": "Regular payment from the second payment onward.",
-          "residual_value": "Shown separately and not automatically counted as TCO cost."
+          "residual_value": "Shown separately and not automatically counted as TCO cost.",
+          "end_date": "Calculated from contract start and duration and set automatically when saved."
         }
       },
       "financing_edit": {
@@ -1079,6 +1082,37 @@
         "description": "Upload a PDF or image. {ocr_status} All values can be reviewed before saving.",
         "data": {
           "financing_file": "Contract / document"
+        }
+      },
+      "financing_documents": {
+        "title": "Financing documents",
+        "description": "Select the financing contract for additional documents.",
+        "data": {
+          "financing_id": "Contract"
+        }
+      },
+      "financing_documents_menu": {
+        "title": "Manage documents",
+        "description": "Additional documents: {document_count}. These documents do not change contract values.",
+        "menu_options": {
+          "financing_document_add": "Add document",
+          "financing_document_delete": "Delete document",
+          "financing_management": "Back to financing"
+        }
+      },
+      "financing_document_add": {
+        "title": "Add document",
+        "description": "Attach a PDF or image to the existing contract. Contract values are not changed.",
+        "data": {
+          "financing_file": "Document",
+          "note": "Note"
+        }
+      },
+      "financing_document_delete": {
+        "title": "Delete document",
+        "description": "Select an additional document. The original main contract remains stored.",
+        "data": {
+          "document_id": "Document"
         }
       }
     },
