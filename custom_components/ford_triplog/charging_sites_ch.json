@@ -49663,13 +49663,13 @@
       ],
       "member_count": 1,
       "osm_ids": [
-        "node/9026047416"
+        "node/9026049416"
       ],
       "members": [
         {
-          "id": "node/9026047416",
+          "id": "node/9026049416",
           "osm_type": "node",
-          "osm_id": 9026047416,
+          "osm_id": 9026049416,
           "lat": 46.6887909,
           "lon": 7.86227,
           "name": "Green Motion SA",
@@ -49804,13 +49804,13 @@
       ],
       "member_count": 1,
       "osm_ids": [
-        "node/9026047397"
+        "node/9026049397"
       ],
       "members": [
         {
-          "id": "node/9026047397",
+          "id": "node/9026049397",
           "osm_type": "node",
-          "osm_id": 9026047397,
+          "osm_id": 9026049397,
           "lat": 46.6891358,
           "lon": 7.8657858,
           "name": "Move",
@@ -49903,13 +49903,13 @@
       ],
       "member_count": 1,
       "osm_ids": [
-        "node/9026047406"
+        "node/9026049406"
       ],
       "members": [
         {
-          "id": "node/9026047406",
+          "id": "node/9026049406",
           "osm_type": "node",
-          "osm_id": 9026047406,
+          "osm_id": 9026049406,
           "lat": 46.6896446,
           "lon": 7.8642335,
           "name": "Grand Beau-Rivage",
