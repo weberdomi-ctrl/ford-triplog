@@ -7560,7 +7560,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     if content:
                         ocr = await self._get_ocr_client().async_analyze(filename=name, media_type=media, content=content)
                         text = str(ocr.get("raw_text") or "")
-                self._insurance_prefill = extract_insurance_fields(text)
+                self._insurance_prefill = extract_insurance_fields(text, str(user_input.get("document_type") or "insurance_policy"))
                 doc_type = str(user_input.get("document_type") or "insurance_policy")
                 await docs.async_attach(self._ensure_vehicle_context_id(), document["filename"], document["original_filename"], document["media_type"], doc_type, "Versicherungsimport")
                 _LOGGER.info("Insurance document parsed: document=%s fields=%s", document["original_filename"], sorted(self._insurance_prefill))

@@ -52,26 +52,42 @@ class FordTriplogVehicleInsuranceStorage:
         d['provider']=str(d.get('provider') or '').strip() or None; d['policy_number']=str(d.get('policy_number') or '').strip() or None; d['notes']=str(d.get('notes') or '').strip() or None
         return d
 
-# --- Insurance policy / invoice import helpers (2.6 dev27) -----------------
-def extract_insurance_fields(raw_text: str) -> dict[str, Any]:
-    """Best-effort extraction from insurance policies and premium invoices.
+# --- Insurance policy import helpers (2.6 dev29) -------------------------
+def extract_insurance_fields(raw_text: str, document_type: str = "insurance_policy") -> dict[str, Any]:
+    """Extract insurance data, with a dedicated policy parser.
 
-    The importer only prefills values. It deliberately distinguishes the
-    insurance premium for a period from invoice totals, credits and balances.
+    For TCO a policy is authoritative: annual premium is the TCO basis while
+    payment frequency/amount describe cash flow. Invoice parsing deliberately
+    keeps the dev27 best-effort behaviour for later refinement.
     """
     import re
     from datetime import datetime
 
     raw = (raw_text or "").replace("\r", "\n")
-    # Keep line boundaries where possible, but normalize horizontal whitespace.
     lines = [re.sub(r"[ \t\f\v]+", " ", x).strip() for x in raw.split("\n") if x.strip()]
     text = "\n".join(lines)
     flat = re.sub(r"\s+", " ", raw).strip()
     out: dict[str, Any] = {}
 
-    # Provider. Company names in headers/footers are more reliable than generic
-    # occurrences of "Versicherung" in product descriptions.
-    provider_patterns = (
+    def iso_date(value: str) -> str | None:
+        for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%Y-%m-%d"):
+            try:
+                return datetime.strptime(value.strip(), fmt).date().isoformat()
+            except ValueError:
+                pass
+        return None
+
+    def amount_value(value: str) -> float | None:
+        v = value.strip().replace("'", "").replace("’", "").replace(" ", "")
+        if "," in v and "." in v:
+            v = v.replace(".", "").replace(",", ".") if v.rfind(",") > v.rfind(".") else v.replace(",", "")
+        else:
+            v = v.replace(",", ".")
+        try: return float(v)
+        except ValueError: return None
+
+    # Shared identity fields.
+    providers = (
         r"\b(AXA\s+Versicherungen\s+AG)\b",
         r"\b(Helvetia(?:\s+Schweizerische)?\s+Versicherung(?:en)?(?:\s+AG)?)\b",
         r"\b(Mobiliar(?:\s+Versicherung(?:en)?)?(?:\s+AG)?)\b",
@@ -79,164 +95,65 @@ def extract_insurance_fields(raw_text: str) -> dict[str, Any]:
         r"\b(Allianz(?:\s+Suisse)?(?:\s+Versicherung(?:en)?)?(?:\s+AG)?)\b",
         r"\b(Baloise(?:\s+Versicherung(?:en)?)?(?:\s+AG)?)\b",
         r"\b(Vaudoise(?:\s+Versicherung(?:en)?)?(?:\s+AG)?)\b",
-        r"(?:Versicherer|Versicherungsgesellschaft|Gesellschaft)\s*[:\-]?\s*([^\n]{2,80})",
     )
-    for pat in provider_patterns:
-        m = re.search(pat, text, re.I)
+    for pat in providers:
+        m=re.search(pat,text,re.I)
+        if m: out["provider"]=m.group(1).strip(); break
+
+    m=re.search(r"\bPolice\s*Nr\.?\s*[:#\-]?\s*(\d{1,4}(?:\.\d{1,4}){1,4}|[A-Z0-9][A-Z0-9./\-]{2,30})", flat, re.I)
+    if m: out["policy_number"]=m.group(1).strip(" .:/-")
+
+    if re.search(r"\bEUR\b|€", text, re.I): out["currency"]="EUR"
+    elif re.search(r"\bCHF\b", text, re.I): out["currency"]="CHF"
+
+    date_pat=r"(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2})"
+    money=r"(\d{1,3}(?:['’ ]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))"
+
+    if document_type == "insurance_policy":
+        # Contract dates. AXA policy: "Vertragsdaten Beginn: ... Ende: ...".
+        m=re.search(rf"(?:Vertragsdaten\s*)?Beginn\s*:\s*{date_pat}.*?Ende\s*:\s*{date_pat}", flat, re.I)
+        if not m:
+            m=re.search(rf"(?:Vertragsbeginn|Beginn)\s*[:\-]?\s*{date_pat}.*?(?:Vertragsende|Ende)\s*[:\-]?\s*{date_pat}", flat, re.I)
         if m:
-            out["provider"] = re.sub(r"\s+", " ", m.group(1)).strip(" :;,-")
-            break
+            a,b=iso_date(m.group(1)),iso_date(m.group(2))
+            if a and b: out["valid_from"],out["valid_to"]=a,b
 
-    # Policy number: stop before the next known label even if PDF extraction
-    # concatenates table cells (e.g. "16.242.692Kontrollschild...").
-    policy_patterns = (
-        r"\bPolice\s*Nr\.?\s*[:#\-]?\s*([A-Z0-9][A-Z0-9./\-]{2,30})",
-        r"\bPolicen(?:nummer|[- ]?Nr\.?)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9./\-]{2,30})",
-        r"\b(?:Vertragsnummer|Vertrags[- ]?Nr\.?)\s*[:#\-]?\s*([A-Z0-9][A-Z0-9./\-]{2,30})",
-    )
-    for pat in policy_patterns:
-        m = re.search(pat, flat, re.I)
+        # TCO basis is explicitly the annual premium, never an individual cover.
+        m=re.search(rf"Total\s+Jahrespr[aä]mie\s*(?:in\s+[A-Z]{{3}}\s*)?(?:CHF|EUR|€)?\s*{money}", flat, re.I)
+        if not m:
+            m=re.search(rf"\bJahrespr[aä]mie\b\s*(?:in\s+[A-Z]{{3}}\s*)?(?:CHF|EUR|€)?\s*{money}", flat, re.I)
         if m:
-            value = m.group(1).strip(" .:/-")
-            # AXA-style numbers are often immediately followed by a label in
-            # badly extracted PDFs. Keep the leading dotted numeric identifier.
-            numeric = re.match(r"\d{1,4}(?:\.\d{1,4}){1,4}", value)
-            out["policy_number"] = numeric.group(0) if numeric else value
-            break
-    # OCR/PDF fallback: allow whitespace/newlines between Police and Nr. and
-    # stop strictly at the first whitespace after the identifier.
-    if "policy_number" not in out:
-        m = re.search(r"\bPolice\s*(?:Nr\.?|Nummer)\s*[:#\-]?\s*(\d{1,4}(?:\.\d{1,4}){1,4}|[A-Z0-9][A-Z0-9./\-]{2,30})", flat, re.I)
+            a=amount_value(m.group(1))
+            if a is not None: out["period_premium"]=f"{a:.2f}"
+
+        # Payment frequency from explicit policy wording, including Swiss "1/2-jährlich".
+        freq=None
+        if re.search(r"Zahlbar\s*:\s*(?:1/12|monatlich)|\bmonatlich\b", flat, re.I): freq="monthly"
+        elif re.search(r"Zahlbar\s*:\s*(?:1/4|viertelj[aä]hrlich)|\bviertelj[aä]hrlich\b", flat, re.I): freq="quarterly"
+        elif re.search(r"Zahlbar\s*:\s*(?:1/2|halbj[aä]hrlich)|\bhalbj[aä]hrlich\b", flat, re.I): freq="semiannual"
+        elif re.search(r"Zahlbar\s*:\s*(?:1/1|j[aä]hrlich)|\bj[aä]hrlich\b", flat, re.I): freq="annual"
+        out["payment_frequency"]=freq or "annual"
+
+        # Prefer the premium matching the selected payment cadence.
+        labels={"monthly":"Monatspr[aä]mie","quarterly":"(?:Quartals|Vierteljahres)pr[aä]mie","semiannual":"Halbjahrespr[aä]mie","annual":"Jahrespr[aä]mie"}
+        label=labels[out["payment_frequency"]]
+        m=re.search(rf"Total\s+{label}\s*(?:CHF|EUR|€)?\s*{money}", flat, re.I)
         if m:
-            out["policy_number"] = m.group(1).strip(" .:/-")
+            a=amount_value(m.group(1))
+            if a is not None: out["payment_amount"]=f"{a:.2f}"
 
-    def iso_date(value: str) -> str | None:
-        value = value.strip()
-        for fmt in ("%d.%m.%Y", "%d.%m.%y", "%d/%m/%Y", "%Y-%m-%d"):
-            try:
-                return datetime.strptime(value, fmt).date().isoformat()
-            except ValueError:
-                pass
-        return None
-
-    date_pat = r"(\d{1,2}[./]\d{1,2}[./]\d{2,4}|\d{4}-\d{2}-\d{2})"
-    # Prefer premium-labelled periods. This also handles AXA change invoices:
-    # "Ihre Prämie neu (Belastung) vom 07.10.2024 - 31.12.2024 308.21".
-    period_patterns = (
-        rf"(?:Prämie|Praemie)[^\n]{{0,80}}?(?:vom|von)\s*{date_pat}\s*(?:bis|[-–—])\s*{date_pat}",
-        rf"(?:Versicherungsperiode|Versicherungsdauer|Prämienperiode|Praemienperiode|Abrechnungsperiode|Gültigkeit|Periode)[^\n]{{0,30}}?{date_pat}\s*(?:bis|[-–—])\s*{date_pat}",
-        rf"(?:vom|von)\s*{date_pat}\s*(?:bis|[-–—])\s*{date_pat}",
-    )
-    for pat in period_patterns:
-        m = re.search(pat, text, re.I) or re.search(pat, flat, re.I)
+        # Main due date: day/month may be recurring and has no meaningful year.
+        m=re.search(r"Pr[aä]mie\s+f[aä]llig\s+am\s*:\s*(\d{1,2})\.(\d{1,2})\.", flat, re.I)
         if m:
-            a, b = iso_date(m.group(1)), iso_date(m.group(2))
-            if a and b:
-                out["valid_from"], out["valid_to"] = a, b
-                break
+            out["notes"]=(f"Hauptfälligkeit: {int(m.group(1)):02d}.{int(m.group(2)):02d}.; "
+                          + ("danach alle 6 Monate" if out["payment_frequency"]=="semiannual" else "gemäss Police"))
+        return out
 
-    def amount_value(value: str) -> float | None:
-        v = value.strip().replace("'", "").replace("’", "").replace(" ", "")
-        # Swiss/German documents use apostrophes for thousands and dot/comma decimals.
-        if "," in v and "." in v:
-            if v.rfind(",") > v.rfind("."):
-                v = v.replace(".", "").replace(",", ".")
-            else:
-                v = v.replace(",", "")
-        else:
-            v = v.replace(",", ".")
-        try:
-            return float(v)
-        except ValueError:
-            return None
-
-    money_pat = r"(?<![\d.])[-+]?\s*(\d{1,3}(?:['’ ]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))"
-
-    # Strongest signal: an explicit total/period premium expression. Search the
-    # flattened text first because PDF table extraction can split the label,
-    # date range and amount across physical lines. This must win over component
-    # rows and columns such as "Jahresprämie Vollkasko 1'199.80".
-    exact_premium_patterns = (
-        rf"(?:Ihre\s+)?(?:Prämie|Praemie)\s+neu\s*(?:\(\s*Belastung\s*\))?\s*(?:vom|von)\s*{date_pat}\s*(?:bis|[-–—])\s*{date_pat}\s*(?:CHF|EUR|€)?\s*{money_pat}",
-        rf"(?:Periodenprämie|Periodenpraemie|Prämie\s+für\s+(?:diesen\s+)?Zeitraum|Praemie\s+fuer\s+(?:diesen\s+)?Zeitraum|Totalprämie|Totalpraemie)\s*[:\-]?\s*(?:CHF|EUR|€)?\s*{money_pat}",
-    )
-    for pat in exact_premium_patterns:
-        m = re.search(pat, flat, re.I)
-        if m:
-            # money_pat is the last capturing group in both patterns.
-            amount = amount_value(m.group(m.lastindex))
-            if amount is not None and amount > 0:
-                out["period_premium"] = f"{amount:.2f}"
-                break
-
-    # Fallback for other insurers: score premium-labelled lines, but never let
-    # annual component rows override an already recognised total period premium.
-    premium_candidates: list[tuple[int, float, str]] = []
-    for line in lines:
-        low = line.lower()
-        if not any(k in low for k in ("prämie", "praemie", "premium")):
-            continue
-        if any(k in low for k in ("totalbetrag", "zu zahlen", "zahlbetrag", "saldo", "auszahlung")):
-            continue
-        values = re.findall(money_pat, line, re.I)
-        for val in values:
-            amount = amount_value(val)
-            if amount is None or amount <= 0:
-                continue
-            score = 0
-            if "prämie neu" in low or "praemie neu" in low or "belastung" in low: score += 100
-            if "periodenprämie" in low or "prämie für" in low or "prämie total" in low or "totalprämie" in low: score += 80
-            if "gutschrift" in low or "prämie bisher" in low or "praemie bisher" in low: score -= 100
-            if "jahresprämie" in low: score += 10
-            # A date range on the same line strongly indicates a period amount.
-            if re.search(r"\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*[-–—]\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}", line): score += 50
-            premium_candidates.append((score, amount, line))
-    if "period_premium" not in out and premium_candidates:
-        premium_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
-        out["period_premium"] = f"{premium_candidates[0][1]:.2f}"
-
-    if re.search(r"\bEUR\b|€", text, re.I):
-        out["currency"] = "EUR"
-    elif re.search(r"\bCHF\b", text, re.I):
-        out["currency"] = "CHF"
-
-    # Payment frequency: explicit payment wording wins over a column heading
-    # such as "Jahresprämie". AXA example: "Zuschlag halbjährliche Zahlung".
-    explicit_freq = (
-        ("monthly", r"(?:monatliche|monatlicher|monatlichen|monatlich)\s+(?:Zahlung|Zahlweise|Rate)|Zuschlag\s+monatlich"),
-        ("quarterly", r"(?:vierteljährliche|vierteljährlicher|vierteljährlichen|vierteljährlich|quartalsweise)\s+(?:Zahlung|Zahlweise|Rate)|Zuschlag\s+vierteljährlich"),
-        ("semiannual", r"(?:halbjährliche|halbjährlicher|halbjährlichen|halbjährlich)\s+(?:Zahlung|Zahlweise|Rate)|Zuschlag\s+halbjährlich"),
-        ("annual", r"(?:jährliche|jährlicher|jährlichen|jährlich)\s+(?:Zahlung|Zahlweise|Rate)|Zuschlag\s+jährlich"),
-    )
-    for freq, pat in explicit_freq:
-        if re.search(pat, text, re.I):
-            out["payment_frequency"] = freq
-            break
-    else:
-        generic_freq = (
-            ("monthly", r"\bMonatsprämie\b"),
-            ("quarterly", r"\bQuartalsprämie\b"),
-            ("semiannual", r"\bHalbjahresprämie\b"),
-        )
-        for freq, pat in generic_freq:
-            if re.search(pat, text, re.I):
-                out["payment_frequency"] = freq
-                break
-        else:
-            out["payment_frequency"] = "annual"
-
-    # Only prefill an instalment amount when the document explicitly labels a
-    # payment/rate. Do not use a surcharge or a credit/change invoice total.
-    pay_line_pat = r"(?:Rate|Teilzahlung|Zahlungsbetrag)\s*[:\-]?\s*(?:CHF|EUR|€)?\s*" + money_pat
-    m = re.search(pay_line_pat, text, re.I)
+    # Invoice/other: retain a conservative dev27-style prefill. TCO will not use it.
+    m=re.search(rf"(?:Pr[aä]mie\s+neu|Belastung)[^\n]{{0,80}}?(?:vom|von)\s*{date_pat}\s*(?:bis|[-–—])\s*{date_pat}[^\n]{{0,30}}?{money}", text, re.I)
     if m:
-        amt = amount_value(m.group(1))
-        if amt is not None and amt > 0:
-            out["payment_amount"] = f"{amt:.2f}"
-
-    m = re.search(rf"(?:fällig(?:keit)?|Zahlbar(?:keit)?|erste\s+(?:Rate|Zahlung))\s*(?:am|per|:)\s*{date_pat}", text, re.I)
-    if m:
-        d = iso_date(m.group(1))
-        if d:
-            out["first_payment_date"] = d
+        a,b=iso_date(m.group(1)),iso_date(m.group(2)); amt=amount_value(m.group(3))
+        if a and b: out["valid_from"],out["valid_to"]=a,b
+        if amt is not None: out["period_premium"]=f"{amt:.2f}"
+    out.setdefault("payment_frequency", "annual")
     return out

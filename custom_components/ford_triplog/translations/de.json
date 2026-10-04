@@ -1242,7 +1242,7 @@
           "insurance_edit": "Versicherung bearbeiten",
           "insurance_delete": "Versicherung löschen",
           "init": "Zurück zum Hauptmenü",
-          "insurance_document_upload": "Police/Rechnung einlesen"
+          "insurance_document_upload": "Police einlesen"
         }
       },
       "insurance_add": {
@@ -1259,13 +1259,13 @@
       },
       "insurance_form": {
         "title": "Versicherung",
-        "description": "Die Prämie gilt für den angegebenen Versicherungszeitraum. Die Zahlweise bildet den realen Zahlungsfluss ab.",
+        "description": "Die Jahresprämie bildet die TCO-Basis. Die Zahlweise und der Betrag pro Zahlung bilden den realen Zahlungsfluss ab.",
         "data": {
           "provider": "Versicherer",
           "policy_number": "Policennummer",
           "valid_from": "Gültig von (JJJJ-MM-TT)",
           "valid_to": "Gültig bis (JJJJ-MM-TT)",
-          "period_premium": "Prämie für diesen Zeitraum",
+          "period_premium": "Jahresprämie / TCO-Basis",
           "currency": "Währung",
           "payment_frequency": "Zahlweise",
           "payment_amount": "Betrag pro Zahlung",
@@ -1276,7 +1276,7 @@
       },
       "insurance_document_upload": {
         "title": "Versicherungsdokument einlesen",
-        "description": "Police oder Prämienrechnung hochladen. Text wird zuerst direkt aus PDF gelesen; bei Scans wird OCR verwendet. Erkannte Werte werden zur Kontrolle vorbelegt.",
+        "description": "Police hochladen. Text wird zuerst direkt aus PDF gelesen; bei Scans wird OCR verwendet. Erkannte Vertragsdaten, Jahresprämie und Zahlweise werden zur Kontrolle vorbelegt.",
         "data": {
           "insurance_file": "Datei",
           "document_type": "Dokumenttyp"
