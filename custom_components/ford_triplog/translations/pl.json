@@ -53,7 +53,9 @@
           "export": "Eksport danych",
           "user_places": "Custom places",
           "insurance_management": "Ubezpieczenie",
-          "tax_management": "Podatek drogowy"
+          "tax_management": "Podatek drogowy",
+          "financing_management": "Finansowanie pojazdu",
+          "vehicle_data_management": "Dane i dokumenty pojazdu"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
@@ -67,7 +69,9 @@
           "export": "Eksportuj zapisane dane Ford Triplog do pliku CSV.",
           "user_places": "Manage places for automatic pause assignment.",
           "insurance_management": "Zarządzaj polisami ubezpieczeniowymi pojazdu i rocznymi składkami TCO.",
-          "tax_management": "Zarządzaj rocznym podatkiem od pojazdu i opłatami pojazdowymi."
+          "tax_management": "Zarządzaj rocznym podatkiem od pojazdu i opłatami pojazdowymi.",
+          "financing_management": "Zarządzaj leasingiem, finansowaniem i zakupem pojazdu.",
+          "vehicle_data_management": "Zarządzaj dokumentem rejestracyjnym i innymi dokumentami pojazdu."
         }
       },
       "settings": {
@@ -1013,19 +1017,22 @@
         }
       },
       "insurance_add": {
-        "title": "Dodaj ubezpieczenie"
+        "title": "Dodaj ubezpieczenie",
+        "description": "Dodaj okres ubezpieczenia."
       },
       "insurance_edit": {
         "title": "Edytuj ubezpieczenie",
         "data": {
           "insurance_id": "Ubezpieczenie"
-        }
+        },
+        "description": "Wybierz okres ubezpieczenia."
       },
       "insurance_delete": {
         "title": "Usuń ubezpieczenie",
         "data": {
           "insurance_id": "Ubezpieczenie"
-        }
+        },
+        "description": "Wybierz i usuń okres ubezpieczenia."
       },
       "insurance_form": {
         "title": "Ubezpieczenie",
@@ -1039,8 +1046,10 @@
           "payment_frequency": "Częstotliwość płatności",
           "payment_amount": "Kwota płatności",
           "first_payment_date": "Pierwsza płatność",
-          "notes": "Notatka"
-        }
+          "notes": "Notatka",
+          "insurance_id": "Ubezpieczenie"
+        },
+        "description": "Roczna składka stanowi podstawę TCO. Częstotliwość płatności i kwota każdej płatności odzwierciedlają rzeczywisty przepływ środków."
       },
       "insurance_document_upload": {
         "title": "Import dokumentu ubezpieczenia",
@@ -1083,6 +1092,220 @@
           "authority": "Urząd / kanton",
           "notes": "Notatka",
           "tax_id": "Okres podatkowy"
+        }
+      },
+      "financing_management": {
+        "title": "Finansowanie pojazdu",
+        "description": "Pojazd: {vehicle_name}. Zarządzaj finansowaniem. Rzeczywiste płatności i TCO są obliczane oddzielnie.",
+        "menu_options": {
+          "financing_edit": "Edytuj umowę",
+          "financing_delete": "Usuń umowę",
+          "init": "Powrót do menu głównego",
+          "financing_add": "Dodaj finansowanie",
+          "financing_documents": "Zarządzaj dokumentami"
+        }
+      },
+      "financing_add_leasing": {
+        "title": "Dodaj umowę leasingową",
+        "description": "Rzeczywiste płatności są rejestrowane zgodnie z umową; dla TCO łączna kwota jest równomiernie rozłożona na okres umowy.",
+        "data": {
+          "provider": "Leasingodawca",
+          "contract_number": "Numer umowy",
+          "start_date": "Początek umowy",
+          "end_date": "Koniec umowy (automatycznie)",
+          "duration_months": "Okres w miesiącach",
+          "purchase_price": "Cena zakupu za gotówkę",
+          "first_payment": "Pierwsza rata leasingowa / wpłata specjalna",
+          "regular_payment": "Regularna rata leasingowa",
+          "number_of_payments": "Liczba rat leasingowych",
+          "residual_value": "Wartość końcowa",
+          "interest_rate": "Oprocentowanie nominalne w %",
+          "annual_mileage": "Roczny przebieg km",
+          "excess_km_rate": "Stawka za nadprzebieg",
+          "currency": "Waluta",
+          "notes": "Uwagi",
+          "financing_id": "Umowa"
+        },
+        "data_description": {
+          "first_payment": "Rzeczywiście należna pierwsza rata, np. CHF 5’000.",
+          "regular_payment": "Regularna rata od drugiej płatności.",
+          "residual_value": "Jest wyświetlana, ale nie jest automatycznie wliczana do kosztów TCO.",
+          "end_date": "Jest obliczany z daty rozpoczęcia i okresu umowy oraz ustawiany automatycznie przy zapisie."
+        }
+      },
+      "financing_edit_leasing": {
+        "title": "Edytuj umowę leasingową",
+        "description": "Rzeczywiste płatności są rejestrowane zgodnie z umową; dla TCO łączna kwota jest równomiernie rozłożona na okres umowy.",
+        "data": {
+          "provider": "Leasingodawca",
+          "contract_number": "Numer umowy",
+          "start_date": "Początek umowy",
+          "end_date": "Koniec umowy (automatycznie)",
+          "duration_months": "Okres w miesiącach",
+          "purchase_price": "Cena zakupu za gotówkę",
+          "first_payment": "Pierwsza rata leasingowa / wpłata specjalna",
+          "regular_payment": "Regularna rata leasingowa",
+          "number_of_payments": "Liczba rat leasingowych",
+          "residual_value": "Wartość końcowa",
+          "interest_rate": "Oprocentowanie nominalne w %",
+          "annual_mileage": "Roczny przebieg km",
+          "excess_km_rate": "Stawka za nadprzebieg",
+          "currency": "Waluta",
+          "notes": "Uwagi",
+          "financing_id": "Umowa"
+        },
+        "data_description": {
+          "first_payment": "Rzeczywiście należna pierwsza rata, np. CHF 5’000.",
+          "regular_payment": "Regularna rata od drugiej płatności.",
+          "residual_value": "Jest wyświetlana, ale nie jest automatycznie wliczana do kosztów TCO.",
+          "end_date": "Jest obliczany z daty rozpoczęcia i okresu umowy oraz ustawiany automatycznie przy zapisie."
+        }
+      },
+      "financing_edit": {
+        "title": "Wybierz umowę",
+        "data": {
+          "financing_id": "Umowa"
+        }
+      },
+      "financing_delete": {
+        "title": "Usuń umowę",
+        "description": "Wybierz umowę do usunięcia.",
+        "data": {
+          "financing_id": "Umowa"
+        }
+      },
+      "financing_documents": {
+        "title": "Dokumenty finansowania",
+        "description": "Wybierz finansowanie, do którego mają zostać dołączone dodatkowe dokumenty.",
+        "data": {
+          "financing_id": "Umowa"
+        }
+      },
+      "financing_documents_menu": {
+        "title": "Zarządzaj dokumentami",
+        "description": "Dodatkowe dokumenty: {document_count}. Dokumenty te nie zmieniają wartości umowy.",
+        "menu_options": {
+          "financing_document_add": "Dodaj dokument",
+          "financing_document_delete": "Usuń dokument",
+          "financing_management": "Powrót do finansowania",
+          "financing_document_view": "Wyświetl dokument"
+        }
+      },
+      "financing_document_add": {
+        "title": "Dodaj dokument",
+        "description": "Dołącz PDF lub obraz do istniejącej umowy. Wartości umowy nie zostaną zmienione.",
+        "data": {
+          "financing_file": "Dokument",
+          "note": "Uwaga"
+        }
+      },
+      "financing_document_delete": {
+        "title": "Usuń dokument",
+        "description": "Wybierz dodatkowy dokument. Oryginalna umowa główna pozostanie zachowana.",
+        "data": {
+          "document_id": "Dokument"
+        }
+      },
+      "financing_document_view": {
+        "title": "Wyświetl dokument",
+        "description": "Wybierz umowę główną lub dodatkowy dokument.",
+        "data": {
+          "document_ref": "Dokument"
+        }
+      },
+      "vehicle_data_management": {
+        "title": "Dane pojazdu",
+        "description": "Pojazd: {vehicle_name}\n\nZarządzaj dokumentem rejestracyjnym i innymi dokumentami pojazdu.",
+        "menu_options": {
+          "vehicle_registration_upload": "Prześlij dokument rejestracyjny",
+          "vehicle_registration_manual": "Edytuj dane pojazdu ręcznie",
+          "vehicle_warranty_management": "Zarządzaj gwarancjami",
+          "vehicle_document_view": "Wyświetl dokument",
+          "vehicle_document_add": "Dodaj kolejny dokument",
+          "vehicle_document_delete": "Usuń dokument",
+          "init": "Wstecz"
+        }
+      },
+      "vehicle_registration_upload": {
+        "title": "Prześlij dokument rejestracyjny",
+        "description": "Prześlij PDF lub obraz. Rozpoznane dane zostaną wyświetlone przed zapisaniem.",
+        "data": {
+          "vehicle_file": "Dokument rejestracyjny"
+        }
+      },
+      "vehicle_registration_manual": {
+        "title": "Dane pojazdu",
+        "description": "Sprawdź i zapisz rozpoznane lub istniejące dane.",
+        "data": {
+          "vin": "VIN / numer nadwozia",
+          "registration_number": "Numer rejestracyjny",
+          "make": "Marka",
+          "model": "Model",
+          "first_registration": "Pierwsza rejestracja",
+          "type_approval": "Homologacja typu",
+          "power_kw": "Moc kW",
+          "empty_weight_kg": "Masa własna kg",
+          "gross_weight_kg": "Masa całkowita kg"
+        }
+      },
+      "vehicle_document_add": {
+        "title": "Dodaj dokument pojazdu",
+        "description": "Dodaj dodatkowy dokument dotyczący pojazdu.",
+        "data": {
+          "vehicle_file": "Dokument",
+          "document_type": "Typ dokumentu",
+          "note": "Notatka"
+        }
+      },
+      "vehicle_document_view": {
+        "title": "Wyświetl dokument pojazdu",
+        "data": {
+          "document_ref": "Dokument"
+        }
+      },
+      "vehicle_document_delete": {
+        "title": "Usuń dokument pojazdu",
+        "description": "Główny dokument rejestracyjny nie jest tutaj usuwany.",
+        "data": {
+          "document_id": "Dokument"
+        }
+      },
+      "vehicle_warranty_management": {
+        "title": "Gwarancje",
+        "description": "Pojazd: {vehicle_name}\n\nZarządzaj gwarancją pojazdu, komponentów EV i akumulatora HV. Dokumenty gwarancyjne korzystają z istniejącego magazynu dokumentów pojazdu.",
+        "menu_options": {
+          "vehicle_warranty_edit": "Okresy gwarancji i przebieg",
+          "vehicle_warranty_document_view": "Wyświetl dokument gwarancyjny",
+          "vehicle_warranty_document_add": "Dodaj dokument gwarancyjny",
+          "vehicle_data_management": "Wstecz"
+        }
+      },
+      "vehicle_warranty_edit": {
+        "title": "Dane gwarancji",
+        "description": "Początek jest automatycznie ustawiany na pierwszą rejestrację: {first_registration}. Data końcowa: {end_dates}. Limity kilometrów oznaczają maksymalny przebieg pojazdu.",
+        "data": {
+          "vehicle_years": "Gwarancja pojazdu – lata",
+          "vehicle_km": "Gwarancja pojazdu – km",
+          "ev_components_years": "Komponenty EV – lata",
+          "ev_components_km": "Komponenty EV – km",
+          "hv_battery_years": "Akumulator HV – lata",
+          "hv_battery_km": "Akumulator HV – km"
+        }
+      },
+      "vehicle_warranty_document_add": {
+        "title": "Dodaj dokument gwarancyjny",
+        "description": "Dokument zostanie również zapisany w Dane pojazdu → Dokumenty.",
+        "data": {
+          "vehicle_file": "Dokument",
+          "document_type": "Typ dokumentu",
+          "note": "Notatka"
+        }
+      },
+      "vehicle_warranty_document_view": {
+        "title": "Wyświetl dokument gwarancyjny",
+        "description": "Zapisane dokumenty gwarancyjne i warunki gwarancji.",
+        "data": {
+          "document_ref": "Dokument"
         }
       }
     },
@@ -1153,11 +1376,14 @@
       "financing_ocr_failed": "Nie udało się przeanalizować dokumentu finansowania.",
       "insurance_invalid": "Nieprawidłowe dane ubezpieczenia.",
       "insurance_document_import_failed": "Nie udało się zaimportować dokumentu ubezpieczenia.",
-      "tax_invalid": "Dane podatku drogowego są nieprawidłowe."
+      "tax_invalid": "Dane podatku drogowego są nieprawidłowe.",
+      "invalid_financing_data": "Nieprawidłowe dane umowy.",
+      "vehicle_document_import_failed": "Nie udało się zaimportować dokumentu pojazdu."
     },
     "abort": {
       "no_insurance_entries": "Brak wpisów ubezpieczenia.",
-      "no_tax_entries": "Brak wpisów podatku drogowego."
+      "no_tax_entries": "Brak wpisów podatku drogowego.",
+      "no_financing_contracts": "Brak umów finansowania."
     }
   },
   "entity": {
@@ -1351,6 +1577,9 @@
       },
       "vehicle_details": {
         "name": "Szczegóły pojazdu"
+      },
+      "insurance_tco": {
+        "name": "Ubezpieczenie TCO"
       }
     },
     "binary_sensor": {
