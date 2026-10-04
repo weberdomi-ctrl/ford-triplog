@@ -579,7 +579,7 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
 
 
 class FordTriplogCostOverviewTCOSensor(SensorEntity):
-    """Current-month TCO overview with rolling 12-month and yearly history."""
+    """TCO overview backed by the canonical SQLite monthly cost view."""
     _attr_has_entity_name = True
     _attr_translation_key = "cost_overview_tco"
     _attr_unique_id = "ford_triplog_cost_overview_tco"
@@ -611,21 +611,20 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
 
     async def async_update(self) -> None:
         from pathlib import Path
-        from calendar import monthrange
-        from datetime import date
-        from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
-        from .vehicle_insurance import FordTriplogVehicleInsuranceStorage
-        from .vehicle_tax import FordTriplogVehicleTaxStorage
-        from .vehicle_expense import FordTriplogVehicleExpenseStorage, allocated_amount_for_period
+        from .database import FordTriplogDatabase
 
         vid=get_selected_vehicle_id(self.hass, fallback=1)
-        if vid is None: self._value=None; self._attrs={}; return
-        base=Path(self.hass.config.path('.storage', STORAGE_DIR)); now=dt_util.now()
+        if vid is None:
+            self._value=None; self._attrs={}; return
 
-        financing_rows=await FordTriplogVehicleFinancingStorage(self.hass,base,vid).async_load()
-        insurance_rows=await FordTriplogVehicleInsuranceStorage(self.hass,base,vid).async_load()
-        tax_rows=await FordTriplogVehicleTaxStorage(self.hass,base,vid).async_load()
-        expense_rows=await FordTriplogVehicleExpenseStorage(self.hass,base,vid).async_load()
+        now=dt_util.now()
+        database=FordTriplogDatabase(
+            self.hass,
+            Path(self.hass.config.path('.storage', STORAGE_DIR)),
+            vehicle_id=vid,
+        )
+        cost_rows=await database.load_vehicle_cost_monthly(vid)
+        costs_by_month={str(row['month']):row for row in cost_rows}
 
         registry=er.async_get(self.hass)
         charging_monthly={}; charging_yearly={}
@@ -652,73 +651,21 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
                 if st.attributes.get('month'):
                     distance_monthly[str(st.attributes['month'])]=float(st.attributes.get('distance_month_km') or st.state or 0)
 
-        def active_row(rows, on_date, id_key):
-            iso=on_date.isoformat()
-            active=[r for r in rows if str(r.get('valid_from') or '') <= iso <= str(r.get('valid_to') or '')]
-            return max(active,key=lambda x:(str(x.get('valid_from') or ''),int(x.get(id_key) or 0))) if active else None
-
-        def calc_period(ps,pe,charging,distance):
-            def overlap_fraction(month_start, month_end, valid_start, valid_end):
-                start=max(month_start,valid_start); end=min(month_end,valid_end)
-                if end < start: return 0.0
-                return ((end-start).days+1)/((month_end-month_start).days+1)
-
-            financing=0.0; insurance=0.0; road_tax=0.0
-            cursor=date(ps.year,ps.month,1)
-            while cursor <= pe:
-                month_end=date(cursor.year,cursor.month,monthrange(cursor.year,cursor.month)[1])
-                seg_start=max(cursor,ps); seg_end=min(month_end,pe)
-
-                for r in financing_rows:
-                    try:
-                        monthly=leasing_tco_for_month(r,cursor.year,cursor.month)
-                        start=date.fromisoformat(str(r.get('start_date')))
-                        end_raw=r.get('end_date')
-                        if end_raw:
-                            end=date.fromisoformat(str(end_raw))
-                        else:
-                            duration=int(r.get('duration_months') or 0)
-                            idx=start.year*12+(start.month-1)+max(duration-1,0)
-                            ey,em0=divmod(idx,12)
-                            end=date(ey,em0+1,monthrange(ey,em0+1)[1])
-                        financing += monthly*overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
-                    except (ValueError,TypeError,KeyError):
-                        pass
-
-                for r in insurance_rows:
-                    try:
-                        start=date.fromisoformat(str(r.get('valid_from')))
-                        end=date.fromisoformat(str(r.get('valid_to')))
-                        fraction=overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
-                        insurance += (float(r.get('period_premium') or 0)/12.0)*fraction
-                    except (ValueError,TypeError):
-                        pass
-
-                for r in tax_rows:
-                    try:
-                        start=date.fromisoformat(str(r.get('valid_from')))
-                        end=date.fromisoformat(str(r.get('valid_to')))
-                        fraction=overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
-                        road_tax += (float(r.get('annual_tax') or 0)/12.0)*fraction
-                    except (ValueError,TypeError):
-                        pass
-
-                cursor=date(cursor.year+1,1,1) if cursor.month==12 else date(cursor.year,cursor.month+1,1)
-
-            variable={'maintenance':0.0,'toll':0.0,'other':0.0}
-            for r in expense_rows:
-                g=str(r.get('expense_group') or '')
-                if g in variable:
-                    try: variable[g]+=allocated_amount_for_period(r,ps,pe)
-                    except (ValueError,TypeError): pass
+        def serialize(row,charging,distance):
+            financing=float((row or {}).get('financing') or 0)
+            insurance=float((row or {}).get('insurance') or 0)
+            road_tax=float((row or {}).get('road_tax') or 0)
+            maintenance=float((row or {}).get('maintenance_repairs') or 0)
+            toll=float((row or {}).get('tolls_vignettes') or 0)
+            other=float((row or {}).get('other_costs') or 0)
             fixed=financing+insurance+road_tax
-            variable_total=sum(variable.values())+charging
-            total=fixed+variable_total
+            variable=maintenance+toll+other+charging
+            total=fixed+variable
             return {
                 'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
-                'fixed_costs':round(fixed,2),'maintenance_repairs':round(variable['maintenance'],2),
-                'tolls_vignettes':round(variable['toll'],2),'other_costs':round(variable['other'],2),
-                'charging':round(charging,2),'variable_costs':round(variable_total,2),
+                'fixed_costs':round(fixed,2),'maintenance_repairs':round(maintenance,2),
+                'tolls_vignettes':round(toll,2),'other_costs':round(other,2),
+                'charging':round(charging,2),'variable_costs':round(variable,2),
                 'total_costs':round(total,2),'distance_km':round(distance,1),
                 'fixed_cost_per_km':round(fixed/distance,4) if distance>0 else None,
                 'total_cost_per_km':round(total/distance,4) if distance>0 else None,
@@ -727,26 +674,29 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
         month_keys=[self._month_key_offset(now,o) for o in range(-11,1)]
         monthly=[]
         for key in month_keys:
-            y,m=map(int,key.split('-')); ps=date(y,m,1); pe=date(y,m,monthrange(y,m)[1])
-            row=calc_period(ps,pe,charging_monthly.get(key,0.0),distance_monthly.get(key,0.0))
-            row={'month':key,**row}; monthly.append(row)
+            monthly.append({'month':key,**serialize(costs_by_month.get(key),charging_monthly.get(key,0.0),distance_monthly.get(key,0.0))})
 
-        # Match the existing charging/driving history convention: preceding calendar years.
-        years=sorted({str(now.year-1),str(now.year-2)} | set(charging_yearly) | set(distance_yearly), reverse=True)
+        # Annual values are sums of the canonical monthly view rows. This keeps
+        # current-month, 12-month and yearly TCO on exactly the same cost basis.
+        by_year={}
+        for row in cost_rows:
+            year=str(row['year'])
+            if int(year)>=now.year: continue
+            bucket=by_year.setdefault(year,{'financing':0.0,'insurance':0.0,'road_tax':0.0,'maintenance_repairs':0.0,'tolls_vignettes':0.0,'other_costs':0.0})
+            for key in bucket: bucket[key]+=float(row.get(key) or 0)
+
+        years=sorted(set(by_year)|set(charging_yearly)|set(distance_yearly),reverse=True)
         yearly=[]
-        for ys in years:
-            try: y=int(ys)
-            except ValueError: continue
-            if y>=now.year: continue
-            ps=date(y,1,1); pe=date(y,12,31)
-            row=calc_period(ps,pe,charging_yearly.get(ys,0.0),distance_yearly.get(ys,0.0))
-            yearly.append({'year':ys,**row})
+        for year in years:
+            if int(year)>=now.year: continue
+            yearly.append({'year':year,**serialize(by_year.get(year),charging_yearly.get(year,0.0),distance_yearly.get(year,0.0))})
 
         current=monthly[-1]
         self._value=current['total_costs']
         self._attrs={'vehicle_id':vid,'month':current['month'],'currency':'CHF',
                      **{k:v for k,v in current.items() if k!='month'},
-                     'monthly_breakdown':monthly,'yearly_summary':yearly}
+                     'monthly_breakdown':monthly,'yearly_summary':yearly,
+                     'cost_source':'sqlite_view:v_vehicle_cost_monthly'}
 
     @property
     def native_value(self): return self._value

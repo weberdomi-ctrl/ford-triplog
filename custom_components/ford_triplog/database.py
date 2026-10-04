@@ -1524,6 +1524,134 @@ class FordTriplogDatabase:
                     )
 
 
+
+                    # dev47: one canonical monthly TCO source for all costs
+                    # stored in relational cost tables. Charging and driven
+                    # distance stay in their dedicated statistics sensors.
+                    db.execute("DROP VIEW IF EXISTS v_vehicle_cost_monthly")
+                    db.execute(
+                        """
+                        CREATE VIEW v_vehicle_cost_monthly AS
+                        WITH RECURSIVE
+                        bounds(start_month, end_month) AS (
+                            SELECT
+                                date(COALESCE(
+                                    (SELECT MIN(d) FROM (
+                                        SELECT MIN(start_date) AS d FROM vehicle_financing
+                                        UNION ALL SELECT MIN(valid_from) FROM vehicle_insurance
+                                        UNION ALL SELECT MIN(valid_from) FROM vehicle_tax
+                                        UNION ALL SELECT MIN(COALESCE(expense_date, valid_from, printf('%04d-01-01', expense_year))) FROM vehicle_expenses
+                                    ) WHERE d IS NOT NULL),
+                                    date('now','start of month')
+                                ), 'start of month'),
+                                date('now','start of month')
+                        ),
+                        months(month_start) AS (
+                            SELECT start_month FROM bounds
+                            UNION ALL
+                            SELECT date(month_start,'+1 month')
+                            FROM months,bounds
+                            WHERE month_start < end_month
+                        ),
+                        calendar AS (
+                            SELECT v.vehicle_id,
+                                   m.month_start,
+                                   date(m.month_start,'+1 month','-1 day') AS month_end,
+                                   CAST(julianday(date(m.month_start,'+1 month'))-julianday(m.month_start) AS REAL) AS month_days
+                            FROM vehicles v CROSS JOIN months m
+                        )
+                        SELECT
+                            c.vehicle_id,
+                            strftime('%Y-%m',c.month_start) AS month,
+                            CAST(strftime('%Y',c.month_start) AS INTEGER) AS year,
+                            ROUND(COALESCE((
+                                SELECT SUM(
+                                    ROUND((f.first_payment + MAX(f.number_of_payments-1,0)*f.regular_payment)/f.duration_months,2)
+                                    * MAX(0,julianday(MIN(c.month_end,COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))))
+                                             -julianday(MAX(c.month_start,f.start_date))+1)
+                                    / c.month_days
+                                )
+                                FROM vehicle_financing f
+                                WHERE f.vehicle_id=c.vehicle_id
+                                  AND f.start_date<=c.month_end
+                                  AND COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))>=c.month_start
+                            ),0),6) AS financing,
+                            ROUND(COALESCE((
+                                SELECT SUM(
+                                    (i.period_premium/12.0)
+                                    * MAX(0,julianday(MIN(c.month_end,i.valid_to))-julianday(MAX(c.month_start,i.valid_from))+1)
+                                    / c.month_days
+                                )
+                                FROM vehicle_insurance i
+                                WHERE i.vehicle_id=c.vehicle_id AND i.valid_from<=c.month_end AND i.valid_to>=c.month_start
+                            ),0),6) AS insurance,
+                            ROUND(COALESCE((
+                                SELECT SUM(
+                                    (x.annual_tax/12.0)
+                                    * MAX(0,julianday(MIN(c.month_end,x.valid_to))-julianday(MAX(c.month_start,x.valid_from,COALESCE(vd.first_registration,x.valid_from)))+1)
+                                    / c.month_days
+                                )
+                                FROM vehicle_tax x
+                                LEFT JOIN vehicle_details vd ON vd.vehicle_id=x.vehicle_id
+                                WHERE x.vehicle_id=c.vehicle_id
+                                  AND MAX(x.valid_from,COALESCE(vd.first_registration,x.valid_from))<=c.month_end
+                                  AND x.valid_to>=c.month_start
+                            ),0),6) AS road_tax,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='maintenance'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS maintenance_repairs,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='toll'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS tolls_vignettes,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='other'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS other_costs
+                        FROM calendar c
+                        """
+                    )
+
                     db.commit()
 
 
@@ -1543,6 +1671,34 @@ class FordTriplogDatabase:
                 "Ford Triplog SQLite database initialized: %s",
                 self.db_path,
             )
+
+    async def load_vehicle_cost_monthly(
+        self,
+        vehicle_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return canonical monthly TCO rows from the SQLite cost view."""
+        await self.async_setup()
+        resolved_vehicle_id = int(vehicle_id or self.vehicle_id)
+        self._log_read("view=v_vehicle_cost_monthly")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    """
+                    SELECT vehicle_id, month, year, financing, insurance,
+                           road_tax, maintenance_repairs, tolls_vignettes,
+                           other_costs
+                    FROM v_vehicle_cost_monthly
+                    WHERE vehicle_id = ?
+                    ORDER BY month
+                    """,
+                    (resolved_vehicle_id,),
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+        return await self.hass.async_add_executor_job(_read)
+
 
     async def load_home_charging_tariffs(self) -> list[dict[str, Any]]:
         """Load global home charging tariff periods from SQLite."""
