@@ -1109,6 +1109,21 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS vehicle_warranties (
+                            warranty_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            warranty_type TEXT NOT NULL,
+                            duration_years INTEGER, mileage_limit_km INTEGER,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            UNIQUE(vehicle_id, warranty_type),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_warranties_vehicle ON vehicle_warranties (vehicle_id, warranty_type)")
+
+                    db.execute(
+                        """
                         CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
                         ON vehicle_financing (vehicle_id, start_date)
                         """

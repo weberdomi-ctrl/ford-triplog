@@ -1131,6 +1131,7 @@
         "menu_options": {
           "vehicle_registration_upload": "Upload vehicle registration",
           "vehicle_registration_manual": "Edit vehicle data manually",
+          "vehicle_warranty_management": "Manage warranties",
           "vehicle_document_view": "View document",
           "vehicle_document_add": "Add document",
           "vehicle_document_delete": "Delete document",
@@ -1179,6 +1180,44 @@
         "description": "The main vehicle registration document is not deleted here.",
         "data": {
           "document_id": "Document"
+        }
+      },
+      "vehicle_warranty_management": {
+        "title": "Warranties",
+        "description": "Vehicle: {vehicle_name}\n\nManage vehicle, EV component and HV battery warranties. Warranty documents use the existing vehicle document store.",
+        "menu_options": {
+          "vehicle_warranty_edit": "Warranty years & mileage",
+          "vehicle_warranty_document_view": "View warranty document",
+          "vehicle_warranty_document_add": "Add warranty document",
+          "vehicle_data_management": "Back"
+        }
+      },
+      "vehicle_warranty_edit": {
+        "title": "Warranty details",
+        "description": "Start is automatically the first registration: {first_registration}. End date: {end_dates}. Mileage limits are maximum vehicle odometer values.",
+        "data": {
+          "vehicle_years": "Vehicle warranty – years",
+          "vehicle_km": "Vehicle warranty – km",
+          "ev_components_years": "EV components – years",
+          "ev_components_km": "EV components – km",
+          "hv_battery_years": "HV battery – years",
+          "hv_battery_km": "HV battery – km"
+        }
+      },
+      "vehicle_warranty_document_add": {
+        "title": "Add warranty document",
+        "description": "The document is also stored under Vehicle data → Documents.",
+        "data": {
+          "vehicle_file": "Document",
+          "document_type": "Document type",
+          "note": "Note"
+        }
+      },
+      "vehicle_warranty_document_view": {
+        "title": "View warranty document",
+        "description": "Existing warranty proofs and warranty terms.",
+        "data": {
+          "document_ref": "Document"
         }
       }
     },

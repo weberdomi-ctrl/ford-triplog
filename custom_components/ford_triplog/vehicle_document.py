@@ -214,6 +214,47 @@ def _extract_de_registration_fields(raw: str) -> dict[str, str]:
     if value:
         out["gross_weight_kg"] = str(int(value))
 
+    # OCR fallback for compact German Teil-I cards. Tesseract may emit the
+    # field codes (G / F.1 / F.2) as one block and the values as a second
+    # block instead of keeping each value next to its code. In that layout
+    # the common sequence is: empty mass, F.1, F.2; F.1 and F.2 are often
+    # identical. Only use this fallback for still-missing values and require
+    # plausible vehicle masses to avoid stealing unrelated numbers.
+    if "empty_weight_kg" not in out or "gross_weight_kg" not in out:
+        mass_block = re.search(
+            r"\b(\d{3,4})\s+(0?\d{3,5})\s+(0?\d{3,5})\b",
+            joined, re.I,
+        )
+        if mass_block:
+            try:
+                g_mass = int(mass_block.group(1))
+                f1_mass = int(mass_block.group(2))
+                f2_mass = int(mass_block.group(3))
+            except ValueError:
+                g_mass = f1_mass = f2_mass = 0
+            if (
+                400 <= g_mass <= 5000
+                and g_mass <= f2_mass <= 7500
+                and f1_mass == f2_mass
+            ):
+                out.setdefault("empty_weight_kg", str(g_mass))
+                out.setdefault("gross_weight_kg", str(f2_mass))
+
+    # A second OCR layout keeps the field code but inserts descriptive text
+    # or neighbouring labels before the number. Limit the search to one line.
+    if "empty_weight_kg" not in out:
+        m = re.search(r"(?:^|\n)\s*\(?G\)?\b[^\n]{0,120}?\b(\d{3,5})\b", joined, re.I | re.M)
+        if m:
+            mass = int(m.group(1))
+            if 400 <= mass <= 5000:
+                out["empty_weight_kg"] = str(mass)
+    if "gross_weight_kg" not in out:
+        m = re.search(r"(?:^|\n)\s*\(?F\s*[.]?\s*2\)?\b[^\n]{0,120}?\b(0?\d{3,5})\b", joined, re.I | re.M)
+        if m:
+            mass = int(m.group(1))
+            if 500 <= mass <= 7500:
+                out["gross_weight_kg"] = str(mass)
+
     # P.2 - rated power in kW.
     value = label_value([
         r"(?:^|\n)\s*P[.]?2\s+(\d{1,4}(?:[.,]\d+)?)\b",

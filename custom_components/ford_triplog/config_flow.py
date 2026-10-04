@@ -71,6 +71,7 @@ from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
 from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
+from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -7517,7 +7518,75 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""
-        return self.async_show_menu(step_id="vehicle_data_management", menu_options=["vehicle_registration_upload", "vehicle_registration_manual", "vehicle_document_view", "vehicle_document_add", "vehicle_document_delete", "init"], description_placeholders={"vehicle_name": self._context_vehicle_name()})
+        return self.async_show_menu(step_id="vehicle_data_management", menu_options=["vehicle_registration_upload", "vehicle_registration_manual", "vehicle_warranty_management", "vehicle_document_view", "vehicle_document_add", "vehicle_document_delete", "init"], description_placeholders={"vehicle_name": self._context_vehicle_name()})
+
+    async def async_step_vehicle_warranty_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage warranty periods and warranty documents."""
+        return self.async_show_menu(
+            step_id="vehicle_warranty_management",
+            menu_options=["vehicle_warranty_edit", "vehicle_warranty_document_view", "vehicle_warranty_document_add", "vehicle_data_management"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_vehicle_warranty_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit vehicle, EV component and HV battery warranty limits."""
+        vid = self._ensure_vehicle_context_id()
+        docs = FordTriplogVehicleDocumentStorage(self.hass)
+        details = await docs.async_get_details(vid) or {}
+        first_registration = str(details.get("first_registration") or "").strip()
+        store = FordTriplogVehicleWarrantyStorage(self.hass)
+        current = await store.async_get(vid)
+        if user_input is not None:
+            await store.async_save_all(vid, dict(user_input))
+            return await self.async_step_vehicle_warranty_management()
+        def val(kind: str, field: str) -> str:
+            v = (current.get(kind) or {}).get(field)
+            return "" if v is None else str(v)
+        ends = []
+        labels = (("vehicle", "Fahrzeug"), ("ev_components", "EV-Komponenten"), ("hv_battery", "HV-Batterie"))
+        for kind, label in labels:
+            end = warranty_end_date(first_registration, (current.get(kind) or {}).get("duration_years"))
+            if end:
+                ends.append(f"{label}: {end}")
+        end_text = " · ".join(ends) if ends else "wird aus Erstzulassung + Jahren berechnet"
+        schema = vol.Schema({
+            vol.Optional("vehicle_years", default=val("vehicle", "duration_years")): selector.TextSelector(),
+            vol.Optional("vehicle_km", default=val("vehicle", "mileage_limit_km")): selector.TextSelector(),
+            vol.Optional("ev_components_years", default=val("ev_components", "duration_years")): selector.TextSelector(),
+            vol.Optional("ev_components_km", default=val("ev_components", "mileage_limit_km")): selector.TextSelector(),
+            vol.Optional("hv_battery_years", default=val("hv_battery", "duration_years")): selector.TextSelector(),
+            vol.Optional("hv_battery_km", default=val("hv_battery", "mileage_limit_km")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="vehicle_warranty_edit", data_schema=schema, description_placeholders={"first_registration": first_registration or "nicht hinterlegt", "end_dates": end_text})
+
+    async def async_step_vehicle_warranty_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a warranty document to the shared vehicle document store."""
+        errors = {}; vid = self._ensure_vehicle_context_id()
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["vehicle_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass); doc = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                await docs.async_attach(vid, doc["filename"], doc["original_filename"], doc["media_type"], str(user_input["document_type"]), str(user_input.get("note") or "").strip() or None)
+                return await self.async_step_vehicle_warranty_management()
+            except (ValueError, HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to attach warranty document"); errors["base"] = "vehicle_document_import_failed"
+        types = [selector.SelectOptionDict(value="warranty_proof", label="Garantienachweis"), selector.SelectOptionDict(value="warranty_terms", label="Garantiebedingungen")]
+        return self.async_show_form(step_id="vehicle_warranty_document_add", data_schema=vol.Schema({vol.Required("vehicle_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")), vol.Required("document_type", default="warranty_proof"): selector.SelectSelector(selector.SelectSelectorConfig(options=types)), vol.Optional("note"): selector.TextSelector()}), errors=errors)
+
+    async def async_step_vehicle_warranty_document_view(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """View warranty documents already stored for the vehicle."""
+        docs = FordTriplogVehicleDocumentStorage(self.hass); vid = self._ensure_vehicle_context_id()
+        items = [x for x in await docs.async_list(vid) if x.get("document_type") in ("warranty_proof", "warranty_terms")]
+        if not items:
+            return await self.async_step_vehicle_warranty_management()
+        if user_input is not None:
+            path = f"/api/ford_triplog/vehicle/{vid}/documents/{user_input['document_ref']}"; signed = async_sign_path(self.hass, path, timedelta(minutes=10), use_content_user=True)
+            try: url = f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
+            except NoURLAvailableError: url = signed
+            self._selected_vehicle_document_url = url
+            return await self.async_step_vehicle_document_open()
+        opts = [selector.SelectOptionDict(value=str(x["document_id"]), label=f"{('Garantienachweis' if x['document_type']=='warranty_proof' else 'Garantiebedingungen')} · {x['original_filename']}") for x in items]
+        return self.async_show_form(step_id="vehicle_warranty_document_view", data_schema=vol.Schema({vol.Required("document_ref"): selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
 
     async def async_step_vehicle_registration_upload(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Upload vehicle registration and prefill master data."""
@@ -7619,8 +7688,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
             path=f"/api/ford_triplog/vehicle/{vid}/documents/{user_input['document_ref']}"; signed=async_sign_path(self.hass,path,timedelta(minutes=10),use_content_user=True)
             try:self._selected_vehicle_document_url=f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
             except NoURLAvailableError:self._selected_vehicle_document_url=signed
-            return self.async_external_step(step_id="vehicle_document_open",url=self._selected_vehicle_document_url)
+            return await self.async_step_vehicle_document_open()
         return self.async_show_form(step_id="vehicle_document_view",data_schema=vol.Schema({vol.Required("document_ref"):selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def async_step_vehicle_document_open(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Open a vehicle document using a registered external flow step."""
+        if not self._selected_vehicle_document_url:
+            return await self.async_step_vehicle_data_management()
+        return self.async_external_step(
+            step_id="vehicle_document_open",
+            url=self._selected_vehicle_document_url,
+        )
 
     async def async_step_vehicle_document_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         docs=FordTriplogVehicleDocumentStorage(self.hass); vid=self._ensure_vehicle_context_id(); items=await docs.async_list(vid)
