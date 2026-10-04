@@ -1362,18 +1362,19 @@
       "expense_form": {
         "title": "Wprowadź koszt",
         "data": {
-          "category": "Kategoria",
+          "category": "Kategoria *",
           "description": "Opis",
-          "amount": "Kwota",
-          "currency": "Waluta",
+          "amount": "Kwota *",
+          "currency": "Waluta *",
           "expense_date": "Data płatności / księgowania",
           "provider": "Dostawca / warsztat / urząd",
           "country": "Kraj",
-          "odometer_km": "Przebieg",
-          "valid_from": "Ważne od",
-          "valid_to": "Ważne do",
+          "odometer_km": "Przebieg (opcjonalnie)",
+          "valid_from": "Ważne od (opcjonalnie)",
+          "valid_to": "Ważne do (opcjonalnie)",
           "notes": "Uwagi",
-          "receipt_file": "Faktura / dokument"
+          "receipt_file": "Faktura / dokument",
+          "expense_year": "Rok (jeśli data jest nieznana)"
         }
       }
     },

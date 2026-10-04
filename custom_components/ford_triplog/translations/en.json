@@ -1356,18 +1356,19 @@
       "expense_form": {
         "title": "Enter cost",
         "data": {
-          "category": "Category",
+          "category": "Category *",
           "description": "Description",
-          "amount": "Amount",
-          "currency": "Currency",
+          "amount": "Amount *",
+          "currency": "Currency *",
           "expense_date": "Payment / booking date",
           "provider": "Provider / workshop / authority",
           "country": "Country",
-          "odometer_km": "Odometer",
-          "valid_from": "Valid from",
-          "valid_to": "Valid to",
+          "odometer_km": "Odometer (optional)",
+          "valid_from": "Valid from (optional)",
+          "valid_to": "Valid to (optional)",
           "notes": "Notes",
-          "receipt_file": "Invoice / receipt"
+          "receipt_file": "Invoice / receipt",
+          "expense_year": "Year (if date is unknown)"
         }
       }
     },

@@ -1374,18 +1374,19 @@
       "expense_form": {
         "title": "Kosten erfassen",
         "data": {
-          "category": "Kategorie",
+          "category": "Kategorie *",
           "description": "Beschreibung",
-          "amount": "Betrag",
-          "currency": "Währung",
+          "amount": "Betrag *",
+          "currency": "Währung *",
           "expense_date": "Zahlungs-/Buchungsdatum",
           "provider": "Anbieter / Werkstatt / Behörde",
           "country": "Land",
-          "odometer_km": "Kilometerstand",
-          "valid_from": "Gültig von",
-          "valid_to": "Gültig bis",
+          "odometer_km": "Kilometerstand (optional)",
+          "valid_from": "Gültig von (optional)",
+          "valid_to": "Gültig bis (optional)",
           "notes": "Notiz",
-          "receipt_file": "Rechnung / Beleg"
+          "receipt_file": "Rechnung / Beleg",
+          "expense_year": "Jahr (falls Datum unbekannt)"
         }
       }
     },

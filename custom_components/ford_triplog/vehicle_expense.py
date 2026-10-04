@@ -25,13 +25,13 @@ class FordTriplogVehicleExpenseStorage:
         await self.async_setup(); d=self._normalize(item); vid=self.database.vehicle_id; p=self.database.db_path
         def _w():
             now=time.strftime('%Y-%m-%dT%H:%M:%S%z'); eid=d.get('expense_id')
-            vals=(d['expense_group'],d['category'],d['description'],d['amount'],d['currency'],d['expense_date'],d.get('valid_from'),d.get('valid_to'),d.get('odometer_km'),d.get('provider'),d.get('country'),d.get('notes'))
+            vals=(d['expense_group'],d['category'],d['description'],d['amount'],d['currency'],d.get('expense_date'),d.get('expense_year'),d.get('valid_from'),d.get('valid_to'),d.get('odometer_km'),d.get('provider'),d.get('country'),d.get('notes'))
             with sqlite3.connect(p) as db:
                 db.row_factory=sqlite3.Row
                 if eid is None:
-                    cur=db.execute("INSERT INTO vehicle_expenses (vehicle_id,expense_group,category,description,amount,currency,expense_date,valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(vid,*vals,now,now)); eid=int(cur.lastrowid)
+                    cur=db.execute("INSERT INTO vehicle_expenses (vehicle_id,expense_group,category,description,amount,currency,expense_date,expense_year,valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",(vid,*vals,now,now)); eid=int(cur.lastrowid)
                 else:
-                    db.execute("UPDATE vehicle_expenses SET expense_group=?,category=?,description=?,amount=?,currency=?,expense_date=?,valid_from=?,valid_to=?,odometer_km=?,provider=?,country=?,notes=?,updated_at=? WHERE vehicle_id=? AND expense_id=?",(*vals,now,vid,int(eid)))
+                    db.execute("UPDATE vehicle_expenses SET expense_group=?,category=?,description=?,amount=?,currency=?,expense_date=?,expense_year=?,valid_from=?,valid_to=?,odometer_km=?,provider=?,country=?,notes=?,updated_at=? WHERE vehicle_id=? AND expense_id=?",(*vals,now,vid,int(eid)))
                 db.commit(); return dict(db.execute("SELECT * FROM vehicle_expenses WHERE vehicle_id=? AND expense_id=?",(vid,eid)).fetchone())
         return await self.hass.async_add_executor_job(_w)
     async def async_delete(self,eid:int):
@@ -57,13 +57,44 @@ class FordTriplogVehicleExpenseStorage:
             if ',' in s and '.' in s: s=s.replace('.','').replace(',','.') if s.rfind(',')>s.rfind('.') else s.replace(',','')
             else:s=s.replace(',','.')
             return float(s)
-        d['expense_date']=dt(d.get('expense_date'),True); d['valid_from']=dt(d.get('valid_from')); d['valid_to']=dt(d.get('valid_to'))
+        d['expense_date']=dt(d.get('expense_date')); d['valid_from']=dt(d.get('valid_from')); d['valid_to']=dt(d.get('valid_to'))
         if bool(d['valid_from']) != bool(d['valid_to']): raise ValueError('both validity dates required')
         if d['valid_from'] and d['valid_to']<d['valid_from']: raise ValueError('invalid validity range')
         d['amount']=num(d.get('amount')); 
         if d['amount']<0: raise ValueError('negative amount')
+        year_raw=str(d.get('expense_year') or '').strip()
+        d['expense_year']=int(year_raw) if year_raw else None
+        if d['expense_year'] is not None and not (1900 <= d['expense_year'] <= 2200): raise ValueError('invalid year')
+        if d['expense_date']: d['expense_year']=int(d['expense_date'][:4])
+        if group == 'toll' and not (d['expense_date'] or d['valid_from'] or d['expense_year']): raise ValueError('missing toll date or year')
+        if group != 'toll' and not (d['expense_date'] or d['expense_year']): raise ValueError('missing date or year')
         d['odometer_km']=None if str(d.get('odometer_km') or '').strip()=='' else num(d.get('odometer_km'))
         for k in ('category','description','provider','country','notes'): d[k]=str(d.get(k) or '').strip() or None
         if not d['category']: raise ValueError('category required')
         d['currency']=str(d.get('currency') or 'CHF').strip().upper()
         return d
+
+
+def allocated_amount_for_period(item: dict[str, Any], period_start: date, period_end: date) -> float:
+    """Return the expense amount allocated to an inclusive reporting period.
+
+    Validity-based expenses (e.g. vignettes) are distributed day-exactly.
+    Other expenses are assigned to their booking date or, if only a year is
+    known, proportionally to that calendar year.
+    """
+    amount=float(item.get("amount") or 0.0)
+    vf=item.get("valid_from"); vt=item.get("valid_to")
+    if vf and vt:
+        start=date.fromisoformat(str(vf)); end=date.fromisoformat(str(vt))
+        total=(end-start).days+1
+        overlap=max(0,(min(end,period_end)-max(start,period_start)).days+1)
+        return amount*overlap/total if total > 0 else 0.0
+    ed=item.get("expense_date")
+    if ed:
+        booked=date.fromisoformat(str(ed)); return amount if period_start <= booked <= period_end else 0.0
+    year=item.get("expense_year")
+    if year:
+        start=date(int(year),1,1); end=date(int(year),12,31); total=(end-start).days+1
+        overlap=max(0,(min(end,period_end)-max(start,period_start)).days+1)
+        return amount*overlap/total
+    return 0.0

@@ -1169,7 +1169,8 @@ class FordTriplogDatabase:
                             description TEXT,
                             amount REAL NOT NULL CHECK (amount >= 0),
                             currency TEXT NOT NULL DEFAULT 'CHF',
-                            expense_date TEXT NOT NULL,
+                            expense_date TEXT,
+                            expense_year INTEGER,
                             valid_from TEXT, valid_to TEXT,
                             odometer_km REAL, provider TEXT, country TEXT, notes TEXT,
                             created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
@@ -1180,6 +1181,28 @@ class FordTriplogDatabase:
                         """
                     )
                     db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle ON vehicle_expenses (vehicle_id, expense_group, expense_date)")
+                    # dev38: older dev37 databases had expense_date NOT NULL and no expense_year.
+                    cols = {row[1]: row for row in db.execute("PRAGMA table_info(vehicle_expenses)").fetchall()}
+                    if "expense_year" not in cols:
+                        db.execute("ALTER TABLE vehicle_expenses ADD COLUMN expense_year INTEGER")
+                    cols = {row[1]: row for row in db.execute("PRAGMA table_info(vehicle_expenses)").fetchall()}
+                    if cols.get("expense_date") and int(cols["expense_date"][3]) == 1:
+                        db.execute("ALTER TABLE vehicle_expenses RENAME TO vehicle_expenses_dev37")
+                        db.execute("""CREATE TABLE vehicle_expenses (
+                            expense_id INTEGER PRIMARY KEY AUTOINCREMENT, vehicle_id INTEGER NOT NULL,
+                            expense_group TEXT NOT NULL, category TEXT NOT NULL, description TEXT,
+                            amount REAL NOT NULL CHECK (amount >= 0), currency TEXT NOT NULL DEFAULT 'CHF',
+                            expense_date TEXT, expense_year INTEGER, valid_from TEXT, valid_to TEXT,
+                            odometer_km REAL, provider TEXT, country TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to IS NULL OR valid_from IS NOT NULL),
+                            CHECK (valid_to IS NULL OR valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE)""")
+                        db.execute("""INSERT INTO vehicle_expenses
+                            (expense_id,vehicle_id,expense_group,category,description,amount,currency,expense_date,expense_year,valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at)
+                            SELECT expense_id,vehicle_id,expense_group,category,description,amount,currency,expense_date,CAST(substr(expense_date,1,4) AS INTEGER),valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at FROM vehicle_expenses_dev37""")
+                        db.execute("DROP TABLE vehicle_expenses_dev37")
+                        db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle ON vehicle_expenses (vehicle_id, expense_group, expense_date)")
 
                     db.execute(
                         """
