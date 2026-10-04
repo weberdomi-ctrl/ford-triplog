@@ -70,7 +70,7 @@ from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
-from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields
+from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -7534,10 +7534,16 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED,False)):
                     content=document["content"]; name=document["original_filename"]; media=document["media_type"]
                     if is_pdf:
-                        content=await self.hass.async_add_executor_job(render_pdf_page_png,document["content"],0); name=f"{Path(name).stem}_page1.png"; media="image/png"
+                        content=await self.hass.async_add_executor_job(render_vehicle_registration_png,document["content"],0); name=f"{Path(name).stem}_page1.png"; media="image/png"
                     if content:
                         ocr=await self._get_ocr_client().async_analyze(filename=name,media_type=media,content=content); text=str(ocr.get("raw_text") or "")
-                self._vehicle_registration_prefill=extract_vehicle_registration_fields(text)
+                    _LOGGER.info("Vehicle registration OCR completed: document=%s chars=%s", document["original_filename"], len(text.strip()))
+                runtime_data = self._get_context_runtime_data()
+                vehicle_data = runtime_data.get("vehicle") or {}
+                vehicle_config = self._get_context_config()
+                expected_vin = str(vehicle_data.get("vin") or vehicle_config.get("vin") or vehicle_config.get("vehicle_vin") or "").strip() or None
+                self._vehicle_registration_prefill=extract_vehicle_registration_fields(text, expected_vin=expected_vin)
+                _LOGGER.info("Vehicle registration fields recognized: document=%s fields=%s", document["original_filename"], sorted(self._vehicle_registration_prefill))
                 return await self.async_step_vehicle_registration_manual()
             except ValueError as err:
                 # Home Assistant removes the temporary upload file after the

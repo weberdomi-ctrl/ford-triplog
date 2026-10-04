@@ -80,24 +80,123 @@ class FordTriplogVehicleDocumentStorage:
         except ValueError:return None
         return p
 
-def extract_vehicle_registration_fields(text:str)->dict[str,str]:
-    """Conservative CH/DE registration parser; all results remain user-reviewable."""
-    t=' '.join((text or '').replace('\r','\n').split())
-    out:dict[str,str]={}
-    pats={
-      'vin':[r'(?:Fahrgestell(?:nummer|-Nr\.?|nr\.?|nummer)?|FIN|VIN|Identifizierungsnummer)\s*[:\-]?\s*([A-HJ-NPR-Z0-9]{17})'],
-      'registration_number':[r'(?:Kontrollschild|Kennzeichen|Amtliches Kennzeichen)\s*[:\-]?\s*([A-ZÄÖÜ]{1,3}[ -]?[A-Z0-9 -]{2,10})'],
-      'first_registration':[r'(?:1\.?\s*Inverkehrsetzung|Erstzulassung|Datum der ersten Zulassung)\s*[:\-]?\s*(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})'],
-      'make':[r'(?:Marke|Hersteller)\s*[:\-]?\s*([A-Za-z0-9ÄÖÜäöü .\-]{2,30})'],
-      'type_approval':[r'(?:Typengenehmigung|Typgenehmigung|Typenschein)\s*[:\-]?\s*([A-Za-z0-9.\-]+)'],
-      'power_kw':[r'(?:Leistung|Nennleistung)\s*[:\-]?\s*(\d+(?:[.,]\d+)?)\s*kW'],
-      'empty_weight_kg':[r'(?:Leergewicht|Masse des in Betrieb befindlichen Fahrzeugs)\s*[:\-]?\s*(\d{3,5})\s*kg'],
-      'gross_weight_kg':[r'(?:Gesamtgewicht|zulässige Gesamtmasse)\s*[:\-]?\s*(\d{3,5})\s*kg'],
-    }
-    for k,arr in pats.items():
-        for p in arr:
-            m=re.search(p,t,re.I)
-            if m: out[k]=m.group(1).strip(); break
+
+def render_vehicle_registration_png(content: bytes, page_number: int = 0) -> bytes:
+    """Render and optimise a scanned registration document for OCR.
+
+    Registration scans often contain large white scanner margins.  Rendering at
+    higher resolution, cropping those margins and applying autocontrast gives
+    the OCR service substantially more useful pixels without changing the
+    stored original document.
+    """
+    from io import BytesIO
+    import fitz
+    from PIL import Image, ImageChops, ImageEnhance, ImageOps
+
+    document = fitz.open(stream=content, filetype="pdf")
+    try:
+        if document.page_count <= page_number:
+            return b""
+        page = document.load_page(page_number)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(3.5, 3.5), alpha=False)
+        raw = pixmap.tobytes("png")
+    finally:
+        document.close()
+
+    image = Image.open(BytesIO(raw)).convert("RGB")
+    # Find everything that differs sufficiently from a white scanner page.
+    gray = ImageOps.grayscale(image)
+    mask = ImageChops.invert(gray).point(lambda value: 255 if value > 18 else 0)
+    bbox = mask.getbbox()
+    if bbox:
+        pad = max(20, int(min(image.size) * 0.015))
+        left = max(0, bbox[0] - pad); top = max(0, bbox[1] - pad)
+        right = min(image.width, bbox[2] + pad); bottom = min(image.height, bbox[3] + pad)
+        image = image.crop((left, top, right, bottom))
+    image = ImageOps.autocontrast(image, cutoff=0.5)
+    image = ImageEnhance.Contrast(image).enhance(1.15)
+    output = BytesIO()
+    image.save(output, format="PNG", optimize=True)
+    return output.getvalue()
+
+def extract_vehicle_registration_fields(text: str, expected_vin: str | None = None) -> dict[str, str]:
+    """Extract CH/DE registration fields from OCR text for user review."""
+    raw = (text or "").replace("\r", "\n")
+    t = " ".join(raw.split())
+    out: dict[str, str] = {}
+
+    def first(patterns: list[str]) -> str | None:
+        for pattern in patterns:
+            match = re.search(pattern, t, re.I)
+            if match:
+                return match.group(1).strip(" :;,-")
+        return None
+
+    # Swiss registration documents are multilingual and OCR frequently inserts
+    # spaces into VINs and dotted Stammnummern.  Keep parsing conservative: all
+    # values are still shown to the user before they are saved.
+    vin = first([
+        r"(?:Fahrgestell(?:nummer|-Nr\.?|nr\.?|nummer)?|Chassis|VIN|FIN|Identifizierungsnummer)\s*[:\-]?\s*((?:[A-HJ-NPR-Z0-9][ \t.-]*){17,22})",
+    ])
+    if vin:
+        candidate = re.sub(r"[^A-HJ-NPR-Z0-9]", "", vin.upper())
+        if len(candidate) >= 17:
+            out["vin"] = candidate[:17]
+
+    # The selected Triplog vehicle already has a canonical VIN.  Scanned CH
+    # documents often split the VIN into groups or OCR confuses individual
+    # glyphs.  Prefer an exact occurrence after normalization; if OCR did not
+    # produce a usable VIN at all, use the canonical VIN as a safe prefill for
+    # this vehicle (the review form still requires user confirmation).
+    canonical_vin = re.sub(r"[^A-HJ-NPR-Z0-9]", "", (expected_vin or "").upper())
+    normalized_ocr = re.sub(r"[^A-HJ-NPR-Z0-9]", "", raw.upper())
+    if len(canonical_vin) == 17:
+        if canonical_vin in normalized_ocr or "vin" not in out:
+            out["vin"] = canonical_vin
+
+    value = first([
+        r"(?:Kontrollschild|Schild|Plaque|Targa|Kennzeichen|Amtliches Kennzeichen)\s*[:\-]?\s*([A-Z]{1,3}\s*\d{2,6})",
+    ])
+    if value:
+        out["registration_number"] = re.sub(r"\s+", " ", value.upper()).strip()
+
+    value = first([
+        r"(?:1\.?\s*Inverkehrsetzung|1\.?\s*Inverkehrssetzung|Inverkehrsetzung|1re mise en circulation|1a messa in circolazione|Erstzulassung|Datum der ersten Zulassung)[^0-9]{0,45}(\d{1,2}[.\-/]\d{1,2}[.\-/]\d{2,4})",
+    ])
+    if not value:
+        # Preserve OCR line structure: on Swiss forms the date can be printed
+        # in the neighbouring line/cell rather than immediately after label.
+        lines = [line.strip() for line in raw.split("\n") if line.strip()]
+        for idx, line in enumerate(lines):
+            if re.search(r"Inverkehr|Erstzulassung|mise en circulation|messa in circolazione", line, re.I):
+                window = " ".join(lines[idx:idx + 3])
+                match = re.search(r"(\d{1,2}[.\-/]\d{1,2}[.\-/](?:\d{2}|\d{4}))", window)
+                if match:
+                    value = match.group(1)
+                    break
+    if value: out["first_registration"] = value
+
+    value = first([r"(?:Marke und Typ|Marque et type|Marca e tipo)\s*[:\-]?\s*([A-Z0-9][A-Z0-9 ._\-/]{2,40})"])
+    if value:
+        words=value.split()
+        if words:
+            out["make"]=words[0]
+            if len(words)>1: out["model"]=" ".join(words[1:])
+    else:
+        value=first([r"(?:Marke|Hersteller)\s*[:\-]?\s*([A-Za-z0-9ÄÖÜäöü .\-]{2,30})"])
+        if value: out["make"]=value
+
+    value = first([r"(?:Typengenehmigung|Typgenehmigung|Approbation du type|Approvazione del tipo|Typenschein)\s*[:\-]?\s*([A-Z0-9 .\-]{3,20})"])
+    if value: out["type_approval"] = re.sub(r"\s+", "", value)
+
+    value = first([r"(?:Leistung|Puissance|Potenza|Nennleistung)\s*(?:kW)?\s*[:\-]?\s*\*{0,6}\s*(\d{2,4}(?:[.,]\d+)?)", r"(?:Leistung|Puissance|Potenza)[^0-9]{0,30}(\d{2,4}(?:[.,]\d+)?)\s*kW"])
+    if value: out["power_kw"] = value.replace(",", ".")
+
+    value = first([r"(?:Leergewicht|Poids à vide|Peso a vuoto)[^0-9]{0,25}\*{0,6}\s*(\d{3,5})"])
+    if value: out["empty_weight_kg"] = value
+    value = first([r"(?:Gesamtgewicht|Poids total|Peso totale|zulässige Gesamtmasse)[^0-9]{0,25}\*{0,6}\s*(\d{3,5})"])
+    if value: out["gross_weight_kg"] = value
+
     return out
 
 class FordTriplogVehicleDocumentView(HomeAssistantView):
