@@ -1022,6 +1022,40 @@ class FordTriplogDatabase:
                     )
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS vehicle_financing (
+                            financing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            financing_type TEXT NOT NULL,
+                            provider TEXT,
+                            contract_number TEXT,
+                            start_date TEXT NOT NULL,
+                            end_date TEXT,
+                            duration_months INTEGER NOT NULL CHECK (duration_months > 0),
+                            purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0),
+                            first_payment REAL NOT NULL DEFAULT 0 CHECK (first_payment >= 0),
+                            regular_payment REAL NOT NULL DEFAULT 0 CHECK (regular_payment >= 0),
+                            number_of_payments INTEGER NOT NULL CHECK (number_of_payments > 0),
+                            residual_value REAL CHECK (residual_value IS NULL OR residual_value >= 0),
+                            interest_rate REAL CHECK (interest_rate IS NULL OR interest_rate >= 0),
+                            annual_mileage INTEGER CHECK (annual_mileage IS NULL OR annual_mileage >= 0),
+                            excess_km_rate REAL CHECK (excess_km_rate IS NULL OR excess_km_rate >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            notes TEXT,
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
+                        ON vehicle_financing (vehicle_id, start_date)
+                        """
+                    )
+
+                    db.execute(
+                        """
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
                         ON home_charging_tariffs (valid_from, valid_to)
                         """
