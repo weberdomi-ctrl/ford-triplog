@@ -51,7 +51,8 @@
           "user_charging_sites": "Własne lokalizacje ładowania",
           "charging_site_database": "Lokalizacje ładowania OpenStreetMap",
           "export": "Eksport danych",
-          "user_places": "Custom places"
+          "user_places": "Custom places",
+          "insurance_management": "Ubezpieczenie"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
@@ -996,6 +997,55 @@
         "data": {
           "financing_file": "Umowa / dokument"
         }
+      },
+      "insurance_management": {
+        "title": "Ubezpieczenie",
+        "description": "Pojazd: {vehicle_name}.",
+        "menu_options": {
+          "insurance_add": "Dodaj ubezpieczenie",
+          "insurance_edit": "Edytuj ubezpieczenie",
+          "insurance_delete": "Usuń ubezpieczenie",
+          "init": "Powrót",
+          "insurance_document_upload": "Odczytaj polisę/fakturę"
+        }
+      },
+      "insurance_add": {
+        "title": "Dodaj ubezpieczenie"
+      },
+      "insurance_edit": {
+        "title": "Edytuj ubezpieczenie",
+        "data": {
+          "insurance_id": "Ubezpieczenie"
+        }
+      },
+      "insurance_delete": {
+        "title": "Usuń ubezpieczenie",
+        "data": {
+          "insurance_id": "Ubezpieczenie"
+        }
+      },
+      "insurance_form": {
+        "title": "Ubezpieczenie",
+        "data": {
+          "provider": "Ubezpieczyciel",
+          "policy_number": "Numer polisy",
+          "valid_from": "Ważne od",
+          "valid_to": "Ważne do",
+          "period_premium": "Składka za okres",
+          "currency": "Waluta",
+          "payment_frequency": "Częstotliwość płatności",
+          "payment_amount": "Kwota płatności",
+          "first_payment_date": "Pierwsza płatność",
+          "notes": "Notatka"
+        }
+      },
+      "insurance_document_upload": {
+        "title": "Import dokumentu ubezpieczenia",
+        "description": "Prześlij polisę lub rachunek składki. Tekst PDF jest odczytywany bezpośrednio, a skany przez OCR. Rozpoznane dane są wstępnie uzupełniane.",
+        "data": {
+          "insurance_file": "Plik",
+          "document_type": "Typ dokumentu"
+        }
       }
     },
     "error": {
@@ -1062,7 +1112,12 @@
       "invalid_tariff_range": "Koniec okresu taryfy nie może być wcześniejszy niż początek.",
       "overlapping_tariff_period": "Ten okres taryfy nakłada się na istniejący okres w tym samym roku.",
       "financing_document_import_failed": "Nie udało się zaimportować dokumentu finansowania.",
-      "financing_ocr_failed": "Nie udało się przeanalizować dokumentu finansowania."
+      "financing_ocr_failed": "Nie udało się przeanalizować dokumentu finansowania.",
+      "insurance_invalid": "Nieprawidłowe dane ubezpieczenia.",
+      "insurance_document_import_failed": "Nie udało się zaimportować dokumentu ubezpieczenia."
+    },
+    "abort": {
+      "no_insurance_entries": "Brak wpisów ubezpieczenia."
     }
   },
   "entity": {

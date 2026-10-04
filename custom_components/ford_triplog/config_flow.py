@@ -72,6 +72,7 @@ from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
 from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
 from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date
+from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -653,6 +654,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._vehicle_registration_prefill: dict[str, Any] = {}
         self._vehicle_registration_document: dict[str, Any] = {}
         self._selected_vehicle_document_url: str | None = None
+        self._vehicle_insurance_storage: FordTriplogVehicleInsuranceStorage | None = None
+        self._selected_insurance_id: int | None = None
+        self._insurance_prefill: dict[str, Any] = {}
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -819,6 +823,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "pause_management",
                 "charge_management",
                 "financing_management",
+                "insurance_management",
                 "vehicle_data_management",
                 "export",
                 "user_places",
@@ -7515,6 +7520,148 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return await self.async_step_financing_documents_menu()
         options = [selector.SelectOptionDict(value=str(x["document_id"]), label=f"{x['original_filename']} · {x['created_at'][:10]}") for x in items]
         return self.async_show_form(step_id="financing_document_delete", data_schema=vol.Schema({vol.Required("document_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def _async_insurance_storage(self) -> FordTriplogVehicleInsuranceStorage:
+        """Return insurance storage for the selected vehicle."""
+        if self._vehicle_insurance_storage is None:
+            self._vehicle_insurance_storage = FordTriplogVehicleInsuranceStorage(
+                self.hass,
+                Path(self.hass.config.path(".storage", STORAGE_DIR)),
+                self._ensure_vehicle_context_id(),
+            )
+            await self._vehicle_insurance_storage.async_setup()
+        return self._vehicle_insurance_storage
+
+    async def async_step_insurance_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage vehicle insurance periods and payment schedules."""
+        return self.async_show_menu(
+            step_id="insurance_management",
+            menu_options=["insurance_document_upload", "insurance_add", "insurance_edit", "insurance_delete", "init"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_insurance_document_upload(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Import an insurance policy/invoice and prefill insurance values."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["insurance_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
+                    document = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+                if is_pdf:
+                    text = await self.hass.async_add_executor_job(extract_pdf_text, document["content"])
+                if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    content = document["content"]; name = document["original_filename"]; media = document["media_type"]
+                    if is_pdf:
+                        content = await self.hass.async_add_executor_job(render_pdf_page_png, document["content"], 0)
+                        name = f"{Path(name).stem}_page1.png"; media = "image/png"
+                    if content:
+                        ocr = await self._get_ocr_client().async_analyze(filename=name, media_type=media, content=content)
+                        text = str(ocr.get("raw_text") or "")
+                self._insurance_prefill = extract_insurance_fields(text)
+                doc_type = str(user_input.get("document_type") or "insurance_policy")
+                await docs.async_attach(self._ensure_vehicle_context_id(), document["filename"], document["original_filename"], document["media_type"], doc_type, "Versicherungsimport")
+                _LOGGER.info("Insurance document parsed: document=%s fields=%s", document["original_filename"], sorted(self._insurance_prefill))
+                self._selected_insurance_id = None
+                return await self.async_step_insurance_form()
+            except (ValueError, HomeAssistantError, OSError, FordTriplogOCRAuthenticationError, FordTriplogOCRConnectionError, FordTriplogOCRResponseError):
+                _LOGGER.exception("Unable to import insurance document")
+                errors["base"] = "insurance_document_import_failed"
+        types = [
+            selector.SelectOptionDict(value="insurance_policy", label="Police"),
+            selector.SelectOptionDict(value="insurance_invoice", label="Prämienrechnung"),
+            selector.SelectOptionDict(value="insurance_other", label="Sonstiger Versicherungsbeleg"),
+        ]
+        return self.async_show_form(step_id="insurance_document_upload", data_schema=vol.Schema({
+            vol.Required("insurance_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+            vol.Required("document_type", default="insurance_policy"): selector.SelectSelector(selector.SelectSelectorConfig(options=types)),
+        }), errors=errors)
+
+    async def async_step_insurance_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add an insurance period."""
+        self._selected_insurance_id = None
+        return await self.async_step_insurance_form(user_input)
+
+    async def async_step_insurance_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select an insurance period to edit."""
+        store = await self._async_insurance_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_insurance_entries")
+        if user_input is not None:
+            self._selected_insurance_id = int(user_input["insurance_id"])
+            return await self.async_step_insurance_form()
+        options = [selector.SelectOptionDict(
+            value=str(x["insurance_id"]),
+            label=f"{x.get('provider') or '-'} · {x['valid_from']} – {x['valid_to']} · {x['period_premium']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="insurance_edit", data_schema=vol.Schema({
+            vol.Required("insurance_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_insurance_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Delete an insurance period."""
+        store = await self._async_insurance_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_insurance_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["insurance_id"]))
+            return await self.async_step_insurance_management()
+        options = [selector.SelectOptionDict(
+            value=str(x["insurance_id"]),
+            label=f"{x.get('provider') or '-'} · {x['valid_from']} – {x['valid_to']}",
+        ) for x in items]
+        return self.async_show_form(step_id="insurance_delete", data_schema=vol.Schema({
+            vol.Required("insurance_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_insurance_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create or edit one insurance period."""
+        store = await self._async_insurance_storage()
+        existing: dict[str, Any] = {}
+        if self._selected_insurance_id is not None:
+            existing = next((x for x in await store.async_load() if int(x["insurance_id"]) == self._selected_insurance_id), {})
+        if self._selected_insurance_id is None and self._insurance_prefill:
+            existing = dict(self._insurance_prefill)
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                if self._selected_insurance_id is not None:
+                    data["insurance_id"] = self._selected_insurance_id
+                await store.async_save(data)
+                self._selected_insurance_id = None
+                self._insurance_prefill = {}
+                return await self.async_step_insurance_management()
+            except (ValueError, TypeError):
+                errors["base"] = "insurance_invalid"
+        payment_options = [
+            selector.SelectOptionDict(value="monthly", label="Monatlich"),
+            selector.SelectOptionDict(value="quarterly", label="Vierteljährlich"),
+            selector.SelectOptionDict(value="semiannual", label="Halbjährlich"),
+            selector.SelectOptionDict(value="annual", label="Jährlich"),
+            selector.SelectOptionDict(value="single", label="Einmalig"),
+            selector.SelectOptionDict(value="individual", label="Individuell"),
+        ]
+        def txt(key: str, default: str = "") -> str:
+            value = existing.get(key)
+            return default if value is None else str(value)
+        schema = vol.Schema({
+            vol.Optional("provider", default=txt("provider")): selector.TextSelector(),
+            vol.Optional("policy_number", default=txt("policy_number")): selector.TextSelector(),
+            vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
+            vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
+            vol.Required("period_premium", default=txt("period_premium", "0")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("payment_frequency", default=txt("payment_frequency", "annual")): selector.SelectSelector(selector.SelectSelectorConfig(options=payment_options)),
+            vol.Optional("payment_amount", default=txt("payment_amount")): selector.TextSelector(),
+            vol.Optional("first_payment_date", default=txt("first_payment_date")): selector.TextSelector(),
+            vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="insurance_form", data_schema=schema, errors=errors)
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""

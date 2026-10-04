@@ -53,7 +53,8 @@
           "export": "Daten exportieren",
           "user_places": "Benutzerdefinierte Orte",
           "financing_management": "Fahrzeugfinanzierung",
-          "vehicle_data_management": "Fahrzeugdaten & Dokumente"
+          "vehicle_data_management": "Fahrzeugdaten & Dokumente",
+          "insurance_management": "Versicherung"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -1232,6 +1233,54 @@
         "data": {
           "document_ref": "Dokument"
         }
+      },
+      "insurance_management": {
+        "title": "Versicherung",
+        "description": "Fahrzeug: {vehicle_name}. Versicherungsperioden und Zahlweise verwalten.",
+        "menu_options": {
+          "insurance_add": "Versicherung hinzufügen",
+          "insurance_edit": "Versicherung bearbeiten",
+          "insurance_delete": "Versicherung löschen",
+          "init": "Zurück zum Hauptmenü",
+          "insurance_document_upload": "Police/Rechnung einlesen"
+        }
+      },
+      "insurance_add": {
+        "title": "Versicherung hinzufügen",
+        "description": "Versicherungsperiode erfassen."
+      },
+      "insurance_edit": {
+        "title": "Versicherung bearbeiten",
+        "description": "Versicherungsperiode auswählen."
+      },
+      "insurance_delete": {
+        "title": "Versicherung löschen",
+        "description": "Versicherungsperiode auswählen und löschen."
+      },
+      "insurance_form": {
+        "title": "Versicherung",
+        "description": "Die Prämie gilt für den angegebenen Versicherungszeitraum. Die Zahlweise bildet den realen Zahlungsfluss ab.",
+        "data": {
+          "provider": "Versicherer",
+          "policy_number": "Policennummer",
+          "valid_from": "Gültig von (JJJJ-MM-TT)",
+          "valid_to": "Gültig bis (JJJJ-MM-TT)",
+          "period_premium": "Prämie für diesen Zeitraum",
+          "currency": "Währung",
+          "payment_frequency": "Zahlweise",
+          "payment_amount": "Betrag pro Zahlung",
+          "first_payment_date": "Erster Zahlungstermin (JJJJ-MM-TT)",
+          "notes": "Notiz",
+          "insurance_id": "Versicherung"
+        }
+      },
+      "insurance_document_upload": {
+        "title": "Versicherungsdokument einlesen",
+        "description": "Police oder Prämienrechnung hochladen. Text wird zuerst direkt aus PDF gelesen; bei Scans wird OCR verwendet. Erkannte Werte werden zur Kontrolle vorbelegt.",
+        "data": {
+          "insurance_file": "Datei",
+          "document_type": "Dokumenttyp"
+        }
       }
     },
     "error": {
@@ -1300,10 +1349,13 @@
       "invalid_financing_data": "Ungültige Vertragsdaten.",
       "financing_document_import_failed": "Der Finanzierungsbeleg konnte nicht importiert werden.",
       "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden.",
-      "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden."
+      "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden.",
+      "insurance_invalid": "Versicherungsdaten sind ungültig.",
+      "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden."
     },
     "abort": {
-      "no_financing_contracts": "Keine Finanzierungsverträge vorhanden."
+      "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",
+      "no_insurance_entries": "Keine Versicherungen vorhanden."
     }
   },
   "entity": {

@@ -52,7 +52,8 @@
           "charging_site_database": "OpenStreetMap charging locations",
           "export": "Export data",
           "user_places": "Custom places",
-          "financing_management": "Vehicle financing"
+          "financing_management": "Vehicle financing",
+          "insurance_management": "Insurance"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -1075,6 +1076,54 @@
         "data": {
           "financing_file": "Contract / document"
         }
+      },
+      "insurance_management": {
+        "title": "Insurance",
+        "description": "Vehicle: {vehicle_name}. Manage insurance periods and payment schedule.",
+        "menu_options": {
+          "insurance_add": "Add insurance",
+          "insurance_edit": "Edit insurance",
+          "insurance_delete": "Delete insurance",
+          "init": "Back to main menu",
+          "insurance_document_upload": "Read policy/invoice"
+        }
+      },
+      "insurance_add": {
+        "title": "Add insurance",
+        "description": "Add an insurance period."
+      },
+      "insurance_edit": {
+        "title": "Edit insurance",
+        "description": "Select an insurance period."
+      },
+      "insurance_delete": {
+        "title": "Delete insurance",
+        "description": "Select and delete an insurance period."
+      },
+      "insurance_form": {
+        "title": "Insurance",
+        "description": "The premium applies to the specified insurance period. Payment frequency represents actual cash flow.",
+        "data": {
+          "provider": "Insurer",
+          "policy_number": "Policy number",
+          "valid_from": "Valid from (YYYY-MM-DD)",
+          "valid_to": "Valid to (YYYY-MM-DD)",
+          "period_premium": "Premium for this period",
+          "currency": "Currency",
+          "payment_frequency": "Payment frequency",
+          "payment_amount": "Amount per payment",
+          "first_payment_date": "First payment date (YYYY-MM-DD)",
+          "notes": "Notes",
+          "insurance_id": "Insurance"
+        }
+      },
+      "insurance_document_upload": {
+        "title": "Import insurance document",
+        "description": "Upload a policy or premium invoice. PDF text is read first; scanned documents use OCR. Recognised values are prefilled for review.",
+        "data": {
+          "insurance_file": "File",
+          "document_type": "Document type"
+        }
       }
     },
     "error": {
@@ -1142,10 +1191,13 @@
       "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year.",
       "invalid_financing_data": "Invalid financing contract data.",
       "financing_document_import_failed": "The financing document could not be imported.",
-      "financing_ocr_failed": "The financing document could not be analysed."
+      "financing_ocr_failed": "The financing document could not be analysed.",
+      "insurance_invalid": "Insurance data is invalid.",
+      "insurance_document_import_failed": "Insurance document could not be imported."
     },
     "abort": {
-      "no_financing_contracts": "No financing contracts exist."
+      "no_financing_contracts": "No financing contracts exist.",
+      "no_insurance_entries": "No insurance entries exist."
     }
   },
   "entity": {
