@@ -52,7 +52,8 @@
           "charging_site_database": "OpenStreetMap charging locations",
           "export": "Export data",
           "user_places": "Custom places",
-          "financing_management": "Vehicle financing"
+          "financing_management": "Vehicle financing",
+          "vehicle_data_management": "Vehicle data & documents"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -65,7 +66,8 @@
           "charging_site_database": "Download or import the charging location database.",
           "export": "Export stored Ford Triplog data as a CSV file.",
           "user_places": "Manage places for automatic pause assignment.",
-          "financing_management": "Manage leasing, financing and vehicle purchase costs."
+          "financing_management": "Manage leasing, financing and vehicle purchase costs.",
+          "vehicle_data_management": "Manage vehicle registration and additional vehicle documents."
         }
       },
       "settings": {
@@ -1122,6 +1124,62 @@
         "data": {
           "document_ref": "Document"
         }
+      },
+      "vehicle_data_management": {
+        "title": "Vehicle data",
+        "description": "Vehicle: {vehicle_name}\\n\\nManage registration data and documents.",
+        "menu_options": {
+          "vehicle_registration_upload": "Upload vehicle registration",
+          "vehicle_registration_manual": "Edit vehicle data manually",
+          "vehicle_document_view": "View document",
+          "vehicle_document_add": "Add document",
+          "vehicle_document_delete": "Delete document",
+          "init": "Back"
+        }
+      },
+      "vehicle_registration_upload": {
+        "title": "Upload vehicle registration",
+        "description": "Upload a PDF or image. Recognized values can be reviewed before saving.",
+        "data": {
+          "vehicle_file": "Vehicle registration"
+        }
+      },
+      "vehicle_registration_manual": {
+        "title": "Vehicle data",
+        "description": "Review and save recognized or existing data.",
+        "data": {
+          "vin": "VIN / Fahrgestellnummer",
+          "registration_number": "Registration number",
+          "make": "Make",
+          "model": "Model",
+          "first_registration": "First registration",
+          "type_approval": "Type approval",
+          "power_kw": "Power kW",
+          "empty_weight_kg": "Empty weight kg",
+          "gross_weight_kg": "Gross weight kg"
+        }
+      },
+      "vehicle_document_add": {
+        "title": "Add vehicle document",
+        "description": "Attach an additional vehicle-related document.",
+        "data": {
+          "vehicle_file": "Document",
+          "document_type": "Document type",
+          "note": "Note"
+        }
+      },
+      "vehicle_document_view": {
+        "title": "View vehicle document",
+        "data": {
+          "document_ref": "Document"
+        }
+      },
+      "vehicle_document_delete": {
+        "title": "Delete vehicle document",
+        "description": "The main vehicle registration document is not deleted here.",
+        "data": {
+          "document_id": "Document"
+        }
       }
     },
     "error": {
@@ -1188,7 +1246,8 @@
       "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year.",
       "invalid_financing_data": "Invalid financing contract data.",
       "financing_document_import_failed": "The financing document could not be imported.",
-      "financing_ocr_failed": "The financing document could not be analysed."
+      "financing_ocr_failed": "The financing document could not be analysed.",
+      "vehicle_document_import_failed": "The vehicle document could not be imported."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist."

@@ -52,7 +52,8 @@
           "charging_site_database": "OpenStreetMap-Ladeorte",
           "export": "Daten exportieren",
           "user_places": "Benutzerdefinierte Orte",
-          "financing_management": "Fahrzeugfinanzierung"
+          "financing_management": "Fahrzeugfinanzierung",
+          "vehicle_data_management": "Fahrzeugdaten & Dokumente"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -65,7 +66,8 @@
           "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
           "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren.",
           "user_places": "Orte für automatische Pausen-Zuordnung verwalten.",
-          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten."
+          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
+          "vehicle_data_management": "Fahrzeugausweis/Fahrzeugschein und weitere Fahrzeugdokumente verwalten."
         }
       },
       "settings": {
@@ -1135,6 +1137,62 @@
         "data": {
           "document_ref": "Beleg"
         }
+      },
+      "vehicle_data_management": {
+        "title": "Fahrzeugdaten",
+        "description": "Fahrzeug: {vehicle_name}\\n\\nFahrzeugausweis/Fahrzeugschein und weitere Dokumente verwalten.",
+        "menu_options": {
+          "vehicle_registration_upload": "Fahrzeugausweis / Fahrzeugschein hochladen",
+          "vehicle_registration_manual": "Fahrzeugdaten manuell bearbeiten",
+          "vehicle_document_view": "Dokument anzeigen",
+          "vehicle_document_add": "Weiteres Dokument hinzufügen",
+          "vehicle_document_delete": "Dokument löschen",
+          "init": "Zurück"
+        }
+      },
+      "vehicle_registration_upload": {
+        "title": "Fahrzeugausweis / Fahrzeugschein hochladen",
+        "description": "PDF oder Bild hochladen. Erkannte Daten werden vor dem Speichern angezeigt.",
+        "data": {
+          "vehicle_file": "Fahrzeugausweis / Fahrzeugschein"
+        }
+      },
+      "vehicle_registration_manual": {
+        "title": "Fahrzeugdaten",
+        "description": "Erkannte bzw. vorhandene Angaben prüfen und speichern.",
+        "data": {
+          "vin": "VIN / Fahrgestellnummer",
+          "registration_number": "Kontrollschild / Kennzeichen",
+          "make": "Marke",
+          "model": "Modell",
+          "first_registration": "Erstzulassung / 1. Inverkehrsetzung",
+          "type_approval": "Typengenehmigung",
+          "power_kw": "Leistung kW",
+          "empty_weight_kg": "Leergewicht kg",
+          "gross_weight_kg": "Gesamtgewicht kg"
+        }
+      },
+      "vehicle_document_add": {
+        "title": "Fahrzeugdokument hinzufügen",
+        "description": "Zusätzliches fahrzeugbezogenes Dokument hinterlegen.",
+        "data": {
+          "vehicle_file": "Dokument",
+          "document_type": "Dokumenttyp",
+          "note": "Notiz"
+        }
+      },
+      "vehicle_document_view": {
+        "title": "Fahrzeugdokument anzeigen",
+        "data": {
+          "document_ref": "Dokument"
+        }
+      },
+      "vehicle_document_delete": {
+        "title": "Fahrzeugdokument löschen",
+        "description": "Der Fahrzeugausweis/Fahrzeugschein als Hauptdokument wird hier nicht gelöscht.",
+        "data": {
+          "document_id": "Dokument"
+        }
       }
     },
     "error": {
@@ -1202,7 +1260,8 @@
       "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr.",
       "invalid_financing_data": "Ungültige Vertragsdaten.",
       "financing_document_import_failed": "Der Finanzierungsbeleg konnte nicht importiert werden.",
-      "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden."
+      "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden.",
+      "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden."

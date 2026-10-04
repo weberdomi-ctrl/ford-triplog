@@ -1081,6 +1081,34 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS vehicle_details (
+                            vehicle_id INTEGER PRIMARY KEY,
+                            vin TEXT, registration_number TEXT, make TEXT, model TEXT,
+                            first_registration TEXT, type_approval TEXT,
+                            empty_weight_kg REAL, gross_weight_kg REAL, power_kw REAL,
+                            registration_document_filename TEXT,
+                            registration_document_original_name TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_documents (
+                            document_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL, filename TEXT NOT NULL,
+                            original_filename TEXT NOT NULL, media_type TEXT,
+                            document_type TEXT NOT NULL DEFAULT 'other', note TEXT,
+                            created_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_documents_vehicle ON vehicle_documents (vehicle_id, created_at)")
+
+                    db.execute(
+                        """
                         CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
                         ON vehicle_financing (vehicle_id, start_date)
                         """
