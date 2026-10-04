@@ -70,7 +70,12 @@ from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
-from .financing_document import FordTriplogFinancingDocumentStorage, extract_financing_fields
+from .financing_document import (
+    FordTriplogFinancingDocumentStorage,
+    extract_financing_fields,
+    extract_pdf_text,
+    render_pdf_page_png,
+)
 
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
@@ -7065,7 +7070,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_financing_upload(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Upload a financing document and prefill the leasing form using OCR."""
+        """Upload a financing document and prefill the form from PDF text or OCR."""
         errors: dict[str, str] = {}
         if user_input is not None:
             uploaded_file_id = user_input["financing_file"]
@@ -7080,25 +7085,70 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "document_original_name": document["original_filename"],
                 }
                 self._financing_prefill = {}
-                if bool(self._options.get(CONF_OCR_ENABLED, False)):
-                    try:
-                        ocr = await self._get_ocr_client().async_analyze(
-                            filename=str(document["original_filename"]),
-                            media_type=str(document["media_type"]),
-                            content=document["content"],
+                extracted_text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+
+                # Prefer the PDF text layer. This is faster and substantially
+                # more accurate than OCR for digitally generated contracts.
+                if is_pdf:
+                    extracted_text = await self.hass.async_add_executor_job(
+                        extract_pdf_text, document["content"]
+                    )
+                    if extracted_text.strip():
+                        self._financing_prefill = extract_financing_fields(extracted_text)
+                        _LOGGER.info(
+                            "Financing PDF text extracted: document=%s chars=%s fields=%s",
+                            document["original_filename"],
+                            len(extracted_text),
+                            sorted(self._financing_prefill),
                         )
-                        self._financing_prefill = extract_financing_fields(
-                            str(ocr.get("raw_text") or "")
+                    else:
+                        _LOGGER.info(
+                            "Financing PDF has no usable text layer; using OCR fallback: %s",
+                            document["original_filename"],
+                        )
+
+                # OCR remains the fallback for scanned/image-only PDFs and the
+                # primary path for JPG/PNG/WEBP. For scanned PDFs render page 1
+                # to PNG first; OCR services generally recognize that more
+                # reliably than receiving the PDF container itself.
+                if not extracted_text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    try:
+                        ocr_content = document["content"]
+                        ocr_filename = str(document["original_filename"])
+                        ocr_media_type = str(document["media_type"])
+                        if is_pdf:
+                            ocr_content = await self.hass.async_add_executor_job(
+                                render_pdf_page_png, document["content"], 0
+                            )
+                            if ocr_content:
+                                ocr_filename = f"{Path(ocr_filename).stem}_page1.png"
+                                ocr_media_type = "image/png"
+                        ocr = await self._get_ocr_client().async_analyze(
+                            filename=ocr_filename,
+                            media_type=ocr_media_type,
+                            content=ocr_content,
+                        )
+                        extracted_text = str(ocr.get("raw_text") or "").strip()
+                        self._financing_prefill = extract_financing_fields(extracted_text)
+                        _LOGGER.info(
+                            "Financing OCR fallback completed: document=%s chars=%s fields=%s",
+                            document["original_filename"],
+                            len(extracted_text),
+                            sorted(self._financing_prefill),
                         )
                     except (
                         FordTriplogOCRAuthenticationError,
                         FordTriplogOCRConnectionError,
                         FordTriplogOCRResponseError,
+                        ImportError,
+                        RuntimeError,
+                        ValueError,
                     ):
-                        # The document is already safely stored. OCR is only a
-                        # convenience; a failure must never block manual entry.
+                        # The document is already safely stored. Recognition is
+                        # only a convenience; a failure never blocks manual entry.
                         _LOGGER.exception(
-                            "Financing document OCR failed; continuing with manual review"
+                            "Financing document recognition failed; continuing with manual review"
                         )
                 return await self._async_step_leasing_form(None)
             except ValueError as err:

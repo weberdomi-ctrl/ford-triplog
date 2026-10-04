@@ -49,6 +49,43 @@ class FordTriplogFinancingDocumentStorage:
         }
 
 
+def extract_pdf_text(content: bytes, max_pages: int = 5) -> str:
+    """Extract embedded text from a PDF without OCR.
+
+    Returns an empty string for image-only/scanned PDFs.
+    """
+    if not content:
+        return ""
+    try:
+        from io import BytesIO
+        from pypdf import PdfReader
+
+        reader = PdfReader(BytesIO(content))
+        parts: list[str] = []
+        for page in reader.pages[:max_pages]:
+            value = page.extract_text() or ""
+            if value.strip():
+                parts.append(value)
+        return "\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
+def render_pdf_page_png(content: bytes, page_number: int = 0) -> bytes:
+    """Render a PDF page to PNG for OCR fallback."""
+    import fitz
+
+    document = fitz.open(stream=content, filetype="pdf")
+    try:
+        if document.page_count <= page_number:
+            return b""
+        page = document.load_page(page_number)
+        pixmap = page.get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+        return pixmap.tobytes("png")
+    finally:
+        document.close()
+
+
 def _money(value: str) -> float | None:
     text = value.replace("’", "'").replace(" ", "").replace("CHF", "").strip()
     text = text.replace("'", "")
