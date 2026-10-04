@@ -1694,6 +1694,12 @@
       },
       "insurance_tco": {
         "name": "Insurance TCO"
+      },
+      "financing_tco": {
+        "name": "Financing TCO"
+      },
+      "cost_overview_tco": {
+        "name": "TCO cost overview"
       }
     },
     "binary_sensor": {

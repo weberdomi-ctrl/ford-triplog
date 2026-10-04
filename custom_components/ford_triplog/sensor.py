@@ -208,6 +208,8 @@ async def async_setup_entry(
             FordTriplogVehicleDetailsSensor(hass),
             FordTriplogInsuranceTCOSensor(hass),
             FordTriplogRoadTaxTCOSensor(hass),
+            FordTriplogFinancingTCOSensor(hass),
+            FordTriplogCostOverviewTCOSensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -527,6 +529,138 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
             "model": "Triplog",
             "sw_version": VERSION,
         }
+
+
+
+class FordTriplogFinancingTCOSensor(SensorEntity):
+    """Smoothed monthly financing TCO for the selected vehicle."""
+    _attr_has_entity_name = True
+    _attr_translation_key = "financing_tco"
+    _attr_unique_id = "ford_triplog_financing_tco"
+    _attr_icon = "mdi:cash-sync"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value = None; self._attrs = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        await self.async_update()
+
+    @callback
+    def _changed(self, *_args): self.hass.async_create_task(self._refresh())
+    async def _refresh(self): await self.async_update(); self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
+        vid=get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None: self._value=None; self._attrs={}; return
+        rows=await FordTriplogVehicleFinancingStorage(self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid).async_load()
+        now=dt_util.now(); total=0.0; active=[]
+        for row in rows:
+            try: value=leasing_tco_for_month(row, now.year, now.month)
+            except (ValueError, TypeError, KeyError): value=0.0
+            if value:
+                total += value; active.append({'financing_id':row.get('financing_id'),'provider':row.get('provider'),'type':row.get('financing_type'),'monthly_tco':round(value,2)})
+        self._value=round(total,2) if active else None
+        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF','contracts':active}
+    @property
+    def native_value(self): return self._value
+    @property
+    def extra_state_attributes(self): return self._attrs
+    @property
+    def available(self): return self._value is not None
+    @property
+    def device_info(self): return {'identifiers':{(DOMAIN,'ford_triplog')},'name':'Ford Triplog','manufacturer':'Ford','model':'Triplog','sw_version':VERSION}
+
+
+class FordTriplogCostOverviewTCOSensor(SensorEntity):
+    """Current-month TCO overview across all cost groups."""
+    _attr_has_entity_name = True
+    _attr_translation_key = "cost_overview_tco"
+    _attr_unique_id = "ford_triplog_cost_overview_tco"
+    _attr_icon = "mdi:calculator-variant"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value=None; self._attrs={}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_CHARGE_DATA_UPDATED, self._changed))
+        await self.async_update()
+    @callback
+    def _changed(self,*_args): self.hass.async_create_task(self._refresh())
+    async def _refresh(self): await self.async_update(); self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from calendar import monthrange
+        from datetime import date
+        from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
+        from .vehicle_insurance import FordTriplogVehicleInsuranceStorage
+        from .vehicle_tax import FordTriplogVehicleTaxStorage
+        from .vehicle_expense import FordTriplogVehicleExpenseStorage, allocated_amount_for_period
+        vid=get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None: self._value=None; self._attrs={}; return
+        base=Path(self.hass.config.path('.storage', STORAGE_DIR)); now=dt_util.now()
+        ps=date(now.year,now.month,1); pe=date(now.year,now.month,monthrange(now.year,now.month)[1])
+        financing=0.0
+        for r in await FordTriplogVehicleFinancingStorage(self.hass,base,vid).async_load():
+            try: financing += leasing_tco_for_month(r,now.year,now.month)
+            except (ValueError,TypeError,KeyError): pass
+        today=now.date().isoformat()
+        insurance=0.0
+        insurance_rows=await FordTriplogVehicleInsuranceStorage(self.hass,base,vid).async_load()
+        active_ins=[r for r in insurance_rows if str(r.get('valid_from') or '') <= today <= str(r.get('valid_to') or '')]
+        if active_ins:
+            r=max(active_ins,key=lambda x:(str(x.get('valid_from') or ''),int(x.get('insurance_id') or 0)))
+            try: insurance=float(r.get('period_premium') or 0)/12.0
+            except (TypeError,ValueError): pass
+        road_tax=0.0
+        tax_rows=await FordTriplogVehicleTaxStorage(self.hass,base,vid).async_load()
+        active_tax=[r for r in tax_rows if str(r.get('valid_from') or '') <= today <= str(r.get('valid_to') or '')]
+        if active_tax:
+            r=max(active_tax,key=lambda x:(str(x.get('valid_from') or ''),int(x.get('tax_id') or 0)))
+            try: road_tax=float(r.get('annual_tax') or 0)/12.0
+            except (TypeError,ValueError): pass
+        variable={'maintenance':0.0,'toll':0.0,'other':0.0}
+        exp_store=FordTriplogVehicleExpenseStorage(self.hass,base,vid)
+        for r in await exp_store.async_load():
+            g=str(r.get('expense_group') or '')
+            if g in variable:
+                try: variable[g]+=allocated_amount_for_period(r,ps,pe)
+                except (ValueError,TypeError): pass
+        charging=0.0
+        registry=er.async_get(self.hass)
+        eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_charging_monthly_statistics')
+        if eid:
+            st=self.hass.states.get(eid)
+            if st:
+                try: charging=float(st.attributes.get('total_cost_month') or 0)
+                except (TypeError,ValueError): pass
+        fixed=financing+insurance+road_tax
+        total=fixed+sum(variable.values())+charging
+        self._value=round(total,2)
+        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF',
+            'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
+            'fixed_costs':round(fixed,2),'maintenance_repairs':round(variable['maintenance'],2),
+            'tolls_vignettes':round(variable['toll'],2),'other_costs':round(variable['other'],2),
+            'charging':round(charging,2),'variable_costs':round(sum(variable.values())+charging,2),
+            'total_costs':round(total,2)}
+    @property
+    def native_value(self): return self._value
+    @property
+    def extra_state_attributes(self): return self._attrs
+    @property
+    def device_info(self): return {'identifiers':{(DOMAIN,'ford_triplog')},'name':'Ford Triplog','manufacturer':'Ford','model':'Triplog','sw_version':VERSION}
 
 
 class FordTriplogVehicleDetailsSensor(SensorEntity):
