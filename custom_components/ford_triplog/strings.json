@@ -1097,7 +1097,8 @@
         "menu_options": {
           "financing_document_add": "Add document",
           "financing_document_delete": "Delete document",
-          "financing_management": "Back to financing"
+          "financing_management": "Back to financing",
+          "financing_document_view": "View document"
         }
       },
       "financing_document_add": {
@@ -1113,6 +1114,13 @@
         "description": "Select an additional document. The original main contract remains stored.",
         "data": {
           "document_id": "Document"
+        }
+      },
+      "financing_document_view": {
+        "title": "View document",
+        "description": "Select the main contract or an additional document.",
+        "data": {
+          "document_ref": "Document"
         }
       }
     },

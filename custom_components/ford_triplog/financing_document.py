@@ -13,7 +13,9 @@ from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
+from aiohttp import web
 from homeassistant.core import HomeAssistant
+from homeassistant.components.http import HomeAssistantView
 
 from .const import STORAGE_DIR
 
@@ -94,6 +96,93 @@ class FordTriplogFinancingDocumentStorage:
         if filename:
             path = self.directory / filename
             await self.hass.async_add_executor_job(path.unlink, True)
+
+
+    async def async_get_document(self, financing_id: int, document_id: int) -> dict[str, Any] | None:
+        """Return one additional financing document."""
+        from .database import FordTriplogDatabase
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db = FordTriplogDatabase(self.hass, base_path)
+        await db.async_setup()
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(db.db_path) as conn:
+                conn.row_factory = sqlite3.Row
+                row = conn.execute(
+                    "SELECT * FROM vehicle_financing_documents WHERE document_id=? AND financing_id=?",
+                    (int(document_id), int(financing_id)),
+                ).fetchone()
+                return dict(row) if row is not None else None
+        return await self.hass.async_add_executor_job(_read)
+
+    def get_managed_path(self, filename: str) -> Path | None:
+        """Return a validated path inside the financing document directory."""
+        safe_name = Path(str(filename or "")).name
+        if not safe_name:
+            return None
+        path = self.directory / safe_name
+        try:
+            path.resolve().relative_to(self.directory.resolve())
+        except ValueError:
+            return None
+        return path
+
+
+class FordTriplogFinancingDocumentView(HomeAssistantView):
+    """Authenticated inline viewer for financing documents."""
+
+    url = "/api/ford_triplog/financing/{financing_id}/documents/{document_ref}"
+    name = "api:ford_triplog:financing_document"
+    requires_auth = True
+
+    async def get(self, request: web.Request, financing_id: str, document_ref: str) -> web.StreamResponse:
+        hass: HomeAssistant = request.app["hass"]
+        storage = FordTriplogFinancingDocumentStorage(hass)
+        await storage.async_setup()
+
+        filename: str | None = None
+        original_name: str | None = None
+        media_type: str | None = None
+
+        if document_ref == "main":
+            from .database import FordTriplogDatabase
+            base_path = Path(hass.config.path(".storage", STORAGE_DIR))
+            db = FordTriplogDatabase(hass, base_path)
+            await db.async_setup()
+            def _read_main() -> tuple[str | None, str | None] | None:
+                with sqlite3.connect(db.db_path) as conn:
+                    row = conn.execute(
+                        "SELECT document_filename, document_original_name FROM vehicle_financing WHERE financing_id=?",
+                        (int(financing_id),),
+                    ).fetchone()
+                    return (row[0], row[1]) if row is not None else None
+            row = await hass.async_add_executor_job(_read_main)
+            if row:
+                filename, original_name = row
+        else:
+            try:
+                document_id = int(document_ref)
+            except ValueError as err:
+                raise web.HTTPNotFound() from err
+            document = await storage.async_get_document(int(financing_id), document_id)
+            if document:
+                filename = str(document.get("filename") or "")
+                original_name = str(document.get("original_filename") or "")
+                media_type = str(document.get("media_type") or "") or None
+
+        if not filename:
+            raise web.HTTPNotFound()
+        path = storage.get_managed_path(filename)
+        if path is None or not await hass.async_add_executor_job(path.is_file):
+            raise web.HTTPNotFound()
+
+        display_name = Path(original_name or path.name).name.replace('"', "")
+        response = web.FileResponse(path)
+        if media_type:
+            response.content_type = media_type
+        response.headers["Content-Disposition"] = f'inline; filename="{display_name}"'
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Cache-Control"] = "private, no-store"
+        return response
 
 
 def extract_pdf_text(content: bytes, max_pages: int = 5) -> str:

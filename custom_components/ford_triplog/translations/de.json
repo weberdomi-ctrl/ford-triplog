@@ -1110,7 +1110,8 @@
         "menu_options": {
           "financing_document_add": "Beleg hinzufügen",
           "financing_document_delete": "Beleg löschen",
-          "financing_management": "Zurück zur Finanzierung"
+          "financing_management": "Zurück zur Finanzierung",
+          "financing_document_view": "Beleg anzeigen"
         }
       },
       "financing_document_add": {
@@ -1126,6 +1127,13 @@
         "description": "Zusätzlichen Beleg auswählen. Der ursprüngliche Hauptvertrag bleibt erhalten.",
         "data": {
           "document_id": "Beleg"
+        }
+      },
+      "financing_document_view": {
+        "title": "Beleg anzeigen",
+        "description": "Hauptvertrag oder zusätzlichen Beleg auswählen.",
+        "data": {
+          "document_ref": "Beleg"
         }
       }
     },

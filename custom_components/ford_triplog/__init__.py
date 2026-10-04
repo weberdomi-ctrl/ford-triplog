@@ -5,8 +5,8 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.6.0-dev.8
-Build: 26008
+Version: 2.6.0-dev.10
+Build: 26010
 Changes: Reject detached Route Tracker GPS and keep vehicle GPS authoritative.
 """
 
@@ -59,6 +59,7 @@ from .charge_manager import FordTriplogChargeManager
 from .charging_costs import CONF_HOME_TARIFF_PERIODS
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .receipt_storage import FordTriplogReceiptStorage, FordTriplogReceiptView
+from .financing_document import FordTriplogFinancingDocumentView
 from .route_storage import FordTriplogRouteStorage
 from .route_tracker import FordTriplogRouteTracker
 from .vehicle_identity import (
@@ -493,6 +494,10 @@ async def async_setup_entry(
     if not hass.data.setdefault(DOMAIN, {}).get("receipt_view_registered"):
         hass.http.register_view(FordTriplogReceiptView())
         hass.data[DOMAIN]["receipt_view_registered"] = True
+
+    if not hass.data.setdefault(DOMAIN, {}).get("financing_document_view_registered"):
+        hass.http.register_view(FordTriplogFinancingDocumentView())
+        hass.data[DOMAIN]["financing_document_view_registered"] = True
 
     journey_rebuilder = FordTriplogJourneyRebuilder(
         source_storage=storage,

@@ -647,6 +647,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_financing_id: int | None = None
         self._financing_prefill: dict[str, Any] = {}
         self._financing_document: dict[str, Any] = {}
+        self._selected_financing_document_url: str | None = None
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -7394,8 +7395,72 @@ class FordTriplogOptionsFlow(OptionsFlow):
         items = await docs.async_list_for_financing(self._selected_financing_id)
         return self.async_show_menu(
             step_id="financing_documents_menu",
-            menu_options=["financing_document_add", "financing_document_delete", "financing_management"],
+            menu_options=["financing_document_view", "financing_document_add", "financing_document_delete", "financing_management"],
             description_placeholders={"document_count": str(len(items))},
+        )
+
+    async def async_step_financing_document_view(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select and open the main contract or an additional financing document."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        contract = next((x for x in contracts if int(x["financing_id"]) == self._selected_financing_id), None)
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        options: list[selector.SelectOptionDict] = []
+        if contract and contract.get("document_filename"):
+            options.append(selector.SelectOptionDict(
+                value="main",
+                label=f"Hauptvertrag · {contract.get('document_original_name') or contract.get('document_filename')}",
+            ))
+        options.extend(
+            selector.SelectOptionDict(
+                value=str(x["document_id"]),
+                label=f"{x['original_filename']} · {str(x['created_at'])[:10]}" + (f" · {x['note']}" if x.get("note") else ""),
+            )
+            for x in items
+        )
+        if not options:
+            return await self.async_step_financing_documents_menu()
+        if user_input is not None:
+            ref = str(user_input["document_ref"])
+            document_path = (
+                f"/api/ford_triplog/financing/{self._selected_financing_id}/documents/{ref}"
+            )
+            signed_path = async_sign_path(
+                self.hass,
+                document_path,
+                timedelta(minutes=10),
+                use_content_user=True,
+            )
+            try:
+                base_url = get_url(
+                    self.hass,
+                    allow_internal=True,
+                    allow_external=True,
+                    allow_cloud=True,
+                    allow_ip=True,
+                    prefer_external=True,
+                ).rstrip("/")
+                self._selected_financing_document_url = f"{base_url}{signed_path}"
+            except NoURLAvailableError:
+                self._selected_financing_document_url = signed_path
+            return await self.async_step_financing_document_open()
+        return self.async_show_form(
+            step_id="financing_document_view",
+            data_schema=vol.Schema({
+                vol.Required("document_ref"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+            }),
+        )
+
+    async def async_step_financing_document_open(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Open a financing document using the same external-step pattern as receipts."""
+        if not self._selected_financing_document_url:
+            return await self.async_step_financing_documents_menu()
+        return self.async_external_step(
+            step_id="financing_document_open",
+            url=self._selected_financing_document_url,
         )
 
     async def async_step_financing_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
