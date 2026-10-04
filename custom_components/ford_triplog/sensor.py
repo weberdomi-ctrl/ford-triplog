@@ -646,15 +646,32 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
             if st:
                 try: charging=float(st.attributes.get('total_cost_month') or 0)
                 except (TypeError,ValueError): pass
+        # Distance is taken from the existing monthly driving statistics sensor so
+        # cost/km uses exactly the same trip basis as the dashboard statistics.
+        distance_km=0.0
+        driving_eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_driving_monthly_statistics')
+        if driving_eid:
+            driving_state=self.hass.states.get(driving_eid)
+            if driving_state:
+                try:
+                    distance_km=float(driving_state.attributes.get('distance_month_km') or driving_state.state or 0)
+                except (TypeError,ValueError):
+                    distance_km=0.0
+
         fixed=financing+insurance+road_tax
-        total=fixed+sum(variable.values())+charging
+        variable_total=sum(variable.values())+charging
+        total=fixed+variable_total
+        fixed_per_km=(fixed/distance_km) if distance_km > 0 else None
+        total_per_km=(total/distance_km) if distance_km > 0 else None
         self._value=round(total,2)
         self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF',
             'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
             'fixed_costs':round(fixed,2),'maintenance_repairs':round(variable['maintenance'],2),
             'tolls_vignettes':round(variable['toll'],2),'other_costs':round(variable['other'],2),
-            'charging':round(charging,2),'variable_costs':round(sum(variable.values())+charging,2),
-            'total_costs':round(total,2)}
+            'charging':round(charging,2),'variable_costs':round(variable_total,2),
+            'total_costs':round(total,2),'distance_km':round(distance_km,1),
+            'fixed_cost_per_km':round(fixed_per_km,4) if fixed_per_km is not None else None,
+            'total_cost_per_km':round(total_per_km,4) if total_per_km is not None else None}
     @property
     def native_value(self): return self._value
     @property
