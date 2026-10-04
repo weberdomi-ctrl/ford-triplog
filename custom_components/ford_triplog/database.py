@@ -3,8 +3,8 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.5.0-dev
-Build: 25020
+Version: 2.5.0
+Build: 25023
 Changes: Store global home charging tariff periods in SQLite.
 """
 

@@ -81,6 +81,7 @@ from .const import (
     CONF_TRACKER,
     CONF_SOC,
     CONF_CHARGING,
+    CONF_PLUG_STATUS,
     CONF_JOURNEY_HOME_ZONE,
     CONF_LAST_CHARGE,
     DEFAULT_CHARGE_MATCH_TIMEOUT,
@@ -120,6 +121,8 @@ TRIP_START_GPS_STALE_SECONDS = 60
 TRIP_START_GPS_CORRECTION_WINDOW_SECONDS = 60
 TRIP_START_GPS_CORRECTION_DISTANCE_METERS = 250
 TRIP_START_GPS_FRESH_TOLERANCE_SECONDS = 5
+TRIP_START_GPS_MAX_PLAUSIBLE_SPEED_MPS = 60.0
+TRIP_START_GPS_PLAUSIBILITY_BUFFER_METERS = 250
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -250,6 +253,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_ignition = False
         self.last_charging = False
 
+        # Optional Ford EV plug-state capability. This is auto-detected at
+        # runtime for Ford Connect/FordPass and is not part of the config flow.
+        # A valid CONNECTED state keeps one physical plug session open across
+        # COMPLETED/READY -> IN_PROGRESS cycles such as preconditioning.
+        self.plug_entity: str | None = config.get(CONF_PLUG_STATUS)
+        self.last_plug_connected: bool | None = None
+
         # FordPass 'Last Charge' sensor (Version 1.5 preparation).
         self.last_charge_entity: str | None = config.get(CONF_LAST_CHARGE)
         self.last_charge_snapshot: dict[str, Any] | None = None
@@ -344,6 +354,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Build 25015: remember one stale vehicle GPS start long enough for
         # the first fresh Route Tracker point to correct the Trip origin.
         self._trip_start_gps_provisional: dict[str, Any] | None = None
+        # Build 25023: retain the authoritative vehicle start until the trip
+        # is finalized. If the auxiliary Route Tracker later proves to be
+        # detached from the vehicle, the original start can be restored.
+        self._trip_start_gps_original: dict[str, Any] | None = None
        
 
     @staticmethod
@@ -557,6 +571,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.config.get("tracker"),
                 self.config.get("soc"),
                 self.config.get("charging"),
+                self.plug_entity,
                 self.last_charge_entity,
             ) if e
         ]
@@ -566,6 +581,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
 
         self.vehicle_state = self._read_vehicle_state()
+        self.last_plug_connected = self._normalize_plug_connected(
+            self.vehicle_state.get("plug_status")
+        )
         self._evaluate_vehicle_source_health()
 
         if self.last_charge_entity:
@@ -593,6 +611,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             and self.current_charge.end_time
         ):
             self._resume_pending_charge_from_recovery()
+
+        # If Home Assistant was offline during the physical unplug, the plug
+        # state can already be DISCONNECTED when this coordinator starts and no
+        # future state edge is guaranteed. Close that recovered local session
+        # immediately. Pending Ford Last Charge reconciliation has its own
+        # recovery path above and must not be started twice.
+        if (
+            self.current_charge is not None
+            and self.plug_entity
+            and self.last_plug_connected is False
+            and not self.current_charge.fordpass_pending
+        ):
+            _LOGGER.info(
+                "Recovered charging session %s while EV plug is already "
+                "disconnected; finalizing it",
+                self.current_charge.charge_id,
+            )
+            await self.finish_charge()
 
     def _smart_trip_recovery_payload(self) -> dict[str, Any] | None:
         """Return JSON-safe Smart Trip pause recovery metadata."""
@@ -931,6 +967,84 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return None
         return normalized
 
+    @staticmethod
+    def _normalize_plug_connected(value: Any) -> bool | None:
+        """Return a stable boolean for the optional EV plug-state sensor."""
+
+        normalized = str(value or "").strip().upper().replace("-", "_")
+        if normalized in {
+            "",
+            "UNKNOWN",
+            "UNAVAILABLE",
+            "UNSUPPORTED",
+            "NONE",
+            "NULL",
+        }:
+            return None
+        if normalized in {
+            "CONNECTED",
+            "PLUGGED",
+            "PLUGGED_IN",
+            "PLUGGEDIN",
+            "ON",
+            "TRUE",
+            "1",
+        }:
+            return True
+        if normalized in {
+            "DISCONNECTED",
+            "UNPLUGGED",
+            "NOT_CONNECTED",
+            "NOT_PLUGGED_IN",
+            "NOTPLUGGEDIN",
+            "OFF",
+            "FALSE",
+            "0",
+        }:
+            return False
+        return None
+
+    def _effective_plug_connected(self, current: bool | None) -> bool | None:
+        """Return current plug state, retaining the last valid state on gaps."""
+        return current if current is not None else self.last_plug_connected
+
+    def _prepare_plug_session_resume(self, charge: Charge) -> bool:
+        """Prepare an existing plugged charge for another transfer segment."""
+
+        if charge.completion_time is None:
+            return False
+
+        previous_segment_energy = optional_float(
+            charge.charger_energy_output_kwh
+        )
+        if previous_segment_energy is not None and previous_segment_energy > 0:
+            charge.charging_energy_accumulated_kwh = round(
+                max(0.0, charge.charging_energy_accumulated_kwh)
+                + previous_segment_energy,
+                3,
+            )
+
+        charge.charging_resume_count += 1
+        charge.charger_energy_output_kwh = None
+        charge.energy_added_kwh_charging_status = (
+            round(charge.charging_energy_accumulated_kwh, 2)
+            if charge.charging_energy_accumulated_kwh > 0
+            else None
+        )
+        charge.completion_time = None
+        charge.completion_soc = None
+        charge.last_live_charging_status = None
+        charge.last_live_charging_updated_at = None
+
+        _LOGGER.info(
+            "Charging resumed within the same plug session: charge=%s "
+            "resume=%s accumulated_energy=%s kWh",
+            charge.charge_id,
+            charge.charging_resume_count,
+            charge.charging_energy_accumulated_kwh,
+        )
+        return True
+
     def _read_vehicle_state(self):
         data = {}
 
@@ -939,6 +1053,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "odometer",
             "soc",
             "charging",
+            CONF_PLUG_STATUS,
             CONF_LAST_CHARGE,
         ):
             entity_id = self.config.get(key)
@@ -996,7 +1111,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
 
     async def _state_changed(self, event: Event):
-        if event.data.get("entity_id") == self.config.get("tracker"):
+        event_entity_id = event.data.get("entity_id")
+        if event_entity_id == self.config.get("tracker"):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
@@ -1024,38 +1140,73 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             else charging_state == "IN_PROGRESS"
         )
 
-        if (
-            self.current_charge is not None
-            and charging_state == "IN_PROGRESS"
-            and self._capture_live_charging_snapshot(
-                self.current_charge,
-                self.vehicle_state,
-            )
-        ):
-            await self.storage.save_current_charge(
-                self.current_charge.to_dict()
-            )
-
-        if (
-            self.last_charge_entity
-            and event.data.get("entity_id") == self.last_charge_entity
-        ):
-            self._handle_last_charge_state_change(
-                event.data.get("new_state")
-            )
+        plug_raw = self.vehicle_state.get("plug_status")
+        plug_connected = self._normalize_plug_connected(plug_raw)
+        effective_plug_connected = self._effective_plug_connected(
+            plug_connected
+        )
 
         # Claim state transitions before awaiting any handler. Multiple watched
         # Home Assistant entities can update within a few milliseconds. If the
         # previous state were updated only after an await, a second callback
         # could observe the same edge and start/finish the same Trip twice.
-        # Unknown/unavailable source states are not transitions.  Ford Connect
-        # can briefly publish unavailable/Unsupported when its API request
-        # fails.  Keeping the last known boolean state prevents a running trip
-        # or charging session from being split by that temporary data gap.
+        # Unknown/unavailable source states are not transitions.
         trip_started = ignition is True and not self.last_ignition
         trip_stopped = ignition is False and self.last_ignition
         charge_started = charging is True and not self.last_charging
         charge_stopped = charging is False and self.last_charging
+        plug_disconnected = bool(
+            self.plug_entity
+            and event_entity_id == self.plug_entity
+            and plug_connected is False
+            and self.current_charge is not None
+        )
+
+        # A second IN_PROGRESS edge while the cable is still connected is a
+        # resume of the same physical plug session (for example cabin
+        # preconditioning after the target SOC was reached). Commit the prior
+        # transfer segment before its raw energy counter is replaced.
+        if (
+            charge_started
+            and self.plug_entity
+            and self.current_charge is not None
+            and self.current_charge.completion_time is not None
+            and not self.waiting_for_last_charge
+            and not self.current_charge.fordpass_pending
+            and effective_plug_connected is True
+        ):
+            if self._prepare_plug_session_resume(self.current_charge):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+
+        # Preserve live and COMPLETED snapshots even while the plug-aware
+        # lifecycle intentionally keeps current_charge open. This also captures
+        # late ChargerEnergyOutput updates after the first COMPLETED edge.
+        if self.current_charge is not None and charging_state == "IN_PROGRESS":
+            if self._capture_live_charging_snapshot(
+                self.current_charge,
+                self.vehicle_state,
+            ):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+        elif self.current_charge is not None and charging_state == "COMPLETED":
+            if self._capture_charging_completion_snapshot(
+                self.current_charge,
+                self.vehicle_state,
+            ):
+                await self.storage.save_current_charge(
+                    self.current_charge.to_dict()
+                )
+
+        if (
+            self.last_charge_entity
+            and event_entity_id == self.last_charge_entity
+        ):
+            self._handle_last_charge_state_change(
+                event.data.get("new_state")
+            )
 
         if ignition is not None:
             self.last_ignition = ignition
@@ -1073,17 +1224,56 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charging_raw,
             )
 
+        if plug_connected is not None:
+            self.last_plug_connected = plug_connected
+        elif self.plug_entity and event_entity_id == self.plug_entity:
+            _LOGGER.debug(
+                "Ignoring unavailable plug state and retaining last valid state: %r",
+                plug_raw,
+            )
+
         # Trip handling
         if trip_started:
             await self.start_trip()
         elif trip_stopped:
             await self.finish_trip()
 
-        # Charge handling
-        if charge_started:
-            await self.start_charge()
-        elif charge_stopped:
+        # Charge handling. Without an auto-detected plug sensor (for example
+        # JAC), the proven charging-state lifecycle remains unchanged. With a
+        # Ford plug sensor, COMPLETED/READY only pauses energy transfer while
+        # CONNECTED; an explicit DISCONNECTED closes the physical plug session.
+        if plug_disconnected:
+            _LOGGER.info(
+                "EV plug disconnected; finalizing charging session %s",
+                self.current_charge.charge_id if self.current_charge else "unknown",
+            )
             await self.finish_charge()
+        elif charge_started:
+            if (
+                self.plug_entity
+                and self.current_charge is not None
+                and not self.waiting_for_last_charge
+                and not self.current_charge.fordpass_pending
+            ):
+                _LOGGER.debug(
+                    "Charging IN_PROGRESS resumed with existing plug session %s",
+                    self.current_charge.charge_id,
+                )
+            else:
+                # Preserve the original start path. In particular, start_charge
+                # finalizes a previous session that is still waiting for delayed
+                # Ford Last Charge data before it creates the new session.
+                await self.start_charge()
+        elif charge_stopped:
+            if self.plug_entity and effective_plug_connected is True:
+                _LOGGER.info(
+                    "Charging transfer stopped while EV plug remains connected; "
+                    "keeping session %s open (state=%s)",
+                    self.current_charge.charge_id if self.current_charge else "unknown",
+                    charging_state or "UNKNOWN",
+                )
+            else:
+                await self.finish_charge()
 
         self._schedule_coordinator_update(self.vehicle_state)
 
@@ -2516,6 +2706,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         gps_time = self._normalized_datetime(state.get("gps_updated_at"))
 
         self._trip_start_gps_provisional = None
+        self._trip_start_gps_original = None
 
         if (
             latitude is None
@@ -2536,6 +2727,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             "start_time": trip.start_time,
             "gps_updated_at": state.get("gps_updated_at"),
         }
+        self._trip_start_gps_original = dict(self._trip_start_gps_provisional)
 
         _LOGGER.info(
             "Trip start GPS is %.0fs old; marking start provisional for %ss",
@@ -2548,12 +2740,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self,
         trip_id: str,
         point: dict[str, Any],
-    ) -> bool | None:
+    ) -> bool | str | None:
         """Correct one stale Trip start from the first fresh route point.
 
         ``True`` means the provisional start was replaced, ``False`` means the
-        first fresh point confirmed/resolved it without replacement, and
-        ``None`` asks the Route Tracker to keep waiting for a fresh point.
+        first fresh point confirmed/resolved it without replacement, ``None``
+        asks the Route Tracker to keep waiting for a fresh point, and
+        ``"reject"`` means the auxiliary route source is implausibly far
+        from the vehicle and must be ignored for the rest of this Trip.
         """
 
         provisional = self._trip_start_gps_provisional
@@ -2619,6 +2813,40 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 distance,
             )
             return False
+
+        # A detached phone/device tracker can be many kilometres away while
+        # the vehicle is moved independently (for example during a workshop
+        # visit). Do not let such a point replace the authoritative vehicle
+        # start. Allow generous physically plausible movement since the last
+        # vehicle GPS update before declaring the route source detached.
+        vehicle_gps_time = self._normalized_datetime(
+            provisional.get("gps_updated_at")
+        )
+        elapsed_from_vehicle_gps = (
+            max(0.0, (point_time - vehicle_gps_time).total_seconds())
+            if vehicle_gps_time is not None
+            else max(0.0, delta_seconds)
+        )
+        plausible_distance = max(
+            float(TRIP_START_GPS_CORRECTION_DISTANCE_METERS),
+            (
+                elapsed_from_vehicle_gps
+                * TRIP_START_GPS_MAX_PLAUSIBLE_SPEED_MPS
+                + TRIP_START_GPS_PLAUSIBILITY_BUFFER_METERS
+            ),
+        )
+
+        if distance > plausible_distance:
+            self._trip_start_gps_provisional = None
+            _LOGGER.warning(
+                "Route Tracker start differs implausibly from vehicle GPS "
+                "for trip %s: %.0fm > %.0fm plausible limit; keeping "
+                "vehicle start and rejecting auxiliary route source",
+                trip_id,
+                distance,
+                plausible_distance,
+            )
+            return "reject"
 
         trip.start_latitude = latitude
         trip.start_longitude = longitude
@@ -2964,7 +3192,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 # rather than the maximum so a stale previous-session value
                 # can be replaced by the current session value.
                 charge.charger_energy_output_kwh = charger_energy
-                charge.energy_added_kwh_charging_status = charger_energy
+                charge.energy_added_kwh_charging_status = round(
+                    max(0.0, charge.charging_energy_accumulated_kwh)
+                    + charger_energy,
+                    2,
+                )
                 changed = True
 
         if changed:
@@ -2988,12 +3220,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _capture_charging_completion_snapshot(
         charge: Charge,
         state: dict[str, Any],
-    ) -> None:
+    ) -> bool:
         """Capture the charging entity while it still reports COMPLETED."""
 
         charging_status = str(state.get("charging") or "").strip().upper()
         if charging_status != "COMPLETED":
-            return
+            return False
+
+        before = (
+            charge.completion_time,
+            charge.completion_soc,
+            charge.charging_type,
+            charge.charger_energy_output_kwh,
+            charge.energy_added_kwh_charging_status,
+        )
 
         if charge.completion_time is None:
             charge.completion_time = (
@@ -3019,7 +3259,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         if charger_energy is not None and charger_energy >= 0:
             charge.charger_energy_output_kwh = charger_energy
-            charge.energy_added_kwh_charging_status = charger_energy
+            charge.energy_added_kwh_charging_status = round(
+                max(0.0, charge.charging_energy_accumulated_kwh)
+                + charger_energy,
+                2,
+            )
+
+        after = (
+            charge.completion_time,
+            charge.completion_soc,
+            charge.charging_type,
+            charge.charger_energy_output_kwh,
+            charge.energy_added_kwh_charging_status,
+        )
+        return after != before
 
     def _update_charge_energy_values(self, charge: Charge) -> None:
         """Reconcile vehicle-energy sources without discarding provenance."""
@@ -3048,8 +3301,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 )
 
         energy_charging_status = optional_float(
-            charge.charger_energy_output_kwh
+            charge.energy_added_kwh_charging_status
         )
+        if energy_charging_status is None:
+            energy_charging_status = optional_float(
+                charge.charger_energy_output_kwh
+            )
         if energy_charging_status is not None:
             energy_charging_status = round(energy_charging_status, 2)
 
@@ -3365,6 +3622,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self.current_trip = None
         self._trip_start_gps_provisional = None
+        self._trip_start_gps_original = None
 
         self._schedule_coordinator_update(state)
 
@@ -3645,9 +3903,81 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             except (TypeError, ValueError):
                 distance = None
 
-        # Both sources are available: timestamp decides. The distance check
-        # remains diagnostic only and must not make an older point win.
+        # Both sources are available. If they disagree spatially, the vehicle
+        # tracker is authoritative: an auxiliary phone/device tracker may not
+        # be travelling with the vehicle (for example during a workshop visit).
+        # Only when both sources agree within the configured limit does the
+        # newer timestamp decide.
         if route_valid and vehicle_valid:
+            source_mismatch = (
+                distance is not None
+                and distance > TRIP_END_GPS_MAX_DISTANCE_METERS
+            )
+
+            if source_mismatch:
+                end_state["latitude"] = vehicle_latitude
+                end_state["longitude"] = vehicle_longitude
+                end_state["gps_updated_at"] = vehicle_timestamp
+                end_state["address"] = fresh_gps_state.get("address")
+
+                original = self._trip_start_gps_original
+                if (
+                    isinstance(original, dict)
+                    and self.current_trip is not None
+                    and str(original.get("trip_id") or "")
+                    == str(self.current_trip.trip_id or "")
+                ):
+                    start_latitude = optional_float(original.get("latitude"))
+                    start_longitude = optional_float(original.get("longitude"))
+                    if start_latitude is not None and start_longitude is not None:
+                        self.current_trip.start_latitude = start_latitude
+                        self.current_trip.start_longitude = start_longitude
+                        self.current_trip.start_address = await self._get_address(
+                            {
+                                "latitude": start_latitude,
+                                "longitude": start_longitude,
+                            }
+                        )
+                        await self.storage.save_current_trip(
+                            self.current_trip.to_dict()
+                        )
+                        _LOGGER.warning(
+                            "Restored original vehicle Trip start for %s "
+                            "after Route Tracker source mismatch",
+                            self.current_trip.trip_id,
+                        )
+
+                if self.route_tracker is not None:
+                    self.route_tracker.reject_current_source(
+                        reason="vehicle_route_gps_mismatch",
+                        start_latitude=(
+                            self.current_trip.start_latitude
+                            if self.current_trip is not None
+                            else None
+                        ),
+                        start_longitude=(
+                            self.current_trip.start_longitude
+                            if self.current_trip is not None
+                            else None
+                        ),
+                        start_timestamp=(
+                            self.current_trip.start_time
+                            if self.current_trip is not None
+                            else None
+                        ),
+                    )
+
+                _LOGGER.warning(
+                    "Trip-end GPS sources differ by %.0fm (limit %sm); "
+                    "using vehicle GPS and discarding auxiliary route "
+                    "points, route=%s vehicle=%s",
+                    distance,
+                    TRIP_END_GPS_MAX_DISTANCE_METERS,
+                    route_timestamp,
+                    vehicle_timestamp,
+                )
+                return end_state
+
             use_route = (
                 route_time is not None
                 and (
@@ -3671,31 +4001,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 selected = "vehicle"
                 selected_time = vehicle_timestamp
 
-            if distance is not None and distance > TRIP_END_GPS_MAX_DISTANCE_METERS:
-                _LOGGER.warning(
-                    "Trip-end GPS sources differ by %.0fm (limit %sm); "
-                    "using newer %s GPS (%s), route=%s vehicle=%s",
-                    distance,
-                    TRIP_END_GPS_MAX_DISTANCE_METERS,
-                    selected,
-                    selected_time,
-                    route_timestamp,
-                    vehicle_timestamp,
-                )
-            else:
-                _LOGGER.info(
-                    "Trip-end GPS selection: using newer %s GPS (%s), "
-                    "route=%s vehicle=%s%s",
-                    selected,
-                    selected_time,
-                    route_timestamp,
-                    vehicle_timestamp,
-                    (
-                        f", distance={distance:.0f}m"
-                        if distance is not None
-                        else ""
-                    ),
-                )
+            _LOGGER.info(
+                "Trip-end GPS selection: using newer %s GPS (%s), "
+                "route=%s vehicle=%s%s",
+                selected,
+                selected_time,
+                route_timestamp,
+                vehicle_timestamp,
+                (
+                    f", distance={distance:.0f}m"
+                    if distance is not None
+                    else ""
+                ),
+            )
 
             return end_state
 

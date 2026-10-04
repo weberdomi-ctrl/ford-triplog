@@ -54,6 +54,7 @@ _LOGGER = logging.getLogger(__name__)
 ABRP_DEBOUNCE_SECONDS = 0.75
 ABRP_MAX_PAIR_DELTA_SECONDS = 2.0
 ROUTE_PERSIST_INTERVAL_SECONDS = 60.0
+ROUTE_SOURCE_VEHICLE_FALLBACK = "vehicle_gps_fallback"
 
 
 class FordTriplogRouteTracker:
@@ -66,7 +67,7 @@ class FordTriplogRouteTracker:
         config: dict[str, Any],
         *,
         start_point_correction_callback: Callable[
-            [str, dict[str, Any]], Awaitable[bool | None]
+            [str, dict[str, Any]], Awaitable[bool | str | None]
         ] | None = None,
     ) -> None:
         self.hass = hass
@@ -125,6 +126,7 @@ class FordTriplogRouteTracker:
         self._last_persist_monotonic: float | None = None
         self._route_created_at: str | None = None
         self._provisional_start_trip_id: str | None = None
+        self._source_rejected_trip_id: str | None = None
 
     async def async_setup(self) -> None:
         """Set up route storage and source listeners."""
@@ -228,11 +230,16 @@ class FordTriplogRouteTracker:
                     stored.get("source_type")
                     or self.source_type
                 )
-                self.route_source_type = (
-                    stored_source
-                    if stored_source == self.source_type
-                    else "mixed"
-                )
+                if stored_source == ROUTE_SOURCE_VEHICLE_FALLBACK:
+                    self.route_source_type = stored_source
+                    self._source_rejected_trip_id = trip_id
+                else:
+                    self.route_source_type = (
+                        stored_source
+                        if stored_source == self.source_type
+                        else "mixed"
+                    )
+                    self._source_rejected_trip_id = None
                 self._route_created_at = (
                     stored.get("created_at")
                     or dt_util.now().isoformat()
@@ -276,6 +283,7 @@ class FordTriplogRouteTracker:
         self.route_source_type = self.source_type
         self._route_created_at = dt_util.now().isoformat()
         self._provisional_start_trip_id = None
+        self._source_rejected_trip_id = None
 
         self._append_external_point(
             start_latitude,
@@ -351,6 +359,7 @@ class FordTriplogRouteTracker:
         self._last_coordinate = None
         self.route_source_type = self.source_type
         self._route_created_at = dt_util.now().isoformat()
+        self._source_rejected_trip_id = None
 
         start_point_added = self._append_external_point(
             start_latitude,
@@ -389,6 +398,53 @@ class FordTriplogRouteTracker:
             len(self.points),
         )
 
+    def reject_current_source(
+        self,
+        *,
+        reason: str,
+        start_latitude: Any = None,
+        start_longitude: Any = None,
+        start_timestamp: Any = None,
+    ) -> bool:
+        """Ignore the configured auxiliary GPS source for the current Trip.
+
+        Keep only the authoritative vehicle start point. The final authoritative
+        vehicle end point is appended by ``async_finalize``.
+        """
+
+        trip_id = self.active_trip_id or self.paused_trip_id
+        if trip_id is None:
+            return False
+
+        self._source_rejected_trip_id = trip_id
+        self._provisional_start_trip_id = None
+        self.route_source_type = ROUTE_SOURCE_VEHICLE_FALLBACK
+
+        trusted_start_supplied = (
+            start_latitude is not None and start_longitude is not None
+        )
+        if trusted_start_supplied:
+            self.points = []
+            self._last_coordinate = None
+            self._append_external_point(
+                start_latitude,
+                start_longitude,
+                start_timestamp,
+            )
+        elif self.points:
+            self.points = [dict(self.points[0])]
+            self._last_coordinate = self._coordinate_from_point(self.points[0])
+        else:
+            self._last_coordinate = None
+
+        _LOGGER.warning(
+            "Route Tracker source rejected for trip %s: %s; "
+            "keeping vehicle GPS endpoints only",
+            trip_id,
+            reason,
+        )
+        return True
+
     async def async_finalize(
         self,
         *,
@@ -424,7 +480,12 @@ class FordTriplogRouteTracker:
         # remain the primary stored source and therefore the safe fallback.
         matched_route: dict[str, Any] | None = None
 
-        if self.osrm_enabled and self.osrm_url and len(points) >= 2:
+        if (
+            self.osrm_enabled
+            and self.osrm_url
+            and len(points) >= 2
+            and self._source_rejected_trip_id != trip_id
+        ):
             try:
                 osrm_client = FordTriplogOSRMClient(
                     self.hass,
@@ -498,6 +559,7 @@ class FordTriplogRouteTracker:
         self._route_created_at = None
         self._last_persist_monotonic = None
         self._provisional_start_trip_id = None
+        self._source_rejected_trip_id = None
         self.route_source_type = self.source_type
 
         _LOGGER.info(
@@ -557,6 +619,9 @@ class FordTriplogRouteTracker:
         """Capture one normalized point when the source updates."""
 
         if self.active_trip_id is None:
+            return
+
+        if self._source_rejected_trip_id == self.active_trip_id:
             return
 
         if self.source_type == ROUTE_SOURCE_ABRP:
@@ -683,7 +748,7 @@ class FordTriplogRouteTracker:
         }
 
         if self._provisional_start_trip_id == self.active_trip_id:
-            correction_result: bool | None = False
+            correction_result: bool | str | None = False
             callback = self.start_point_correction_callback
 
             if callback is not None and self.active_trip_id is not None:
@@ -703,6 +768,16 @@ class FordTriplogRouteTracker:
                 # The source event is older than the Trip start. Keep waiting
                 # for the first genuinely fresh point and do not add another
                 # stale coordinate to the route.
+                return
+
+            if correction_result == "reject":
+                self.reject_current_source(
+                    reason="implausible_trip_start_distance"
+                )
+                await self._persist_current_route(
+                    "active",
+                    force=True,
+                )
                 return
 
             self._provisional_start_trip_id = None
