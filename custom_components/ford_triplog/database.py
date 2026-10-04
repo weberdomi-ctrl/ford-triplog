@@ -1568,37 +1568,67 @@ class FordTriplogDatabase:
                                 SELECT SUM(
                                     ROUND((f.first_payment + MAX(f.number_of_payments-1,0)*f.regular_payment)/f.duration_months,2)
                                     * MAX(0,julianday(MIN(c.month_end,COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))))
-                                             -julianday(MAX(c.month_start,f.start_date,COALESCE(vd.first_registration,f.start_date)))+1)
+                                             -julianday(MAX(c.month_start,f.start_date,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),f.start_date)))+1)
                                     / c.month_days
                                 )
                                 FROM vehicle_financing f
                                 LEFT JOIN vehicle_details vd ON vd.vehicle_id=f.vehicle_id
                                 WHERE f.vehicle_id=c.vehicle_id
-                                  AND MAX(f.start_date,COALESCE(vd.first_registration,f.start_date))<=c.month_end
+                                  AND MAX(f.start_date,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),f.start_date))<=c.month_end
                                   AND COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))>=c.month_start
                             ),0),6) AS financing,
                             ROUND(COALESCE((
                                 SELECT SUM(
                                     (i.period_premium/12.0)
-                                    * MAX(0,julianday(MIN(c.month_end,i.valid_to))-julianday(MAX(c.month_start,i.valid_from,COALESCE(vd.first_registration,i.valid_from)))+1)
+                                    * MAX(0,julianday(MIN(c.month_end,i.valid_to))-julianday(MAX(c.month_start,i.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),i.valid_from)))+1)
                                     / c.month_days
                                 )
                                 FROM vehicle_insurance i
                                 LEFT JOIN vehicle_details vd ON vd.vehicle_id=i.vehicle_id
                                 WHERE i.vehicle_id=c.vehicle_id
-                                  AND MAX(i.valid_from,COALESCE(vd.first_registration,i.valid_from))<=c.month_end
+                                  AND MAX(i.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),i.valid_from))<=c.month_end
                                   AND i.valid_to>=c.month_start
                             ),0),6) AS insurance,
                             ROUND(COALESCE((
                                 SELECT
                                     (x.annual_tax/12.0)
                                     * MAX(0,julianday(MIN(c.month_end,x.valid_to))
-                                             -julianday(MAX(c.month_start,x.valid_from,COALESCE(vd.first_registration,x.valid_from)))+1)
+                                             -julianday(MAX(c.month_start,x.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),x.valid_from)))+1)
                                     / c.month_days
                                 FROM vehicle_tax x
                                 LEFT JOIN vehicle_details vd ON vd.vehicle_id=x.vehicle_id
                                 WHERE x.vehicle_id=c.vehicle_id
-                                  AND MAX(x.valid_from,COALESCE(vd.first_registration,x.valid_from))<=c.month_end
+                                  AND MAX(x.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),x.valid_from))<=c.month_end
                                   AND x.valid_to>=c.month_start
                                 ORDER BY x.valid_from DESC, x.tax_id DESC
                                 LIMIT 1
