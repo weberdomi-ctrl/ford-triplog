@@ -58,7 +58,8 @@
           "vehicle_data_management": "Dane i dokumenty pojazdu",
           "maintenance_management": "Serwis i naprawy",
           "toll_management": "Opłaty drogowe i winiety",
-          "other_cost_management": "Inne koszty"
+          "other_cost_management": "Inne koszty",
+          "costs_management": "Koszty"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
@@ -77,7 +78,8 @@
           "vehicle_data_management": "Zarządzaj dokumentem rejestracyjnym i innymi dokumentami pojazdu.",
           "maintenance_management": "Zarządzaj kosztami serwisu, napraw, opon i innymi kosztami warsztatowymi wraz z fakturami.",
           "toll_management": "Zarządzaj opłatami drogowymi i winietami z opcjonalnym okresem ważności i dokumentem.",
-          "other_cost_management": "Zarządzaj dowodem rejestracyjnym, tablicami, zmianami administracyjnymi i innymi jednorazowymi kosztami pojazdu."
+          "other_cost_management": "Zarządzaj dowodem rejestracyjnym, tablicami, zmianami administracyjnymi i innymi jednorazowymi kosztami pojazdu.",
+          "costs_management": "Zarządzaj finansowaniem, ubezpieczeniem, podatkami i innymi kosztami pojazdu."
         }
       },
       "settings": {
@@ -1019,7 +1021,8 @@
           "insurance_edit": "Edytuj ubezpieczenie",
           "insurance_delete": "Usuń ubezpieczenie",
           "init": "Powrót",
-          "insurance_document_upload": "Odczytaj polisę/fakturę"
+          "insurance_document_upload": "Odczytaj polisę/fakturę",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "insurance_add": {
@@ -1072,7 +1075,8 @@
           "tax_add": "Add road tax",
           "tax_edit": "Edit road tax",
           "tax_delete": "Delete road tax",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "tax_add": {
@@ -1108,7 +1112,8 @@
           "financing_delete": "Usuń umowę",
           "init": "Powrót do menu głównego",
           "financing_add": "Dodaj finansowanie",
-          "financing_documents": "Zarządzaj dokumentami"
+          "financing_documents": "Zarządzaj dokumentami",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "financing_add_leasing": {
@@ -1321,7 +1326,8 @@
           "expense_add": "Dodaj koszt",
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
-          "init": "Wstecz"
+          "init": "Wstecz",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "toll_management": {
@@ -1331,7 +1337,8 @@
           "expense_add": "Dodaj koszt",
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
-          "init": "Wstecz"
+          "init": "Wstecz",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "other_cost_management": {
@@ -1341,7 +1348,8 @@
           "expense_add": "Dodaj koszt",
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
-          "init": "Wstecz"
+          "init": "Wstecz",
+          "costs_management": "Powrót do kosztów"
         }
       },
       "expense_add": {
@@ -1375,6 +1383,27 @@
           "notes": "Uwagi",
           "receipt_file": "Faktura / dokument",
           "expense_year": "Rok (jeśli data jest nieznana)"
+        }
+      },
+      "costs_management": {
+        "title": "Koszty",
+        "description": "Zarządzaj finansowaniem, ubezpieczeniem, podatkami i innymi kosztami pojazdu.",
+        "menu_options": {
+          "financing_management": "Finansowanie pojazdu",
+          "insurance_management": "Ubezpieczenie",
+          "tax_management": "Podatek drogowy",
+          "maintenance_management": "Serwis i naprawy",
+          "toll_management": "Opłaty drogowe i winiety",
+          "other_cost_management": "Inne koszty",
+          "init": "Wstecz"
+        },
+        "menu_option_descriptions": {
+          "financing_management": "Zarządzaj leasingiem, finansowaniem i zakupem pojazdu.",
+          "insurance_management": "Zarządzaj polisami ubezpieczeniowymi pojazdu i rocznymi składkami TCO.",
+          "tax_management": "Zarządzaj rocznym podatkiem od pojazdu i opłatami pojazdowymi.",
+          "maintenance_management": "Zarządzaj kosztami serwisu, napraw, opon i innymi kosztami warsztatowymi wraz z fakturami.",
+          "toll_management": "Zarządzaj opłatami drogowymi i winietami z opcjonalnym okresem ważności i dokumentem.",
+          "other_cost_management": "Zarządzaj dowodem rejestracyjnym, tablicami, zmianami administracyjnymi i innymi jednorazowymi kosztami pojazdu."
         }
       }
     },

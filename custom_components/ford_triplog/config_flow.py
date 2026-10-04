@@ -832,12 +832,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "route_management",
                 "pause_management",
                 "charge_management",
-                "financing_management",
-                "insurance_management",
-                "tax_management",
-                "maintenance_management",
-                "toll_management",
-                "other_cost_management",
+                "costs_management",
                 "vehicle_data_management",
                 "export",
                 "user_places",
@@ -7063,6 +7058,24 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
 
 
+    async def async_step_costs_management(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show all vehicle cost management areas in one submenu."""
+        return self.async_show_menu(
+            step_id="costs_management",
+            menu_options=[
+                "financing_management",
+                "insurance_management",
+                "tax_management",
+                "maintenance_management",
+                "toll_management",
+                "other_cost_management",
+                "init",
+            ],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
     async def _async_financing_storage(self) -> FordTriplogVehicleFinancingStorage:
         """Return financing storage for the vehicle locked to this options flow."""
         vehicle_id = self._ensure_vehicle_context_id()
@@ -7085,7 +7098,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "financing_edit",
                 "financing_documents",
                 "financing_delete",
-                "init",
+                "costs_management",
             ],
             description_placeholders={"vehicle_name": self._context_vehicle_name()},
         )
@@ -7550,7 +7563,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Manage vehicle insurance periods and payment schedules."""
         return self.async_show_menu(
             step_id="insurance_management",
-            menu_options=["insurance_document_upload", "insurance_add", "insurance_edit", "insurance_delete", "init"],
+            menu_options=["insurance_document_upload", "insurance_add", "insurance_edit", "insurance_delete", "costs_management"],
             description_placeholders={"vehicle_name": self._context_vehicle_name()},
         )
 
@@ -7692,7 +7705,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Manage annual road-tax TCO bases."""
         return self.async_show_menu(
             step_id="tax_management",
-            menu_options=["tax_add", "tax_edit", "tax_delete", "init"],
+            menu_options=["tax_add", "tax_edit", "tax_delete", "costs_management"],
             description_placeholders={"vehicle_name": self._context_vehicle_name()},
         )
 
@@ -7777,7 +7790,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_other_cost_management(self, user_input=None):
         self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
     async def _async_expense_menu(self, step_id):
-        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","init"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
     async def async_step_expense_add(self,user_input=None):
         self._selected_expense_id=None; return await self.async_step_expense_form(user_input)
     async def async_step_expense_edit(self,user_input=None):

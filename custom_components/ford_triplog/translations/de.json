@@ -58,7 +58,8 @@
           "tax_management": "Strassensteuer",
           "maintenance_management": "Wartung & Reparaturen",
           "toll_management": "Maut & Vignetten",
-          "other_cost_management": "Sonstige Kosten"
+          "other_cost_management": "Sonstige Kosten",
+          "costs_management": "Kosten"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -77,7 +78,8 @@
           "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten.",
           "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
           "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
-          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten."
+          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten.",
+          "costs_management": "Finanzierung, Versicherung, Steuern und weitere Fahrzeugkosten verwalten."
         }
       },
       "settings": {
@@ -1021,7 +1023,8 @@
           "financing_delete": "Vertrag löschen",
           "init": "Zurück zum Hauptmenü",
           "financing_add": "Finanzierung hinzufügen",
-          "financing_documents": "Belege verwalten"
+          "financing_documents": "Belege verwalten",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "financing_add_leasing": {
@@ -1251,7 +1254,8 @@
           "insurance_edit": "Versicherung bearbeiten",
           "insurance_delete": "Versicherung löschen",
           "init": "Zurück zum Hauptmenü",
-          "insurance_document_upload": "Police einlesen"
+          "insurance_document_upload": "Police einlesen",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "insurance_add": {
@@ -1298,7 +1302,8 @@
           "tax_add": "Steuer hinzufügen",
           "tax_edit": "Steuer bearbeiten",
           "tax_delete": "Steuer löschen",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "tax_add": {
@@ -1333,7 +1338,8 @@
           "expense_add": "Kosten hinzufügen",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
-          "init": "Zurück"
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "toll_management": {
@@ -1343,7 +1349,8 @@
           "expense_add": "Kosten hinzufügen",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
-          "init": "Zurück"
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "other_cost_management": {
@@ -1353,7 +1360,8 @@
           "expense_add": "Kosten hinzufügen",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
-          "init": "Zurück"
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten"
         }
       },
       "expense_add": {
@@ -1387,6 +1395,27 @@
           "notes": "Notiz",
           "receipt_file": "Rechnung / Beleg",
           "expense_year": "Jahr (falls Datum unbekannt)"
+        }
+      },
+      "costs_management": {
+        "title": "Kosten",
+        "description": "Finanzierung, Versicherung, Steuern und weitere Fahrzeugkosten verwalten.",
+        "menu_options": {
+          "financing_management": "Fahrzeugfinanzierung",
+          "insurance_management": "Versicherung",
+          "tax_management": "Strassensteuer",
+          "maintenance_management": "Wartung & Reparaturen",
+          "toll_management": "Maut & Vignetten",
+          "other_cost_management": "Sonstige Kosten",
+          "init": "Zurück"
+        },
+        "menu_option_descriptions": {
+          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
+          "insurance_management": "Fahrzeugversicherungen und Jahresprämien für die TCO-Berechnung verwalten.",
+          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten.",
+          "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
+          "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
+          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten."
         }
       }
     },
