@@ -97,23 +97,53 @@ def _money(value: str) -> float | None:
         return None
 
 
-def extract_financing_fields(raw_text: str) -> dict[str, Any]:
-    """Extract conservative financing suggestions from OCR text.
+def _amounts_in_window(text: str) -> list[float]:
+    """Return plausible monetary values from a short OCR/text window."""
+    values: list[float] = []
+    for token in re.findall(r"(?<!\d)(\d{1,3}(?:['’ .]\d{3})*(?:[.,]\d{2})|\d{1,6}[.,]\d{2})(?!\d)", text):
+        value = _money(token)
+        if value is not None:
+            values.append(value)
+    return values
 
-    Values are suggestions only and are always reviewed in the HA form.
+
+def _payment_total_after_label(text: str, label_pattern: str, window: int = 180) -> float | None:
+    """Find the gross/total payment near a leasing-rate label.
+
+    Leasing contracts commonly print net amount, VAT and gross amount on the
+    same row.  The gross amount is normally the largest monetary value in that
+    row/window, so prefer it over the first number following the label.
     """
+    match = re.search(label_pattern, text, re.IGNORECASE)
+    if not match:
+        return None
+    tail = text[match.end():match.end() + window]
+    # Stop before the next well-known field so unrelated amounts do not win.
+    stop = re.search(
+        r"(?:Restwert|Barkaufpreis|Kaufpreis|Jahresfahrleistung|Mehrkilometer|Nominal|Effektiv|2\.?\s*[-–]\s*\d+\.?\s*Leasingrate)",
+        tail,
+        re.IGNORECASE,
+    )
+    if stop:
+        tail = tail[:stop.start()]
+    amounts = _amounts_in_window(tail)
+    return max(amounts) if amounts else None
+
+
+def extract_financing_fields(raw_text: str) -> dict[str, Any]:
+    """Extract conservative financing suggestions from PDF/OCR text."""
     text = str(raw_text or "")
     compact = " ".join(text.split())
     result: dict[str, Any] = {"financing_type": "leasing"}
 
     patterns: list[tuple[str, str, Any]] = [
         ("contract_number", r"(?:Leasing[- ]?(?:Nr\.?|Nummer)|Vertrags(?:nummer|nr\.?)?)\s*[:#]?\s*([A-Z0-9./-]{4,})", str),
-        ("duration_months", r"(?:Vertragsdauer|Laufzeit)\s*[:]?\s*(\d{1,3})\s*(?:Monate|Mt\.?|months)", int),
+        ("duration_months", r"(?:Leasingdauer|Vertragsdauer|Laufzeit)\s*[:]?\s*(\d{1,3})\s*(?:Monate|Mt\.?|months)?", int),
         ("purchase_price", r"(?:Barkaufpreis|Kaufpreis|Fahrzeugpreis)\s*[:]?\s*(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", _money),
         ("residual_value", r"(?:Restwert)\s*[:]?\s*(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", _money),
-        ("interest_rate", r"(?:Nominal(?:zins|er Jahreszins)|Jahreszins[^0-9]{0,20})\s*[:]?\s*([0-9]+(?:[.,]\d+)?)\s*%", lambda x: float(x.replace(",", "."))),
-        ("annual_mileage", r"(?:Jahresfahrleistung|Kilometerleistung pro Jahr|km/Jahr)\s*[:]?\s*([0-9'’ .]+)", lambda x: int(re.sub(r"\D", "", x))),
-        ("excess_km_rate", r"(?:Mehrkilometer|Mehr-km)[^0-9]{0,40}(?:CHF\s*)?([0-9]+(?:[.,]\d+)?)", lambda x: float(x.replace(",", "."))),
+        ("interest_rate", r"(?:Nominal(?:zins|er Jahreszins)|Jahreszinssatz(?:\s+nominal)?|Jahreszins[^0-9]{0,20})\s*[:]?\s*([0-9]+(?:[.,]\d+)?)\s*%", lambda x: float(x.replace(",", "."))),
+        ("annual_mileage", r"(?:Jährliche\s+Fahrleistung|Jahresfahrleistung|Kilometerleistung pro Jahr|km/Jahr)\s*[:]?\s*([0-9'’ .]+)", lambda x: int(re.sub(r"\D", "", x))),
+        ("excess_km_rate", r"(?:Mehrkilometer(?:kosten)?|Mehr-km)[^0-9]{0,60}(?:CHF\s*)?([0-9]+(?:[.,]\d+)?)", lambda x: float(x.replace(",", "."))),
     ]
     for key, pattern, convert in patterns:
         match = re.search(pattern, compact, re.IGNORECASE)
@@ -125,29 +155,45 @@ def extract_financing_fields(raw_text: str) -> dict[str, Any]:
             if value not in (None, ""):
                 result[key] = value
 
-    # First and regular leasing payments. Support forms such as
-    # "1. Leasingrate CHF 5'000.00" and "2.-48. Leasingrate CHF 746.95".
-    first = re.search(r"1\.?\s*Leasingrate[^0-9]{0,25}(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", compact, re.IGNORECASE)
-    if first:
-        value = _money(first.group(1))
-        if value is not None:
-            result["first_payment"] = value
+    # Contract/start date: only explicit start/commencement/takeover labels are
+    # accepted.  Never use an unlabeled signature or document date.
+    date_match = re.search(
+        r"(?:Vertragsbeginn|Leasingbeginn|Mietbeginn|Übernahme(?:datum)?|Fahrzeugübernahme)\s*[:]?\s*"
+        r"(\d{1,2}[./-]\d{1,2}[./-]\d{4})",
+        compact,
+        re.IGNORECASE,
+    )
+    if date_match:
+        raw_date = date_match.group(1).replace("/", ".").replace("-", ".")
+        try:
+            result["start_date"] = datetime.strptime(raw_date, "%d.%m.%Y").date().isoformat()
+        except ValueError:
+            pass
 
-    regular = re.search(r"2\.?\s*[-–]\s*(\d{1,3})\.?\s*Leasingrate[^0-9]{0,25}(?:CHF\s*)?([0-9'’ .]+(?:[.,]\d{2})?)", compact, re.IGNORECASE)
-    if regular:
-        result["number_of_payments"] = int(regular.group(1))
-        value = _money(regular.group(2))
-        if value is not None:
-            result["regular_payment"] = value
+    # Prefer the gross/total amounts. On Ford Credit/BANK-now contracts the
+    # row contains net + VAT + gross, e.g. 4625.35 + 374.65 = 5000.00 and
+    # 690.96 + 55.99 = 746.95. Choosing the largest row amount avoids taking
+    # the net amount by accident.
+    first_payment = _payment_total_after_label(compact, r"1\.?\s*Leasingrate")
+    if first_payment is not None:
+        result["first_payment"] = first_payment
 
-    # Fallback count from duration for conventional monthly leasing.
+    regular_label = re.search(r"2\.?\s*[-–]\s*(\d{1,3})\.?\s*Leasingrate", compact, re.IGNORECASE)
+    if regular_label:
+        result["number_of_payments"] = int(regular_label.group(1))
+        regular_payment = _payment_total_after_label(
+            compact, r"2\.?\s*[-–]\s*\d{1,3}\.?\s*Leasingrate"
+        )
+        if regular_payment is not None:
+            result["regular_payment"] = regular_payment
+
     if "number_of_payments" not in result and result.get("duration_months"):
         result["number_of_payments"] = int(result["duration_months"])
 
-    # Provider hints: deliberately conservative.
     provider = re.search(r"\b(BANK-now AG|Ford Credit|Cembra Money Bank AG|AMAG Leasing AG)\b", compact, re.IGNORECASE)
     if provider:
         result["provider"] = provider.group(1)
 
-    result["currency"] = "CHF" if "CHF" in text.upper() else "CHF"
+    result["currency"] = "CHF"
     return result
+
