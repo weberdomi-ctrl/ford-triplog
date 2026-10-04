@@ -98,6 +98,57 @@ class FordTriplogFinancingDocumentStorage:
             await self.hass.async_add_executor_job(path.unlink, True)
 
 
+    async def async_recover_main_document(self, financing_id: int) -> bool:
+        """Recover a main-contract link lost by early 2.6 dev builds.
+
+        Recovery is deliberately conservative: only relink when exactly one
+        persisted financing file is not referenced by any main contract or
+        additional attachment.
+        """
+        from .database import FordTriplogDatabase
+        await self.async_setup()
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db = FordTriplogDatabase(self.hass, base_path)
+        await db.async_setup()
+
+        def _recover() -> bool:
+            with sqlite3.connect(db.db_path) as conn:
+                row = conn.execute(
+                    "SELECT document_filename FROM vehicle_financing WHERE financing_id=?",
+                    (int(financing_id),),
+                ).fetchone()
+                if row is None or row[0]:
+                    return False
+                referenced = {
+                    str(r[0]) for r in conn.execute(
+                        "SELECT document_filename FROM vehicle_financing WHERE document_filename IS NOT NULL AND document_filename <> ''"
+                    ).fetchall() if r[0]
+                }
+                referenced.update(
+                    str(r[0]) for r in conn.execute(
+                        "SELECT filename FROM vehicle_financing_documents"
+                    ).fetchall() if r[0]
+                )
+                candidates = [
+                    path for path in self.directory.iterdir()
+                    if path.is_file() and path.name not in referenced and path.suffix.lower() in _ALLOWED_EXTENSIONS
+                ]
+                if len(candidates) != 1:
+                    return False
+                candidate = candidates[0]
+                # The original display name was stored only in the DB linkage
+                # in early builds. If that linkage was lost, use a stable
+                # descriptive name rather than exposing the generated filename.
+                display_name = f"Leasingvertrag{candidate.suffix.lower()}"
+                conn.execute(
+                    "UPDATE vehicle_financing SET document_filename=?, document_original_name=?, updated_at=? WHERE financing_id=?",
+                    (candidate.name, display_name, time.strftime("%Y-%m-%dT%H:%M:%S%z"), int(financing_id)),
+                )
+                conn.commit()
+                return True
+
+        return await self.hass.async_add_executor_job(_recover)
+
     async def async_get_document(self, financing_id: int, document_id: int) -> dict[str, Any] | None:
         """Return one additional financing document."""
         from .database import FordTriplogDatabase

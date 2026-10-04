@@ -127,6 +127,27 @@ class FordTriplogVehicleFinancingStorage:
             )
             with sqlite3.connect(db_path) as db:
                 db.row_factory = sqlite3.Row
+                # Keep the original uploaded main contract when an existing
+                # financing record is edited. The financing form does not
+                # submit document fields, so older dev builds could otherwise
+                # overwrite the linkage with NULL.
+                if financing_id is not None and not data.get("document_filename"):
+                    existing = db.execute(
+                        "SELECT document_filename, document_original_name FROM vehicle_financing WHERE vehicle_id=? AND financing_id=?",
+                        (vehicle_id, int(financing_id)),
+                    ).fetchone()
+                    if existing is not None and existing["document_filename"]:
+                        data["document_filename"] = existing["document_filename"]
+                        data["document_original_name"] = existing["document_original_name"]
+                        values = (
+                            data["financing_type"], data.get("provider"), data.get("contract_number"),
+                            data["start_date"], data.get("end_date"), data["duration_months"],
+                            data.get("purchase_price"), data["first_payment"], data["regular_payment"],
+                            data["number_of_payments"], data.get("residual_value"), data.get("interest_rate"),
+                            data.get("annual_mileage"), data.get("excess_km_rate"), data["currency"],
+                            data.get("notes"), data.get("document_filename"),
+                            data.get("document_original_name"), now,
+                        )
                 if financing_id is None:
                     cur = db.execute(
                         """INSERT INTO vehicle_financing (

@@ -7407,6 +7407,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
         contracts = await storage.async_load()
         contract = next((x for x in contracts if int(x["financing_id"]) == self._selected_financing_id), None)
         docs = FordTriplogFinancingDocumentStorage(self.hass)
+        # dev8/dev9 could lose the DB link to the already persisted main
+        # contract when the financing record was edited. Recover that orphaned
+        # file once when it can be identified unambiguously.
+        if contract and not contract.get("document_filename"):
+            if await docs.async_recover_main_document(self._selected_financing_id):
+                contracts = await storage.async_load()
+                contract = next((x for x in contracts if int(x["financing_id"]) == self._selected_financing_id), None)
         items = await docs.async_list_for_financing(self._selected_financing_id)
         options: list[selector.SelectOptionDict] = []
         if contract and contract.get("document_filename"):
