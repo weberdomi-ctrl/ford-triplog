@@ -7539,8 +7539,38 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         ocr=await self._get_ocr_client().async_analyze(filename=name,media_type=media,content=content); text=str(ocr.get("raw_text") or "")
                 self._vehicle_registration_prefill=extract_vehicle_registration_fields(text)
                 return await self.async_step_vehicle_registration_manual()
-            except (ValueError,HomeAssistantError,OSError,FordTriplogOCRAuthenticationError,FordTriplogOCRConnectionError,FordTriplogOCRResponseError,ImportError,RuntimeError):
-                _LOGGER.exception("Unable to import vehicle registration document"); errors["base"]="vehicle_document_import_failed"
+            except ValueError as err:
+                # Home Assistant removes the temporary upload file after the
+                # upload context has been consumed. The frontend can submit the
+                # same upload id again while moving to the review form. If the
+                # registration document was already persisted, continue with
+                # that copy instead of failing the flow. This mirrors the
+                # proven financing-document upload behaviour.
+                if str(err) == "File does not exist" and self._vehicle_registration_document:
+                    _LOGGER.debug(
+                        "Vehicle registration upload temp file already consumed; using stored document %s",
+                        self._vehicle_registration_document.get("registration_document_filename"),
+                    )
+                    return await self.async_step_vehicle_registration_manual()
+                _LOGGER.exception("Unable to import vehicle registration document")
+                errors["base"] = "vehicle_document_import_failed"
+            except (HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to import vehicle registration document")
+                errors["base"] = "vehicle_document_import_failed"
+            except (
+                FordTriplogOCRAuthenticationError,
+                FordTriplogOCRConnectionError,
+                FordTriplogOCRResponseError,
+                ImportError,
+                RuntimeError,
+            ):
+                # The document has already been imported persistently. OCR is
+                # only a convenience, so recognition errors must not discard
+                # the vehicle document or block manual data entry.
+                _LOGGER.exception(
+                    "Vehicle registration recognition failed; continuing with manual review"
+                )
+                return await self.async_step_vehicle_registration_manual()
         return self.async_show_form(step_id="vehicle_registration_upload",data_schema=vol.Schema({vol.Required("vehicle_file"):selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"))}),errors=errors)
 
     async def async_step_vehicle_registration_manual(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
