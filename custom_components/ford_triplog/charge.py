@@ -54,6 +54,13 @@ class Charge:
         # can publish them at different times.
         self.charging_type: str | None = None
         self.charger_energy_output_kwh: float | None = None
+        # When a Ford remains plugged in after reaching its target SOC, a
+        # later preconditioning event can start a second energy-transfer
+        # segment while the physical plug session is still the same charge.
+        # Keep already completed segment energy separate from the raw current
+        # segment counter so the charging-status total can be accumulated.
+        self.charging_energy_accumulated_kwh: float = 0.0
+        self.charging_resume_count: int = 0
         self.last_live_charging_soc: float | None = None
         self.last_live_charging_status: str | None = None
         self.last_live_charging_updated_at: str | None = None
@@ -370,6 +377,10 @@ class Charge:
             "fordpass_end_soc": self.fordpass_end_soc,
             "charging_type": self.charging_type,
             "charger_energy_output_kwh": self.charger_energy_output_kwh,
+            "charging_energy_accumulated_kwh": (
+                self.charging_energy_accumulated_kwh
+            ),
+            "charging_resume_count": self.charging_resume_count,
             "last_live_charging_soc": self.last_live_charging_soc,
             "last_live_charging_status": self.last_live_charging_status,
             "last_live_charging_updated_at": (
@@ -491,6 +502,20 @@ class Charge:
         charge.charger_energy_output_kwh = data.get(
             "charger_energy_output_kwh"
         )
+        try:
+            charge.charging_energy_accumulated_kwh = max(
+                0.0,
+                float(data.get("charging_energy_accumulated_kwh", 0.0) or 0.0),
+            )
+        except (TypeError, ValueError):
+            charge.charging_energy_accumulated_kwh = 0.0
+        try:
+            charge.charging_resume_count = max(
+                0,
+                int(data.get("charging_resume_count", 0) or 0),
+            )
+        except (TypeError, ValueError):
+            charge.charging_resume_count = 0
         charge.last_live_charging_soc = data.get(
             "last_live_charging_soc"
         )
