@@ -7544,6 +7544,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 expected_vin = str(vehicle_data.get("vin") or vehicle_config.get("vin") or vehicle_config.get("vehicle_vin") or "").strip() or None
                 self._vehicle_registration_prefill=extract_vehicle_registration_fields(text, expected_vin=expected_vin)
                 _LOGGER.info("Vehicle registration fields recognized: document=%s fields=%s", document["original_filename"], sorted(self._vehicle_registration_prefill))
+                existing_details = await docs.async_get_details(self._ensure_vehicle_context_id()) or {}
+                tracked_fields = ("vin", "registration_number", "make", "model", "first_registration", "type_approval", "power_kw", "empty_weight_kg", "gross_weight_kg")
+                field_sources = {
+                    field: ("document" if field in self._vehicle_registration_prefill else "existing_db" if existing_details.get(field) not in (None, "") else "empty")
+                    for field in tracked_fields
+                }
+                _LOGGER.info("Vehicle registration field sources: document=%s sources=%s", document["original_filename"], field_sources)
                 return await self.async_step_vehicle_registration_manual()
             except ValueError as err:
                 # Home Assistant removes the temporary upload file after the

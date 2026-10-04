@@ -1140,7 +1140,7 @@
       },
       "vehicle_data_management": {
         "title": "Fahrzeugdaten",
-        "description": "Fahrzeug: {vehicle_name}\\n\\nFahrzeugausweis/Fahrzeugschein und weitere Dokumente verwalten.",
+        "description": "Fahrzeug: {vehicle_name}\n\nFahrzeugausweis / Fahrzeugschein und weitere Dokumente verwalten.",
         "menu_options": {
           "vehicle_registration_upload": "Fahrzeugausweis / Fahrzeugschein hochladen",
           "vehicle_registration_manual": "Fahrzeugdaten manuell bearbeiten",
