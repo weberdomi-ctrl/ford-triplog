@@ -658,27 +658,51 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
             return max(active,key=lambda x:(str(x.get('valid_from') or ''),int(x.get(id_key) or 0))) if active else None
 
         def calc_period(ps,pe,charging,distance):
-            financing=0.0
-            # Financing is monthly TCO. Sum every calendar month touched by period.
-            cursor=date(ps.year,ps.month,1)
-            while cursor <= pe:
-                try:
-                    for r in financing_rows: financing += leasing_tco_for_month(r,cursor.year,cursor.month)
-                except (ValueError,TypeError,KeyError): pass
-                cursor=date(cursor.year+1,1,1) if cursor.month==12 else date(cursor.year,cursor.month+1,1)
+            def overlap_fraction(month_start, month_end, valid_start, valid_end):
+                start=max(month_start,valid_start); end=min(month_end,valid_end)
+                if end < start: return 0.0
+                return ((end-start).days+1)/((month_end-month_start).days+1)
 
-            insurance=0.0; road_tax=0.0
+            financing=0.0; insurance=0.0; road_tax=0.0
             cursor=date(ps.year,ps.month,1)
             while cursor <= pe:
-                mid=date(cursor.year,cursor.month,min(15,monthrange(cursor.year,cursor.month)[1]))
-                r=active_row(insurance_rows,mid,'insurance_id')
-                if r:
-                    try: insurance += float(r.get('period_premium') or 0)/12.0
-                    except (TypeError,ValueError): pass
-                r=active_row(tax_rows,mid,'tax_id')
-                if r:
-                    try: road_tax += float(r.get('annual_tax') or 0)/12.0
-                    except (TypeError,ValueError): pass
+                month_end=date(cursor.year,cursor.month,monthrange(cursor.year,cursor.month)[1])
+                seg_start=max(cursor,ps); seg_end=min(month_end,pe)
+
+                for r in financing_rows:
+                    try:
+                        monthly=leasing_tco_for_month(r,cursor.year,cursor.month)
+                        start=date.fromisoformat(str(r.get('start_date')))
+                        end_raw=r.get('end_date')
+                        if end_raw:
+                            end=date.fromisoformat(str(end_raw))
+                        else:
+                            duration=int(r.get('duration_months') or 0)
+                            idx=start.year*12+(start.month-1)+max(duration-1,0)
+                            ey,em0=divmod(idx,12)
+                            end=date(ey,em0+1,monthrange(ey,em0+1)[1])
+                        financing += monthly*overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
+                    except (ValueError,TypeError,KeyError):
+                        pass
+
+                for r in insurance_rows:
+                    try:
+                        start=date.fromisoformat(str(r.get('valid_from')))
+                        end=date.fromisoformat(str(r.get('valid_to')))
+                        fraction=overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
+                        insurance += (float(r.get('period_premium') or 0)/12.0)*fraction
+                    except (ValueError,TypeError):
+                        pass
+
+                for r in tax_rows:
+                    try:
+                        start=date.fromisoformat(str(r.get('valid_from')))
+                        end=date.fromisoformat(str(r.get('valid_to')))
+                        fraction=overlap_fraction(cursor,month_end,max(start,seg_start),min(end,seg_end))
+                        road_tax += (float(r.get('annual_tax') or 0)/12.0)*fraction
+                    except (ValueError,TypeError):
+                        pass
+
                 cursor=date(cursor.year+1,1,1) if cursor.month==12 else date(cursor.year,cursor.month+1,1)
 
             variable={'maintenance':0.0,'toll':0.0,'other':0.0}
