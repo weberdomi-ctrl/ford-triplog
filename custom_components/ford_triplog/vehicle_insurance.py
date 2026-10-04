@@ -52,7 +52,7 @@ class FordTriplogVehicleInsuranceStorage:
         d['provider']=str(d.get('provider') or '').strip() or None; d['policy_number']=str(d.get('policy_number') or '').strip() or None; d['notes']=str(d.get('notes') or '').strip() or None
         return d
 
-# --- Insurance policy import helpers (2.6 dev29) -------------------------
+# --- Insurance policy import helpers (2.6 dev30) -------------------------
 def extract_insurance_fields(raw_text: str, document_type: str = "insurance_policy") -> dict[str, Any]:
     """Extract insurance data, with a dedicated policy parser.
 
@@ -88,7 +88,7 @@ def extract_insurance_fields(raw_text: str, document_type: str = "insurance_poli
 
     # Shared identity fields.
     providers = (
-        r"\b(AXA\s+Versicherungen\s+AG)\b",
+        r"(AXA\s*Versicherungen\s*AG)\b",
         r"\b(Helvetia(?:\s+Schweizerische)?\s+Versicherung(?:en)?(?:\s+AG)?)\b",
         r"\b(Mobiliar(?:\s+Versicherung(?:en)?)?(?:\s+AG)?)\b",
         r"\b(Zurich(?:\s+Versicherung(?:s-Gesellschaft)?)?(?:\s+AG)?)\b",
@@ -100,7 +100,7 @@ def extract_insurance_fields(raw_text: str, document_type: str = "insurance_poli
         m=re.search(pat,text,re.I)
         if m: out["provider"]=m.group(1).strip(); break
 
-    m=re.search(r"\bPolice\s*Nr\.?\s*[:#\-]?\s*(\d{1,4}(?:\.\d{1,4}){1,4}|[A-Z0-9][A-Z0-9./\-]{2,30})", flat, re.I)
+    m=re.search(r"Police\s*Nr\.?\s*[:#\-]?\s*(\d{1,4}(?:\.\d{1,4}){1,4}|[A-Z0-9][A-Z0-9./\-]{2,30})", flat, re.I)
     if m: out["policy_number"]=m.group(1).strip(" .:/-")
 
     if re.search(r"\bEUR\b|€", text, re.I): out["currency"]="EUR"
@@ -119,7 +119,7 @@ def extract_insurance_fields(raw_text: str, document_type: str = "insurance_poli
             if a and b: out["valid_from"],out["valid_to"]=a,b
 
         # TCO basis is explicitly the annual premium, never an individual cover.
-        m=re.search(rf"Total\s+Jahrespr[aä]mie\s*(?:in\s+[A-Z]{{3}}\s*)?(?:CHF|EUR|€)?\s*{money}", flat, re.I)
+        m=re.search(rf"Total\s*Jahrespr[aä]mie\s*(?:in\s*[A-Z]{{3}}\s*)?(?:CHF|EUR|€)?\s*{money}", flat, re.I)
         if not m:
             m=re.search(rf"\bJahrespr[aä]mie\b\s*(?:in\s+[A-Z]{{3}}\s*)?(?:CHF|EUR|€)?\s*{money}", flat, re.I)
         if m:
@@ -137,7 +137,7 @@ def extract_insurance_fields(raw_text: str, document_type: str = "insurance_poli
         # Prefer the premium matching the selected payment cadence.
         labels={"monthly":"Monatspr[aä]mie","quarterly":"(?:Quartals|Vierteljahres)pr[aä]mie","semiannual":"Halbjahrespr[aä]mie","annual":"Jahrespr[aä]mie"}
         label=labels[out["payment_frequency"]]
-        m=re.search(rf"Total\s+{label}\s*(?:CHF|EUR|€)?\s*{money}", flat, re.I)
+        m=re.search(rf"Total\s*{label}\s*(?:CHF|EUR|€)?\s*{money}", flat, re.I)
         if m:
             a=amount_value(m.group(1))
             if a is not None: out["payment_amount"]=f"{a:.2f}"
