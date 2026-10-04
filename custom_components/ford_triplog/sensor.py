@@ -28,6 +28,7 @@ from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from homeassistant.components.http.auth import async_sign_path
 from .utils import (
@@ -176,6 +177,31 @@ async def async_setup_entry(
         ),
     }
 
+    # Keep the insurance entity stable across the dev31/dev32 naming experiments.
+    # dev31 used ``ford_triplog_vehicle_insurance`` while dev32 accidentally
+    # introduced a second unique ID.  Reclaim the original registry entry,
+    # remove the duplicate, and give the surviving entity its intended ID.
+    registry = er.async_get(hass)
+    insurance_unique_id = "ford_triplog_vehicle_insurance"
+    duplicate_unique_id = "ford_triplog_insurance_tco"
+    wanted_entity_id = "sensor.garage_ford_triplog_versicherung_tco"
+
+    duplicate_entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, duplicate_unique_id
+    )
+    if duplicate_entity_id is not None:
+        registry.async_remove(duplicate_entity_id)
+
+    insurance_entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, insurance_unique_id
+    )
+    if insurance_entity_id is not None and insurance_entity_id != wanted_entity_id:
+        existing_target = registry.async_get(wanted_entity_id)
+        if existing_target is None:
+            registry.async_update_entity(
+                insurance_entity_id, new_entity_id=wanted_entity_id
+            )
+
     async_add_entities(
         [
             FordTriplogVehicleSourceStatusSensor(coordinator),
@@ -319,8 +345,9 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
     """Monthly insurance TCO for the currently selected vehicle."""
 
     _attr_has_entity_name = True
-    _attr_translation_key = "insurance_tco"
-    _attr_unique_id = "ford_triplog_insurance_tco"
+    _attr_name = "Versicherung TCO"
+    # Keep the original dev31 unique ID so HA reuses the existing registry row.
+    _attr_unique_id = "ford_triplog_vehicle_insurance"
     _attr_icon = "mdi:shield-car"
     _attr_native_unit_of_measurement = "CHF/month"
     _attr_should_poll = True
