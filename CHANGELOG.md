@@ -1,5 +1,6 @@
 # Changelog
 
+<<<<<<< Updated upstream
 ## 2.5.0 – Pre-release
 
 ### Added
@@ -33,6 +34,46 @@
 - A pre-2.5 database backup is created automatically before the schema migration.
 - No manual database conversion is required.
 - As this is a pre-release, a current Home Assistant backup is recommended before upgrading.
+=======
+## 2.5.0
+
+### Added
+
+- Added production multi-vehicle support with stable internal `vehicle_id` values and vehicle-scoped SQLite data.
+- Added vehicle identity discovery from Home Assistant registries, including VIN, display name, manufacturer, model and source where available.
+- Added a shared vehicle selector so the existing Ford Triplog dashboard/history entities can switch between loaded vehicles without duplicating the complete entity set.
+- Added vehicle-aware configuration/options flows and vehicle-specific manual actions.
+- Added global SQLite-backed home charging tariff storage shared safely across multiple vehicle ConfigEntries.
+- Added optional automatic Ford EV plug-state discovery for compatible Ford Connect/FordPass devices.
+
+### Improved
+
+- Existing SQLite data is migrated into the multi-vehicle schema and assigned to the original vehicle without requiring a manual database conversion.
+- Trips, charging sessions, Journeys, Routes, current/last caches, receipts, metadata, charging sites and statistics are isolated by vehicle where applicable.
+- Shared History and dashboard entities follow the selected vehicle context while preserving the established entity IDs.
+- Ford charging sessions can remain open across `IN_PROGRESS -> COMPLETED/READY -> IN_PROGRESS` transitions while the physical plug remains connected.
+- An explicit physical plug disconnect closes the Ford charging session; unavailable/unsupported plug states retain the last valid physical state instead of creating false transitions.
+- Vehicle sources without a supported physical plug-state entity continue to use the established charging-state lifecycle.
+- Route Tracker source consistency is checked against vehicle GPS before the final route is accepted.
+- When the auxiliary phone/device tracker and vehicle GPS disagree by more than 250 m at Trip end, vehicle GPS becomes authoritative and auxiliary route points are discarded.
+- If an auxiliary tracker incorrectly replaced a provisional Trip start, the original vehicle start position is restored when a source mismatch is detected.
+- Home charging tariff periods are stored once globally in SQLite instead of being duplicated across vehicle ConfigEntries.
+
+### Fixed
+
+- Fixed Ford charging sessions being split when preconditioning or another later transfer segment resumed charging without the vehicle being unplugged.
+- Fixed phantom routes when a configured phone/device tracker was not travelling with the vehicle, for example while the vehicle was being moved in a workshop.
+- Fixed implausible Route Tracker points being retained in the completed stored route after a large vehicle/auxiliary-GPS mismatch.
+- Fixed stale provisional Trip start coordinates remaining authoritative after the Route Tracker source was later proven to belong somewhere else.
+
+### Notes
+
+- Ford Connect remains the recommended source for Ford vehicles; compatible FordPass entities can still be used where available.
+- Multi-vehicle support is source-agnostic at the entity layer. A compatible non-Ford source can be used when it exposes the required Home Assistant entities; such sources do not automatically receive Ford-specific plug-state handling.
+- Release testing covered multiple vehicles, normal and dense GPS routes, Smart Trip handling, charging-session resume while still plugged in, and a workshop scenario with the auxiliary phone tracker roughly 27 km away from the vehicle.
+- No manual SQLite conversion is required when upgrading from 2.4.
+- Final public release: Build 25023.
+>>>>>>> Stashed changes
 
 ## 2.4.0
 

@@ -1,3 +1,4 @@
+<<<<<<< Updated upstream
 # Ford Triplog 2.5.0 Pre-release
 
 Ford Triplog 2.5 introduces the vehicle-aware architecture required for multi-vehicle operation.
@@ -93,6 +94,101 @@ The SQLite schema is migrated automatically and a pre-2.5 database backup is cre
 No manual migration is required.
 
 Because this is a pre-release, creating a current Home Assistant backup before upgrading is recommended.
+=======
+# Ford Triplog 2.5.0
+
+**Final release: Build 25023**
+
+Ford Triplog 2.5 introduces production multi-vehicle support and strengthens charging-session and GPS-route reliability. The release keeps the SQLite-only local-first architecture from 2.3/2.4 while extending it so Trips, charging sessions, Journeys, Routes and related metadata can be kept separate for multiple vehicles.
+
+Existing 2.4 data remains compatible. The database migration assigns legacy records to the original vehicle and does not require a manual conversion.
+
+## 🚙 Multi-vehicle architecture
+
+Ford Triplog can now run multiple vehicle ConfigEntries against the same local database.
+
+Each vehicle receives a stable internal `vehicle_id`, and vehicle identity can be discovered from Home Assistant registry data where available, including:
+
+- VIN
+- display name
+- manufacturer
+- model
+- source integration
+
+The main Triplog UI keeps one shared entity set instead of creating a complete duplicate dashboard for every vehicle. A vehicle selector changes the active dashboard/history context, and options/manual actions follow the selected vehicle.
+
+Vehicle-scoped storage covers the operational Triplog data, including Trips, charging sessions, Journeys, Routes, current/last caches, metadata and receipts where applicable.
+
+Ford Connect remains the recommended source for Ford vehicles. The 2.5 multi-vehicle architecture is entity-based, so other compatible Home Assistant vehicle sources can also be used when they expose the required states. Ford-specific capabilities remain limited to Ford sources.
+
+## ⚡ Physical plug-aware Ford charging sessions
+
+Ford Connect/FordPass vehicles can now use an automatically discovered physical EV plug-state entity when one is available on the same Home Assistant device.
+
+This solves a real charging edge case: a vehicle can finish charging, remain physically plugged in and later resume a short transfer segment, for example because of preconditioning or battery management.
+
+With a valid physical plug state:
+
+- `IN_PROGRESS -> COMPLETED/READY -> IN_PROGRESS` can remain one physical charging session while the plug stays connected.
+- An explicit `DISCONNECTED` / unplugged state closes the physical session.
+- Temporary `unknown`, `unavailable` or unsupported plug values retain the last valid physical state instead of forcing a false session end.
+- Energy from resumed transfer segments can be accumulated into the same stored charging session.
+
+Sources without this Ford plug-state capability keep the existing charging-state lifecycle unchanged.
+
+## 🛰️ Route Tracker source guard
+
+Ford Triplog 2.5 adds a spatial consistency guard between the optional Route Tracker source and the vehicle GPS.
+
+A phone/device tracker is useful while the phone is travelling with the vehicle, but it can become invalid if the vehicle is moved independently, for example during a workshop visit.
+
+At Trip completion, when both sources are available:
+
+- Ford Triplog compares the auxiliary Route Tracker position with vehicle GPS.
+- If the sources differ by more than 250 m, vehicle GPS is authoritative.
+- Auxiliary phone/device-tracker route points are discarded for the completed route.
+- If the auxiliary source had previously replaced a provisional Trip start, the original vehicle start is restored.
+- The resulting Trip keeps the vehicle odometer/distance data and trustworthy vehicle position instead of creating an impossible long-distance phantom route.
+
+When both sources remain geographically consistent, normal Route Tracker recording and OSRM processing continue unchanged.
+
+## 💾 Vehicle-aware SQLite storage
+
+The local database schema now contains vehicle identity and vehicle-scoping information. Existing records from earlier releases are migrated non-destructively to the original vehicle context.
+
+Home charging tariff periods are also stored globally in SQLite so multiple vehicle ConfigEntries use one consistent tariff definition instead of carrying duplicated configuration copies.
+
+The local-first policy remains unchanged:
+
+- SQLite is the sole productive datastore.
+- Receipts remain local files linked through stored metadata.
+- Raw GPS points remain separate from OSRM-matched geometry.
+- No external database service is required.
+
+## 🧪 Real-world validation
+
+The final 2.5 test cycle covered:
+
+- multiple active vehicles using separate vehicle identities and history
+- normal everyday Trips and multi-Trip Journeys
+- dense phone GPS route recording and OSRM matching
+- Ford charging completion followed by a later charging resume while still physically plugged in
+- a workshop scenario where the configured phone tracker remained roughly 27 km away while the vehicle was repeatedly switched on and moved locally
+- correct rejection of the detached phone route while preserving the vehicle Trip and odometer distance
+- database integrity and clean current Trip/Journey/Charge state after testing
+
+The final public release build is **25023**.
+
+## ⬆️ Upgrade notes
+
+Ford Triplog 2.5.0 is designed as a direct upgrade from 2.4.x.
+
+No manual database conversion is required. A backup of `ford_triplog.db` is still recommended before upgrading, as with any storage release.
+
+Existing dashboard entity IDs remain stable. After adding more than one vehicle, the shared Ford Triplog vehicle selector controls which vehicle is shown by the shared dashboard/history entities.
+
+Ford-specific physical plug-state handling is discovered automatically when supported; there is no additional plug-state field to configure manually.
+>>>>>>> Stashed changes
 
 ------------------------------------------------------------------------
 

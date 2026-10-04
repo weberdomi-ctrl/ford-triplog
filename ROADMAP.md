@@ -364,6 +364,7 @@ The following earlier 2.4 ideas were not required for the final 2.4 release and 
 
 ---
 
+<<<<<<< Updated upstream
 # Version 2.5 – Multi-Vehicle Architecture
 
 Status: **Pre-release testing**
@@ -413,13 +414,137 @@ Equivalent tariff data can therefore be imported repeatedly without creating dup
 # Version 2.6+ – Planned
 
 Potential Ford-focused development areas:
+=======
+# Version 2.5 – Multi-Vehicle, Charging Session & Route Source Reliability
+
+Status: **Released**
+
+Version 2.5 turns the existing single-vehicle runtime into a production
+multi-vehicle architecture while keeping the established local-first SQLite
+storage and shared Home Assistant dashboard model.
+
+## Implemented – Multi-Vehicle Storage and Runtime
+
+- Stable internal `vehicle_id` per configured vehicle
+- Vehicle registry with VIN, display name, manufacturer, model and source metadata where available
+- Vehicle-scoped Trips, charging sessions, Journeys and Routes
+- Vehicle-scoped current/last caches and operational metadata
+- Existing pre-2.5 SQLite rows migrated non-destructively to vehicle 1 / the original vehicle context
+- One shared SQLite database remains the sole productive datastore
+- Shared Ford Triplog entity set follows the selected vehicle context instead of duplicating the complete dashboard per ConfigEntry
+- Vehicle selector synchronizes dashboard/history context and options-flow vehicle selection
+
+## Implemented – Vehicle-aware Configuration
+
+- Vehicle identity discovery from Home Assistant registries
+- VIN-based duplicate protection where a stable VIN is available
+- Vehicle-specific options and manual maintenance context
+- Compatible entity-based non-Ford sources can use the common Triplog lifecycle
+- Ford-specific capabilities remain capability-gated to supported Ford sources
+
+## Implemented – Physical Plug-aware Ford Charging
+
+- Optional Ford EV plug-state entity is auto-detected on the same Home Assistant device
+- `IN_PROGRESS -> COMPLETED/READY -> IN_PROGRESS` can remain one physical session while the plug stays connected
+- Explicit unplug/disconnect closes the physical session
+- Temporary unknown/unavailable plug states retain the last valid physical state
+- Resumed transfer energy can be accumulated into the same stored charge
+- Sources without supported physical plug state retain the established charging-state lifecycle
+
+## Implemented – Route Tracker Source Guard
+
+- Auxiliary Route Tracker GPS is compared with vehicle GPS at Trip completion
+- Vehicle GPS is authoritative when the sources differ by more than 250 m
+- Detached phone/device-tracker points are discarded from the completed route
+- Original vehicle start coordinates are restored if a provisional start was previously replaced by an invalid auxiliary tracker
+- Normal dense Route Tracker and OSRM behavior remains unchanged when both sources are geographically consistent
+
+## Implemented – Shared Home Charging Tariffs
+
+- Home charging tariff periods are stored globally in SQLite
+- Multiple vehicle ConfigEntries use the same tariff definition
+- Existing ConfigEntry tariff data is migrated once and deduplicated
+
+---
+
+# Version 2.6 – Vehicle Costs, Recovery & Reporting
+
+Status: **Planned**
+
+The primary 2.6 feature area is a per-vehicle operating-cost/TCO module built
+on top of the multi-vehicle and monthly-statistics foundations from 2.5.
+
+## Planned – Vehicle Cost/TCO Module
+
+Costs are stored strictly per vehicle and are intended to answer the practical
+question: **what does this vehicle cost per kilometre per month and per year?**
+
+Planned cost categories include:
+
+- Leasing / financing
+- Insurance
+- Road tax
+- Vignette / toll
+- Service / maintenance
+- Repairs
+- Tyres / wheels
+- Washing / care
+- Parking / garage
+- Accessories
+- Other
+
+Planned cost fields include:
+
+- vehicle
+- category
+- description
+- amount and currency
+- one-time / monthly / yearly / total-period interval
+- validity start/end
+- optional payment date for documentation only
+- optional notes
+- optional PDF/image receipt
+
+The cost calculation should use the economic validity period rather than the
+payment date. For example, an annual insurance invoice is distributed across
+its covered months even if it is paid as one invoice.
+
+Monthly and yearly reporting is planned to combine:
+
+- allocated fixed costs
+- one-time/variable vehicle costs
+- effective stored charging costs
+- driven distance from the existing Triplog statistics
+- total cost
+- cost per kilometre
+
+Stored charging-session cost remains authoritative. When receipt/billed cost
+is available, that effective value is used instead of recalculating a separate
+energy estimate for the TCO view. Months or years with zero driven distance
+show no cost-per-kilometre value instead of dividing by zero.
+
+## Planned – Configuration Recovery Metadata
+
+- Persist each vehicle's Home Assistant entity/sensor mapping in `ford_triplog.db` as recovery metadata
+- Keep the Home Assistant ConfigEntry as the active runtime configuration; the database copy is a restore template, not the live source of truth
+- Match restored vehicles primarily by VIN/internal vehicle identity
+- Validate whether saved entity IDs still exist and offer remapping when they do not
+- Goal: restoring `ford_triplog.db` should recover nearly all Triplog domain data and provide enough metadata to reconstruct vehicle configuration with minimal manual work
+
+## Additional 2.6 Candidates
+>>>>>>> Stashed changes
 
 - Route export and route-data portability
-- Optional enriched GPS point metadata
+- Raw GPS export with timestamps
+- GPX / GeoJSON route export
+- Optional enriched GPS metadata such as altitude, accuracy, speed and course
 - Additional database-backed reporting
+<<<<<<< Updated upstream
 - Maintenance tracking
 - Further charging and energy reporting improvements
 - Further multi-vehicle refinements
+=======
+>>>>>>> Stashed changes
 
 ---
 
@@ -441,6 +566,10 @@ The JAC Home Assistant connector is developed as a separate project and is not p
 
 Additional future development areas include:
 
+<<<<<<< Updated upstream
+=======
+- Further multi-vehicle/source-adapter improvements
+>>>>>>> Stashed changes
 - Maintenance tracking
 - Long-term history improvements
 - Additional database-backed reporting options
@@ -464,6 +593,11 @@ Additional future development areas include:
 | 2.2 | Released | CSV exports, maintenance tools, pause receipts, History reliability and continued JSON/SQLite validation |
 | 2.3 | Released | SQLite-only storage, direct device-tracker GPS, improved trip-end GPS, dense OSRM matching and Route maintenance |
 | 2.4 | Released | Charging reliability, recuperation/monthly statistics, user-defined places, Journey rebuild reliability and vehicle-source health |
+<<<<<<< Updated upstream
 | 2.5 | Pre-release | Multi-vehicle architecture, vehicle-aware SQLite storage, shared vehicle selection and tariff-import reliability |
 | 2.6+ | Planned | Route portability, enriched GPS metadata, reporting and further Ford-focused improvements |
+=======
+| 2.5 | Released | Multi-vehicle storage/runtime, vehicle selector, plug-aware Ford charging and Route Tracker source guard |
+| 2.6 | Planned | Per-vehicle costs/TCO, configuration recovery metadata and further reporting |
+>>>>>>> Stashed changes
 | 3.x | Research | Manufacturer-neutral Triplog core and vehicle adapters |
