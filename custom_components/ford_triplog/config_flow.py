@@ -7792,12 +7792,15 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def _async_expense_menu(self, step_id):
         return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
     async def async_step_expense_add(self,user_input=None):
-        self._selected_expense_id=None; return await self.async_step_expense_form(user_input)
+        self._selected_expense_id=None
+        # A pending receipt belongs only to the current expense form session.
+        self._pending_expense_document = None
+        return await self.async_step_expense_form(user_input)
     async def async_step_expense_edit(self,user_input=None):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            self._selected_expense_id=int(user_input["expense_id"]); return await self.async_step_expense_form()
+            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; return await self.async_step_expense_form()
         opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
         return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
@@ -7861,20 +7864,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
             # intentionally not reused as defaults because HA FileSelector cannot do so.
             form_values.update({k: v for k, v in user_input.items() if k != "receipt_file"})
             try:
+                # Persist a newly selected receipt *before* validating the other
+                # fields. Home Assistant's upload token is temporary and cannot
+                # safely be submitted a second time after a validation error.
+                # The persistent copy stays pending until the expense itself is
+                # successfully saved, then it is attached to that expense.
+                upload_id = user_input.get("receipt_file")
+                if upload_id and not getattr(self, "_pending_expense_document", None):
+                    with process_uploaded_file(self.hass, upload_id) as uploaded_path:
+                        docs = FordTriplogVehicleDocumentStorage(self.hass)
+                        self._pending_expense_document = await docs.async_import(
+                            uploaded_path, original_name=uploaded_path.name
+                        )
+
                 data = dict(user_input)
+                data.pop("receipt_file", None)
                 data["expense_group"] = self._expense_group
                 if eid is not None:
                     data["expense_id"] = eid
                 saved = await store.async_save(data)
-                if user_input.get("receipt_file"):
-                    with process_uploaded_file(self.hass, user_input["receipt_file"]) as uploaded_path:
-                        docs = FordTriplogVehicleDocumentStorage(self.hass)
-                        doc = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                pending_doc = getattr(self, "_pending_expense_document", None)
+                if pending_doc:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
                     await docs.async_attach(
-                        self._ensure_vehicle_context_id(), doc["filename"], doc["original_filename"],
-                        doc["media_type"], f"expense_{saved['expense_id']}",
+                        self._ensure_vehicle_context_id(), pending_doc["filename"], pending_doc["original_filename"],
+                        pending_doc["media_type"], f"expense_{saved['expense_id']}",
                         str(user_input.get("notes") or "").strip() or None,
                     )
+                    self._pending_expense_document = None
                 self._selected_expense_id = None
                 return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
             except ValueError as err:

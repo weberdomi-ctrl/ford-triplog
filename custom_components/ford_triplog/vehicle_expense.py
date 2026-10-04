@@ -62,7 +62,7 @@ class FordTriplogVehicleExpenseStorage:
             text = str(value or "").strip()
             if not text:
                 return None
-            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d.%m.%y", "%d/%m/%y"):
                 try:
                     return datetime.strptime(text, fmt).date().isoformat()
                 except ValueError:
