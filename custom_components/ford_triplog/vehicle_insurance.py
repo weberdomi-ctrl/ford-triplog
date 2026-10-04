@@ -103,6 +103,12 @@ def extract_insurance_fields(raw_text: str) -> dict[str, Any]:
             numeric = re.match(r"\d{1,4}(?:\.\d{1,4}){1,4}", value)
             out["policy_number"] = numeric.group(0) if numeric else value
             break
+    # OCR/PDF fallback: allow whitespace/newlines between Police and Nr. and
+    # stop strictly at the first whitespace after the identifier.
+    if "policy_number" not in out:
+        m = re.search(r"\bPolice\s*(?:Nr\.?|Nummer)\s*[:#\-]?\s*(\d{1,4}(?:\.\d{1,4}){1,4}|[A-Z0-9][A-Z0-9./\-]{2,30})", flat, re.I)
+        if m:
+            out["policy_number"] = m.group(1).strip(" .:/-")
 
     def iso_date(value: str) -> str | None:
         value = value.strip()
@@ -146,8 +152,25 @@ def extract_insurance_fields(raw_text: str) -> dict[str, Any]:
 
     money_pat = r"(?<![\d.])[-+]?\s*(\d{1,3}(?:['’ ]\d{3})*(?:[.,]\d{2})|\d+(?:[.,]\d{2}))"
 
-    # Strongest signal: the amount on a labelled period-premium line. Prefer
-    # "new / debit" over "previous / credit" on contract-change invoices.
+    # Strongest signal: an explicit total/period premium expression. Search the
+    # flattened text first because PDF table extraction can split the label,
+    # date range and amount across physical lines. This must win over component
+    # rows and columns such as "Jahresprämie Vollkasko 1'199.80".
+    exact_premium_patterns = (
+        rf"(?:Ihre\s+)?(?:Prämie|Praemie)\s+neu\s*(?:\(\s*Belastung\s*\))?\s*(?:vom|von)\s*{date_pat}\s*(?:bis|[-–—])\s*{date_pat}\s*(?:CHF|EUR|€)?\s*{money_pat}",
+        rf"(?:Periodenprämie|Periodenpraemie|Prämie\s+für\s+(?:diesen\s+)?Zeitraum|Praemie\s+fuer\s+(?:diesen\s+)?Zeitraum|Totalprämie|Totalpraemie)\s*[:\-]?\s*(?:CHF|EUR|€)?\s*{money_pat}",
+    )
+    for pat in exact_premium_patterns:
+        m = re.search(pat, flat, re.I)
+        if m:
+            # money_pat is the last capturing group in both patterns.
+            amount = amount_value(m.group(m.lastindex))
+            if amount is not None and amount > 0:
+                out["period_premium"] = f"{amount:.2f}"
+                break
+
+    # Fallback for other insurers: score premium-labelled lines, but never let
+    # annual component rows override an already recognised total period premium.
     premium_candidates: list[tuple[int, float, str]] = []
     for line in lines:
         low = line.lower()
@@ -168,7 +191,7 @@ def extract_insurance_fields(raw_text: str) -> dict[str, Any]:
             # A date range on the same line strongly indicates a period amount.
             if re.search(r"\d{1,2}[./]\d{1,2}[./]\d{2,4}\s*[-–—]\s*\d{1,2}[./]\d{1,2}[./]\d{2,4}", line): score += 50
             premium_candidates.append((score, amount, line))
-    if premium_candidates:
+    if "period_premium" not in out and premium_candidates:
         premium_candidates.sort(key=lambda x: (x[0], x[1]), reverse=True)
         out["period_premium"] = f"{premium_candidates[0][1]:.2f}"
 
