@@ -7790,7 +7790,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_other_cost_management(self, user_input=None):
         self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
     async def _async_expense_menu(self, step_id):
-        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
     async def async_step_expense_add(self,user_input=None):
         self._selected_expense_id=None; return await self.async_step_expense_form(user_input)
     async def async_step_expense_edit(self,user_input=None):
@@ -7807,6 +7807,45 @@ class FordTriplogOptionsFlow(OptionsFlow):
             await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
         opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
         return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+    async def _async_expense_receipt_items(self):
+        store=await self._async_expense_storage()
+        expenses=await store.async_load(self._expense_group)
+        expense_ids={int(x["expense_id"]):x for x in expenses}
+        docs=FordTriplogVehicleDocumentStorage(self.hass)
+        vid=self._ensure_vehicle_context_id()
+        items=await docs.async_list(vid)
+        result=[]
+        for doc in items:
+            dtype=str(doc.get("document_type") or "")
+            if not dtype.startswith("expense_"):
+                continue
+            try: eid=int(dtype.split("_",1)[1])
+            except (ValueError,IndexError): continue
+            expense=expense_ids.get(eid)
+            if expense is not None: result.append((doc,expense))
+        return result
+
+    async def async_step_expense_receipt_view(self,user_input=None):
+        pairs=await self._async_expense_receipt_items()
+        if not pairs: return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        if user_input is not None:
+            vid=self._ensure_vehicle_context_id(); ref=str(user_input["document_id"])
+            path=f"/api/ford_triplog/vehicle/{vid}/documents/{ref}"; signed=async_sign_path(self.hass,path,timedelta(minutes=10),use_content_user=True)
+            try:self._selected_vehicle_document_url=f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
+            except NoURLAvailableError:self._selected_vehicle_document_url=signed
+            return await self.async_step_vehicle_document_open()
+        opts=[selector.SelectOptionDict(value=str(doc["document_id"]),label=f"{exp.get('expense_date') or exp.get('expense_year') or exp.get('valid_from') or '—'} · {exp.get('category')} · {doc.get('original_filename')}") for doc,exp in pairs]
+        return self.async_show_form(step_id="expense_receipt_view",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+
+    async def async_step_expense_receipt_delete(self,user_input=None):
+        pairs=await self._async_expense_receipt_items(); docs=FordTriplogVehicleDocumentStorage(self.hass); vid=self._ensure_vehicle_context_id()
+        if not pairs: return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        if user_input is not None:
+            await docs.async_delete(vid,int(user_input["document_id"]))
+            return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        opts=[selector.SelectOptionDict(value=str(doc["document_id"]),label=f"{exp.get('expense_date') or exp.get('expense_year') or exp.get('valid_from') or '—'} · {exp.get('category')} · {doc.get('original_filename')}") for doc,exp in pairs]
+        return self.async_show_form(step_id="expense_receipt_delete",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+
     async def async_step_expense_form(self,user_input=None):
         store=await self._async_expense_storage(); existing={}; eid=self._selected_expense_id
         if eid is not None: existing=next((x for x in await store.async_load(self._expense_group) if int(x['expense_id'])==eid),{})

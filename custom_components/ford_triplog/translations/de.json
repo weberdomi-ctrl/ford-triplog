@@ -1339,7 +1339,9 @@
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
-          "costs_management": "Zurück zu Kosten"
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
         }
       },
       "toll_management": {
@@ -1350,7 +1352,9 @@
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
-          "costs_management": "Zurück zu Kosten"
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
         }
       },
       "other_cost_management": {
@@ -1361,7 +1365,9 @@
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
-          "costs_management": "Zurück zu Kosten"
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
         }
       },
       "expense_add": {
@@ -1416,6 +1422,20 @@
           "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
           "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
           "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten."
+        }
+      },
+      "expense_receipt_view": {
+        "title": "Belege anzeigen",
+        "description": "Beleg zum Öffnen auswählen.",
+        "data": {
+          "document_id": "Beleg"
+        }
+      },
+      "expense_receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Beleg zum Löschen auswählen.",
+        "data": {
+          "document_id": "Beleg"
         }
       }
     },

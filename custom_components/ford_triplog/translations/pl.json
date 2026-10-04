@@ -1327,7 +1327,9 @@
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
           "init": "Wstecz",
-          "costs_management": "Powrót do kosztów"
+          "costs_management": "Powrót do kosztów",
+          "expense_receipt_view": "Wyświetl rachunki",
+          "expense_receipt_delete": "Usuń rachunek"
         }
       },
       "toll_management": {
@@ -1338,7 +1340,9 @@
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
           "init": "Wstecz",
-          "costs_management": "Powrót do kosztów"
+          "costs_management": "Powrót do kosztów",
+          "expense_receipt_view": "Wyświetl rachunki",
+          "expense_receipt_delete": "Usuń rachunek"
         }
       },
       "other_cost_management": {
@@ -1349,7 +1353,9 @@
           "expense_edit": "Edytuj koszt",
           "expense_delete": "Usuń koszt",
           "init": "Wstecz",
-          "costs_management": "Powrót do kosztów"
+          "costs_management": "Powrót do kosztów",
+          "expense_receipt_view": "Wyświetl rachunki",
+          "expense_receipt_delete": "Usuń rachunek"
         }
       },
       "expense_add": {
@@ -1404,6 +1410,20 @@
           "maintenance_management": "Zarządzaj kosztami serwisu, napraw, opon i innymi kosztami warsztatowymi wraz z fakturami.",
           "toll_management": "Zarządzaj opłatami drogowymi i winietami z opcjonalnym okresem ważności i dokumentem.",
           "other_cost_management": "Zarządzaj dowodem rejestracyjnym, tablicami, zmianami administracyjnymi i innymi jednorazowymi kosztami pojazdu."
+        }
+      },
+      "expense_receipt_view": {
+        "title": "Wyświetl rachunki",
+        "description": "Wybierz rachunek do otwarcia.",
+        "data": {
+          "document_id": "Rachunek"
+        }
+      },
+      "expense_receipt_delete": {
+        "title": "Usuń rachunek",
+        "description": "Wybierz rachunek do usunięcia.",
+        "data": {
+          "document_id": "Rachunek"
         }
       }
     },

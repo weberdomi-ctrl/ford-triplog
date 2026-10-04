@@ -1321,7 +1321,9 @@
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
-          "costs_management": "Back to costs"
+          "costs_management": "Back to costs",
+          "expense_receipt_view": "View receipts",
+          "expense_receipt_delete": "Delete receipt"
         }
       },
       "toll_management": {
@@ -1332,7 +1334,9 @@
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
-          "costs_management": "Back to costs"
+          "costs_management": "Back to costs",
+          "expense_receipt_view": "View receipts",
+          "expense_receipt_delete": "Delete receipt"
         }
       },
       "other_cost_management": {
@@ -1343,7 +1347,9 @@
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
-          "costs_management": "Back to costs"
+          "costs_management": "Back to costs",
+          "expense_receipt_view": "View receipts",
+          "expense_receipt_delete": "Delete receipt"
         }
       },
       "expense_add": {
@@ -1398,6 +1404,20 @@
           "maintenance_management": "Manage service, repairs, tyres and other workshop costs including invoices.",
           "toll_management": "Manage toll and vignette costs with an optional validity period and receipt.",
           "other_cost_management": "Manage registration documents, licence plates, administrative changes and other one-off vehicle costs."
+        }
+      },
+      "expense_receipt_view": {
+        "title": "View receipts",
+        "description": "Select a receipt to open.",
+        "data": {
+          "document_id": "Receipt"
+        }
+      },
+      "expense_receipt_delete": {
+        "title": "Delete receipt",
+        "description": "Select a receipt to delete.",
+        "data": {
+          "document_id": "Receipt"
         }
       }
     },
