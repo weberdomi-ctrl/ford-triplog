@@ -7846,54 +7846,91 @@ class FordTriplogOptionsFlow(OptionsFlow):
         opts=[selector.SelectOptionDict(value=str(doc["document_id"]),label=f"{exp.get('expense_date') or exp.get('expense_year') or exp.get('valid_from') or '—'} · {exp.get('category')} · {doc.get('original_filename')}") for doc,exp in pairs]
         return self.async_show_form(step_id="expense_receipt_delete",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
 
-    async def async_step_expense_form(self,user_input=None):
-        store=await self._async_expense_storage(); existing={}; eid=self._selected_expense_id
-        if eid is not None: existing=next((x for x in await store.async_load(self._expense_group) if int(x['expense_id'])==eid),{})
-        errors={}
+    async def async_step_expense_form(self, user_input=None):
+        """Create or edit a variable vehicle expense without losing entered values."""
+        store = await self._async_expense_storage()
+        existing = {}
+        eid = self._selected_expense_id
+        if eid is not None:
+            existing = next((x for x in await store.async_load(self._expense_group) if int(x["expense_id"]) == eid), {})
+
+        errors = {}
+        form_values = dict(existing)
         if user_input is not None:
+            # Keep the submitted values when validation fails. File upload objects are
+            # intentionally not reused as defaults because HA FileSelector cannot do so.
+            form_values.update({k: v for k, v in user_input.items() if k != "receipt_file"})
             try:
-                data=dict(user_input); data['expense_group']=self._expense_group
-                if eid is not None:data['expense_id']=eid
-                saved=await store.async_save(data)
-                if user_input.get('receipt_file'):
-                    with process_uploaded_file(self.hass,user_input['receipt_file']) as uploaded_path:
-                        docs=FordTriplogVehicleDocumentStorage(self.hass); doc=await docs.async_import(uploaded_path,original_name=uploaded_path.name)
-                    await docs.async_attach(self._ensure_vehicle_context_id(),doc['filename'],doc['original_filename'],doc['media_type'],f"expense_{saved['expense_id']}",str(user_input.get('notes') or '').strip() or None)
-                self._selected_expense_id=None
+                data = dict(user_input)
+                data["expense_group"] = self._expense_group
+                if eid is not None:
+                    data["expense_id"] = eid
+                saved = await store.async_save(data)
+                if user_input.get("receipt_file"):
+                    with process_uploaded_file(self.hass, user_input["receipt_file"]) as uploaded_path:
+                        docs = FordTriplogVehicleDocumentStorage(self.hass)
+                        doc = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                    await docs.async_attach(
+                        self._ensure_vehicle_context_id(), doc["filename"], doc["original_filename"],
+                        doc["media_type"], f"expense_{saved['expense_id']}",
+                        str(user_input.get("notes") or "").strip() or None,
+                    )
+                self._selected_expense_id = None
                 return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
-            except (ValueError,TypeError,HomeAssistantError,OSError): errors['base']='expense_invalid'
-        def v(k,d=''): return d if existing.get(k) is None else str(existing.get(k))
-        lang=(self.hass.config.language or 'en').lower().split('-')[0]
-        labels={
-          'de':{
-            'maintenance':[('service','Service'),('repair','Reparatur'),('tires','Reifen / Räder'),('wear','Verschleissteile'),('care','Fahrzeugpflege'),('accessories','Zubehör'),('other','Sonstiges')],
-            'toll':[('vignette','Vignette'),('road_toll','Strassenmaut'),('tunnel_pass','Tunnel / Pass'),('bridge','Brücke'),('ferry','Fähre'),('other','Sonstiges')],
-            'other':[('registration_document','Fahrzeugausweis / Zulassung'),('plates','Kontrollschilder'),('mutation','Mutation'),('admin_fee','Administrative Gebühr'),('roadside_assistance','Pannenhilfe'),('other','Sonstiges')]},
-          'en':{
-            'maintenance':[('service','Service'),('repair','Repair'),('tires','Tyres / wheels'),('wear','Wear parts'),('care','Vehicle care'),('accessories','Accessories'),('other','Other')],
-            'toll':[('vignette','Vignette'),('road_toll','Road toll'),('tunnel_pass','Tunnel / mountain pass'),('bridge','Bridge'),('ferry','Ferry'),('other','Other')],
-            'other':[('registration_document','Registration document'),('plates','Licence plates'),('mutation','Registration change'),('admin_fee','Administrative fee'),('roadside_assistance','Roadside assistance'),('other','Other')]},
-          'pl':{
-            'maintenance':[('service','Serwis'),('repair','Naprawa'),('tires','Opony / koła'),('wear','Części eksploatacyjne'),('care','Pielęgnacja pojazdu'),('accessories','Akcesoria'),('other','Inne')],
-            'toll':[('vignette','Winieta'),('road_toll','Opłata drogowa'),('tunnel_pass','Tunel / przełęcz'),('bridge','Most'),('ferry','Prom'),('other','Inne')],
-            'other':[('registration_document','Dowód rejestracyjny / rejestracja'),('plates','Tablice rejestracyjne'),('mutation','Zmiana rejestracyjna'),('admin_fee','Opłata administracyjna'),('roadside_assistance','Pomoc drogowa'),('other','Inne')]}}
-        opts=[selector.SelectOptionDict(value=a,label=b) for a,b in labels.get(lang,labels['en'])[self._expense_group]]
-        schema={
-            vol.Required('category',default=v('category')):selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
-            vol.Optional('description',default=v('description')):selector.TextSelector(),
-            vol.Required('amount',default=v('amount','0')):selector.TextSelector(),
-            vol.Required('currency',default=v('currency','CHF')):selector.TextSelector(),
-            vol.Optional('expense_date',default=v('expense_date')):selector.TextSelector(),
-            vol.Optional('expense_year',default=v('expense_year')):selector.TextSelector(),
-            vol.Optional('provider',default=v('provider')):selector.TextSelector(),
-            vol.Optional('country',default=v('country')):selector.TextSelector(),
-            vol.Optional('odometer_km',default=v('odometer_km')):selector.TextSelector(),
-            vol.Optional('valid_from',default=v('valid_from')):selector.TextSelector(),
-            vol.Optional('valid_to',default=v('valid_to')):selector.TextSelector(),
-            vol.Optional('notes',default=v('notes')):selector.TextSelector(),
-            vol.Optional('receipt_file'):selector.FileSelector(selector.FileSelectorConfig(accept='.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'))
+            except ValueError as err:
+                # Storage returns stable field-oriented validation codes in the exception.
+                code = str(err)
+                field_map = {
+                    "category_required": "category", "invalid_category": "category",
+                    "amount_required": "amount", "invalid_amount": "amount", "negative_amount": "amount",
+                    "invalid_expense_date": "expense_date", "invalid_year": "expense_year",
+                    "missing_date_or_year": "expense_date", "missing_toll_date_or_year": "expense_year",
+                    "invalid_valid_from": "valid_from", "invalid_valid_to": "valid_to",
+                    "both_validity_dates_required": "valid_to", "invalid_validity_range": "valid_to",
+                    "invalid_odometer": "odometer_km",
+                }
+                errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
+            except (TypeError, HomeAssistantError, OSError):
+                errors["base"] = "expense_invalid"
+
+        def v(k, d=""):
+            value = form_values.get(k)
+            return d if value is None else str(value)
+
+        lang = (self.hass.config.language or "en").lower().split("-")[0]
+        labels = {
+          "de": {
+            "maintenance":[("service","Service"),("repair","Reparatur"),("tires","Reifen / Räder"),("wear","Verschleissteile"),("care","Fahrzeugpflege"),("accessories","Zubehör"),("other","Sonstiges")],
+            "toll":[("vignette","Vignette"),("road_toll","Strassenmaut"),("tunnel_pass","Tunnel / Pass"),("bridge","Brücke"),("ferry","Fähre"),("other","Sonstiges")],
+            "other":[("registration_document","Fahrzeugausweis / Zulassung"),("plates","Kontrollschilder"),("mutation","Mutation"),("admin_fee","Administrative Gebühr"),("roadside_assistance","Pannenhilfe"),("other","Sonstiges")]},
+          "en": {
+            "maintenance":[("service","Service"),("repair","Repair"),("tires","Tyres / wheels"),("wear","Wear parts"),("care","Vehicle care"),("accessories","Accessories"),("other","Other")],
+            "toll":[("vignette","Vignette"),("road_toll","Road toll"),("tunnel_pass","Tunnel / mountain pass"),("bridge","Bridge"),("ferry","Ferry"),("other","Other")],
+            "other":[("registration_document","Registration document"),("plates","Licence plates"),("mutation","Registration change"),("admin_fee","Administrative fee"),("roadside_assistance","Roadside assistance"),("other","Other")]},
+          "pl": {
+            "maintenance":[("service","Serwis"),("repair","Naprawa"),("tires","Opony / koła"),("wear","Części eksploatacyjne"),("care","Pielęgnacja pojazdu"),("accessories","Akcesoria"),("other","Inne")],
+            "toll":[("vignette","Winieta"),("road_toll","Opłata drogowa"),("tunnel_pass","Tunel / przełęcz"),("bridge","Most"),("ferry","Prom"),("other","Inne")],
+            "other":[("registration_document","Dowód rejestracyjny / rejestracja"),("plates","Tablice rejestracyjne"),("mutation","Zmiana rejestracyjna"),("admin_fee","Opłata administracyjna"),("roadside_assistance","Pomoc drogowa"),("other","Inne")]}}
+        opts = [selector.SelectOptionDict(value=a, label=b) for a,b in labels.get(lang, labels["en"])[self._expense_group]]
+        category_default = v("category")
+        if category_default not in {x[0] for x in labels["en"][self._expense_group]}:
+            category_default = opts[0]["value"]
+        schema = {
+            vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
+            vol.Optional("description", default=v("description")): selector.TextSelector(),
+            vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
+            vol.Required("currency", default=v("currency", "CHF")): selector.TextSelector(),
+            vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
+            vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
+            vol.Optional("provider", default=v("provider")): selector.TextSelector(),
+            vol.Optional("country", default=v("country")): selector.TextSelector(),
+            vol.Optional("odometer_km", default=v("odometer_km")): selector.TextSelector(),
+            vol.Optional("valid_from", default=v("valid_from")): selector.TextSelector(),
+            vol.Optional("valid_to", default=v("valid_to")): selector.TextSelector(),
+            vol.Optional("notes", default=v("notes")): selector.TextSelector(),
+            vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
         }
-        return self.async_show_form(step_id='expense_form',data_schema=vol.Schema(schema),errors=errors)
+        return self.async_show_form(step_id="expense_form", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""

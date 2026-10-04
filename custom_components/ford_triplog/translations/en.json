@@ -1491,7 +1491,21 @@
       "insurance_document_import_failed": "Insurance document could not be imported.",
       "tax_invalid": "Road-tax data is invalid.",
       "vehicle_document_import_failed": "The vehicle document could not be imported.",
-      "expense_invalid": "The cost data is invalid."
+      "expense_invalid": "The cost data is invalid.",
+      "expense_category_required": "Select a category.",
+      "expense_invalid_category": "Invalid category.",
+      "expense_amount_required": "Enter an amount.",
+      "expense_invalid_amount": "The amount is invalid.",
+      "expense_negative_amount": "The amount cannot be negative.",
+      "expense_invalid_expense_date": "The booking date is invalid.",
+      "expense_invalid_year": "The year is invalid.",
+      "expense_missing_date_or_year": "Enter a date or year.",
+      "expense_missing_toll_date_or_year": "Enter a date, validity start date, or year for the toll/vignette.",
+      "expense_invalid_valid_from": "Valid from is invalid.",
+      "expense_invalid_valid_to": "Valid to is invalid.",
+      "expense_both_validity_dates_required": "Both valid from and valid to are required for a validity period.",
+      "expense_invalid_validity_range": "Valid to cannot be before valid from.",
+      "expense_invalid_odometer": "The odometer value is invalid."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",

@@ -1497,7 +1497,21 @@
       "tax_invalid": "Dane podatku drogowego są nieprawidłowe.",
       "invalid_financing_data": "Nieprawidłowe dane umowy.",
       "vehicle_document_import_failed": "Nie udało się zaimportować dokumentu pojazdu.",
-      "expense_invalid": "Dane kosztu są nieprawidłowe."
+      "expense_invalid": "Dane kosztu są nieprawidłowe.",
+      "expense_category_required": "Wybierz kategorię.",
+      "expense_invalid_category": "Nieprawidłowa kategoria.",
+      "expense_amount_required": "Wprowadź kwotę.",
+      "expense_invalid_amount": "Kwota jest nieprawidłowa.",
+      "expense_negative_amount": "Kwota nie może być ujemna.",
+      "expense_invalid_expense_date": "Data księgowania jest nieprawidłowa.",
+      "expense_invalid_year": "Rok jest nieprawidłowy.",
+      "expense_missing_date_or_year": "Podaj datę lub rok.",
+      "expense_missing_toll_date_or_year": "Dla opłaty/winiety podaj datę, początek ważności lub rok.",
+      "expense_invalid_valid_from": "Data początku ważności jest nieprawidłowa.",
+      "expense_invalid_valid_to": "Data końca ważności jest nieprawidłowa.",
+      "expense_both_validity_dates_required": "Dla okresu ważności wymagane są obie daty od i do.",
+      "expense_invalid_validity_range": "Data końca ważności nie może być wcześniejsza niż data początku.",
+      "expense_invalid_odometer": "Stan licznika jest nieprawidłowy."
     },
     "abort": {
       "no_insurance_entries": "Brak wpisów ubezpieczenia.",

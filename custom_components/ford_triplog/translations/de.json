@@ -1509,7 +1509,21 @@
       "insurance_invalid": "Versicherungsdaten sind ungültig.",
       "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden.",
       "tax_invalid": "Steuerdaten sind ungültig.",
-      "expense_invalid": "Kostendaten sind ungültig."
+      "expense_invalid": "Kostendaten sind ungültig.",
+      "expense_category_required": "Kategorie auswählen.",
+      "expense_invalid_category": "Ungültige Kategorie.",
+      "expense_amount_required": "Betrag eingeben.",
+      "expense_invalid_amount": "Betrag ist ungültig.",
+      "expense_negative_amount": "Betrag darf nicht negativ sein.",
+      "expense_invalid_expense_date": "Buchungsdatum ist ungültig.",
+      "expense_invalid_year": "Jahr ist ungültig.",
+      "expense_missing_date_or_year": "Datum oder Jahr angeben.",
+      "expense_missing_toll_date_or_year": "Für Maut/Vignette Datum, Gültigkeitsbeginn oder Jahr angeben.",
+      "expense_invalid_valid_from": "Gültig von ist ungültig.",
+      "expense_invalid_valid_to": "Gültig bis ist ungültig.",
+      "expense_both_validity_dates_required": "Für einen Gültigkeitszeitraum müssen Von und Bis angegeben werden.",
+      "expense_invalid_validity_range": "Gültig bis darf nicht vor Gültig von liegen.",
+      "expense_invalid_odometer": "Kilometerstand ist ungültig."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",

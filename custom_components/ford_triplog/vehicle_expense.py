@@ -41,38 +41,85 @@ class FordTriplogVehicleExpenseStorage:
         await self.hass.async_add_executor_job(_d)
     @staticmethod
     def _normalize(item):
-        d=dict(item); group=str(d.get('expense_group') or '').strip()
-        if group not in GROUPS: raise ValueError('invalid expense group')
-        def dt(v,required=False):
-            s=str(v or '').strip()
-            if not s:
-                if required: raise ValueError('missing date')
+        d = dict(item)
+        group = str(d.get("expense_group") or "").strip()
+        if group not in GROUPS:
+            raise ValueError("invalid_expense_group")
+
+        categories = {
+            "maintenance": {"service","repair","tires","wear","care","accessories","other"},
+            "toll": {"vignette","road_toll","tunnel_pass","bridge","ferry","other"},
+            "other": {"registration_document","plates","mutation","admin_fee","roadside_assistance","other"},
+        }
+        category = str(d.get("category") or "").strip()
+        if not category:
+            raise ValueError("category_required")
+        if category not in categories[group]:
+            raise ValueError("invalid_category")
+        d["category"] = category
+
+        def dt(value, code):
+            text = str(value or "").strip()
+            if not text:
                 return None
-            for f in ('%Y-%m-%d','%d.%m.%Y','%d/%m/%Y'):
-                try:return datetime.strptime(s,f).date().isoformat()
-                except ValueError:pass
-            raise ValueError('invalid date')
-        def num(v):
-            s=str(v or '').strip().replace('CHF','').replace('Fr.','').replace("'",'').replace('’','').replace(' ','').replace('.–','').replace('.-','')
-            if ',' in s and '.' in s: s=s.replace('.','').replace(',','.') if s.rfind(',')>s.rfind('.') else s.replace(',','')
-            else:s=s.replace(',','.')
-            return float(s)
-        d['expense_date']=dt(d.get('expense_date')); d['valid_from']=dt(d.get('valid_from')); d['valid_to']=dt(d.get('valid_to'))
-        if bool(d['valid_from']) != bool(d['valid_to']): raise ValueError('both validity dates required')
-        if d['valid_from'] and d['valid_to']<d['valid_from']: raise ValueError('invalid validity range')
-        d['amount']=num(d.get('amount')); 
-        if d['amount']<0: raise ValueError('negative amount')
-        year_raw=str(d.get('expense_year') or '').strip()
-        d['expense_year']=int(year_raw) if year_raw else None
-        if d['expense_year'] is not None and not (1900 <= d['expense_year'] <= 2200): raise ValueError('invalid year')
-        if d['expense_date']: d['expense_year']=int(d['expense_date'][:4])
-        if group == 'toll' and not (d['expense_date'] or d['valid_from'] or d['expense_year']): raise ValueError('missing toll date or year')
-        if group != 'toll' and not (d['expense_date'] or d['expense_year']): raise ValueError('missing date or year')
-        d['odometer_km']=None if str(d.get('odometer_km') or '').strip()=='' else num(d.get('odometer_km'))
-        for k in ('category','description','provider','country','notes'): d[k]=str(d.get(k) or '').strip() or None
-        if not d['category']: raise ValueError('category required')
-        d['currency']=str(d.get('currency') or 'CHF').strip().upper()
+            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
+                try:
+                    return datetime.strptime(text, fmt).date().isoformat()
+                except ValueError:
+                    pass
+            raise ValueError(code)
+
+        def num(value, empty_code, invalid_code):
+            text = str(value or "").strip()
+            if not text:
+                raise ValueError(empty_code)
+            text = text.replace("CHF", "").replace("Fr.", "").replace("'", "").replace("’", "").replace(" ", "").replace(".–", "").replace(".-", "")
+            if "," in text and "." in text:
+                text = text.replace(".", "").replace(",", ".") if text.rfind(",") > text.rfind(".") else text.replace(",", "")
+            else:
+                text = text.replace(",", ".")
+            try:
+                return float(text)
+            except (TypeError, ValueError):
+                raise ValueError(invalid_code) from None
+
+        d["expense_date"] = dt(d.get("expense_date"), "invalid_expense_date")
+        d["valid_from"] = dt(d.get("valid_from"), "invalid_valid_from")
+        d["valid_to"] = dt(d.get("valid_to"), "invalid_valid_to")
+        if bool(d["valid_from"]) != bool(d["valid_to"]):
+            raise ValueError("both_validity_dates_required")
+        if d["valid_from"] and d["valid_to"] < d["valid_from"]:
+            raise ValueError("invalid_validity_range")
+
+        d["amount"] = num(d.get("amount"), "amount_required", "invalid_amount")
+        if d["amount"] < 0:
+            raise ValueError("negative_amount")
+
+        year_raw = str(d.get("expense_year") or "").strip()
+        if year_raw:
+            try:
+                d["expense_year"] = int(year_raw)
+            except ValueError:
+                raise ValueError("invalid_year") from None
+            if not 1900 <= d["expense_year"] <= 2200:
+                raise ValueError("invalid_year")
+        else:
+            d["expense_year"] = None
+        if d["expense_date"]:
+            d["expense_year"] = int(d["expense_date"][:4])
+
+        if group == "toll" and not (d["expense_date"] or d["valid_from"] or d["expense_year"]):
+            raise ValueError("missing_toll_date_or_year")
+        if group != "toll" and not (d["expense_date"] or d["expense_year"]):
+            raise ValueError("missing_date_or_year")
+
+        odo_raw = str(d.get("odometer_km") or "").strip()
+        d["odometer_km"] = None if not odo_raw else num(odo_raw, "invalid_odometer", "invalid_odometer")
+        for key in ("description", "provider", "country", "notes"):
+            d[key] = str(d.get(key) or "").strip() or None
+        d["currency"] = str(d.get("currency") or "CHF").strip().upper() or "CHF"
         return d
+
 
 
 def allocated_amount_for_period(item: dict[str, Any], period_start: date, period_end: date) -> float:
