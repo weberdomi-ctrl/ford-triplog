@@ -1480,6 +1480,9 @@
           "unavailable": "Unavailable",
           "unknown": "Unknown"
         }
+      },
+      "vehicle_details": {
+        "name": "Vehicle details"
       }
     },
     "binary_sensor": {

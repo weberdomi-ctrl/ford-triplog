@@ -27,6 +27,7 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_track_state_change_event
 from homeassistant.util import dt as dt_util
 from homeassistant.components.http.auth import async_sign_path
 from .utils import (
@@ -73,6 +74,8 @@ from .vehicle_context import (
     VehicleRuntimeProxy,
     iter_vehicle_runtimes,
     vehicle_display_name,
+    get_selected_vehicle_id,
+    get_vehicle_runtime,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -175,6 +178,7 @@ async def async_setup_entry(
     async_add_entities(
         [
             FordTriplogVehicleSourceStatusSensor(coordinator),
+            FordTriplogVehicleDetailsSensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -307,6 +311,167 @@ async def async_setup_entry(
 
 
     )
+
+
+class FordTriplogVehicleDetailsSensor(SensorEntity):
+    """Combined vehicle master-data and warranty sensor for the selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "vehicle_details"
+    _attr_unique_id = "ford_triplog_vehicle_details"
+    _attr_icon = "mdi:car-info"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: str | None = None
+        self._attrs: dict[str, Any] = {}
+        self._remove_odometer_listener = None
+        self._watched_odometer_entity: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(self._remove_odometer_watch)
+        self._bind_odometer_watch()
+        await self.async_update()
+
+    @callback
+    def _remove_odometer_watch(self) -> None:
+        if self._remove_odometer_listener is not None:
+            self._remove_odometer_listener()
+            self._remove_odometer_listener = None
+        self._watched_odometer_entity = None
+
+    @callback
+    def _bind_odometer_watch(self) -> None:
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        resolved = get_vehicle_runtime(self.hass, vehicle_id) if vehicle_id is not None else None
+        runtime = resolved[1] if resolved else {}
+        odometer_entity = (runtime.get("config") or {}).get("odometer")
+        odometer_entity = str(odometer_entity) if odometer_entity else None
+        if odometer_entity == self._watched_odometer_entity:
+            return
+        self._remove_odometer_watch()
+        if odometer_entity:
+            self._watched_odometer_entity = odometer_entity
+            self._remove_odometer_listener = async_track_state_change_event(
+                self.hass, [odometer_entity], self._odometer_changed
+            )
+
+    @callback
+    def _odometer_changed(self, event) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self._bind_odometer_watch()
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date, warranty_remaining_time
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        runtime = resolved[1] if resolved else {}
+        name = vehicle_display_name(self.hass, vehicle_id, runtime)
+        details = await FordTriplogVehicleDocumentStorage(self.hass).async_get_details(vehicle_id) or {}
+        warranties = await FordTriplogVehicleWarrantyStorage(self.hass).async_get(vehicle_id)
+
+        config = runtime.get("config") or {}
+        odometer_entity = config.get("odometer")
+        odometer = None
+        if odometer_entity:
+            state = self.hass.states.get(str(odometer_entity))
+            if state is not None and state.state not in ("unknown", "unavailable", ""):
+                try:
+                    odometer = float(str(state.state).replace("'", "").replace(" ", ""))
+                except (TypeError, ValueError):
+                    odometer = None
+        if odometer is None:
+            coordinator = runtime.get("coordinator")
+            try:
+                raw = (coordinator.data or {}).get("odometer") if coordinator is not None else None
+                odometer = float(raw) if raw is not None else None
+            except (TypeError, ValueError, AttributeError):
+                odometer = None
+
+        first_registration = details.get("first_registration")
+        labels = {
+            "vehicle": "Fahrzeuggarantie",
+            "ev_components": "EV-Komponenten",
+            "hv_battery": "HV-Batterie",
+        }
+        warranty_attrs: dict[str, Any] = {}
+        for kind, label in labels.items():
+            row = warranties.get(kind) or {}
+            years = row.get("duration_years")
+            km_limit = row.get("mileage_limit_km")
+            remaining_km = None
+            if km_limit is not None and odometer is not None:
+                remaining_km = max(0, int(round(float(km_limit) - odometer)))
+            valid_until = warranty_end_date(first_registration, years)
+            remaining_time = warranty_remaining_time(valid_until, dt_util.now().date())
+            warranty_attrs[kind] = {
+                "name": label,
+                "years": years,
+                "km_limit": km_limit,
+                "valid_until": valid_until,
+                "remaining_km": remaining_km,
+                **remaining_time,
+            }
+
+        self._value = name
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "make": details.get("make"),
+            "model": details.get("model"),
+            "registration_number": details.get("registration_number"),
+            "vin": details.get("vin"),
+            "first_registration": first_registration,
+            "type_approval": details.get("type_approval"),
+            "power_kw": details.get("power_kw"),
+            "empty_weight_kg": details.get("empty_weight_kg"),
+            "gross_weight_kg": details.get("gross_weight_kg"),
+            "odometer_km": round(odometer, 1) if odometer is not None else None,
+            "odometer_entity": odometer_entity,
+            "warranties": warranty_attrs,
+        }
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
 
 
 class FordTriplogVehicleSourceStatusSensor(SensorEntity):

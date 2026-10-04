@@ -36,6 +36,29 @@ def warranty_end_date(first_registration: str | None, years: int | None) -> str 
     return add_years(start, int(years)).isoformat()
 
 
+def warranty_remaining_time(valid_until: str | None, today: date | None = None) -> dict[str, int | None]:
+    """Return calendar remaining time as years, months and days."""
+    end = _parse_date(valid_until)
+    current = today or date.today()
+    if not end:
+        return {"remaining_years": None, "remaining_months": None, "remaining_days": None}
+    if end <= current:
+        return {"remaining_years": 0, "remaining_months": 0, "remaining_days": 0}
+
+    years = end.year - current.year
+    months = end.month - current.month
+    days = end.day - current.day
+    if days < 0:
+        months -= 1
+        prev_month = end.month - 1 or 12
+        prev_year = end.year if end.month > 1 else end.year - 1
+        days += monthrange(prev_year, prev_month)[1]
+    if months < 0:
+        years -= 1
+        months += 12
+    return {"remaining_years": years, "remaining_months": months, "remaining_days": days}
+
+
 class FordTriplogVehicleWarrantyStorage:
     def __init__(self, hass) -> None:
         self.hass = hass

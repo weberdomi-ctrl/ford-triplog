@@ -1494,6 +1494,9 @@
           "unavailable": "Nicht verfügbar",
           "unknown": "Unbekannt"
         }
+      },
+      "vehicle_details": {
+        "name": "Fahrzeug Details"
       }
     },
     "binary_sensor": {
