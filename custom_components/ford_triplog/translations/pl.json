@@ -55,7 +55,10 @@
           "insurance_management": "Ubezpieczenie",
           "tax_management": "Podatek drogowy",
           "financing_management": "Finansowanie pojazdu",
-          "vehicle_data_management": "Dane i dokumenty pojazdu"
+          "vehicle_data_management": "Dane i dokumenty pojazdu",
+          "maintenance_management": "Serwis i naprawy",
+          "toll_management": "Opłaty drogowe i winiety",
+          "other_cost_management": "Inne koszty"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
@@ -71,7 +74,10 @@
           "insurance_management": "Zarządzaj polisami ubezpieczeniowymi pojazdu i rocznymi składkami TCO.",
           "tax_management": "Zarządzaj rocznym podatkiem od pojazdu i opłatami pojazdowymi.",
           "financing_management": "Zarządzaj leasingiem, finansowaniem i zakupem pojazdu.",
-          "vehicle_data_management": "Zarządzaj dokumentem rejestracyjnym i innymi dokumentami pojazdu."
+          "vehicle_data_management": "Zarządzaj dokumentem rejestracyjnym i innymi dokumentami pojazdu.",
+          "maintenance_management": "Zarządzaj kosztami serwisu, napraw, opon i innymi kosztami warsztatowymi wraz z fakturami.",
+          "toll_management": "Zarządzaj opłatami drogowymi i winietami z opcjonalnym okresem ważności i dokumentem.",
+          "other_cost_management": "Zarządzaj dowodem rejestracyjnym, tablicami, zmianami administracyjnymi i innymi jednorazowymi kosztami pojazdu."
         }
       },
       "settings": {
@@ -1307,6 +1313,68 @@
         "data": {
           "document_ref": "Dokument"
         }
+      },
+      "maintenance_management": {
+        "title": "Serwis i naprawy",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Dodaj koszt",
+          "expense_edit": "Edytuj koszt",
+          "expense_delete": "Usuń koszt",
+          "init": "Wstecz"
+        }
+      },
+      "toll_management": {
+        "title": "Opłaty drogowe i winiety",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Dodaj koszt",
+          "expense_edit": "Edytuj koszt",
+          "expense_delete": "Usuń koszt",
+          "init": "Wstecz"
+        }
+      },
+      "other_cost_management": {
+        "title": "Inne koszty",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Dodaj koszt",
+          "expense_edit": "Edytuj koszt",
+          "expense_delete": "Usuń koszt",
+          "init": "Wstecz"
+        }
+      },
+      "expense_add": {
+        "title": "Dodaj koszt"
+      },
+      "expense_edit": {
+        "title": "Edytuj koszt",
+        "data": {
+          "expense_id": "Edytuj koszt"
+        }
+      },
+      "expense_delete": {
+        "title": "Usuń koszt",
+        "data": {
+          "expense_id": "Usuń koszt"
+        }
+      },
+      "expense_form": {
+        "title": "Wprowadź koszt",
+        "data": {
+          "category": "Kategoria",
+          "description": "Opis",
+          "amount": "Kwota",
+          "currency": "Waluta",
+          "expense_date": "Data płatności / księgowania",
+          "provider": "Dostawca / warsztat / urząd",
+          "country": "Kraj",
+          "odometer_km": "Przebieg",
+          "valid_from": "Ważne od",
+          "valid_to": "Ważne do",
+          "notes": "Uwagi",
+          "receipt_file": "Faktura / dokument"
+        }
       }
     },
     "error": {
@@ -1378,12 +1446,14 @@
       "insurance_document_import_failed": "Nie udało się zaimportować dokumentu ubezpieczenia.",
       "tax_invalid": "Dane podatku drogowego są nieprawidłowe.",
       "invalid_financing_data": "Nieprawidłowe dane umowy.",
-      "vehicle_document_import_failed": "Nie udało się zaimportować dokumentu pojazdu."
+      "vehicle_document_import_failed": "Nie udało się zaimportować dokumentu pojazdu.",
+      "expense_invalid": "Dane kosztu są nieprawidłowe."
     },
     "abort": {
       "no_insurance_entries": "Brak wpisów ubezpieczenia.",
       "no_tax_entries": "Brak wpisów podatku drogowego.",
-      "no_financing_contracts": "Brak umów finansowania."
+      "no_financing_contracts": "Brak umów finansowania.",
+      "no_expense_entries": "Brak zapisanych kosztów."
     }
   },
   "entity": {

@@ -74,6 +74,7 @@ from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle
 from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date
 from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
 from .vehicle_tax import FordTriplogVehicleTaxStorage
+from .vehicle_expense import FordTriplogVehicleExpenseStorage
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -657,6 +658,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_vehicle_document_url: str | None = None
         self._vehicle_insurance_storage: FordTriplogVehicleInsuranceStorage | None = None
         self._vehicle_tax_storage: FordTriplogVehicleTaxStorage | None = None
+        self._vehicle_expense_storage: FordTriplogVehicleExpenseStorage | None = None
+        self._selected_expense_id: int | None = None
+        self._expense_group: str | None = None
         self._selected_insurance_id: int | None = None
         self._insurance_prefill: dict[str, Any] = {}
 
@@ -810,6 +814,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._vehicle_financing_storage = None
         self._vehicle_insurance_storage = None
         self._vehicle_tax_storage = None
+        self._vehicle_expense_storage = None
 
     async def async_step_init(
         self,
@@ -830,6 +835,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "financing_management",
                 "insurance_management",
                 "tax_management",
+                "maintenance_management",
+                "toll_management",
+                "other_cost_management",
                 "vehicle_data_management",
                 "export",
                 "user_places",
@@ -7753,6 +7761,59 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
         })
         return self.async_show_form(step_id="tax_form", data_schema=schema, errors=errors)
+
+
+    async def _async_expense_storage(self) -> FordTriplogVehicleExpenseStorage:
+        if self._vehicle_expense_storage is None:
+            vehicle_id = self._ensure_vehicle_context_id()
+            self._vehicle_expense_storage = FordTriplogVehicleExpenseStorage(self.hass, Path(self.hass.config.path(".storage", "ford_triplog")), vehicle_id)
+            await self._vehicle_expense_storage.async_setup()
+        return self._vehicle_expense_storage
+
+    async def async_step_maintenance_management(self, user_input=None):
+        self._expense_group="maintenance"; return await self._async_expense_menu("maintenance_management")
+    async def async_step_toll_management(self, user_input=None):
+        self._expense_group="toll"; return await self._async_expense_menu("toll_management")
+    async def async_step_other_cost_management(self, user_input=None):
+        self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
+    async def _async_expense_menu(self, step_id):
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","init"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+    async def async_step_expense_add(self,user_input=None):
+        self._selected_expense_id=None; return await self.async_step_expense_form(user_input)
+    async def async_step_expense_edit(self,user_input=None):
+        store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
+        if not items:return self.async_abort(reason="no_expense_entries")
+        if user_input is not None:
+            self._selected_expense_id=int(user_input["expense_id"]); return await self.async_step_expense_form()
+        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x['expense_date']} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+    async def async_step_expense_delete(self,user_input=None):
+        store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
+        if not items:return self.async_abort(reason="no_expense_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x['expense_date']} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+    async def async_step_expense_form(self,user_input=None):
+        store=await self._async_expense_storage(); existing={}; eid=self._selected_expense_id
+        if eid is not None: existing=next((x for x in await store.async_load(self._expense_group) if int(x['expense_id'])==eid),{})
+        errors={}
+        if user_input is not None:
+            try:
+                data=dict(user_input); data['expense_group']=self._expense_group
+                if eid is not None:data['expense_id']=eid
+                saved=await store.async_save(data)
+                # Optional receipt: persist through the existing vehicle-document store/viewer.
+                if user_input.get('receipt_file'):
+                    with process_uploaded_file(self.hass,user_input['receipt_file']) as uploaded_path:
+                        docs=FordTriplogVehicleDocumentStorage(self.hass); doc=await docs.async_import(uploaded_path,original_name=uploaded_path.name)
+                    await docs.async_attach(self._ensure_vehicle_context_id(),doc['filename'],doc['original_filename'],doc['media_type'],f"expense_{saved['expense_id']}",str(user_input.get('notes') or '').strip() or None)
+                self._selected_expense_id=None
+                return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+            except (ValueError,TypeError,HomeAssistantError,OSError): errors['base']='expense_invalid'
+        def v(k,d=''): return d if existing.get(k) is None else str(existing.get(k))
+        schema={vol.Required('category',default=v('category')):selector.TextSelector(),vol.Optional('description',default=v('description')):selector.TextSelector(),vol.Required('amount',default=v('amount','0')):selector.TextSelector(),vol.Required('currency',default=v('currency','CHF')):selector.TextSelector(),vol.Required('expense_date',default=v('expense_date')):selector.TextSelector(),vol.Optional('provider',default=v('provider')):selector.TextSelector(),vol.Optional('country',default=v('country')):selector.TextSelector(),vol.Optional('odometer_km',default=v('odometer_km')):selector.TextSelector(),vol.Optional('valid_from',default=v('valid_from')):selector.TextSelector(),vol.Optional('valid_to',default=v('valid_to')):selector.TextSelector(),vol.Optional('notes',default=v('notes')):selector.TextSelector(),vol.Optional('receipt_file'):selector.FileSelector(selector.FileSelectorConfig(accept='.pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp'))}
+        return self.async_show_form(step_id='expense_form',data_schema=vol.Schema(schema),errors=errors)
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""

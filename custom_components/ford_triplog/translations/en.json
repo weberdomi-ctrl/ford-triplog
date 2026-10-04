@@ -55,7 +55,10 @@
           "financing_management": "Vehicle financing",
           "insurance_management": "Insurance",
           "tax_management": "Road tax",
-          "vehicle_data_management": "Vehicle data & documents"
+          "vehicle_data_management": "Vehicle data & documents",
+          "maintenance_management": "Maintenance & repairs",
+          "toll_management": "Tolls & vignettes",
+          "other_cost_management": "Other costs"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -71,7 +74,10 @@
           "financing_management": "Manage leasing, financing and vehicle purchase costs.",
           "insurance_management": "Manage vehicle insurance policies and annual TCO premiums.",
           "tax_management": "Manage annual vehicle tax and vehicle duties.",
-          "vehicle_data_management": "Manage registration documents and other vehicle documents."
+          "vehicle_data_management": "Manage registration documents and other vehicle documents.",
+          "maintenance_management": "Manage service, repairs, tyres and other workshop costs including invoices.",
+          "toll_management": "Manage toll and vignette costs with an optional validity period and receipt.",
+          "other_cost_management": "Manage registration documents, licence plates, administrative changes and other one-off vehicle costs."
         }
       },
       "settings": {
@@ -1301,6 +1307,68 @@
         "data": {
           "document_ref": "Document"
         }
+      },
+      "maintenance_management": {
+        "title": "Maintenance & repairs",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "toll_management": {
+        "title": "Tolls & vignettes",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "other_cost_management": {
+        "title": "Other costs",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "expense_add": {
+        "title": "Add cost"
+      },
+      "expense_edit": {
+        "title": "Edit cost",
+        "data": {
+          "expense_id": "Edit cost"
+        }
+      },
+      "expense_delete": {
+        "title": "Delete cost",
+        "data": {
+          "expense_id": "Delete cost"
+        }
+      },
+      "expense_form": {
+        "title": "Enter cost",
+        "data": {
+          "category": "Category",
+          "description": "Description",
+          "amount": "Amount",
+          "currency": "Currency",
+          "expense_date": "Payment / booking date",
+          "provider": "Provider / workshop / authority",
+          "country": "Country",
+          "odometer_km": "Odometer",
+          "valid_from": "Valid from",
+          "valid_to": "Valid to",
+          "notes": "Notes",
+          "receipt_file": "Invoice / receipt"
+        }
       }
     },
     "error": {
@@ -1372,12 +1440,14 @@
       "insurance_invalid": "Insurance data is invalid.",
       "insurance_document_import_failed": "Insurance document could not be imported.",
       "tax_invalid": "Road-tax data is invalid.",
-      "vehicle_document_import_failed": "The vehicle document could not be imported."
+      "vehicle_document_import_failed": "The vehicle document could not be imported.",
+      "expense_invalid": "The cost data is invalid."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",
       "no_insurance_entries": "No insurance entries exist.",
-      "no_tax_entries": "No road-tax entries available."
+      "no_tax_entries": "No road-tax entries available.",
+      "no_expense_entries": "No costs are available."
     }
   },
   "entity": {

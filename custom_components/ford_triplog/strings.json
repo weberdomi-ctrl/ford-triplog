@@ -53,9 +53,12 @@
           "export": "Export data",
           "user_places": "Custom places",
           "financing_management": "Vehicle financing",
-          "vehicle_data_management": "Vehicle data & documents",
+          "insurance_management": "Insurance",
           "tax_management": "Road tax",
-          "insurance_management": "Insurance"
+          "vehicle_data_management": "Vehicle data & documents",
+          "maintenance_management": "Maintenance & repairs",
+          "toll_management": "Tolls & vignettes",
+          "other_cost_management": "Other costs"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -69,9 +72,12 @@
           "export": "Export stored Ford Triplog data as a CSV file.",
           "user_places": "Manage places for automatic pause assignment.",
           "financing_management": "Manage leasing, financing and vehicle purchase costs.",
-          "vehicle_data_management": "Manage vehicle registration and additional vehicle documents.",
           "insurance_management": "Manage vehicle insurance policies and annual TCO premiums.",
-          "tax_management": "Manage annual vehicle tax and vehicle duties."
+          "tax_management": "Manage annual vehicle tax and vehicle duties.",
+          "vehicle_data_management": "Manage registration documents and other vehicle documents.",
+          "maintenance_management": "Manage service, repairs, tyres and other workshop costs including invoices.",
+          "toll_management": "Manage toll and vignette costs with an optional validity period and receipt.",
+          "other_cost_management": "Manage registration documents, licence plates, administrative changes and other one-off vehicle costs."
         }
       },
       "settings": {
@@ -811,12 +817,14 @@
         "menu_options": {
           "pause_edit": "Edit pause",
           "pause_receipts": "Receipts",
-          "pause_selection": "Back to pauses"
+          "pause_selection": "Back to pauses",
+          "pause_save_place": "Save as custom place"
         },
         "menu_option_descriptions": {
           "pause_edit": "Edit category, title, note, location and costs.",
           "pause_receipts": "Show receipts or attach a new receipt to this pause.",
-          "pause_selection": "Return to the list of detected pauses."
+          "pause_selection": "Return to the list of detected pauses.",
+          "pause_save_place": "Use this pause's coordinates directly and save them as a reusable place."
         }
       },
       "pause_receipts": {
@@ -908,6 +916,17 @@
           "action": "Action"
         }
       },
+      "pause_save_place": {
+        "title": "Save pause as place",
+        "description": "Coordinates are taken automatically from the pause: {latitude}, {longitude}.\n\nCurrent location: {location}",
+        "data": {
+          "name": "Place / name",
+          "category": "Category",
+          "description": "Description",
+          "radius_m": "Detection radius (m)",
+          "icon": "Icon (optional)"
+        }
+      },
       "vehicle_settings": {
         "title": "Vehicle",
         "description": "Internal vehicle ID: {vehicle_id}\nVIN: {vin}\nSource: {source}\nDetected name: {detected_name}",
@@ -976,24 +995,6 @@
           "home_tariff_year": "Year"
         }
       },
-      "home_tariff_add": {
-        "title": "Add tariff period",
-        "description": "Define a new tariff period. From/To use day.month, for example 01.04 and 30.09. Periods within the same year must not overlap.",
-        "data": {
-          "home_tariff_year": "Year",
-          "home_tariff_valid_from": "From",
-          "home_tariff_valid_to": "To",
-          "home_tariff_price_per_kwh": "Tariff per kWh",
-          "home_tariff_action": "Action"
-        },
-        "data_description": {
-          "home_tariff_year": "Calendar year for which this tariff period is valid.",
-          "home_tariff_valid_from": "First valid day in DD.MM format, for example 01.04.",
-          "home_tariff_valid_to": "Last valid day in DD.MM format, for example 30.09.",
-          "home_tariff_price_per_kwh": "Energy price per kWh for this period.",
-          "home_tariff_action": "Save, delete or return without changes."
-        }
-      },
       "financing_management": {
         "title": "Vehicle financing",
         "description": "Vehicle: {vehicle_name}\\n\\nManage financing contracts. Real payments and TCO are calculated separately.",
@@ -1012,7 +1013,7 @@
           "provider": "Provider",
           "contract_number": "Contract number",
           "start_date": "Contract start",
-          "end_date": "Contract end (automatic)",
+          "end_date": "Contract end (optional, YYYY-MM-DD)",
           "duration_months": "Duration in months",
           "purchase_price": "Cash purchase price",
           "first_payment": "First leasing payment / special payment",
@@ -1030,7 +1031,7 @@
           "first_payment": "Actual first payment, e.g. CHF 5,000.",
           "regular_payment": "Regular payment from the second payment onward.",
           "residual_value": "Shown separately and not automatically counted as TCO cost.",
-          "end_date": "Calculated from contract start and duration and set automatically when saved."
+          "end_date": "Calculated from the contract start date and term and set automatically when saved."
         }
       },
       "financing_edit_leasing": {
@@ -1040,7 +1041,7 @@
           "provider": "Provider",
           "contract_number": "Contract number",
           "start_date": "Contract start",
-          "end_date": "Contract end (automatic)",
+          "end_date": "Contract end (optional, YYYY-MM-DD)",
           "duration_months": "Duration in months",
           "purchase_price": "Cash purchase price",
           "first_payment": "First leasing payment / special payment",
@@ -1058,7 +1059,7 @@
           "first_payment": "Actual first payment, e.g. CHF 5,000.",
           "regular_payment": "Regular payment from the second payment onward.",
           "residual_value": "Shown separately and not automatically counted as TCO cost.",
-          "end_date": "Calculated from contract start and duration and set automatically when saved."
+          "end_date": "Calculated from the contract start date and term and set automatically when saved."
         }
       },
       "financing_edit": {
@@ -1090,138 +1091,52 @@
           "financing_file": "Contract / document"
         }
       },
-      "financing_documents": {
-        "title": "Financing documents",
-        "description": "Select the financing contract for additional documents.",
-        "data": {
-          "financing_id": "Contract"
-        }
-      },
-      "financing_documents_menu": {
-        "title": "Manage documents",
-        "description": "Additional documents: {document_count}. These documents do not change contract values.",
+      "insurance_management": {
+        "title": "Insurance",
+        "description": "Vehicle: {vehicle_name}. Manage insurance periods and payment schedule.",
         "menu_options": {
-          "financing_document_add": "Add document",
-          "financing_document_delete": "Delete document",
-          "financing_management": "Back to financing",
-          "financing_document_view": "View document"
+          "insurance_add": "Add insurance",
+          "insurance_edit": "Edit insurance",
+          "insurance_delete": "Delete insurance",
+          "init": "Back to main menu",
+          "insurance_document_upload": "Read policy/invoice"
         }
       },
-      "financing_document_add": {
-        "title": "Add document",
-        "description": "Attach a PDF or image to the existing contract. Contract values are not changed.",
+      "insurance_add": {
+        "title": "Add insurance",
+        "description": "Add an insurance period."
+      },
+      "insurance_edit": {
+        "title": "Edit insurance",
+        "description": "Select an insurance period."
+      },
+      "insurance_delete": {
+        "title": "Delete insurance",
+        "description": "Select and delete an insurance period."
+      },
+      "insurance_form": {
+        "title": "Insurance",
+        "description": "The premium applies to the specified insurance period. Payment frequency represents actual cash flow.",
         "data": {
-          "financing_file": "Document",
-          "note": "Note"
+          "provider": "Insurer",
+          "policy_number": "Policy number",
+          "valid_from": "Valid from (YYYY-MM-DD)",
+          "valid_to": "Valid to (YYYY-MM-DD)",
+          "period_premium": "Premium for this period",
+          "currency": "Currency",
+          "payment_frequency": "Payment frequency",
+          "payment_amount": "Amount per payment",
+          "first_payment_date": "First payment date (YYYY-MM-DD)",
+          "notes": "Notes",
+          "insurance_id": "Insurance"
         }
       },
-      "financing_document_delete": {
-        "title": "Delete document",
-        "description": "Select an additional document. The original main contract remains stored.",
+      "insurance_document_upload": {
+        "title": "Import insurance document",
+        "description": "Upload a policy or premium invoice. PDF text is read first; scanned documents use OCR. Recognised values are prefilled for review.",
         "data": {
-          "document_id": "Document"
-        }
-      },
-      "financing_document_view": {
-        "title": "View document",
-        "description": "Select the main contract or an additional document.",
-        "data": {
-          "document_ref": "Document"
-        }
-      },
-      "vehicle_data_management": {
-        "title": "Vehicle data",
-        "description": "Vehicle: {vehicle_name}\\n\\nManage registration data and documents.",
-        "menu_options": {
-          "vehicle_registration_upload": "Upload vehicle registration",
-          "vehicle_registration_manual": "Edit vehicle data manually",
-          "vehicle_warranty_management": "Manage warranties",
-          "vehicle_document_view": "View document",
-          "vehicle_document_add": "Add document",
-          "vehicle_document_delete": "Delete document",
-          "init": "Back"
-        }
-      },
-      "vehicle_registration_upload": {
-        "title": "Upload vehicle registration",
-        "description": "Upload a PDF or image. Recognized values can be reviewed before saving.",
-        "data": {
-          "vehicle_file": "Vehicle registration"
-        }
-      },
-      "vehicle_registration_manual": {
-        "title": "Vehicle data",
-        "description": "Review and save recognized or existing data.",
-        "data": {
-          "vin": "VIN / Fahrgestellnummer",
-          "registration_number": "Registration number",
-          "make": "Make",
-          "model": "Model",
-          "first_registration": "First registration",
-          "type_approval": "Type approval",
-          "power_kw": "Power kW",
-          "empty_weight_kg": "Empty weight kg",
-          "gross_weight_kg": "Gross weight kg"
-        }
-      },
-      "vehicle_document_add": {
-        "title": "Add vehicle document",
-        "description": "Attach an additional vehicle-related document.",
-        "data": {
-          "vehicle_file": "Document",
-          "document_type": "Document type",
-          "note": "Note"
-        }
-      },
-      "vehicle_document_view": {
-        "title": "View vehicle document",
-        "data": {
-          "document_ref": "Document"
-        }
-      },
-      "vehicle_document_delete": {
-        "title": "Delete vehicle document",
-        "description": "The main vehicle registration document is not deleted here.",
-        "data": {
-          "document_id": "Document"
-        }
-      },
-      "vehicle_warranty_management": {
-        "title": "Warranties",
-        "description": "Vehicle: {vehicle_name}\n\nManage vehicle, EV component and HV battery warranties. Warranty documents use the existing vehicle document store.",
-        "menu_options": {
-          "vehicle_warranty_edit": "Warranty years & mileage",
-          "vehicle_warranty_document_view": "View warranty document",
-          "vehicle_warranty_document_add": "Add warranty document",
-          "vehicle_data_management": "Back"
-        }
-      },
-      "vehicle_warranty_edit": {
-        "title": "Warranty details",
-        "description": "Start is automatically the first registration: {first_registration}. End date: {end_dates}. Mileage limits are maximum vehicle odometer values.",
-        "data": {
-          "vehicle_years": "Vehicle warranty – years",
-          "vehicle_km": "Vehicle warranty – km",
-          "ev_components_years": "EV components – years",
-          "ev_components_km": "EV components – km",
-          "hv_battery_years": "HV battery – years",
-          "hv_battery_km": "HV battery – km"
-        }
-      },
-      "vehicle_warranty_document_add": {
-        "title": "Add warranty document",
-        "description": "The document is also stored under Vehicle data → Documents.",
-        "data": {
-          "vehicle_file": "Document",
-          "document_type": "Document type",
-          "note": "Note"
-        }
-      },
-      "vehicle_warranty_document_view": {
-        "title": "View warranty document",
-        "description": "Existing warranty proofs and warranty terms.",
-        "data": {
-          "document_ref": "Document"
+          "insurance_file": "File",
+          "document_type": "Document type"
         }
       },
       "tax_management": {
@@ -1257,6 +1172,202 @@
           "authority": "Authority / canton",
           "notes": "Note",
           "tax_id": "Tax period"
+        }
+      },
+      "financing_documents": {
+        "title": "Financing documents",
+        "description": "Select the financing contract to which additional documents should be attached.",
+        "data": {
+          "financing_id": "Contract"
+        }
+      },
+      "financing_documents_menu": {
+        "title": "Manage documents",
+        "description": "Additional documents: {document_count}. These documents do not change any contract values.",
+        "menu_options": {
+          "financing_document_add": "Add document",
+          "financing_document_delete": "Delete document",
+          "financing_management": "Back to financing",
+          "financing_document_view": "View document"
+        }
+      },
+      "financing_document_add": {
+        "title": "Add document",
+        "description": "Attach a PDF or image to the existing contract. Contract values are not changed.",
+        "data": {
+          "financing_file": "Document",
+          "note": "Note"
+        }
+      },
+      "financing_document_delete": {
+        "title": "Delete document",
+        "description": "Select an additional document. The original main contract is retained.",
+        "data": {
+          "document_id": "Document"
+        }
+      },
+      "financing_document_view": {
+        "title": "View document",
+        "description": "Select the main contract or an additional document.",
+        "data": {
+          "document_ref": "Document"
+        }
+      },
+      "vehicle_data_management": {
+        "title": "Vehicle data",
+        "description": "Vehicle: {vehicle_name}\n\nManage registration documents and other vehicle documents.",
+        "menu_options": {
+          "vehicle_registration_upload": "Upload registration document",
+          "vehicle_registration_manual": "Edit vehicle data manually",
+          "vehicle_warranty_management": "Manage warranties",
+          "vehicle_document_view": "View document",
+          "vehicle_document_add": "Add another document",
+          "vehicle_document_delete": "Delete document",
+          "init": "Back"
+        }
+      },
+      "vehicle_registration_upload": {
+        "title": "Upload registration document",
+        "description": "Upload a PDF or image. Recognized data will be shown before saving.",
+        "data": {
+          "vehicle_file": "Registration document"
+        }
+      },
+      "vehicle_registration_manual": {
+        "title": "Vehicle data",
+        "description": "Review and save recognized or existing data.",
+        "data": {
+          "vin": "VIN / chassis number",
+          "registration_number": "License plate",
+          "make": "Make",
+          "model": "Model",
+          "first_registration": "First registration",
+          "type_approval": "Type approval",
+          "power_kw": "Power kW",
+          "empty_weight_kg": "Curb weight kg",
+          "gross_weight_kg": "Gross weight kg"
+        }
+      },
+      "vehicle_document_add": {
+        "title": "Add vehicle document",
+        "description": "Store an additional vehicle-related document.",
+        "data": {
+          "vehicle_file": "Document",
+          "document_type": "Document type",
+          "note": "Note"
+        }
+      },
+      "vehicle_document_view": {
+        "title": "View vehicle document",
+        "data": {
+          "document_ref": "Document"
+        }
+      },
+      "vehicle_document_delete": {
+        "title": "Delete vehicle document",
+        "description": "The registration document stored as the main document is not deleted here.",
+        "data": {
+          "document_id": "Document"
+        }
+      },
+      "vehicle_warranty_management": {
+        "title": "Warranties",
+        "description": "Vehicle: {vehicle_name}\n\nManage vehicle, EV component and HV battery warranties. Warranty documents use the existing vehicle document storage.",
+        "menu_options": {
+          "vehicle_warranty_edit": "Warranty periods & mileage",
+          "vehicle_warranty_document_view": "View warranty document",
+          "vehicle_warranty_document_add": "Add warranty document",
+          "vehicle_data_management": "Back"
+        }
+      },
+      "vehicle_warranty_edit": {
+        "title": "Warranty details",
+        "description": "The start date is automatically the first registration: {first_registration}. End date: {end_dates}. Mileage limits are the maximum vehicle mileage.",
+        "data": {
+          "vehicle_years": "Vehicle warranty – years",
+          "vehicle_km": "Vehicle warranty – km",
+          "ev_components_years": "EV components – years",
+          "ev_components_km": "EV components – km",
+          "hv_battery_years": "HV battery – years",
+          "hv_battery_km": "HV battery – km"
+        }
+      },
+      "vehicle_warranty_document_add": {
+        "title": "Add warranty document",
+        "description": "The document is also stored under Vehicle data → Documents.",
+        "data": {
+          "vehicle_file": "Document",
+          "document_type": "Document type",
+          "note": "Note"
+        }
+      },
+      "vehicle_warranty_document_view": {
+        "title": "View warranty document",
+        "description": "Existing warranty certificates and warranty terms.",
+        "data": {
+          "document_ref": "Document"
+        }
+      },
+      "maintenance_management": {
+        "title": "Maintenance & repairs",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "toll_management": {
+        "title": "Tolls & vignettes",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "other_cost_management": {
+        "title": "Other costs",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Add cost",
+          "expense_edit": "Edit cost",
+          "expense_delete": "Delete cost",
+          "init": "Back"
+        }
+      },
+      "expense_add": {
+        "title": "Add cost"
+      },
+      "expense_edit": {
+        "title": "Edit cost",
+        "data": {
+          "expense_id": "Edit cost"
+        }
+      },
+      "expense_delete": {
+        "title": "Delete cost",
+        "data": {
+          "expense_id": "Delete cost"
+        }
+      },
+      "expense_form": {
+        "title": "Enter cost",
+        "data": {
+          "category": "Category",
+          "description": "Description",
+          "amount": "Amount",
+          "currency": "Currency",
+          "expense_date": "Payment / booking date",
+          "provider": "Provider / workshop / authority",
+          "country": "Country",
+          "odometer_km": "Odometer",
+          "valid_from": "Valid from",
+          "valid_to": "Valid to",
+          "notes": "Notes",
+          "receipt_file": "Invoice / receipt"
         }
       }
     },
@@ -1307,15 +1418,16 @@
       "export_failed": "The CSV export could not be created. Check the Home Assistant log for more details.",
       "charge_delete_failed": "The charging session could not be deleted completely.",
       "charge_not_suspicious": "This charging session does not meet the criteria for safe deletion.",
+      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
       "route_rebuild_confirmation_required": "The action must be confirmed.",
       "route_rebuild_failed": "The route maintenance action could not be completed. Check the Home Assistant log for details.",
       "route_osrm_not_configured": "OSRM is not configured. Configure an OSRM address first.",
-      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
       "user_place_load_failed": "Custom places could not be loaded.",
       "user_place_not_found": "The selected place was not found.",
       "user_place_save_failed": "The place could not be saved. Check name, coordinates and radius.",
       "user_place_duplicate": "A custom place already exists at this location or with this name nearby.",
       "user_place_delete_failed": "The place could not be deleted.",
+      "pause_place_no_coordinates": "No GPS coordinates are available for this pause.",
       "journey_operation_busy": "Journey maintenance is already running. Please wait until it has completed.",
       "vehicle_context_invalid": "The selected vehicle is not currently available.",
       "invalid_tariff_period": "Enter a valid year, From/To date and tariff.",
@@ -1325,12 +1437,17 @@
       "invalid_financing_data": "Invalid financing contract data.",
       "financing_document_import_failed": "The financing document could not be imported.",
       "financing_ocr_failed": "The financing document could not be analysed.",
+      "insurance_invalid": "Insurance data is invalid.",
+      "insurance_document_import_failed": "Insurance document could not be imported.",
+      "tax_invalid": "Road-tax data is invalid.",
       "vehicle_document_import_failed": "The vehicle document could not be imported.",
-      "tax_invalid": "Road-tax data is invalid."
+      "expense_invalid": "The cost data is invalid."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",
-      "no_tax_entries": "No road-tax entries available."
+      "no_insurance_entries": "No insurance entries exist.",
+      "no_tax_entries": "No road-tax entries available.",
+      "no_expense_entries": "No costs are available."
     }
   },
   "entity": {

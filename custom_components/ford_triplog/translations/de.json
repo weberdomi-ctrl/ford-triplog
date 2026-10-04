@@ -55,7 +55,10 @@
           "financing_management": "Fahrzeugfinanzierung",
           "vehicle_data_management": "Fahrzeugdaten & Dokumente",
           "insurance_management": "Versicherung",
-          "tax_management": "Strassensteuer"
+          "tax_management": "Strassensteuer",
+          "maintenance_management": "Wartung & Reparaturen",
+          "toll_management": "Maut & Vignetten",
+          "other_cost_management": "Sonstige Kosten"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -71,7 +74,10 @@
           "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
           "vehicle_data_management": "Fahrzeugausweis/Fahrzeugschein und weitere Fahrzeugdokumente verwalten.",
           "insurance_management": "Fahrzeugversicherungen und Jahresprämien für die TCO-Berechnung verwalten.",
-          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten."
+          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten.",
+          "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
+          "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
+          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten."
         }
       },
       "settings": {
@@ -1319,6 +1325,68 @@
           "notes": "Notiz",
           "tax_id": "Steuerperiode"
         }
+      },
+      "maintenance_management": {
+        "title": "Wartung & Reparaturen",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück"
+        }
+      },
+      "toll_management": {
+        "title": "Maut & Vignetten",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück"
+        }
+      },
+      "other_cost_management": {
+        "title": "Sonstige Kosten",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück"
+        }
+      },
+      "expense_add": {
+        "title": "Kosten hinzufügen"
+      },
+      "expense_edit": {
+        "title": "Kosten bearbeiten",
+        "data": {
+          "expense_id": "Kosten bearbeiten"
+        }
+      },
+      "expense_delete": {
+        "title": "Kosten löschen",
+        "data": {
+          "expense_id": "Kosten löschen"
+        }
+      },
+      "expense_form": {
+        "title": "Kosten erfassen",
+        "data": {
+          "category": "Kategorie",
+          "description": "Beschreibung",
+          "amount": "Betrag",
+          "currency": "Währung",
+          "expense_date": "Zahlungs-/Buchungsdatum",
+          "provider": "Anbieter / Werkstatt / Behörde",
+          "country": "Land",
+          "odometer_km": "Kilometerstand",
+          "valid_from": "Gültig von",
+          "valid_to": "Gültig bis",
+          "notes": "Notiz",
+          "receipt_file": "Rechnung / Beleg"
+        }
       }
     },
     "error": {
@@ -1390,12 +1458,14 @@
       "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden.",
       "insurance_invalid": "Versicherungsdaten sind ungültig.",
       "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden.",
-      "tax_invalid": "Steuerdaten sind ungültig."
+      "tax_invalid": "Steuerdaten sind ungültig.",
+      "expense_invalid": "Kostendaten sind ungültig."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",
       "no_insurance_entries": "Keine Versicherungen vorhanden.",
-      "no_tax_entries": "Keine Strassensteuer-Einträge vorhanden."
+      "no_tax_entries": "Keine Strassensteuer-Einträge vorhanden.",
+      "no_expense_entries": "Keine Kosten vorhanden."
     }
   },
   "entity": {
