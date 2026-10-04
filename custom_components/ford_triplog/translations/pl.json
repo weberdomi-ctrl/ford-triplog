@@ -980,6 +980,22 @@
         "data": {
           "home_tariff_year": "Rok"
         }
+      },
+      "financing_add": {
+        "title": "Dodaj finansowanie",
+        "description": "Wprowadź dane ręcznie lub prześlij umowę/dokument.",
+        "menu_options": {
+          "financing_add_leasing": "Wprowadź ręcznie",
+          "financing_upload": "Prześlij umowę / dokument",
+          "financing_management": "Wstecz"
+        }
+      },
+      "financing_upload": {
+        "title": "Prześlij umowę finansowania",
+        "description": "Prześlij PDF lub obraz. {ocr_status} Przed zapisaniem wszystkie wartości można sprawdzić.",
+        "data": {
+          "financing_file": "Umowa / dokument"
+        }
       }
     },
     "error": {
@@ -1044,7 +1060,9 @@
       "invalid_tariff_period": "Wprowadź prawidłowy rok, daty Od/Do i taryfę.",
       "invalid_tariff_year": "Wprowadź rok od 2000 do 2100.",
       "invalid_tariff_range": "Koniec okresu taryfy nie może być wcześniejszy niż początek.",
-      "overlapping_tariff_period": "Ten okres taryfy nakłada się na istniejący okres w tym samym roku."
+      "overlapping_tariff_period": "Ten okres taryfy nakłada się na istniejący okres w tym samym roku.",
+      "financing_document_import_failed": "Nie udało się zaimportować dokumentu finansowania.",
+      "financing_ocr_failed": "Nie udało się przeanalizować dokumentu finansowania."
     }
   },
   "entity": {

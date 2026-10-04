@@ -987,10 +987,10 @@
         "title": "Vehicle financing",
         "description": "Vehicle: {vehicle_name}\\n\\nManage financing contracts. Real payments and TCO are calculated separately.",
         "menu_options": {
-          "financing_add_leasing": "Add leasing contract",
           "financing_edit": "Edit contract",
           "financing_delete": "Delete contract",
-          "init": "Back to main menu"
+          "init": "Back to main menu",
+          "financing_add": "Add financing"
         }
       },
       "financing_add_leasing": {
@@ -1059,6 +1059,22 @@
         "data": {
           "financing_id": "Contract"
         }
+      },
+      "financing_add": {
+        "title": "Add financing",
+        "description": "Enter financing manually or upload a contract/document.",
+        "menu_options": {
+          "financing_add_leasing": "Enter manually",
+          "financing_upload": "Upload contract / document",
+          "financing_management": "Back"
+        }
+      },
+      "financing_upload": {
+        "title": "Upload financing contract",
+        "description": "Upload a PDF or image. {ocr_status} All values can be reviewed before saving.",
+        "data": {
+          "financing_file": "Contract / document"
+        }
       }
     },
     "error": {
@@ -1124,7 +1140,9 @@
       "invalid_tariff_year": "Enter a year between 2000 and 2100.",
       "invalid_tariff_range": "The end of the tariff period must not be before the start.",
       "overlapping_tariff_period": "This tariff period overlaps an existing period in the same year.",
-      "invalid_financing_data": "Invalid financing contract data."
+      "invalid_financing_data": "Invalid financing contract data.",
+      "financing_document_import_failed": "The financing document could not be imported.",
+      "financing_ocr_failed": "The financing document could not be analysed."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist."

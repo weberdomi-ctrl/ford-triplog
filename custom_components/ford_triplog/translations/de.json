@@ -1005,10 +1005,10 @@
         "title": "Fahrzeugfinanzierung",
         "description": "Fahrzeug: {vehicle_name}\\n\\nFinanzierungsverträge verwalten. Reale Zahlungen und TCO werden getrennt berechnet.",
         "menu_options": {
-          "financing_add_leasing": "Leasingvertrag hinzufügen",
           "financing_edit": "Vertrag bearbeiten",
           "financing_delete": "Vertrag löschen",
-          "init": "Zurück zum Hauptmenü"
+          "init": "Zurück zum Hauptmenü",
+          "financing_add": "Finanzierung hinzufügen"
         }
       },
       "financing_add_leasing": {
@@ -1077,6 +1077,22 @@
         "data": {
           "financing_id": "Vertrag"
         }
+      },
+      "financing_add": {
+        "title": "Finanzierung hinzufügen",
+        "description": "Finanzierungsdaten manuell erfassen oder einen Vertrag/Beleg hochladen.",
+        "menu_options": {
+          "financing_add_leasing": "Manuell erfassen",
+          "financing_upload": "Vertrag / Beleg hochladen",
+          "financing_management": "Zurück"
+        }
+      },
+      "financing_upload": {
+        "title": "Finanzierungsvertrag hochladen",
+        "description": "PDF oder Bild hochladen. {ocr_status} Anschliessend werden alle Werte vor dem Speichern zur Kontrolle angezeigt.",
+        "data": {
+          "financing_file": "Vertrag / Beleg"
+        }
       }
     },
     "error": {
@@ -1142,7 +1158,9 @@
       "invalid_tariff_year": "Gib ein Jahr zwischen 2000 und 2100 ein.",
       "invalid_tariff_range": "Das Ende des Tarifzeitraums darf nicht vor dem Beginn liegen.",
       "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr.",
-      "invalid_financing_data": "Ungültige Vertragsdaten."
+      "invalid_financing_data": "Ungültige Vertragsdaten.",
+      "financing_document_import_failed": "Der Finanzierungsbeleg konnte nicht importiert werden.",
+      "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden."

@@ -122,7 +122,8 @@ class FordTriplogVehicleFinancingStorage:
                 data.get("purchase_price"), data["first_payment"], data["regular_payment"],
                 data["number_of_payments"], data.get("residual_value"), data.get("interest_rate"),
                 data.get("annual_mileage"), data.get("excess_km_rate"), data["currency"],
-                data.get("notes"), now,
+                data.get("notes"), data.get("document_filename"),
+                data.get("document_original_name"), now,
             )
             with sqlite3.connect(db_path) as db:
                 db.row_factory = sqlite3.Row
@@ -132,8 +133,9 @@ class FordTriplogVehicleFinancingStorage:
                             vehicle_id, financing_type, provider, contract_number, start_date, end_date,
                             duration_months, purchase_price, first_payment, regular_payment,
                             number_of_payments, residual_value, interest_rate, annual_mileage,
-                            excess_km_rate, currency, notes, created_at, updated_at
-                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            excess_km_rate, currency, notes, document_filename,
+                            document_original_name, created_at, updated_at
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                         (vehicle_id, *values[:-1], now, now),
                     )
                     financing_id = int(cur.lastrowid)
@@ -142,7 +144,8 @@ class FordTriplogVehicleFinancingStorage:
                         """UPDATE vehicle_financing SET financing_type=?, provider=?, contract_number=?,
                             start_date=?, end_date=?, duration_months=?, purchase_price=?, first_payment=?,
                             regular_payment=?, number_of_payments=?, residual_value=?, interest_rate=?,
-                            annual_mileage=?, excess_km_rate=?, currency=?, notes=?, updated_at=?
+                            annual_mileage=?, excess_km_rate=?, currency=?, notes=?, document_filename=?,
+                            document_original_name=?, updated_at=?
                             WHERE vehicle_id=? AND financing_id=?""",
                         (*values, vehicle_id, int(financing_id)),
                     )

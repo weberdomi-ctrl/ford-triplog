@@ -70,6 +70,7 @@ from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
+from .financing_document import FordTriplogFinancingDocumentStorage, extract_financing_fields
 
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
@@ -627,6 +628,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._home_tariff_periods_cache: list[dict[str, Any]] | None = None
         self._vehicle_financing_storage: FordTriplogVehicleFinancingStorage | None = None
         self._selected_financing_id: int | None = None
+        self._financing_prefill: dict[str, Any] = {}
+        self._financing_document: dict[str, Any] = {}
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -7035,7 +7038,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return self.async_show_menu(
             step_id="financing_management",
             menu_options=[
-                "financing_add_leasing",
+                "financing_add",
                 "financing_edit",
                 "financing_delete",
                 "init",
@@ -7043,10 +7046,91 @@ class FordTriplogOptionsFlow(OptionsFlow):
             description_placeholders={"vehicle_name": self._context_vehicle_name()},
         )
 
+    async def async_step_financing_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose manual financing entry or document-assisted entry."""
+        self._selected_financing_id = None
+        self._financing_prefill = {}
+        self._financing_document = {}
+        return self.async_show_menu(
+            step_id="financing_add",
+            menu_options=[
+                "financing_add_leasing",
+                "financing_upload",
+                "financing_management",
+            ],
+        )
+
+    async def async_step_financing_upload(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Upload a financing document and prefill the leasing form using OCR."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            uploaded_file_id = user_input["financing_file"]
+            try:
+                with process_uploaded_file(self.hass, uploaded_file_id) as uploaded_path:
+                    docs = FordTriplogFinancingDocumentStorage(self.hass)
+                    document = await docs.async_import(
+                        uploaded_path, original_name=uploaded_path.name
+                    )
+                self._financing_document = {
+                    "document_filename": document["filename"],
+                    "document_original_name": document["original_filename"],
+                }
+                self._financing_prefill = {}
+                if bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    try:
+                        ocr = await self._get_ocr_client().async_analyze(
+                            filename=str(document["original_filename"]),
+                            media_type=str(document["media_type"]),
+                            content=document["content"],
+                        )
+                        self._financing_prefill = extract_financing_fields(
+                            str(ocr.get("raw_text") or "")
+                        )
+                    except (
+                        FordTriplogOCRAuthenticationError,
+                        FordTriplogOCRConnectionError,
+                        FordTriplogOCRResponseError,
+                    ):
+                        # The document is already safely stored. OCR is only a
+                        # convenience; a failure must never block manual entry.
+                        _LOGGER.exception(
+                            "Financing document OCR failed; continuing with manual review"
+                        )
+                return await self._async_step_leasing_form(None)
+            except (HomeAssistantError, OSError, ValueError):
+                _LOGGER.exception("Unable to import financing document")
+                errors["base"] = "financing_document_import_failed"
+
+        return self.async_show_form(
+            step_id="financing_upload",
+            data_schema=vol.Schema({
+                vol.Required("financing_file"): selector.FileSelector(
+                    selector.FileSelectorConfig(
+                        accept=(
+                            ".pdf,.jpg,.jpeg,.png,.webp,"
+                            "application/pdf,image/jpeg,image/png,image/webp"
+                        )
+                    )
+                )
+            }),
+            errors=errors,
+            description_placeholders={
+                "ocr_status": (
+                    "OCR aktiviert – erkannte Werte werden vorgeschlagen."
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "OCR ist deaktiviert – der Vertrag wird gespeichert, die Werte werden manuell erfasst."
+                )
+            },
+        )
+
     async def async_step_financing_add_leasing(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
-        """Add a leasing contract."""
+        """Add a leasing contract manually or from document suggestions."""
         self._selected_financing_id = None
         return await self._async_step_leasing_form(user_input)
 
@@ -7134,6 +7218,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 data["financing_type"] = "leasing"
                 if self._selected_financing_id is not None:
                     data["financing_id"] = self._selected_financing_id
+                elif self._financing_document:
+                    data.update(self._financing_document)
                 # Empty optional text/number fields become NULL in SQLite.
                 for key in ("provider", "contract_number", "end_date", "notes"):
                     if not str(data.get(key) or "").strip():
@@ -7147,10 +7233,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 errors["base"] = "invalid_financing_data"
             else:
                 self._selected_financing_id = None
+                self._financing_prefill = {}
+                self._financing_document = {}
                 return await self.async_step_financing_management()
 
         def d(key: str, fallback: Any = "") -> Any:
-            return selected.get(key, fallback) if selected else fallback
+            if selected:
+                return selected.get(key, fallback)
+            return self._financing_prefill.get(key, fallback)
 
         schema = vol.Schema({
             vol.Optional("provider", default=d("provider")): selector.TextSelector(),

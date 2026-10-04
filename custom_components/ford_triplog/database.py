@@ -1047,6 +1047,17 @@ class FordTriplogDatabase:
                         )
                         """
                     )
+                    # 2.6 financing document linkage. Existing dev databases are
+                    # upgraded in place without rebuilding the financing table.
+                    financing_columns = {
+                        str(row[1])
+                        for row in db.execute("PRAGMA table_info(vehicle_financing)").fetchall()
+                    }
+                    if "document_filename" not in financing_columns:
+                        db.execute("ALTER TABLE vehicle_financing ADD COLUMN document_filename TEXT")
+                    if "document_original_name" not in financing_columns:
+                        db.execute("ALTER TABLE vehicle_financing ADD COLUMN document_original_name TEXT")
+
                     db.execute(
                         """
                         CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
