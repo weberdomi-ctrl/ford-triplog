@@ -52,7 +52,8 @@
           "charging_site_database": "Lokalizacje ładowania OpenStreetMap",
           "export": "Eksport danych",
           "user_places": "Custom places",
-          "insurance_management": "Ubezpieczenie"
+          "insurance_management": "Ubezpieczenie",
+          "tax_management": "Podatek drogowy"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Wybierz pojazd używany dla ustawień, konserwacji i eksportu danych pojazdu.",
@@ -64,7 +65,9 @@
           "user_charging_sites": "Wyświetlaj i zarządzaj własnymi lokalizacjami ładowania.",
           "charging_site_database": "Pobierz lub zaimportuj bazę lokalizacji ładowania.",
           "export": "Eksportuj zapisane dane Ford Triplog do pliku CSV.",
-          "user_places": "Manage places for automatic pause assignment."
+          "user_places": "Manage places for automatic pause assignment.",
+          "insurance_management": "Zarządzaj polisami ubezpieczeniowymi pojazdu i rocznymi składkami TCO.",
+          "tax_management": "Zarządzaj rocznym podatkiem od pojazdu i opłatami pojazdowymi."
         }
       },
       "settings": {
@@ -1046,6 +1049,41 @@
           "insurance_file": "Plik",
           "document_type": "Typ dokumentu"
         }
+      },
+      "tax_management": {
+        "title": "Road tax",
+        "description": "Vehicle: {vehicle_name}. Manage annual road-tax TCO bases.",
+        "menu_options": {
+          "tax_add": "Add road tax",
+          "tax_edit": "Edit road tax",
+          "tax_delete": "Delete road tax",
+          "init": "Back to main menu"
+        }
+      },
+      "tax_add": {
+        "title": "Add road tax",
+        "description": "Enter annual road tax for a validity period."
+      },
+      "tax_edit": {
+        "title": "Edit road tax",
+        "description": "Select a tax period."
+      },
+      "tax_delete": {
+        "title": "Delete road tax",
+        "description": "Select and delete a tax period."
+      },
+      "tax_form": {
+        "title": "Podatek drogowy",
+        "description": "Roczny podatek stanowi podstawę TCO i jest dzielony przez 12 dla miesięcznych kosztów stałych.",
+        "data": {
+          "valid_from": "Ważne od (RRRR-MM-DD)",
+          "valid_to": "Ważne do (RRRR-MM-DD)",
+          "annual_tax": "Roczny podatek / podstawa TCO",
+          "currency": "Waluta",
+          "authority": "Urząd / kanton",
+          "notes": "Notatka",
+          "tax_id": "Okres podatkowy"
+        }
       }
     },
     "error": {
@@ -1114,10 +1152,12 @@
       "financing_document_import_failed": "Nie udało się zaimportować dokumentu finansowania.",
       "financing_ocr_failed": "Nie udało się przeanalizować dokumentu finansowania.",
       "insurance_invalid": "Nieprawidłowe dane ubezpieczenia.",
-      "insurance_document_import_failed": "Nie udało się zaimportować dokumentu ubezpieczenia."
+      "insurance_document_import_failed": "Nie udało się zaimportować dokumentu ubezpieczenia.",
+      "tax_invalid": "Dane podatku drogowego są nieprawidłowe."
     },
     "abort": {
-      "no_insurance_entries": "Brak wpisów ubezpieczenia."
+      "no_insurance_entries": "Brak wpisów ubezpieczenia.",
+      "no_tax_entries": "Brak wpisów podatku drogowego."
     }
   },
   "entity": {

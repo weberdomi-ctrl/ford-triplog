@@ -53,7 +53,8 @@
           "export": "Export data",
           "user_places": "Custom places",
           "financing_management": "Vehicle financing",
-          "insurance_management": "Insurance"
+          "insurance_management": "Insurance",
+          "tax_management": "Road tax"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Choose the vehicle used for vehicle-specific settings, maintenance and exports.",
@@ -66,7 +67,9 @@
           "charging_site_database": "Download or import the charging location database.",
           "export": "Export stored Ford Triplog data as a CSV file.",
           "user_places": "Manage places for automatic pause assignment.",
-          "financing_management": "Manage leasing, financing and vehicle purchase costs."
+          "financing_management": "Manage leasing, financing and vehicle purchase costs.",
+          "insurance_management": "Manage vehicle insurance policies and annual TCO premiums.",
+          "tax_management": "Manage annual vehicle tax and vehicle duties."
         }
       },
       "settings": {
@@ -1124,6 +1127,41 @@
           "insurance_file": "File",
           "document_type": "Document type"
         }
+      },
+      "tax_management": {
+        "title": "Road tax",
+        "description": "Vehicle: {vehicle_name}. Manage annual road-tax TCO bases.",
+        "menu_options": {
+          "tax_add": "Add road tax",
+          "tax_edit": "Edit road tax",
+          "tax_delete": "Delete road tax",
+          "init": "Back to main menu"
+        }
+      },
+      "tax_add": {
+        "title": "Add road tax",
+        "description": "Enter annual road tax for a validity period."
+      },
+      "tax_edit": {
+        "title": "Edit road tax",
+        "description": "Select a tax period."
+      },
+      "tax_delete": {
+        "title": "Delete road tax",
+        "description": "Select and delete a tax period."
+      },
+      "tax_form": {
+        "title": "Road tax",
+        "description": "Annual tax is the TCO basis and is divided by 12 for monthly fixed costs. Partial invoices and one-off fees do not change this basis.",
+        "data": {
+          "valid_from": "Valid from (YYYY-MM-DD)",
+          "valid_to": "Valid to (YYYY-MM-DD)",
+          "annual_tax": "Annual tax / TCO basis",
+          "currency": "Currency",
+          "authority": "Authority / canton",
+          "notes": "Note",
+          "tax_id": "Tax period"
+        }
       }
     },
     "error": {
@@ -1193,11 +1231,13 @@
       "financing_document_import_failed": "The financing document could not be imported.",
       "financing_ocr_failed": "The financing document could not be analysed.",
       "insurance_invalid": "Insurance data is invalid.",
-      "insurance_document_import_failed": "Insurance document could not be imported."
+      "insurance_document_import_failed": "Insurance document could not be imported.",
+      "tax_invalid": "Road-tax data is invalid."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",
-      "no_insurance_entries": "No insurance entries exist."
+      "no_insurance_entries": "No insurance entries exist.",
+      "no_tax_entries": "No road-tax entries available."
     }
   },
   "entity": {

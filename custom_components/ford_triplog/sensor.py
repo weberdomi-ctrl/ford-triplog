@@ -207,6 +207,7 @@ async def async_setup_entry(
             FordTriplogVehicleSourceStatusSensor(coordinator),
             FordTriplogVehicleDetailsSensor(hass),
             FordTriplogInsuranceTCOSensor(hass),
+            FordTriplogRoadTaxTCOSensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -413,6 +414,96 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
             "payment_amount": policy.get("payment_amount"),
             "first_payment_date": policy.get("first_payment_date"),
             "notes": policy.get("notes"),
+        }
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogRoadTaxTCOSensor(SensorEntity):
+    """Monthly road-tax TCO for the currently selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Strassensteuer TCO"
+    _attr_unique_id = "ford_triplog_vehicle_road_tax"
+    _attr_icon = "mdi:car-cog"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        await self.async_update()
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_tax import FordTriplogVehicleTaxStorage
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+        store = FordTriplogVehicleTaxStorage(
+            self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
+        )
+        rows = await store.async_load()
+        today = dt_util.now().date().isoformat()
+        active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
+        if not active:
+            self._value = None
+            self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_tax"}
+            return
+        tax = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("tax_id") or 0)))
+        try:
+            annual = float(tax.get("annual_tax") or 0)
+        except (TypeError, ValueError):
+            annual = 0.0
+        self._value = round(annual / 12.0, 2)
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "annual_tax": round(annual, 2),
+            "currency": tax.get("currency") or "CHF",
+            "authority": tax.get("authority"),
+            "valid_from": tax.get("valid_from"),
+            "valid_to": tax.get("valid_to"),
+            "notes": tax.get("notes"),
         }
 
     @property

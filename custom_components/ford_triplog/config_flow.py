@@ -73,6 +73,7 @@ from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_lea
 from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
 from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date
 from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
+from .vehicle_tax import FordTriplogVehicleTaxStorage
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -655,6 +656,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._vehicle_registration_document: dict[str, Any] = {}
         self._selected_vehicle_document_url: str | None = None
         self._vehicle_insurance_storage: FordTriplogVehicleInsuranceStorage | None = None
+        self._vehicle_tax_storage: FordTriplogVehicleTaxStorage | None = None
         self._selected_insurance_id: int | None = None
         self._insurance_prefill: dict[str, Any] = {}
 
@@ -805,6 +807,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_apply_receipt_id = None
         self._route_tracker_draft = {}
         self._user_place_storage = None
+        self._vehicle_financing_storage = None
+        self._vehicle_insurance_storage = None
+        self._vehicle_tax_storage = None
 
     async def async_step_init(
         self,
@@ -824,6 +829,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "charge_management",
                 "financing_management",
                 "insurance_management",
+                "tax_management",
                 "vehicle_data_management",
                 "export",
                 "user_places",
@@ -7662,6 +7668,91 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
         })
         return self.async_show_form(step_id="insurance_form", data_schema=schema, errors=errors)
+
+    async def _async_tax_storage(self) -> FordTriplogVehicleTaxStorage:
+        """Return road-tax storage for the selected vehicle."""
+        if self._vehicle_tax_storage is None:
+            self._vehicle_tax_storage = FordTriplogVehicleTaxStorage(
+                self.hass,
+                Path(self.hass.config.path(".storage", STORAGE_DIR)),
+                self._ensure_vehicle_context_id(),
+            )
+            await self._vehicle_tax_storage.async_setup()
+        return self._vehicle_tax_storage
+
+    async def async_step_tax_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage annual road-tax TCO bases."""
+        return self.async_show_menu(
+            step_id="tax_management",
+            menu_options=["tax_add", "tax_edit", "tax_delete", "init"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_tax_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        self._selected_tax_id = None
+        return await self.async_step_tax_form(user_input)
+
+    async def async_step_tax_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_tax_entries")
+        if user_input is not None:
+            self._selected_tax_id = int(user_input["tax_id"])
+            return await self.async_step_tax_form()
+        options = [selector.SelectOptionDict(
+            value=str(x["tax_id"]),
+            label=f"{x['valid_from']} – {x['valid_to']} · {x['annual_tax']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="tax_edit", data_schema=vol.Schema({
+            vol.Required("tax_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_tax_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_tax_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["tax_id"]))
+            return await self.async_step_tax_management()
+        options = [selector.SelectOptionDict(
+            value=str(x["tax_id"]),
+            label=f"{x['valid_from']} – {x['valid_to']} · {x['annual_tax']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="tax_delete", data_schema=vol.Schema({
+            vol.Required("tax_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_tax_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        existing: dict[str, Any] = {}
+        tax_id = getattr(self, "_selected_tax_id", None)
+        if tax_id is not None:
+            existing = next((x for x in await store.async_load() if int(x["tax_id"]) == tax_id), {})
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                if tax_id is not None:
+                    data["tax_id"] = tax_id
+                await store.async_save(data)
+                self._selected_tax_id = None
+                return await self.async_step_tax_management()
+            except (ValueError, TypeError):
+                errors["base"] = "tax_invalid"
+        def txt(key: str, default: str = "") -> str:
+            value = existing.get(key)
+            return default if value is None else str(value)
+        schema = vol.Schema({
+            vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
+            vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
+            vol.Required("annual_tax", default=txt("annual_tax", "0")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Optional("authority", default=txt("authority")): selector.TextSelector(),
+            vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="tax_form", data_schema=schema, errors=errors)
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""

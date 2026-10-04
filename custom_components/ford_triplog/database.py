@@ -1144,6 +1144,23 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS vehicle_tax (
+                            tax_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            valid_from TEXT NOT NULL, valid_to TEXT NOT NULL,
+                            annual_tax REAL NOT NULL CHECK (annual_tax >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            authority TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_tax_vehicle ON vehicle_tax (vehicle_id, valid_from)")
+
+                    db.execute(
+                        """
                         CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
                         ON vehicle_financing (vehicle_id, start_date)
                         """

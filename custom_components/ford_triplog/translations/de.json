@@ -54,7 +54,8 @@
           "user_places": "Benutzerdefinierte Orte",
           "financing_management": "Fahrzeugfinanzierung",
           "vehicle_data_management": "Fahrzeugdaten & Dokumente",
-          "insurance_management": "Versicherung"
+          "insurance_management": "Versicherung",
+          "tax_management": "Strassensteuer"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -68,7 +69,9 @@
           "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren.",
           "user_places": "Orte für automatische Pausen-Zuordnung verwalten.",
           "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
-          "vehicle_data_management": "Fahrzeugausweis/Fahrzeugschein und weitere Fahrzeugdokumente verwalten."
+          "vehicle_data_management": "Fahrzeugausweis/Fahrzeugschein und weitere Fahrzeugdokumente verwalten.",
+          "insurance_management": "Fahrzeugversicherungen und Jahresprämien für die TCO-Berechnung verwalten.",
+          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten."
         }
       },
       "settings": {
@@ -1281,6 +1284,41 @@
           "insurance_file": "Datei",
           "document_type": "Dokumenttyp"
         }
+      },
+      "tax_management": {
+        "title": "Strassensteuer",
+        "description": "Fahrzeug: {vehicle_name}. Jahressteuer als TCO-Basis verwalten. Einmalige Gebühren gehören später zu den sonstigen Kosten.",
+        "menu_options": {
+          "tax_add": "Steuer hinzufügen",
+          "tax_edit": "Steuer bearbeiten",
+          "tax_delete": "Steuer löschen",
+          "init": "Zurück zum Hauptmenü"
+        }
+      },
+      "tax_add": {
+        "title": "Strassensteuer hinzufügen",
+        "description": "Jahressteuer für eine Gültigkeitsperiode erfassen."
+      },
+      "tax_edit": {
+        "title": "Strassensteuer bearbeiten",
+        "description": "Steuerperiode auswählen."
+      },
+      "tax_delete": {
+        "title": "Strassensteuer löschen",
+        "description": "Steuerperiode auswählen und löschen."
+      },
+      "tax_form": {
+        "title": "Strassensteuer",
+        "description": "Die Jahressteuer bildet die TCO-Basis und wird für den monatlichen Fixkostenanteil durch 12 geteilt. Teilrechnungen und einmalige Gebühren verändern diese TCO-Basis nicht.",
+        "data": {
+          "valid_from": "Gültig von (JJJJ-MM-TT)",
+          "valid_to": "Gültig bis (JJJJ-MM-TT)",
+          "annual_tax": "Jahressteuer / TCO-Basis",
+          "currency": "Währung",
+          "authority": "Behörde / Kanton",
+          "notes": "Notiz",
+          "tax_id": "Steuerperiode"
+        }
       }
     },
     "error": {
@@ -1351,11 +1389,13 @@
       "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden.",
       "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden.",
       "insurance_invalid": "Versicherungsdaten sind ungültig.",
-      "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden."
+      "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden.",
+      "tax_invalid": "Steuerdaten sind ungültig."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",
-      "no_insurance_entries": "Keine Versicherungen vorhanden."
+      "no_insurance_entries": "Keine Versicherungen vorhanden.",
+      "no_tax_entries": "Keine Strassensteuer-Einträge vorhanden."
     }
   },
   "entity": {
