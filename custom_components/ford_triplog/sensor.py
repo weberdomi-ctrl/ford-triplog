@@ -210,6 +210,7 @@ async def async_setup_entry(
             FordTriplogRoadTaxTCOSensor(hass),
             FordTriplogFinancingTCOSensor(hass),
             FordTriplogCostOverviewTCOSensor(hass),
+            FordTriplogCostHistorySensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -418,6 +419,24 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
             "notes": policy.get("notes"),
         }
 
+        # Insurance documents are stored vehicle-wide and typed as insurance_*.
+        # Expose authenticated, short-lived viewer links for dashboard use.
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        documents = []
+        for doc in await docs_store.async_list(vehicle_id):
+            dtype = str(doc.get("document_type") or "")
+            if not dtype.startswith("insurance_"):
+                continue
+            path = f"/api/ford_triplog/vehicle/{vehicle_id}/documents/{doc.get('document_id')}"
+            documents.append({
+                "document_id": doc.get("document_id"),
+                "name": doc.get("original_filename") or doc.get("filename"),
+                "type": dtype,
+                "url": async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+        self._attrs["documents"] = documents
+
     @property
     def native_value(self):
         return self._value
@@ -565,7 +584,41 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
             try: value=leasing_tco_for_month(row, now.year, now.month)
             except (ValueError, TypeError, KeyError): value=0.0
             if value:
-                total += value; active.append({'financing_id':row.get('financing_id'),'provider':row.get('provider'),'type':row.get('financing_type'),'monthly_tco':round(value,2)})
+                total += value
+                financing_id = row.get('financing_id')
+                contract = {
+                    'financing_id': financing_id,
+                    'provider': row.get('provider'),
+                    'type': row.get('financing_type'),
+                    'monthly_tco': round(value, 2),
+                    'start_date': row.get('start_date'),
+                    'end_date': row.get('end_date'),
+                    'term_months': row.get('term_months'),
+                    'first_payment': row.get('first_payment'),
+                    'regular_payment': row.get('regular_payment'),
+                    'residual_value': row.get('residual_value'),
+                    'documents': [],
+                }
+                if financing_id is not None:
+                    from .financing_document import FordTriplogFinancingDocumentStorage
+                    doc_store = FordTriplogFinancingDocumentStorage(self.hass)
+                    if row.get('document_filename'):
+                        path = f"/api/ford_triplog/financing/{int(financing_id)}/documents/main"
+                        contract['documents'].append({
+                            'document_id': 'main',
+                            'name': row.get('document_original_name') or 'Vertrag',
+                            'type': 'contract',
+                            'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+                        })
+                    for doc in await doc_store.async_list_for_financing(int(financing_id)):
+                        path = f"/api/ford_triplog/financing/{int(financing_id)}/documents/{doc.get('document_id')}"
+                        contract['documents'].append({
+                            'document_id': doc.get('document_id'),
+                            'name': doc.get('original_filename') or doc.get('filename'),
+                            'type': 'attachment',
+                            'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+                        })
+                active.append(contract)
         self._value=round(total,2) if active else None
         self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF','contracts':active}
     @property
@@ -576,6 +629,113 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
     def available(self): return self._value is not None
     @property
     def device_info(self): return {'identifiers':{(DOMAIN,'ford_triplog')},'name':'Ford Triplog','manufacturer':'Ford','model':'Triplog','sw_version':VERSION}
+
+
+class FordTriplogCostHistorySensor(SensorEntity):
+    """Individual vehicle expenses, newest first, including receipt links."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Kostenhistorie"
+    _attr_unique_id = "ford_triplog_cost_history"
+    _attr_icon = "mdi:receipt-text-clock"
+    _attr_should_poll = True
+    _unrecorded_attributes = frozenset({"entries"})
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value = 0
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        await self.async_update()
+
+    @callback
+    def _changed(self, *_args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_expense import FordTriplogVehicleExpenseStorage
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+
+        vid = get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None:
+            self._value = 0
+            self._attrs = {}
+            return
+
+        store = FordTriplogVehicleExpenseStorage(
+            self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid
+        )
+        rows = await store.async_load()
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        all_docs = await docs_store.async_list(vid)
+        docs_by_expense: dict[int, list[dict[str, Any]]] = {}
+        for doc in all_docs:
+            dtype = str(doc.get('document_type') or '')
+            if not dtype.startswith('expense_'):
+                continue
+            try:
+                expense_id = int(dtype.split('_', 1)[1])
+            except (ValueError, IndexError):
+                continue
+            path = f"/api/ford_triplog/vehicle/{vid}/documents/{doc.get('document_id')}"
+            docs_by_expense.setdefault(expense_id, []).append({
+                'document_id': doc.get('document_id'),
+                'name': doc.get('original_filename') or doc.get('filename'),
+                'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+
+        entries = []
+        for row in rows:
+            expense_id = int(row.get('expense_id') or 0)
+            sort_date = (
+                row.get('expense_date')
+                or row.get('valid_from')
+                or (f"{int(row['expense_year']):04d}-01-01" if row.get('expense_year') else '')
+            )
+            entries.append({
+                'expense_id': expense_id,
+                'date': row.get('expense_date'),
+                'year': row.get('expense_year'),
+                'valid_from': row.get('valid_from'),
+                'valid_to': row.get('valid_to'),
+                'expense_group': row.get('expense_group'),
+                'category': row.get('category'),
+                'description': row.get('description'),
+                'amount': round(float(row.get('amount') or 0), 2),
+                'currency': row.get('currency') or 'CHF',
+                'provider': row.get('provider'),
+                'country': row.get('country'),
+                'odometer_km': row.get('odometer_km'),
+                'notes': row.get('notes'),
+                'documents': docs_by_expense.get(expense_id, []),
+                '_sort_date': sort_date,
+            })
+        entries.sort(key=lambda item: (str(item.get('_sort_date') or ''), int(item.get('expense_id') or 0)), reverse=True)
+        for item in entries:
+            item.pop('_sort_date', None)
+
+        self._value = len(entries)
+        self._attrs = {'vehicle_id': vid, 'entries': entries}
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def device_info(self):
+        return {'identifiers': {(DOMAIN, 'ford_triplog')}, 'name': 'Ford Triplog', 'manufacturer': 'Ford', 'model': 'Triplog', 'sw_version': VERSION}
 
 
 class FordTriplogCostOverviewTCOSensor(SensorEntity):
