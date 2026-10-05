@@ -423,11 +423,19 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         # Expose authenticated, short-lived viewer links for dashboard use.
         from .vehicle_document import FordTriplogVehicleDocumentStorage
         docs_store = FordTriplogVehicleDocumentStorage(self.hass)
-        documents = []
-        for doc in await docs_store.async_list(vehicle_id):
+        source_documents = await docs_store.async_list(vehicle_id)
+        deduplicated: dict[tuple[str, str], dict[str, Any]] = {}
+        for doc in source_documents:
             dtype = str(doc.get("document_type") or "")
             if not dtype.startswith("insurance_"):
                 continue
+            name = str(doc.get("original_filename") or doc.get("filename") or "")
+            # async_list() is oldest -> newest, so later duplicates replace
+            # earlier rows and the dashboard gets the newest valid document id.
+            deduplicated[(dtype.casefold(), name.casefold())] = doc
+        documents = []
+        for doc in deduplicated.values():
+            dtype = str(doc.get("document_type") or "")
             path = f"/api/ford_triplog/vehicle/{vehicle_id}/documents/{doc.get('document_id')}"
             documents.append({
                 "document_id": doc.get("document_id"),
@@ -526,6 +534,31 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
             "valid_to": tax.get("valid_to"),
             "notes": tax.get("notes"),
         }
+
+        # Expose road-tax documents when present in the vehicle document store.
+        # The current UI does not require a tax document, so an empty list is a
+        # valid and useful dashboard contract.
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        documents = []
+        seen_documents: set[tuple[str, str]] = set()
+        for doc in await docs_store.async_list(vehicle_id):
+            dtype = str(doc.get("document_type") or "")
+            if not (dtype.startswith("tax_") or dtype.startswith("road_tax_")):
+                continue
+            name = str(doc.get("original_filename") or doc.get("filename") or "")
+            key = (dtype.casefold(), name.casefold())
+            if key in seen_documents:
+                continue
+            seen_documents.add(key)
+            path = f"/api/ford_triplog/vehicle/{vehicle_id}/documents/{doc.get('document_id')}"
+            documents.append({
+                "document_id": doc.get("document_id"),
+                "name": doc.get("original_filename") or doc.get("filename"),
+                "type": dtype,
+                "url": async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+        self._attrs["documents"] = documents
 
     @property
     def native_value(self):
