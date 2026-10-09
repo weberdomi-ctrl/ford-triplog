@@ -3308,6 +3308,8 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._route = route
         self._attr_native_value = trip_id or len(display_coordinates)
 
+        start_longitude, start_latitude = display_coordinates[0]
+        end_longitude, end_latitude = display_coordinates[-1]
         center_latitude = (
             sum(coord[1] for coord in display_coordinates)
             / len(display_coordinates)
@@ -3325,8 +3327,17 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "raw_point_count": len(coordinates),
             "start_time": start_time,
             "end_time": end_time,
-            "latitude": center_latitude,
-            "longitude": center_longitude,
+            "start_latitude": start_latitude,
+            "start_longitude": start_longitude,
+            "end_latitude": end_latitude,
+            "end_longitude": end_longitude,
+            # Home Assistant map-compatible position. Keep this on the route
+            # start so map cards open at the beginning of the drive.
+            "latitude": start_latitude,
+            "longitude": start_longitude,
+            # Preserve the previous geometric centre as explicit metadata.
+            "center_latitude": center_latitude,
+            "center_longitude": center_longitude,
             "osrm_distance_km": osrm_distance_km,
             "osrm_confidence": osrm_confidence,
             "osrm_matched_tracepoints": osrm_matched_tracepoints,
@@ -3494,11 +3505,30 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         }
 
         if coordinates:
-            attrs["latitude"] = (
+            start_longitude = float(coordinates[0][0])
+            start_latitude = float(coordinates[0][1])
+            end_longitude = float(coordinates[-1][0])
+            end_latitude = float(coordinates[-1][1])
+            center_latitude = (
                 sum(float(c[1]) for c in coordinates) / len(coordinates)
             )
-            attrs["longitude"] = (
+            center_longitude = (
                 sum(float(c[0]) for c in coordinates) / len(coordinates)
+            )
+
+            attrs.update(
+                {
+                    "start_latitude": start_latitude,
+                    "start_longitude": start_longitude,
+                    "end_latitude": end_latitude,
+                    "end_longitude": end_longitude,
+                    # Home Assistant map-compatible position. For a day with
+                    # multiple routes this is the start of the first route.
+                    "latitude": start_latitude,
+                    "longitude": start_longitude,
+                    "center_latitude": center_latitude,
+                    "center_longitude": center_longitude,
+                }
             )
 
         self._attr_native_value = selected_date
