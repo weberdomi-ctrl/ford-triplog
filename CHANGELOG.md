@@ -1,40 +1,49 @@
 # Changelog
 
-<<<<<<< Updated upstream
-## 2.5.0 – Pre-release
+## 2.6.0
 
 ### Added
 
-- Added multi-vehicle support with a persistent internal vehicle context.
-- Added vehicle-aware SQLite storage using `vehicle_id` for Trips, charging sessions, Journeys, Routes, statistics, metadata and receipts.
-- Added automatic migration of existing single-vehicle SQLite data to the vehicle-aware schema.
-- Added an automatic pre-2.5 SQLite backup before the vehicle-aware schema migration is performed.
-- Added central vehicle selection through `select.ford_triplog_fahrzeug`.
-- Shared Dashboard, History and statistics entities now follow the currently selected vehicle.
+- Added a vehicle-scoped operating-cost/TCO module for financing, insurance, road tax, maintenance/repairs, tolls/vignettes and other vehicle expenses.
+- Added SQLite tables and a canonical monthly TCO view for economic cost allocation per `vehicle_id`.
+- Added shared TCO sensors for financing, insurance, road tax, individual cost history and the combined vehicle cost overview.
+- Added monthly and yearly TCO summaries including fixed costs, variable costs, total costs, driven distance and cost per kilometre.
+- Added leasing/financing contract management with local document storage, PDF text extraction and optional OCR fallback.
+- Added insurance-policy management with policy metadata, payment information and optional document-assisted extraction.
+- Added vehicle road-tax management with validity periods and monthly TCO allocation.
+- Added maintenance, repair, tyre/wear, care/accessory, vignette/toll and other expense records with optional PDF/image receipts.
+- Added vehicle master-data storage for VIN, registration number, make/model, first registration, type approval, power and vehicle weights.
+- Added vehicle-document management and registration-document assisted import from PDF/image files.
+- Added warranty tracking for the vehicle, EV components and high-voltage battery with time and mileage limits.
+- Added SQLite-backed vehicle ConfigEntry recovery snapshots and a setup flow for restoring an unclaimed stored vehicle configuration.
+- Added explicit `start_latitude`, `start_longitude`, `end_latitude`, `end_longitude`, `center_latitude` and `center_longitude` attributes to Last Route and Route History.
 
 ### Improved
 
-- Vehicle-specific reads and statistics are isolated by `vehicle_id`.
-- Existing stored history is preserved during migration and assigned to the migrated vehicle context.
-- Vehicle switching refreshes shared Triplog entities without requiring a Home Assistant restart.
-- Tariff import duplicate detection no longer relies on changing source IDs alone.
+- Vehicle cost reporting reuses the existing effective charging-session costs instead of calculating charging costs a second time; billed/receipt-derived values remain authoritative.
+- Recurring and validity-based costs are allocated to the economic period they cover instead of to the date an invoice happens to be paid.
+- Leasing first/special payments are smoothed across the contract term for TCO; residual value is retained as contract information and is not automatically counted as a running cost.
+- Insurance TCO uses the policy premium as the economic basis while payment cadence/amount remains descriptive cash-flow information.
+- Last Route and Route History now expose their normal Home Assistant `latitude` / `longitude` at the first displayed route coordinate so map cards can open at the route start.
+- The previous route geometric centre remains available explicitly as `center_latitude` / `center_longitude`.
+- Vehicle details combine stored master data with the live odometer and calculated warranty remainder where available.
+- Stored configuration snapshots protect otherwise unclaimed vehicle records from orphan cleanup so a missing ConfigEntry can be reconstructed without losing history.
+- The German last-trip SOC recovery display name was standardized to **Rekuperation der letzten Fahrt**; English and Polish translations were aligned while keeping entity identity stable.
 
 ### Fixed
 
-- Fixed stale shared sensor values after changing `select.ford_triplog_fahrzeug`.
-- Fixed Top Journey retaining data from the previously selected vehicle.
-- Fixed vehicle-dependent Top Statistics not always refreshing after a vehicle change.
-- Fixed Last Trip, Last Journey, Last Route and History views retaining stale vehicle context after selection changes.
-- Fixed repeated tariff imports when an external tariff source assigns new IDs to otherwise identical tariff periods.
-- Fixed migration and database-isolation issues discovered during multi-vehicle pre-release testing.
+- Fixed route cards opening around a geometric centre when the more useful default focus is the beginning of the route.
+- Fixed the recovery gap where restoring only `ford_triplog.db` preserved vehicle history but not enough Home Assistant source mapping to recreate the vehicle ConfigEntry.
 
-### Upgrade Notes
+### Notes
 
-- Ford Triplog 2.5 upgrades the SQLite schema to become vehicle-aware.
-- A pre-2.5 database backup is created automatically before the schema migration.
-- No manual database conversion is required.
-- As this is a pre-release, a current Home Assistant backup is recommended before upgrading.
-=======
+- Direct upgrade from Ford Triplog 2.5 is supported; no manual SQLite conversion is required.
+- New cost, document, warranty and recovery tables/views are created automatically during normal database initialization.
+- The Home Assistant ConfigEntry remains the active runtime configuration. SQLite configuration snapshots are recovery templates, not a second live configuration source.
+- Global home charging tariffs remain shared SQLite master data and are intentionally not duplicated into per-vehicle recovery snapshots.
+- Automatically discovered Ford physical plug-state entities remain runtime-only and are rediscovered after recovery.
+- Final public release build: **26055**.
+
 ## 2.5.0
 
 ### Added
@@ -73,7 +82,6 @@
 - Release testing covered multiple vehicles, normal and dense GPS routes, Smart Trip handling, charging-session resume while still plugged in, and a workshop scenario with the auxiliary phone tracker roughly 27 km away from the vehicle.
 - No manual SQLite conversion is required when upgrading from 2.4.
 - Final public release: Build 25023.
->>>>>>> Stashed changes
 
 ## 2.4.0
 

@@ -1,6 +1,6 @@
 # Configuration
 
-Ford Triplog 2.5 is configured through Home Assistant ConfigEntries.
+Ford Triplog 2.6 is configured through Home Assistant ConfigEntries.
 
 Each configured vehicle has its own Ford Triplog ConfigEntry and its own vehicle
 data sources. The integration keeps the recorded history separated by a stable
@@ -25,7 +25,9 @@ Settings
 
 Create one Ford Triplog ConfigEntry for each vehicle you want to record.
 
-The initial setup asks for the core vehicle entities plus Smart Trip settings.
+If the local Ford Triplog database contains a stored vehicle configuration snapshot that is not currently claimed by a ConfigEntry, the setup flow first offers **Recover vehicle configuration** or **New vehicle**. Recovery is intended for restoring a missing ConfigEntry while keeping the existing vehicle ID/history.
+
+The normal new-vehicle setup asks for the core vehicle entities plus Smart Trip settings.
 
 ---
 
@@ -141,7 +143,7 @@ physical vehicle.
 
 # Vehicle Identity and Multi-Vehicle Setup
 
-Ford Triplog 2.5 attempts to discover vehicle identity from Home Assistant
+Ford Triplog 2.6 attempts to discover vehicle identity from Home Assistant
 registry/device information where available.
 
 Detected information can include:
@@ -219,6 +221,17 @@ Settings
 The main options menu shows the currently selected vehicle context.
 
 The settings area contains:
+
+- Vehicle context
+- General/settings navigation
+- Journey, route, pause and charging management
+- Costs
+- Vehicle data/documents/warranty
+- Export
+- User places and charging locations
+- Charging-site database
+
+The **Settings** submenu contains:
 
 - General settings
 - Home charging tariffs
@@ -310,7 +323,7 @@ Optional sources can also be cleared later.
 
 There is no manual plug-state field in the Ford Triplog configuration.
 
-For compatible Ford Connect/FordPass devices, Ford Triplog 2.5 automatically
+For compatible Ford Connect/FordPass devices, Ford Triplog automatically
 looks for a supported EV plug-state entity on the same Home Assistant device.
 
 When a valid physical plug state is available:
@@ -384,7 +397,7 @@ OSRM is optional. Raw route recording continues without it.
 
 # Home Charging Tariffs
 
-Ford Triplog 2.5 stores home charging tariff periods centrally in SQLite.
+Ford Triplog 2.6 stores home charging tariff periods centrally in SQLite.
 
 This prevents the same tariff table from being duplicated for every vehicle
 ConfigEntry.
@@ -415,6 +428,149 @@ charging cost calculation is used for the selected vehicle.
 
 Where legacy summer/winter tariff settings still exist and no new tariff
 periods have been created, the options flow can offer a legacy tariff import.
+
+---
+
+# Vehicle Costs and TCO
+
+Open:
+
+```text
+Settings
+→ Devices & Services
+→ Ford Triplog
+→ Configure
+→ Costs
+```
+
+The selected vehicle context is locked for the options-flow operation so costs cannot accidentally be written to another vehicle if the shared dashboard selector changes in parallel.
+
+Available areas include:
+
+- Financing
+- Insurance
+- Road tax
+- Maintenance / repairs
+- Tolls / vignettes
+- Other costs
+
+## Financing / leasing
+
+Leasing/financing contracts can be entered manually or from an uploaded document.
+
+Relevant fields include provider, contract number, start/end date, duration, purchase price, first payment, regular payment, number of payments, residual value, interest rate, annual mileage, excess-km rate, currency and notes.
+
+For TCO, leasing payments are economically smoothed across the contract duration. A residual value is stored as contract information and is not automatically added to the running TCO.
+
+PDF/image documents are stored locally. Digitally generated PDFs can use their text layer; scanned/image documents can use the configured OCR service to prefill values for review.
+
+## Insurance
+
+Insurance records can store:
+
+- Provider
+- Policy number
+- Valid from / valid to
+- Period/annual premium
+- Currency
+- Payment frequency
+- Payment amount
+- First payment date
+- Notes
+
+The premium and validity period drive TCO. Payment details are informational and do not move the economic cost into the payment month.
+
+## Road tax
+
+Road-tax records store validity period, annual tax, currency, authority and notes. The annual amount is allocated across the covered period.
+
+## Maintenance, tolls and other expenses
+
+Individual vehicle expenses support category, description, amount/currency, date or year, optional validity period, provider, country, odometer, notes and an optional receipt.
+
+Validity-based expenses such as a vignette are distributed across their covered period. A normal dated service/repair remains a one-time cost in its stored month.
+
+## TCO output
+
+The shared Cost Overview TCO sensor combines stored vehicle costs with the existing effective charging cost and driving distance.
+
+It exposes:
+
+- Current-month total
+- Financing / insurance / road tax
+- Fixed costs
+- Maintenance / repairs
+- Tolls / vignettes
+- Other costs
+- Charging
+- Variable costs
+- Total costs
+- Driven kilometres
+- Fixed cost per kilometre
+- Total cost per kilometre
+- Rolling monthly breakdown
+- Yearly summary
+
+If distance is zero, cost per kilometre is unavailable.
+
+---
+
+# Vehicle Data, Documents and Warranty
+
+Open:
+
+```text
+Settings
+→ Devices & Services
+→ Ford Triplog
+→ Configure
+→ Vehicle data
+```
+
+Vehicle master data can be entered manually or prefilled from an uploaded vehicle-registration document.
+
+Stored fields include VIN, registration number, make, model, first registration, type approval, power, empty weight and gross weight.
+
+PDF text extraction is tried first for digitally generated documents. When enabled, OCR can be used for scanned PDFs/images. Recognized values remain editable before saving.
+
+Additional local vehicle documents can be added, viewed and deleted. Supported uses include IVI, CoC, warranty proof/terms, service documents and other files.
+
+Warranty settings can be maintained separately for:
+
+- Vehicle
+- EV components
+- High-voltage battery
+
+Each warranty can have a duration in years and/or mileage limit. The Vehicle Details sensor uses the stored first-registration date and live odometer to calculate remaining time/kilometres where possible.
+
+---
+
+# Configuration Recovery
+
+Ford Triplog 2.6 stores a recovery snapshot after each successful vehicle ConfigEntry setup.
+
+The snapshot contains the ConfigEntry data/options required to rebuild the vehicle source mapping and keeps the original internal `vehicle_id`.
+
+Recovery workflow:
+
+```text
+Settings
+→ Devices & Services
+→ Add Integration
+→ Ford Triplog
+→ Recover vehicle configuration
+```
+
+The recovery option appears only when SQLite contains an unclaimed vehicle snapshot.
+
+Important details:
+
+- Home Assistant ConfigEntry remains the active runtime configuration.
+- Snapshot is updated only after a complete successful setup.
+- Global home tariffs are not copied into the snapshot.
+- Auto-discovered Ford physical plug state is not copied; it is rediscovered.
+- Recovery recreates the ConfigEntry from the stored source mappings/options.
+- Deliberate normal removal of a Ford Triplog vehicle remains a deletion workflow; recovery targets accidental/lost ConfigEntry scenarios.
 
 ---
 
@@ -517,7 +673,7 @@ The exact available fields depend on the vehicle source.
 
 # Storage
 
-Ford Triplog 2.5 uses SQLite as the sole productive history datastore.
+Ford Triplog 2.6 uses SQLite as the sole productive history datastore.
 
 There is no JSON/SQLite read-backend selector in current releases.
 
@@ -569,9 +725,9 @@ Maintenance actions remain scoped to the selected vehicle context.
 
 # Receipt and OCR Configuration
 
-Receipts can be uploaded for charging sessions and Journey pauses.
+Receipts can be uploaded for charging sessions, Journey pauses and vehicle expenses. Vehicle/financing/insurance/registration documents use the same local-first document model.
 
-Charging receipts can optionally be analyzed by an OCR service.
+Charging receipts and selected vehicle/financing/insurance documents can optionally use an OCR service for assisted data extraction.
 
 OCR settings include:
 
@@ -583,7 +739,7 @@ OCR settings include:
 The OCR connection is optional. All normal Triplog recording continues without
 OCR.
 
-Receipt files remain stored locally in Home Assistant.
+Receipt and vehicle document files remain stored locally in Home Assistant.
 
 ---
 
@@ -621,6 +777,10 @@ This includes:
 - Charging and pause metadata
 - Receipt metadata
 - Home tariff periods
+- Financing, insurance, road tax and vehicle expenses
+- Vehicle master data and warranties
+- Vehicle/financing document metadata
+- Vehicle ConfigEntry recovery snapshots
 - Migration state
 
 Receipt files, generated exports and downloaded charging-site databases also
@@ -660,3 +820,6 @@ For the most reliable results:
 - Add frequently used charging locations such as Home and Work.
 - Use local OSRM only when route matching is desired.
 - Keep Home Assistant and the selected vehicle-source integration up to date.
+- Use validity periods for recurring costs so TCO allocation reflects the covered period.
+- Review OCR-prefilled vehicle/financing/insurance values before saving.
+- Keep `ford_triplog.db` together with the local document directories when restoring a full Triplog backup.

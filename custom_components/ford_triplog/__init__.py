@@ -5,9 +5,9 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.6.0-dev.54
-Build: 26054
-Changes: Add SQLite-backed vehicle configuration recovery snapshots.
+Version: 2.6.0
+Build: 26055
+Changes: Final 2.6 release with vehicle TCO, route metadata and configuration recovery.
 """
 
 from __future__ import annotations

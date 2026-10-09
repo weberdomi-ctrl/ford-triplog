@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.6.0-dev.54
-Build: 26054
-Changes: Add persistent vehicle ConfigEntry recovery snapshots.
+Version: 2.6.0
+Build: 26055
+Changes: Final 2.6 vehicle cost/TCO and configuration recovery schema.
 """
 
 from __future__ import annotations

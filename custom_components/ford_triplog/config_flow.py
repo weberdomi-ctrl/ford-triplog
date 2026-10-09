@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.6.0-dev.54
-Phase: Vehicle configuration recovery
-Build: 26054
-Release: Development
+Version: 2.6.0
+Phase: 2.6 final release
+Build: 26055
+Release: Final
 
 
 """
