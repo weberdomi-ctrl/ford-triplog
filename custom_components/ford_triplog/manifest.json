@@ -17,6 +17,9 @@
   "loggers": [
     "custom_components.ford_triplog"
   ],
-  "requirements": [],
-  "version": "2.5.0"
+  "requirements": [
+    "pypdf==5.9.0",
+    "PyMuPDF==1.26.7"
+  ],
+  "version": "2.6.0"
 }

@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.5.0
-Phase: Multi-vehicle context
-Build: 25023
-Release: 2.5.0
+Version: 2.6.0
+Phase: 2.6 final release
+Build: 26055
+Release: Final
 
 
 """
@@ -66,9 +66,22 @@ from .osrm_client import (
 )
 
 from .export import FordTriplogExporter
+from .database import FordTriplogDatabase
 from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
+from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
+from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
+from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date
+from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
+from .vehicle_tax import FordTriplogVehicleTaxStorage
+from .vehicle_expense import FordTriplogVehicleExpenseStorage
+from .financing_document import (
+    FordTriplogFinancingDocumentStorage,
+    extract_financing_fields,
+    extract_pdf_text,
+    render_pdf_page_png,
+)
 
 from .vehicle_identity import (
     FordTriplogVehicleIdentity,
@@ -124,11 +137,14 @@ from .const import (
     DEFAULT_JOURNEY_MAX_GAP_HOURS,
     DOMAIN,
     NAME,
+    STORAGE_DIR,
     VERSION as FORD_TRIPLOG_VERSION,
 )
 
 
 CONF_CREATE_TEST_VEHICLE = "create_test_vehicle"
+CONF_RECOVERY_VEHICLE = "recovery_vehicle"
+CONF_RECOVERY_CONFIRM = "recovery_confirm"
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
@@ -420,11 +436,95 @@ class FordTriplogConfigFlow(
         title = f"{NAME} – {configured_name}" if configured_name else NAME
         return self.async_create_entry(title=title, data=entry_data)
 
+    async def _async_available_recovery_snapshots(self) -> list[dict[str, Any]]:
+        """Return stored vehicle configurations not owned by a ConfigEntry."""
+
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db_path = base_path / "ford_triplog.db"
+        if not db_path.exists():
+            return []
+
+        database = FordTriplogDatabase(self.hass, base_path, 1)
+        snapshots = await database.async_list_config_snapshots()
+
+        configured_vehicle_ids: set[int] = set()
+        configured_unique_ids: set[str] = set()
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            merged = {**entry.data, **entry.options}
+            raw_vehicle_id = merged.get(CONF_VEHICLE_ID)
+            try:
+                configured_vehicle_ids.add(int(raw_vehicle_id))
+            except (TypeError, ValueError):
+                if entry.unique_id in (None, DOMAIN):
+                    configured_vehicle_ids.add(1)
+            if entry.unique_id:
+                configured_unique_ids.add(str(entry.unique_id))
+
+        return [
+            snapshot
+            for snapshot in snapshots
+            if int(snapshot.get("vehicle_id") or 0)
+            not in configured_vehicle_ids
+            and (
+                not snapshot.get("entry_unique_id")
+                or str(snapshot.get("entry_unique_id"))
+                not in configured_unique_ids
+            )
+        ]
+
+    @staticmethod
+    def _recovery_snapshot_label(snapshot: dict[str, Any]) -> str:
+        """Return a concise human-readable recovery selector label."""
+
+        vehicle_id = int(snapshot.get("vehicle_id") or 0)
+        name = str(
+            snapshot.get("name")
+            or snapshot.get("model")
+            or snapshot.get("entry_title")
+            or f"Vehicle {vehicle_id}"
+        ).strip()
+        vin = str(snapshot.get("vin") or "").strip()
+        source = FordTriplogConfigFlow._source_display_name(
+            snapshot.get("source")
+        )
+        parts = [name]
+        if vin:
+            parts.append(vin)
+        if source:
+            parts.append(source)
+        parts.append(f"ID {vehicle_id}")
+        return " · ".join(parts)
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle the initial configuration."""
+        """Offer recovery when an unclaimed vehicle snapshot exists."""
+
+        if user_input is not None:
+            return await self.async_step_new_vehicle(user_input)
+
+        snapshots = await self._async_available_recovery_snapshots()
+        if snapshots:
+            self._recovery_snapshots = {
+                str(snapshot["vehicle_id"]): snapshot
+                for snapshot in snapshots
+            }
+            return self.async_show_menu(
+                step_id="user",
+                menu_options=[
+                    "recover_vehicle",
+                    "new_vehicle",
+                ],
+            )
+
+        return await self.async_step_new_vehicle()
+
+    async def async_step_new_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle normal configuration of a new vehicle."""
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -452,9 +552,150 @@ class FordTriplogConfigFlow(
                 )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="new_vehicle",
             data_schema=self._build_schema(),
             errors=errors,
+        )
+
+    async def async_step_recover_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a stored vehicle configuration for recovery."""
+
+        snapshots = await self._async_available_recovery_snapshots()
+        snapshot_map = {
+            str(snapshot["vehicle_id"]): snapshot
+            for snapshot in snapshots
+        }
+        self._recovery_snapshots = snapshot_map
+
+        if not snapshot_map:
+            return await self.async_step_new_vehicle()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = str(user_input.get(CONF_RECOVERY_VEHICLE) or "")
+            snapshot = snapshot_map.get(selected)
+            if snapshot is None:
+                errors["base"] = "recovery_snapshot_missing"
+            else:
+                self._pending_recovery_snapshot = snapshot
+                return await self.async_step_recover_vehicle_confirm()
+
+        options = [
+            selector.SelectOptionDict(
+                value=vehicle_id,
+                label=self._recovery_snapshot_label(snapshot),
+            )
+            for vehicle_id, snapshot in snapshot_map.items()
+        ]
+
+        return self.async_show_form(
+            step_id="recover_vehicle",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECOVERY_VEHICLE,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_recover_vehicle_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm and recreate a ConfigEntry from its SQLite snapshot."""
+
+        snapshot = getattr(self, "_pending_recovery_snapshot", None)
+        if not isinstance(snapshot, dict):
+            return await self.async_step_recover_vehicle()
+
+        vehicle_id = int(snapshot.get("vehicle_id") or 0)
+        if vehicle_id < 1:
+            return self.async_abort(reason="recovery_snapshot_missing")
+
+        if user_input is not None:
+            if not bool(user_input.get(CONF_RECOVERY_CONFIRM, False)):
+                self._pending_recovery_snapshot = None
+                return await self.async_step_user()
+
+            recovered_data = dict(snapshot.get("data") or {})
+            recovered_data.update(dict(snapshot.get("options") or {}))
+            recovered_data[CONF_VEHICLE_ID] = vehicle_id
+
+            recovered_name = str(
+                recovered_data.get(CONF_VEHICLE_NAME)
+                or snapshot.get("name")
+                or snapshot.get("model")
+                or ""
+            ).strip()
+            if recovered_name:
+                recovered_data[CONF_VEHICLE_NAME] = recovered_name
+
+            unique_id = str(
+                snapshot.get("entry_unique_id")
+                or (
+                    f"vehicle:{str(snapshot.get('vin')).strip().lower()}"
+                    if snapshot.get("vin")
+                    else ""
+                )
+            ).strip()
+            if unique_id:
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
+            title = str(snapshot.get("entry_title") or "").strip()
+            if not title:
+                title = (
+                    f"{NAME} – {recovered_name}"
+                    if recovered_name
+                    else NAME
+                )
+
+            _LOGGER.warning(
+                "Recovering Ford Triplog ConfigEntry from SQLite snapshot: "
+                "vehicle_id=%s vin=%s snapshot_build=%s",
+                vehicle_id,
+                snapshot.get("vin") or "unknown",
+                snapshot.get("integration_build") or "unknown",
+            )
+            self._pending_recovery_snapshot = None
+            return self.async_create_entry(
+                title=title,
+                data=recovered_data,
+            )
+
+        return self.async_show_form(
+            step_id="recover_vehicle_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECOVERY_CONFIRM,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            description_placeholders={
+                "vehicle": self._recovery_snapshot_label(snapshot),
+                "vin": str(snapshot.get("vin") or "—"),
+                "source": self._source_display_name(snapshot.get("source")),
+                "updated_at": str(snapshot.get("updated_at") or "—"),
+                "snapshot_version": str(
+                    snapshot.get("integration_version") or "—"
+                ),
+                "snapshot_build": str(
+                    snapshot.get("integration_build") or "—"
+                ),
+            },
         )
 
     async def async_step_duplicate_vehicle(
@@ -570,6 +811,18 @@ class FordTriplogConfigFlow(
         )
 
 
+def _financing_add_months_iso(start_date: str, months: int) -> str:
+    """Return ISO date after adding whole calendar months."""
+    import calendar
+    from datetime import date as _date
+    value = _date.fromisoformat(start_date)
+    total = value.year * 12 + (value.month - 1) + int(months)
+    year, month0 = divmod(total, 12)
+    month = month0 + 1
+    day = min(value.day, calendar.monthrange(year, month)[1])
+    return _date(year, month, day).isoformat()
+
+
 class FordTriplogOptionsFlow(OptionsFlow):
     """Ford Triplog options."""
 
@@ -623,6 +876,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._home_tariff_translations: dict[str, str] | None = None
         self._home_tariff_storage: FordTriplogHomeTariffStorage | None = None
         self._home_tariff_periods_cache: list[dict[str, Any]] | None = None
+        self._vehicle_financing_storage: FordTriplogVehicleFinancingStorage | None = None
+        self._selected_financing_id: int | None = None
+        self._financing_prefill: dict[str, Any] = {}
+        self._financing_document: dict[str, Any] = {}
+        self._selected_financing_document_url: str | None = None
+        self._vehicle_registration_prefill: dict[str, Any] = {}
+        self._vehicle_registration_document: dict[str, Any] = {}
+        self._selected_vehicle_document_url: str | None = None
+        self._vehicle_insurance_storage: FordTriplogVehicleInsuranceStorage | None = None
+        self._vehicle_tax_storage: FordTriplogVehicleTaxStorage | None = None
+        self._vehicle_expense_storage: FordTriplogVehicleExpenseStorage | None = None
+        self._selected_expense_id: int | None = None
+        self._expense_group: str | None = None
+        self._selected_insurance_id: int | None = None
+        self._insurance_prefill: dict[str, Any] = {}
 
     def _origin_vehicle_id(self) -> int:
         """Return the vehicle id of the ConfigEntry that opened this flow."""
@@ -771,6 +1039,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._selected_apply_receipt_id = None
         self._route_tracker_draft = {}
         self._user_place_storage = None
+        self._vehicle_financing_storage = None
+        self._vehicle_insurance_storage = None
+        self._vehicle_tax_storage = None
+        self._vehicle_expense_storage = None
 
     async def async_step_init(
         self,
@@ -788,6 +1060,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "route_management",
                 "pause_management",
                 "charge_management",
+                "costs_management",
+                "vehicle_data_management",
                 "export",
                 "user_places",
                 "user_charging_sites",
@@ -7011,6 +7285,1089 @@ class FordTriplogOptionsFlow(OptionsFlow):
             errors=errors,
         )
 
+
+    async def async_step_costs_management(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Show all vehicle cost management areas in one submenu."""
+        return self.async_show_menu(
+            step_id="costs_management",
+            menu_options=[
+                "financing_management",
+                "insurance_management",
+                "tax_management",
+                "maintenance_management",
+                "toll_management",
+                "other_cost_management",
+                "init",
+            ],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def _async_financing_storage(self) -> FordTriplogVehicleFinancingStorage:
+        """Return financing storage for the vehicle locked to this options flow."""
+        vehicle_id = self._ensure_vehicle_context_id()
+        if self._vehicle_financing_storage is None:
+            base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+            self._vehicle_financing_storage = FordTriplogVehicleFinancingStorage(
+                self.hass, base_path, vehicle_id
+            )
+            await self._vehicle_financing_storage.async_setup()
+        return self._vehicle_financing_storage
+
+    async def async_step_financing_management(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Manage vehicle financing contracts."""
+        return self.async_show_menu(
+            step_id="financing_management",
+            menu_options=[
+                "financing_add",
+                "financing_edit",
+                "financing_documents",
+                "financing_delete",
+                "costs_management",
+            ],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_financing_add(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Choose manual financing entry or document-assisted entry."""
+        self._selected_financing_id = None
+        self._financing_prefill = {}
+        self._financing_document = {}
+        return self.async_show_menu(
+            step_id="financing_add",
+            menu_options=[
+                "financing_add_leasing",
+                "financing_upload",
+                "financing_management",
+            ],
+        )
+
+    async def async_step_financing_upload(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Upload a financing document and prefill the form from PDF text or OCR."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            uploaded_file_id = user_input["financing_file"]
+            try:
+                with process_uploaded_file(self.hass, uploaded_file_id) as uploaded_path:
+                    docs = FordTriplogFinancingDocumentStorage(self.hass)
+                    document = await docs.async_import(
+                        uploaded_path, original_name=uploaded_path.name
+                    )
+                self._financing_document = {
+                    "document_filename": document["filename"],
+                    "document_original_name": document["original_filename"],
+                }
+                self._financing_prefill = {}
+                extracted_text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+
+                # Prefer the PDF text layer. This is faster and substantially
+                # more accurate than OCR for digitally generated contracts.
+                if is_pdf:
+                    extracted_text = await self.hass.async_add_executor_job(
+                        extract_pdf_text, document["content"]
+                    )
+                    if extracted_text.strip():
+                        self._financing_prefill = extract_financing_fields(extracted_text)
+                        _LOGGER.info(
+                            "Financing PDF text extracted: document=%s chars=%s fields=%s",
+                            document["original_filename"],
+                            len(extracted_text),
+                            sorted(self._financing_prefill),
+                        )
+                    else:
+                        _LOGGER.info(
+                            "Financing PDF has no usable text layer; using OCR fallback: %s",
+                            document["original_filename"],
+                        )
+
+                # OCR remains the fallback for scanned/image-only PDFs and the
+                # primary path for JPG/PNG/WEBP. For scanned PDFs render page 1
+                # to PNG first; OCR services generally recognize that more
+                # reliably than receiving the PDF container itself.
+                if not extracted_text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    try:
+                        ocr_content = document["content"]
+                        ocr_filename = str(document["original_filename"])
+                        ocr_media_type = str(document["media_type"])
+                        if is_pdf:
+                            ocr_content = await self.hass.async_add_executor_job(
+                                render_pdf_page_png, document["content"], 0
+                            )
+                            if ocr_content:
+                                ocr_filename = f"{Path(ocr_filename).stem}_page1.png"
+                                ocr_media_type = "image/png"
+                        ocr = await self._get_ocr_client().async_analyze(
+                            filename=ocr_filename,
+                            media_type=ocr_media_type,
+                            content=ocr_content,
+                        )
+                        extracted_text = str(ocr.get("raw_text") or "").strip()
+                        self._financing_prefill = extract_financing_fields(extracted_text)
+                        _LOGGER.info(
+                            "Financing OCR fallback completed: document=%s chars=%s fields=%s",
+                            document["original_filename"],
+                            len(extracted_text),
+                            sorted(self._financing_prefill),
+                        )
+                    except (
+                        FordTriplogOCRAuthenticationError,
+                        FordTriplogOCRConnectionError,
+                        FordTriplogOCRResponseError,
+                        ImportError,
+                        RuntimeError,
+                        ValueError,
+                    ):
+                        # The document is already safely stored. Recognition is
+                        # only a convenience; a failure never blocks manual entry.
+                        _LOGGER.exception(
+                            "Financing document recognition failed; continuing with manual review"
+                        )
+                return await self._async_step_leasing_form(None)
+            except ValueError as err:
+                # HA file_upload removes its temporary file when the upload
+                # context is left. A repeated submit can therefore contain the
+                # already-consumed upload id. If the document was imported on
+                # the previous submit, continue with our persistent copy instead
+                # of failing the financing flow.
+                if str(err) == "File does not exist" and self._financing_document:
+                    _LOGGER.debug(
+                        "Financing upload temp file already consumed; using stored document %s",
+                        self._financing_document.get("document_filename"),
+                    )
+                    return await self._async_step_leasing_form(None)
+                _LOGGER.exception("Unable to import financing document")
+                errors["base"] = "financing_document_import_failed"
+            except (HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to import financing document")
+                errors["base"] = "financing_document_import_failed"
+
+        return self.async_show_form(
+            step_id="financing_upload",
+            data_schema=vol.Schema({
+                vol.Required("financing_file"): selector.FileSelector(
+                    selector.FileSelectorConfig(
+                        accept=(
+                            ".pdf,.jpg,.jpeg,.png,.webp,"
+                            "application/pdf,image/jpeg,image/png,image/webp"
+                        )
+                    )
+                )
+            }),
+            errors=errors,
+            description_placeholders={
+                "ocr_status": (
+                    "OCR aktiviert – erkannte Werte werden vorgeschlagen."
+                    if bool(self._options.get(CONF_OCR_ENABLED, False))
+                    else "OCR ist deaktiviert – der Vertrag wird gespeichert, die Werte werden manuell erfasst."
+                )
+            },
+        )
+
+    async def async_step_financing_add_leasing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Add a leasing contract manually or from document suggestions."""
+        self._selected_financing_id = None
+        return await self._async_step_leasing_form(user_input)
+
+    async def async_step_financing_edit(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Select a financing contract to edit."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            self._selected_financing_id = int(user_input["financing_id"])
+            return await self._async_step_leasing_form(None)
+        options = [
+            selector.SelectOptionDict(
+                value=str(item["financing_id"]),
+                label=f"{item['financing_type'].title()} · {item['start_date']} · {item.get('provider') or '-'}",
+            )
+            for item in contracts
+        ]
+        return self.async_show_form(
+            step_id="financing_edit",
+            data_schema=vol.Schema({
+                vol.Required("financing_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options)
+                )
+            }),
+        )
+
+    async def async_step_financing_delete(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Delete a financing contract after explicit selection."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            financing_id = int(user_input["financing_id"])
+            db_path = storage.database.db_path
+            vehicle_id = storage.database.vehicle_id
+            def _delete() -> None:
+                import sqlite3
+                with sqlite3.connect(db_path) as db:
+                    db.execute(
+                        "DELETE FROM vehicle_financing WHERE vehicle_id=? AND financing_id=?",
+                        (vehicle_id, financing_id),
+                    )
+                    db.commit()
+            await self.hass.async_add_executor_job(_delete)
+            return await self.async_step_financing_management()
+        options = [
+            selector.SelectOptionDict(
+                value=str(item["financing_id"]),
+                label=f"{item['financing_type'].title()} · {item['start_date']} · {item.get('provider') or '-'}",
+            )
+            for item in contracts
+        ]
+        return self.async_show_form(
+            step_id="financing_delete",
+            data_schema=vol.Schema({
+                vol.Required("financing_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options)
+                )
+            }),
+        )
+
+    async def _async_step_leasing_form(
+        self, user_input: dict[str, Any] | None
+    ) -> ConfigFlowResult:
+        """Create or edit one leasing contract."""
+        storage = await self._async_financing_storage()
+        selected: dict[str, Any] | None = None
+        if self._selected_financing_id is not None:
+            selected = next(
+                (x for x in await storage.async_load()
+                 if int(x["financing_id"]) == self._selected_financing_id),
+                None,
+            )
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                data["financing_type"] = "leasing"
+                if self._selected_financing_id is not None:
+                    data["financing_id"] = self._selected_financing_id
+                elif self._financing_document:
+                    data.update(self._financing_document)
+                # Contract end is derived exclusively from start date + duration.
+                # Never trust a manually edited/displayed end date.
+                data["end_date"] = _financing_add_months_iso(
+                    str(data["start_date"]), int(data["duration_months"])
+                )
+                # Empty optional text fields become NULL in SQLite.
+                for key in ("provider", "contract_number", "notes"):
+                    if not str(data.get(key) or "").strip():
+                        data[key] = None
+                for key in ("purchase_price", "residual_value", "interest_rate", "annual_mileage", "excess_km_rate"):
+                    if data.get(key) in ("", None):
+                        data[key] = None
+                saved = await storage.async_save(data)
+                calculate_leasing_summary(saved)
+            except (ValueError, TypeError, KeyError):
+                errors["base"] = "invalid_financing_data"
+            else:
+                self._selected_financing_id = None
+                self._financing_prefill = {}
+                self._financing_document = {}
+                return await self.async_step_financing_management()
+
+        def d(key: str, fallback: Any = "") -> Any:
+            if selected:
+                return selected.get(key, fallback)
+            return self._financing_prefill.get(key, fallback)
+
+        # TextSelector defaults must be strings. Document parsers deliberately
+        # return numeric types for calculations, so normalize only at the UI
+        # boundary. This avoids Home Assistant's "expected str" validation.
+        def text_d(key: str, fallback: str = "") -> str:
+            value = d(key, fallback)
+            return "" if value is None else str(value)
+
+        start_date = d("start_date", None)
+        duration = int(d("duration_months", 48) or 48)
+        calculated_end = ""
+        if start_date:
+            try:
+                calculated_end = _financing_add_months_iso(str(start_date), duration)
+            except (ValueError, TypeError):
+                calculated_end = ""
+
+        schema_fields: dict[Any, Any] = {
+            vol.Optional("provider", default=text_d("provider")): selector.TextSelector(),
+            vol.Optional("contract_number", default=text_d("contract_number")): selector.TextSelector(),
+        }
+        if start_date:
+            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.DateSelector()
+        else:
+            schema_fields[vol.Required("start_date")] = selector.DateSelector()
+        schema_fields.update({
+            vol.Required("duration_months", default=duration): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+            # Displayed directly below duration for clarity. It is overwritten
+            # from start_date + duration_months on every save.
+            vol.Optional("end_date", default=calculated_end): selector.TextSelector(),
+            vol.Optional("purchase_price", default=text_d("purchase_price")): selector.TextSelector(),
+            vol.Required("first_payment", default=d("first_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Required("regular_payment", default=d("regular_payment", 0)): selector.NumberSelector(selector.NumberSelectorConfig(min=0, step=0.01, mode=selector.NumberSelectorMode.BOX)),
+            vol.Required("number_of_payments", default=d("number_of_payments", 48)): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
+            vol.Optional("residual_value", default=text_d("residual_value")): selector.TextSelector(),
+            vol.Optional("interest_rate", default=text_d("interest_rate")): selector.TextSelector(),
+            vol.Optional("annual_mileage", default=text_d("annual_mileage")): selector.TextSelector(),
+            vol.Optional("excess_km_rate", default=text_d("excess_km_rate")): selector.TextSelector(),
+            vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
+            vol.Optional("notes", default=text_d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
+        })
+
+        schema = vol.Schema(schema_fields)
+        return self.async_show_form(step_id="financing_add_leasing" if selected is None else "financing_edit_leasing", data_schema=schema, errors=errors)
+
+    async def async_step_financing_edit_leasing(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        """Handle the edit leasing form submission."""
+        return await self._async_step_leasing_form(user_input)
+
+    async def async_step_financing_documents(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select a financing contract whose additional documents are managed."""
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        if not contracts:
+            return self.async_abort(reason="no_financing_contracts")
+        if user_input is not None:
+            self._selected_financing_id = int(user_input["financing_id"])
+            return await self.async_step_financing_documents_menu()
+        options = [selector.SelectOptionDict(value=str(x["financing_id"]), label=f"{x['financing_type'].title()} · {x['start_date']} · {x.get('provider') or '-'}") for x in contracts]
+        return self.async_show_form(step_id="financing_documents", data_schema=vol.Schema({vol.Required("financing_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def async_step_financing_documents_menu(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage additional documents for the selected financing contract."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        return self.async_show_menu(
+            step_id="financing_documents_menu",
+            menu_options=["financing_document_view", "financing_document_add", "financing_document_delete", "financing_management"],
+            description_placeholders={"document_count": str(len(items))},
+        )
+
+    async def async_step_financing_document_view(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select and open the main contract or an additional financing document."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        storage = await self._async_financing_storage()
+        contracts = await storage.async_load()
+        contract = next((x for x in contracts if int(x["financing_id"]) == self._selected_financing_id), None)
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        # dev8/dev9 could lose the DB link to the already persisted main
+        # contract when the financing record was edited. Recover that orphaned
+        # file once when it can be identified unambiguously.
+        if contract and not contract.get("document_filename"):
+            if await docs.async_recover_main_document(self._selected_financing_id):
+                contracts = await storage.async_load()
+                contract = next((x for x in contracts if int(x["financing_id"]) == self._selected_financing_id), None)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        options: list[selector.SelectOptionDict] = []
+        if contract and contract.get("document_filename"):
+            options.append(selector.SelectOptionDict(
+                value="main",
+                label=f"Hauptvertrag · {contract.get('document_original_name') or contract.get('document_filename')}",
+            ))
+        options.extend(
+            selector.SelectOptionDict(
+                value=str(x["document_id"]),
+                label=f"{x['original_filename']} · {str(x['created_at'])[:10]}" + (f" · {x['note']}" if x.get("note") else ""),
+            )
+            for x in items
+        )
+        if not options:
+            return await self.async_step_financing_documents_menu()
+        if user_input is not None:
+            ref = str(user_input["document_ref"])
+            document_path = (
+                f"/api/ford_triplog/financing/{self._selected_financing_id}/documents/{ref}"
+            )
+            signed_path = async_sign_path(
+                self.hass,
+                document_path,
+                timedelta(minutes=10),
+                use_content_user=True,
+            )
+            try:
+                base_url = get_url(
+                    self.hass,
+                    allow_internal=True,
+                    allow_external=True,
+                    allow_cloud=True,
+                    allow_ip=True,
+                    prefer_external=True,
+                ).rstrip("/")
+                self._selected_financing_document_url = f"{base_url}{signed_path}"
+            except NoURLAvailableError:
+                self._selected_financing_document_url = signed_path
+            return await self.async_step_financing_document_open()
+        return self.async_show_form(
+            step_id="financing_document_view",
+            data_schema=vol.Schema({
+                vol.Required("document_ref"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+            }),
+        )
+
+    async def async_step_financing_document_open(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Open a financing document using the same external-step pattern as receipts."""
+        if not self._selected_financing_document_url:
+            return await self.async_step_financing_documents_menu()
+        return self.async_external_step(
+            step_id="financing_document_open",
+            url=self._selected_financing_document_url,
+        )
+
+    async def async_step_financing_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Attach an additional document without changing contract values."""
+        errors: dict[str, str] = {}
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["financing_file"]) as uploaded_path:
+                    docs = FordTriplogFinancingDocumentStorage(self.hass)
+                    document = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                await docs.async_attach(
+                    financing_id=self._selected_financing_id,
+                    filename=document["filename"],
+                    original_filename=document["original_filename"],
+                    media_type=document["media_type"],
+                    note=str(user_input.get("note") or "").strip() or None,
+                )
+                return await self.async_step_financing_documents_menu()
+            except (ValueError, HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to attach financing document")
+                errors["base"] = "financing_document_import_failed"
+        return self.async_show_form(step_id="financing_document_add", data_schema=vol.Schema({
+            vol.Required("financing_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+            vol.Optional("note"): selector.TextSelector(),
+        }), errors=errors)
+
+    async def async_step_financing_document_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Delete one additional financing document."""
+        if self._selected_financing_id is None:
+            return await self.async_step_financing_documents()
+        docs = FordTriplogFinancingDocumentStorage(self.hass)
+        items = await docs.async_list_for_financing(self._selected_financing_id)
+        if not items:
+            return await self.async_step_financing_documents_menu()
+        if user_input is not None:
+            await docs.async_delete_attachment(int(user_input["document_id"]), self._selected_financing_id)
+            return await self.async_step_financing_documents_menu()
+        options = [selector.SelectOptionDict(value=str(x["document_id"]), label=f"{x['original_filename']} · {x['created_at'][:10]}") for x in items]
+        return self.async_show_form(step_id="financing_document_delete", data_schema=vol.Schema({vol.Required("document_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def _async_insurance_storage(self) -> FordTriplogVehicleInsuranceStorage:
+        """Return insurance storage for the selected vehicle."""
+        if self._vehicle_insurance_storage is None:
+            self._vehicle_insurance_storage = FordTriplogVehicleInsuranceStorage(
+                self.hass,
+                Path(self.hass.config.path(".storage", STORAGE_DIR)),
+                self._ensure_vehicle_context_id(),
+            )
+            await self._vehicle_insurance_storage.async_setup()
+        return self._vehicle_insurance_storage
+
+    async def async_step_insurance_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage vehicle insurance periods and payment schedules."""
+        return self.async_show_menu(
+            step_id="insurance_management",
+            menu_options=["insurance_document_upload", "insurance_add", "insurance_edit", "insurance_delete", "costs_management"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_insurance_document_upload(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Import an insurance policy/invoice and prefill insurance values."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["insurance_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
+                    document = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+                if is_pdf:
+                    text = await self.hass.async_add_executor_job(extract_pdf_text, document["content"])
+                if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    content = document["content"]; name = document["original_filename"]; media = document["media_type"]
+                    if is_pdf:
+                        content = await self.hass.async_add_executor_job(render_pdf_page_png, document["content"], 0)
+                        name = f"{Path(name).stem}_page1.png"; media = "image/png"
+                    if content:
+                        ocr = await self._get_ocr_client().async_analyze(filename=name, media_type=media, content=content)
+                        text = str(ocr.get("raw_text") or "")
+                self._insurance_prefill = extract_insurance_fields(text, str(user_input.get("document_type") or "insurance_policy"))
+                doc_type = str(user_input.get("document_type") or "insurance_policy")
+                await docs.async_attach(self._ensure_vehicle_context_id(), document["filename"], document["original_filename"], document["media_type"], doc_type, "Versicherungsimport")
+                _LOGGER.info("Insurance document parsed: document=%s fields=%s", document["original_filename"], sorted(self._insurance_prefill))
+                self._selected_insurance_id = None
+                return await self.async_step_insurance_form()
+            except (ValueError, HomeAssistantError, OSError, FordTriplogOCRAuthenticationError, FordTriplogOCRConnectionError, FordTriplogOCRResponseError):
+                _LOGGER.exception("Unable to import insurance document")
+                errors["base"] = "insurance_document_import_failed"
+        types = [
+            selector.SelectOptionDict(value="insurance_policy", label="Police"),
+            selector.SelectOptionDict(value="insurance_invoice", label="Prämienrechnung"),
+            selector.SelectOptionDict(value="insurance_other", label="Sonstiger Versicherungsbeleg"),
+        ]
+        return self.async_show_form(step_id="insurance_document_upload", data_schema=vol.Schema({
+            vol.Required("insurance_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+            vol.Required("document_type", default="insurance_policy"): selector.SelectSelector(selector.SelectSelectorConfig(options=types)),
+        }), errors=errors)
+
+    async def async_step_insurance_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add an insurance period."""
+        self._selected_insurance_id = None
+        return await self.async_step_insurance_form(user_input)
+
+    async def async_step_insurance_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select an insurance period to edit."""
+        store = await self._async_insurance_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_insurance_entries")
+        if user_input is not None:
+            self._selected_insurance_id = int(user_input["insurance_id"])
+            return await self.async_step_insurance_form()
+        options = [selector.SelectOptionDict(
+            value=str(x["insurance_id"]),
+            label=f"{x.get('provider') or '-'} · {x['valid_from']} – {x['valid_to']} · {x['period_premium']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="insurance_edit", data_schema=vol.Schema({
+            vol.Required("insurance_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_insurance_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Delete an insurance period."""
+        store = await self._async_insurance_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_insurance_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["insurance_id"]))
+            return await self.async_step_insurance_management()
+        options = [selector.SelectOptionDict(
+            value=str(x["insurance_id"]),
+            label=f"{x.get('provider') or '-'} · {x['valid_from']} – {x['valid_to']}",
+        ) for x in items]
+        return self.async_show_form(step_id="insurance_delete", data_schema=vol.Schema({
+            vol.Required("insurance_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_insurance_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Create or edit one insurance period."""
+        store = await self._async_insurance_storage()
+        existing: dict[str, Any] = {}
+        if self._selected_insurance_id is not None:
+            existing = next((x for x in await store.async_load() if int(x["insurance_id"]) == self._selected_insurance_id), {})
+        if self._selected_insurance_id is None and self._insurance_prefill:
+            existing = dict(self._insurance_prefill)
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                if self._selected_insurance_id is not None:
+                    data["insurance_id"] = self._selected_insurance_id
+                await store.async_save(data)
+                self._selected_insurance_id = None
+                self._insurance_prefill = {}
+                return await self.async_step_insurance_management()
+            except (ValueError, TypeError):
+                errors["base"] = "insurance_invalid"
+        payment_options = [
+            selector.SelectOptionDict(value="monthly", label="Monatlich"),
+            selector.SelectOptionDict(value="quarterly", label="Vierteljährlich"),
+            selector.SelectOptionDict(value="semiannual", label="Halbjährlich"),
+            selector.SelectOptionDict(value="annual", label="Jährlich"),
+            selector.SelectOptionDict(value="single", label="Einmalig"),
+            selector.SelectOptionDict(value="individual", label="Individuell"),
+        ]
+        def txt(key: str, default: str = "") -> str:
+            value = existing.get(key)
+            return default if value is None else str(value)
+        schema = vol.Schema({
+            vol.Optional("provider", default=txt("provider")): selector.TextSelector(),
+            vol.Optional("policy_number", default=txt("policy_number")): selector.TextSelector(),
+            vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
+            vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
+            vol.Required("period_premium", default=txt("period_premium", "0")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("payment_frequency", default=txt("payment_frequency", "annual")): selector.SelectSelector(selector.SelectSelectorConfig(options=payment_options)),
+            vol.Optional("payment_amount", default=txt("payment_amount")): selector.TextSelector(),
+            vol.Optional("first_payment_date", default=txt("first_payment_date")): selector.TextSelector(),
+            vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="insurance_form", data_schema=schema, errors=errors)
+
+    async def _async_tax_storage(self) -> FordTriplogVehicleTaxStorage:
+        """Return road-tax storage for the selected vehicle."""
+        if self._vehicle_tax_storage is None:
+            self._vehicle_tax_storage = FordTriplogVehicleTaxStorage(
+                self.hass,
+                Path(self.hass.config.path(".storage", STORAGE_DIR)),
+                self._ensure_vehicle_context_id(),
+            )
+            await self._vehicle_tax_storage.async_setup()
+        return self._vehicle_tax_storage
+
+    async def async_step_tax_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage annual road-tax TCO bases."""
+        return self.async_show_menu(
+            step_id="tax_management",
+            menu_options=["tax_add", "tax_edit", "tax_delete", "costs_management"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_tax_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        self._selected_tax_id = None
+        return await self.async_step_tax_form(user_input)
+
+    async def async_step_tax_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_tax_entries")
+        if user_input is not None:
+            self._selected_tax_id = int(user_input["tax_id"])
+            return await self.async_step_tax_form()
+        options = [selector.SelectOptionDict(
+            value=str(x["tax_id"]),
+            label=f"{x['valid_from']} – {x['valid_to']} · {x['annual_tax']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="tax_edit", data_schema=vol.Schema({
+            vol.Required("tax_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_tax_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        items = await store.async_load()
+        if not items:
+            return self.async_abort(reason="no_tax_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["tax_id"]))
+            return await self.async_step_tax_management()
+        options = [selector.SelectOptionDict(
+            value=str(x["tax_id"]),
+            label=f"{x['valid_from']} – {x['valid_to']} · {x['annual_tax']:.2f} {x['currency']}",
+        ) for x in items]
+        return self.async_show_form(step_id="tax_delete", data_schema=vol.Schema({
+            vol.Required("tax_id"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_tax_form(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        store = await self._async_tax_storage()
+        existing: dict[str, Any] = {}
+        tax_id = getattr(self, "_selected_tax_id", None)
+        if tax_id is not None:
+            existing = next((x for x in await store.async_load() if int(x["tax_id"]) == tax_id), {})
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                data = dict(user_input)
+                if tax_id is not None:
+                    data["tax_id"] = tax_id
+                await store.async_save(data)
+                self._selected_tax_id = None
+                return await self.async_step_tax_management()
+            except (ValueError, TypeError):
+                errors["base"] = "tax_invalid"
+        def txt(key: str, default: str = "") -> str:
+            value = existing.get(key)
+            return default if value is None else str(value)
+        schema = vol.Schema({
+            vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
+            vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
+            vol.Required("annual_tax", default=txt("annual_tax", "0")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Optional("authority", default=txt("authority")): selector.TextSelector(),
+            vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="tax_form", data_schema=schema, errors=errors)
+
+
+    async def _async_expense_storage(self) -> FordTriplogVehicleExpenseStorage:
+        if self._vehicle_expense_storage is None:
+            vehicle_id = self._ensure_vehicle_context_id()
+            self._vehicle_expense_storage = FordTriplogVehicleExpenseStorage(self.hass, Path(self.hass.config.path(".storage", "ford_triplog")), vehicle_id)
+            await self._vehicle_expense_storage.async_setup()
+        return self._vehicle_expense_storage
+
+    async def async_step_maintenance_management(self, user_input=None):
+        self._expense_group="maintenance"; return await self._async_expense_menu("maintenance_management")
+    async def async_step_toll_management(self, user_input=None):
+        self._expense_group="toll"; return await self._async_expense_menu("toll_management")
+    async def async_step_other_cost_management(self, user_input=None):
+        self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
+    async def _async_expense_menu(self, step_id):
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+    async def async_step_expense_add(self,user_input=None):
+        self._selected_expense_id=None
+        # A pending receipt belongs only to the current expense form session.
+        self._pending_expense_document = None
+        return await self.async_step_expense_form(user_input)
+    async def async_step_expense_edit(self,user_input=None):
+        store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
+        if not items:return self.async_abort(reason="no_expense_entries")
+        if user_input is not None:
+            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; return await self.async_step_expense_form()
+        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+    async def async_step_expense_delete(self,user_input=None):
+        store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
+        if not items:return self.async_abort(reason="no_expense_entries")
+        if user_input is not None:
+            await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+    async def _async_expense_receipt_items(self):
+        store=await self._async_expense_storage()
+        expenses=await store.async_load(self._expense_group)
+        expense_ids={int(x["expense_id"]):x for x in expenses}
+        docs=FordTriplogVehicleDocumentStorage(self.hass)
+        vid=self._ensure_vehicle_context_id()
+        items=await docs.async_list(vid)
+        result=[]
+        for doc in items:
+            dtype=str(doc.get("document_type") or "")
+            if not dtype.startswith("expense_"):
+                continue
+            try: eid=int(dtype.split("_",1)[1])
+            except (ValueError,IndexError): continue
+            expense=expense_ids.get(eid)
+            if expense is not None: result.append((doc,expense))
+        return result
+
+    async def async_step_expense_receipt_view(self,user_input=None):
+        pairs=await self._async_expense_receipt_items()
+        if not pairs: return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        if user_input is not None:
+            vid=self._ensure_vehicle_context_id(); ref=str(user_input["document_id"])
+            path=f"/api/ford_triplog/vehicle/{vid}/documents/{ref}"; signed=async_sign_path(self.hass,path,timedelta(minutes=10),use_content_user=True)
+            try:self._selected_vehicle_document_url=f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
+            except NoURLAvailableError:self._selected_vehicle_document_url=signed
+            return await self.async_step_vehicle_document_open()
+        opts=[selector.SelectOptionDict(value=str(doc["document_id"]),label=f"{exp.get('expense_date') or exp.get('expense_year') or exp.get('valid_from') or '—'} · {exp.get('category')} · {doc.get('original_filename')}") for doc,exp in pairs]
+        return self.async_show_form(step_id="expense_receipt_view",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+
+    async def async_step_expense_receipt_delete(self,user_input=None):
+        pairs=await self._async_expense_receipt_items(); docs=FordTriplogVehicleDocumentStorage(self.hass); vid=self._ensure_vehicle_context_id()
+        if not pairs: return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        if user_input is not None:
+            await docs.async_delete(vid,int(user_input["document_id"]))
+            return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        opts=[selector.SelectOptionDict(value=str(doc["document_id"]),label=f"{exp.get('expense_date') or exp.get('expense_year') or exp.get('valid_from') or '—'} · {exp.get('category')} · {doc.get('original_filename')}") for doc,exp in pairs]
+        return self.async_show_form(step_id="expense_receipt_delete",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+
+    async def async_step_expense_form(self, user_input=None):
+        """Create or edit a variable vehicle expense without losing entered values."""
+        store = await self._async_expense_storage()
+        existing = {}
+        eid = self._selected_expense_id
+        if eid is not None:
+            existing = next((x for x in await store.async_load(self._expense_group) if int(x["expense_id"]) == eid), {})
+
+        errors = {}
+        form_values = dict(existing)
+        if user_input is not None:
+            # Keep the submitted values when validation fails. File upload objects are
+            # intentionally not reused as defaults because HA FileSelector cannot do so.
+            form_values.update({k: v for k, v in user_input.items() if k != "receipt_file"})
+            try:
+                # Persist a newly selected receipt *before* validating the other
+                # fields. Home Assistant's upload token is temporary and cannot
+                # safely be submitted a second time after a validation error.
+                # The persistent copy stays pending until the expense itself is
+                # successfully saved, then it is attached to that expense.
+                upload_id = user_input.get("receipt_file")
+                if upload_id and not getattr(self, "_pending_expense_document", None):
+                    with process_uploaded_file(self.hass, upload_id) as uploaded_path:
+                        docs = FordTriplogVehicleDocumentStorage(self.hass)
+                        self._pending_expense_document = await docs.async_import(
+                            uploaded_path, original_name=uploaded_path.name
+                        )
+
+                data = dict(user_input)
+                data.pop("receipt_file", None)
+                data["expense_group"] = self._expense_group
+                if eid is not None:
+                    data["expense_id"] = eid
+                saved = await store.async_save(data)
+                pending_doc = getattr(self, "_pending_expense_document", None)
+                if pending_doc:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
+                    await docs.async_attach(
+                        self._ensure_vehicle_context_id(), pending_doc["filename"], pending_doc["original_filename"],
+                        pending_doc["media_type"], f"expense_{saved['expense_id']}",
+                        str(user_input.get("notes") or "").strip() or None,
+                    )
+                    self._pending_expense_document = None
+                self._selected_expense_id = None
+                return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+            except ValueError as err:
+                # Storage returns stable field-oriented validation codes in the exception.
+                code = str(err)
+                field_map = {
+                    "category_required": "category", "invalid_category": "category",
+                    "amount_required": "amount", "invalid_amount": "amount", "negative_amount": "amount",
+                    "invalid_expense_date": "expense_date", "invalid_year": "expense_year",
+                    "missing_date_or_year": "expense_date", "missing_toll_date_or_year": "expense_year",
+                    "invalid_valid_from": "valid_from", "invalid_valid_to": "valid_to",
+                    "both_validity_dates_required": "valid_to", "invalid_validity_range": "valid_to",
+                    "invalid_odometer": "odometer_km",
+                }
+                errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
+            except (TypeError, HomeAssistantError, OSError):
+                errors["base"] = "expense_invalid"
+
+        def v(k, d=""):
+            value = form_values.get(k)
+            return d if value is None else str(value)
+
+        lang = (self.hass.config.language or "en").lower().split("-")[0]
+        labels = {
+          "de": {
+            "maintenance":[("service","Service"),("repair","Reparatur"),("tires","Reifen / Räder"),("wear","Verschleissteile"),("care","Fahrzeugpflege"),("accessories","Zubehör"),("other","Sonstiges")],
+            "toll":[("vignette","Vignette"),("road_toll","Strassenmaut"),("tunnel_pass","Tunnel / Pass"),("bridge","Brücke"),("ferry","Fähre"),("other","Sonstiges")],
+            "other":[("registration_document","Fahrzeugausweis / Zulassung"),("plates","Kontrollschilder"),("mutation","Mutation"),("admin_fee","Administrative Gebühr"),("roadside_assistance","Pannenhilfe"),("other","Sonstiges")]},
+          "en": {
+            "maintenance":[("service","Service"),("repair","Repair"),("tires","Tyres / wheels"),("wear","Wear parts"),("care","Vehicle care"),("accessories","Accessories"),("other","Other")],
+            "toll":[("vignette","Vignette"),("road_toll","Road toll"),("tunnel_pass","Tunnel / mountain pass"),("bridge","Bridge"),("ferry","Ferry"),("other","Other")],
+            "other":[("registration_document","Registration document"),("plates","Licence plates"),("mutation","Registration change"),("admin_fee","Administrative fee"),("roadside_assistance","Roadside assistance"),("other","Other")]},
+          "pl": {
+            "maintenance":[("service","Serwis"),("repair","Naprawa"),("tires","Opony / koła"),("wear","Części eksploatacyjne"),("care","Pielęgnacja pojazdu"),("accessories","Akcesoria"),("other","Inne")],
+            "toll":[("vignette","Winieta"),("road_toll","Opłata drogowa"),("tunnel_pass","Tunel / przełęcz"),("bridge","Most"),("ferry","Prom"),("other","Inne")],
+            "other":[("registration_document","Dowód rejestracyjny / rejestracja"),("plates","Tablice rejestracyjne"),("mutation","Zmiana rejestracyjna"),("admin_fee","Opłata administracyjna"),("roadside_assistance","Pomoc drogowa"),("other","Inne")]}}
+        opts = [selector.SelectOptionDict(value=a, label=b) for a,b in labels.get(lang, labels["en"])[self._expense_group]]
+        category_default = v("category")
+        if category_default not in {x[0] for x in labels["en"][self._expense_group]}:
+            category_default = opts[0]["value"]
+        schema = {
+            vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
+            vol.Optional("description", default=v("description")): selector.TextSelector(),
+            vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
+            vol.Required("currency", default=v("currency", "CHF")): selector.TextSelector(),
+            vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
+            vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
+            vol.Optional("provider", default=v("provider")): selector.TextSelector(),
+            vol.Optional("country", default=v("country")): selector.TextSelector(),
+            vol.Optional("odometer_km", default=v("odometer_km")): selector.TextSelector(),
+            vol.Optional("valid_from", default=v("valid_from")): selector.TextSelector(),
+            vol.Optional("valid_to", default=v("valid_to")): selector.TextSelector(),
+            vol.Optional("notes", default=v("notes")): selector.TextSelector(),
+            vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+        }
+        return self.async_show_form(step_id="expense_form", data_schema=vol.Schema(schema), errors=errors)
+
+    async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage vehicle master data and vehicle documents."""
+        return self.async_show_menu(step_id="vehicle_data_management", menu_options=["vehicle_registration_upload", "vehicle_registration_manual", "vehicle_warranty_management", "vehicle_document_view", "vehicle_document_add", "vehicle_document_delete", "init"], description_placeholders={"vehicle_name": self._context_vehicle_name()})
+
+    async def async_step_vehicle_warranty_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Manage warranty periods and warranty documents."""
+        return self.async_show_menu(
+            step_id="vehicle_warranty_management",
+            menu_options=["vehicle_warranty_edit", "vehicle_warranty_document_view", "vehicle_warranty_document_add", "vehicle_data_management"],
+            description_placeholders={"vehicle_name": self._context_vehicle_name()},
+        )
+
+    async def async_step_vehicle_warranty_edit(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Edit vehicle, EV component and HV battery warranty limits."""
+        vid = self._ensure_vehicle_context_id()
+        docs = FordTriplogVehicleDocumentStorage(self.hass)
+        details = await docs.async_get_details(vid) or {}
+        first_registration = str(details.get("first_registration") or "").strip()
+        store = FordTriplogVehicleWarrantyStorage(self.hass)
+        current = await store.async_get(vid)
+        if user_input is not None:
+            await store.async_save_all(vid, dict(user_input))
+            return await self.async_step_vehicle_warranty_management()
+        def val(kind: str, field: str) -> str:
+            v = (current.get(kind) or {}).get(field)
+            return "" if v is None else str(v)
+        ends = []
+        labels = (("vehicle", "Fahrzeug"), ("ev_components", "EV-Komponenten"), ("hv_battery", "HV-Batterie"))
+        for kind, label in labels:
+            end = warranty_end_date(first_registration, (current.get(kind) or {}).get("duration_years"))
+            if end:
+                ends.append(f"{label}: {end}")
+        end_text = " · ".join(ends) if ends else "wird aus Erstzulassung + Jahren berechnet"
+        schema = vol.Schema({
+            vol.Optional("vehicle_years", default=val("vehicle", "duration_years")): selector.TextSelector(),
+            vol.Optional("vehicle_km", default=val("vehicle", "mileage_limit_km")): selector.TextSelector(),
+            vol.Optional("ev_components_years", default=val("ev_components", "duration_years")): selector.TextSelector(),
+            vol.Optional("ev_components_km", default=val("ev_components", "mileage_limit_km")): selector.TextSelector(),
+            vol.Optional("hv_battery_years", default=val("hv_battery", "duration_years")): selector.TextSelector(),
+            vol.Optional("hv_battery_km", default=val("hv_battery", "mileage_limit_km")): selector.TextSelector(),
+        })
+        return self.async_show_form(step_id="vehicle_warranty_edit", data_schema=schema, description_placeholders={"first_registration": first_registration or "nicht hinterlegt", "end_dates": end_text})
+
+    async def async_step_vehicle_warranty_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Add a warranty document to the shared vehicle document store."""
+        errors = {}; vid = self._ensure_vehicle_context_id()
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["vehicle_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass); doc = await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                await docs.async_attach(vid, doc["filename"], doc["original_filename"], doc["media_type"], str(user_input["document_type"]), str(user_input.get("note") or "").strip() or None)
+                return await self.async_step_vehicle_warranty_management()
+            except (ValueError, HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to attach warranty document"); errors["base"] = "vehicle_document_import_failed"
+        types = [selector.SelectOptionDict(value="warranty_proof", label="Garantienachweis"), selector.SelectOptionDict(value="warranty_terms", label="Garantiebedingungen")]
+        return self.async_show_form(step_id="vehicle_warranty_document_add", data_schema=vol.Schema({vol.Required("vehicle_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")), vol.Required("document_type", default="warranty_proof"): selector.SelectSelector(selector.SelectSelectorConfig(options=types)), vol.Optional("note"): selector.TextSelector()}), errors=errors)
+
+    async def async_step_vehicle_warranty_document_view(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """View warranty documents already stored for the vehicle."""
+        docs = FordTriplogVehicleDocumentStorage(self.hass); vid = self._ensure_vehicle_context_id()
+        items = [x for x in await docs.async_list(vid) if x.get("document_type") in ("warranty_proof", "warranty_terms")]
+        if not items:
+            return await self.async_step_vehicle_warranty_management()
+        if user_input is not None:
+            path = f"/api/ford_triplog/vehicle/{vid}/documents/{user_input['document_ref']}"; signed = async_sign_path(self.hass, path, timedelta(minutes=10), use_content_user=True)
+            try: url = f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
+            except NoURLAvailableError: url = signed
+            self._selected_vehicle_document_url = url
+            return await self.async_step_vehicle_document_open()
+        opts = [selector.SelectOptionDict(value=str(x["document_id"]), label=f"{('Garantienachweis' if x['document_type']=='warranty_proof' else 'Garantiebedingungen')} · {x['original_filename']}") for x in items]
+        return self.async_show_form(step_id="vehicle_warranty_document_view", data_schema=vol.Schema({vol.Required("document_ref"): selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+
+    async def async_step_vehicle_registration_upload(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Upload vehicle registration and prefill master data."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["vehicle_file"]) as uploaded_path:
+                    docs=FordTriplogVehicleDocumentStorage(self.hass)
+                    document=await docs.async_import(uploaded_path, original_name=uploaded_path.name)
+                self._vehicle_registration_document={"registration_document_filename":document["filename"],"registration_document_original_name":document["original_filename"]}
+                text=""; is_pdf=str(document["media_type"]).lower()=="application/pdf"
+                if is_pdf:
+                    text=await self.hass.async_add_executor_job(extract_pdf_text,document["content"])
+                if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED,False)):
+                    content=document["content"]; name=document["original_filename"]; media=document["media_type"]
+                    if is_pdf:
+                        content=await self.hass.async_add_executor_job(render_vehicle_registration_png,document["content"],0); name=f"{Path(name).stem}_page1.png"; media="image/png"
+                    if content:
+                        ocr=await self._get_ocr_client().async_analyze(filename=name,media_type=media,content=content); text=str(ocr.get("raw_text") or "")
+                    _LOGGER.info("Vehicle registration OCR completed: document=%s chars=%s", document["original_filename"], len(text.strip()))
+                runtime_data = self._get_context_runtime_data()
+                vehicle_data = runtime_data.get("vehicle") or {}
+                vehicle_config = self._get_context_config()
+                expected_vin = str(vehicle_data.get("vin") or vehicle_config.get("vin") or vehicle_config.get("vehicle_vin") or "").strip() or None
+                self._vehicle_registration_prefill=extract_vehicle_registration_fields(text, expected_vin=expected_vin)
+                _LOGGER.info("Vehicle registration fields recognized: document=%s fields=%s", document["original_filename"], sorted(self._vehicle_registration_prefill))
+                existing_details = await docs.async_get_details(self._ensure_vehicle_context_id()) or {}
+                tracked_fields = ("vin", "registration_number", "make", "model", "first_registration", "type_approval", "power_kw", "empty_weight_kg", "gross_weight_kg")
+                field_sources = {
+                    field: ("document" if field in self._vehicle_registration_prefill else "existing_db" if existing_details.get(field) not in (None, "") else "empty")
+                    for field in tracked_fields
+                }
+                _LOGGER.info("Vehicle registration field sources: document=%s sources=%s", document["original_filename"], field_sources)
+                return await self.async_step_vehicle_registration_manual()
+            except ValueError as err:
+                # Home Assistant removes the temporary upload file after the
+                # upload context has been consumed. The frontend can submit the
+                # same upload id again while moving to the review form. If the
+                # registration document was already persisted, continue with
+                # that copy instead of failing the flow. This mirrors the
+                # proven financing-document upload behaviour.
+                if str(err) == "File does not exist" and self._vehicle_registration_document:
+                    _LOGGER.debug(
+                        "Vehicle registration upload temp file already consumed; using stored document %s",
+                        self._vehicle_registration_document.get("registration_document_filename"),
+                    )
+                    return await self.async_step_vehicle_registration_manual()
+                _LOGGER.exception("Unable to import vehicle registration document")
+                errors["base"] = "vehicle_document_import_failed"
+            except (HomeAssistantError, OSError):
+                _LOGGER.exception("Unable to import vehicle registration document")
+                errors["base"] = "vehicle_document_import_failed"
+            except (
+                FordTriplogOCRAuthenticationError,
+                FordTriplogOCRConnectionError,
+                FordTriplogOCRResponseError,
+                ImportError,
+                RuntimeError,
+            ):
+                # The document has already been imported persistently. OCR is
+                # only a convenience, so recognition errors must not discard
+                # the vehicle document or block manual data entry.
+                _LOGGER.exception(
+                    "Vehicle registration recognition failed; continuing with manual review"
+                )
+                return await self.async_step_vehicle_registration_manual()
+        return self.async_show_form(step_id="vehicle_registration_upload",data_schema=vol.Schema({vol.Required("vehicle_file"):selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"))}),errors=errors)
+
+    async def async_step_vehicle_registration_manual(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Review/edit vehicle master data."""
+        docs=FordTriplogVehicleDocumentStorage(self.hass); vehicle_id=self._ensure_vehicle_context_id(); existing=await docs.async_get_details(vehicle_id) or {}
+        pre={**existing,**self._vehicle_registration_prefill}
+        if user_input is not None:
+            data=dict(user_input); data.update(self._vehicle_registration_document or {k:existing.get(k) for k in ("registration_document_filename","registration_document_original_name")})
+            await docs.async_save_details(vehicle_id,data); self._vehicle_registration_prefill={}; self._vehicle_registration_document={}
+            return await self.async_step_vehicle_data_management()
+        def d(k): return "" if pre.get(k) is None else str(pre.get(k))
+        schema=vol.Schema({vol.Optional("vin",default=d("vin")):selector.TextSelector(),vol.Optional("registration_number",default=d("registration_number")):selector.TextSelector(),vol.Optional("make",default=d("make")):selector.TextSelector(),vol.Optional("model",default=d("model")):selector.TextSelector(),vol.Optional("first_registration",default=d("first_registration")):selector.TextSelector(),vol.Optional("type_approval",default=d("type_approval")):selector.TextSelector(),vol.Optional("power_kw",default=d("power_kw")):selector.TextSelector(),vol.Optional("empty_weight_kg",default=d("empty_weight_kg")):selector.TextSelector(),vol.Optional("gross_weight_kg",default=d("gross_weight_kg")):selector.TextSelector()})
+        return self.async_show_form(step_id="vehicle_registration_manual",data_schema=schema)
+
+    async def async_step_vehicle_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        errors={}; vehicle_id=self._ensure_vehicle_context_id()
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass,user_input["vehicle_file"]) as uploaded_path:
+                    docs=FordTriplogVehicleDocumentStorage(self.hass); doc=await docs.async_import(uploaded_path,original_name=uploaded_path.name)
+                await docs.async_attach(vehicle_id,doc["filename"],doc["original_filename"],doc["media_type"],str(user_input["document_type"]),str(user_input.get("note") or "").strip() or None)
+                return await self.async_step_vehicle_data_management()
+            except (ValueError,HomeAssistantError,OSError): errors["base"]="vehicle_document_import_failed"
+        types=[selector.SelectOptionDict(value="ivi",label="IVI"),selector.SelectOptionDict(value="coc",label="CoC"),selector.SelectOptionDict(value="warranty_proof",label="Garantienachweis"),selector.SelectOptionDict(value="warranty_terms",label="Garantiebedingungen"),selector.SelectOptionDict(value="service",label="Service-/Wartungsdokument"),selector.SelectOptionDict(value="other",label="Sonstiges")]
+        return self.async_show_form(step_id="vehicle_document_add",data_schema=vol.Schema({vol.Required("vehicle_file"):selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),vol.Required("document_type",default="other"):selector.SelectSelector(selector.SelectSelectorConfig(options=types)),vol.Optional("note"):selector.TextSelector()}),errors=errors)
+
+    async def async_step_vehicle_document_view(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        docs=FordTriplogVehicleDocumentStorage(self.hass); vid=self._ensure_vehicle_context_id(); details=await docs.async_get_details(vid) or {}; items=await docs.async_list(vid); options=[]
+        if details.get("registration_document_filename"): options.append(selector.SelectOptionDict(value="registration",label=f"Fahrzeugausweis / Fahrzeugschein · {details.get('registration_document_original_name') or details.get('registration_document_filename')}"))
+        options.extend(selector.SelectOptionDict(value=str(x["document_id"]),label=f"{x['document_type']} · {x['original_filename']}"+(f" · {x['note']}" if x.get('note') else "")) for x in items)
+        if not options:return await self.async_step_vehicle_data_management()
+        if user_input is not None:
+            path=f"/api/ford_triplog/vehicle/{vid}/documents/{user_input['document_ref']}"; signed=async_sign_path(self.hass,path,timedelta(minutes=10),use_content_user=True)
+            try:self._selected_vehicle_document_url=f"{get_url(self.hass,allow_internal=True,allow_external=True,allow_cloud=True,allow_ip=True,prefer_external=True).rstrip('/')}{signed}"
+            except NoURLAvailableError:self._selected_vehicle_document_url=signed
+            return await self.async_step_vehicle_document_open()
+        return self.async_show_form(step_id="vehicle_document_view",data_schema=vol.Schema({vol.Required("document_ref"):selector.SelectSelector(selector.SelectSelectorConfig(options=options))}))
+
+    async def async_step_vehicle_document_open(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Open a vehicle document using a registered external flow step."""
+        if not self._selected_vehicle_document_url:
+            return await self.async_step_vehicle_data_management()
+        return self.async_external_step(
+            step_id="vehicle_document_open",
+            url=self._selected_vehicle_document_url,
+        )
+
+    async def async_step_vehicle_document_delete(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        docs=FordTriplogVehicleDocumentStorage(self.hass); vid=self._ensure_vehicle_context_id(); items=await docs.async_list(vid)
+        if not items:return await self.async_step_vehicle_data_management()
+        if user_input is not None:
+            await docs.async_delete(vid,int(user_input["document_id"])); return await self.async_step_vehicle_data_management()
+        opts=[selector.SelectOptionDict(value=str(x["document_id"]),label=f"{x['original_filename']} · {x['document_type']}") for x in items]
+        return self.async_show_form(step_id="vehicle_document_delete",data_schema=vol.Schema({vol.Required("document_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
 
     async def async_step_general_settings(
         self,

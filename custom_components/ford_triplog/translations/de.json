@@ -15,6 +15,10 @@
         "data_description": {
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
           "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
+        },
+        "menu_options": {
+          "recover_vehicle": "Fahrzeugkonfiguration wiederherstellen",
+          "new_vehicle": "Neues Fahrzeug konfigurieren"
         }
       },
       "duplicate_vehicle": {
@@ -26,14 +30,46 @@
         "data_description": {
           "create_test_vehicle": "Erzeugt für diese Quelle eine neue vehicle_id, obwohl die VIN bereits vorhanden ist. Nur für Tests verwenden."
         }
+      },
+      "new_vehicle": {
+        "title": "Neues Fahrzeug konfigurieren",
+        "description": "Ford Triplog für ein neues Fahrzeug konfigurieren.",
+        "data": {
+          "ignition": "Zündung",
+          "odometer": "Kilometerstand",
+          "tracker": "Fahrzeug-Tracker",
+          "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar)",
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+        },
+        "data_description": {
+          "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
+          "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
+        }
+      },
+      "recover_vehicle": {
+        "title": "Fahrzeugkonfiguration wiederherstellen",
+        "description": "In der lokalen SQLite-Datenbank ist ein Ford-Triplog-Fahrzeug ohne Home-Assistant-Konfiguration vorhanden. Wähle das Fahrzeug aus, dessen gespeicherte Konfiguration wiederhergestellt werden soll.",
+        "data": {
+          "recovery_vehicle": "Gespeichertes Fahrzeug"
+        }
+      },
+      "recover_vehicle_confirm": {
+        "title": "Wiederherstellung bestätigen",
+        "description": "**{vehicle}** aus dem lokalen Konfigurations-Snapshot wiederherstellen?\n\nVIN: **{vin}**  \nQuelle: **{source}**  \nSnapshot: **{snapshot_version} / Build {snapshot_build}**  \nZuletzt aktualisiert: **{updated_at}**\n\nDie gespeicherten Home-Assistant-Quellentitäten und Fahrzeugeinstellungen werden wiederhergestellt. Sie können danach in den Ford-Triplog-Einstellungen geändert werden.",
+        "data": {
+          "recovery_confirm": "Konfiguration wiederherstellen"
+        }
       }
     },
     "error": {
-      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
+      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
+      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar."
     },
     "abort": {
       "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",
-      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten."
+      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten.",
+      "recovery_snapshot_missing": "Der gespeicherte Konfigurations-Snapshot ist nicht mehr verfügbar."
     }
   },
   "options": {
@@ -51,7 +87,15 @@
           "user_charging_sites": "Eigene Ladeorte",
           "charging_site_database": "OpenStreetMap-Ladeorte",
           "export": "Daten exportieren",
-          "user_places": "Benutzerdefinierte Orte"
+          "user_places": "Benutzerdefinierte Orte",
+          "financing_management": "Fahrzeugfinanzierung",
+          "vehicle_data_management": "Fahrzeugdaten & Dokumente",
+          "insurance_management": "Versicherung",
+          "tax_management": "Strassensteuer",
+          "maintenance_management": "Wartung & Reparaturen",
+          "toll_management": "Maut & Vignetten",
+          "other_cost_management": "Sonstige Kosten",
+          "costs_management": "Kosten"
         },
         "menu_option_descriptions": {
           "vehicle_context": "Fahrzeug für fahrzeugspezifische Einstellungen, Wartung und Exporte auswählen.",
@@ -63,7 +107,15 @@
           "user_charging_sites": "Eigene Ladeorte anzeigen und verwalten.",
           "charging_site_database": "Ladeort-Datenbank herunterladen oder importieren.",
           "export": "Gespeicherte Ford-Triplog-Daten als CSV-Datei exportieren.",
-          "user_places": "Orte für automatische Pausen-Zuordnung verwalten."
+          "user_places": "Orte für automatische Pausen-Zuordnung verwalten.",
+          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
+          "vehicle_data_management": "Fahrzeugausweis/Fahrzeugschein und weitere Fahrzeugdokumente verwalten.",
+          "insurance_management": "Fahrzeugversicherungen und Jahresprämien für die TCO-Berechnung verwalten.",
+          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten.",
+          "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
+          "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
+          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten.",
+          "costs_management": "Finanzierung, Versicherung, Steuern und weitere Fahrzeugkosten verwalten."
         }
       },
       "settings": {
@@ -998,6 +1050,429 @@
           "home_tariff_price_per_kwh": "Energiepreis pro kWh für diesen Zeitraum.",
           "home_tariff_action": "Speichern, löschen oder ohne Änderung zurückkehren."
         }
+      },
+      "financing_management": {
+        "title": "Fahrzeugfinanzierung",
+        "description": "Fahrzeug: {vehicle_name}. Finanzierungen verwalten. Reale Zahlungen und TCO werden getrennt berechnet.",
+        "menu_options": {
+          "financing_edit": "Vertrag bearbeiten",
+          "financing_delete": "Vertrag löschen",
+          "init": "Zurück zum Hauptmenü",
+          "financing_add": "Finanzierung hinzufügen",
+          "financing_documents": "Belege verwalten",
+          "costs_management": "Zurück zu Kosten"
+        }
+      },
+      "financing_add_leasing": {
+        "title": "Leasingvertrag hinzufügen",
+        "description": "Reale Zahlungen werden vertragsgetreu erfasst; für TCO wird der Gesamtbetrag gleichmässig über die Laufzeit verteilt.",
+        "data": {
+          "provider": "Leasinggeber",
+          "contract_number": "Vertragsnummer",
+          "start_date": "Vertragsbeginn",
+          "end_date": "Vertragsende (automatisch)",
+          "duration_months": "Laufzeit in Monaten",
+          "purchase_price": "Barkaufpreis",
+          "first_payment": "1. Leasingrate / Sonderzahlung",
+          "regular_payment": "Reguläre Leasingrate",
+          "number_of_payments": "Anzahl Leasingraten",
+          "residual_value": "Restwert",
+          "interest_rate": "Nominalzins in %",
+          "annual_mileage": "Jahresfahrleistung km",
+          "excess_km_rate": "Mehrkilometer-Preis",
+          "currency": "Währung",
+          "notes": "Bemerkungen",
+          "financing_id": "Vertrag"
+        },
+        "data_description": {
+          "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
+          "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet.",
+          "end_date": "Wird aus Vertragsbeginn und Laufzeit berechnet und beim Speichern automatisch gesetzt."
+        }
+      },
+      "financing_edit_leasing": {
+        "title": "Leasingvertrag bearbeiten",
+        "description": "Reale Zahlungen werden vertragsgetreu erfasst; für TCO wird der Gesamtbetrag gleichmässig über die Laufzeit verteilt.",
+        "data": {
+          "provider": "Leasinggeber",
+          "contract_number": "Vertragsnummer",
+          "start_date": "Vertragsbeginn",
+          "end_date": "Vertragsende (automatisch)",
+          "duration_months": "Laufzeit in Monaten",
+          "purchase_price": "Barkaufpreis",
+          "first_payment": "1. Leasingrate / Sonderzahlung",
+          "regular_payment": "Reguläre Leasingrate",
+          "number_of_payments": "Anzahl Leasingraten",
+          "residual_value": "Restwert",
+          "interest_rate": "Nominalzins in %",
+          "annual_mileage": "Jahresfahrleistung km",
+          "excess_km_rate": "Mehrkilometer-Preis",
+          "currency": "Währung",
+          "notes": "Bemerkungen",
+          "financing_id": "Vertrag"
+        },
+        "data_description": {
+          "first_payment": "Tatsächlich fällige erste Rate, z. B. CHF 5’000.",
+          "regular_payment": "Reguläre Rate ab der zweiten Zahlung.",
+          "residual_value": "Wird angezeigt, aber nicht automatisch als TCO-Kosten gerechnet.",
+          "end_date": "Wird aus Vertragsbeginn und Laufzeit berechnet und beim Speichern automatisch gesetzt."
+        }
+      },
+      "financing_edit": {
+        "title": "Vertrag auswählen",
+        "data": {
+          "financing_id": "Vertrag"
+        }
+      },
+      "financing_delete": {
+        "title": "Vertrag löschen",
+        "description": "Den zu löschenden Vertrag auswählen.",
+        "data": {
+          "financing_id": "Vertrag"
+        }
+      },
+      "financing_add": {
+        "title": "Finanzierung hinzufügen",
+        "description": "Finanzierungsdaten manuell erfassen oder einen Vertrag/Beleg hochladen.",
+        "menu_options": {
+          "financing_add_leasing": "Manuell erfassen",
+          "financing_upload": "Vertrag / Beleg hochladen",
+          "financing_management": "Zurück"
+        }
+      },
+      "financing_upload": {
+        "title": "Finanzierungsvertrag hochladen",
+        "description": "PDF oder Bild hochladen. {ocr_status} Anschliessend werden alle Werte vor dem Speichern zur Kontrolle angezeigt.",
+        "data": {
+          "financing_file": "Vertrag / Beleg"
+        }
+      },
+      "financing_documents": {
+        "title": "Finanzierungsbelege",
+        "description": "Finanzierung auswählen, an die zusätzliche Belege angehängt werden sollen.",
+        "data": {
+          "financing_id": "Vertrag"
+        }
+      },
+      "financing_documents_menu": {
+        "title": "Belege verwalten",
+        "description": "Zusätzliche Belege: {document_count}. Diese Belege ändern keine Vertragswerte.",
+        "menu_options": {
+          "financing_document_add": "Beleg hinzufügen",
+          "financing_document_delete": "Beleg löschen",
+          "financing_management": "Zurück zur Finanzierung",
+          "financing_document_view": "Beleg anzeigen"
+        }
+      },
+      "financing_document_add": {
+        "title": "Beleg hinzufügen",
+        "description": "PDF oder Bild an den bestehenden Vertrag anhängen. Vertragswerte werden nicht verändert.",
+        "data": {
+          "financing_file": "Beleg",
+          "note": "Bemerkung"
+        }
+      },
+      "financing_document_delete": {
+        "title": "Beleg löschen",
+        "description": "Zusätzlichen Beleg auswählen. Der ursprüngliche Hauptvertrag bleibt erhalten.",
+        "data": {
+          "document_id": "Beleg"
+        }
+      },
+      "financing_document_view": {
+        "title": "Beleg anzeigen",
+        "description": "Hauptvertrag oder zusätzlichen Beleg auswählen.",
+        "data": {
+          "document_ref": "Beleg"
+        }
+      },
+      "vehicle_data_management": {
+        "title": "Fahrzeugdaten",
+        "description": "Fahrzeug: {vehicle_name}\n\nFahrzeugausweis / Fahrzeugschein und weitere Dokumente verwalten.",
+        "menu_options": {
+          "vehicle_registration_upload": "Fahrzeugausweis / Fahrzeugschein hochladen",
+          "vehicle_registration_manual": "Fahrzeugdaten manuell bearbeiten",
+          "vehicle_warranty_management": "Garantien verwalten",
+          "vehicle_document_view": "Dokument anzeigen",
+          "vehicle_document_add": "Weiteres Dokument hinzufügen",
+          "vehicle_document_delete": "Dokument löschen",
+          "init": "Zurück"
+        }
+      },
+      "vehicle_registration_upload": {
+        "title": "Fahrzeugausweis / Fahrzeugschein hochladen",
+        "description": "PDF oder Bild hochladen. Erkannte Daten werden vor dem Speichern angezeigt.",
+        "data": {
+          "vehicle_file": "Fahrzeugausweis / Fahrzeugschein"
+        }
+      },
+      "vehicle_registration_manual": {
+        "title": "Fahrzeugdaten",
+        "description": "Erkannte bzw. vorhandene Angaben prüfen und speichern.",
+        "data": {
+          "vin": "VIN / Fahrgestellnummer",
+          "registration_number": "Kontrollschild / Kennzeichen",
+          "make": "Marke",
+          "model": "Modell",
+          "first_registration": "Erstzulassung / 1. Inverkehrsetzung",
+          "type_approval": "Typengenehmigung",
+          "power_kw": "Leistung kW",
+          "empty_weight_kg": "Leergewicht kg",
+          "gross_weight_kg": "Gesamtgewicht kg"
+        }
+      },
+      "vehicle_document_add": {
+        "title": "Fahrzeugdokument hinzufügen",
+        "description": "Zusätzliches fahrzeugbezogenes Dokument hinterlegen.",
+        "data": {
+          "vehicle_file": "Dokument",
+          "document_type": "Dokumenttyp",
+          "note": "Notiz"
+        }
+      },
+      "vehicle_document_view": {
+        "title": "Fahrzeugdokument anzeigen",
+        "data": {
+          "document_ref": "Dokument"
+        }
+      },
+      "vehicle_document_delete": {
+        "title": "Fahrzeugdokument löschen",
+        "description": "Der Fahrzeugausweis/Fahrzeugschein als Hauptdokument wird hier nicht gelöscht.",
+        "data": {
+          "document_id": "Dokument"
+        }
+      },
+      "vehicle_warranty_management": {
+        "title": "Garantien",
+        "description": "Fahrzeug: {vehicle_name}\n\nFahrzeug-, EV-Komponenten- und HV-Batteriegarantie verwalten. Garantiedokumente verwenden die bestehende Fahrzeugdokument-Ablage.",
+        "menu_options": {
+          "vehicle_warranty_edit": "Garantiezeiten & Kilometer",
+          "vehicle_warranty_document_view": "Garantiedokument anzeigen",
+          "vehicle_warranty_document_add": "Garantiedokument hinzufügen",
+          "vehicle_data_management": "Zurück"
+        }
+      },
+      "vehicle_warranty_edit": {
+        "title": "Garantieangaben",
+        "description": "Start ist automatisch die Erstzulassung: {first_registration}. Enddatum: {end_dates}. Kilometergrenzen sind jeweils die maximale Fahrzeuglaufleistung.",
+        "data": {
+          "vehicle_years": "Fahrzeuggarantie – Jahre",
+          "vehicle_km": "Fahrzeuggarantie – km",
+          "ev_components_years": "EV-Komponenten – Jahre",
+          "ev_components_km": "EV-Komponenten – km",
+          "hv_battery_years": "HV-Batterie – Jahre",
+          "hv_battery_km": "HV-Batterie – km"
+        }
+      },
+      "vehicle_warranty_document_add": {
+        "title": "Garantiedokument hinzufügen",
+        "description": "Das Dokument wird gleichzeitig unter Fahrzeugdaten → Dokumente abgelegt.",
+        "data": {
+          "vehicle_file": "Dokument",
+          "document_type": "Dokumenttyp",
+          "note": "Notiz"
+        }
+      },
+      "vehicle_warranty_document_view": {
+        "title": "Garantiedokument anzeigen",
+        "description": "Bereits hinterlegte Garantienachweise und Garantiebedingungen.",
+        "data": {
+          "document_ref": "Dokument"
+        }
+      },
+      "insurance_management": {
+        "title": "Versicherung",
+        "description": "Fahrzeug: {vehicle_name}. Versicherungsperioden und Zahlweise verwalten.",
+        "menu_options": {
+          "insurance_add": "Versicherung hinzufügen",
+          "insurance_edit": "Versicherung bearbeiten",
+          "insurance_delete": "Versicherung löschen",
+          "init": "Zurück zum Hauptmenü",
+          "insurance_document_upload": "Police einlesen",
+          "costs_management": "Zurück zu Kosten"
+        }
+      },
+      "insurance_add": {
+        "title": "Versicherung hinzufügen",
+        "description": "Versicherungsperiode erfassen."
+      },
+      "insurance_edit": {
+        "title": "Versicherung bearbeiten",
+        "description": "Versicherungsperiode auswählen."
+      },
+      "insurance_delete": {
+        "title": "Versicherung löschen",
+        "description": "Versicherungsperiode auswählen und löschen."
+      },
+      "insurance_form": {
+        "title": "Versicherung",
+        "description": "Die Jahresprämie bildet die TCO-Basis. Die Zahlweise und der Betrag pro Zahlung bilden den realen Zahlungsfluss ab.",
+        "data": {
+          "provider": "Versicherer",
+          "policy_number": "Policennummer",
+          "valid_from": "Gültig von (JJJJ-MM-TT)",
+          "valid_to": "Gültig bis (JJJJ-MM-TT)",
+          "period_premium": "Jahresprämie / TCO-Basis",
+          "currency": "Währung",
+          "payment_frequency": "Zahlweise",
+          "payment_amount": "Betrag pro Zahlung",
+          "first_payment_date": "Erster Zahlungstermin (JJJJ-MM-TT)",
+          "notes": "Notiz",
+          "insurance_id": "Versicherung"
+        }
+      },
+      "insurance_document_upload": {
+        "title": "Versicherungsdokument einlesen",
+        "description": "Police hochladen. Text wird zuerst direkt aus PDF gelesen; bei Scans wird OCR verwendet. Erkannte Vertragsdaten, Jahresprämie und Zahlweise werden zur Kontrolle vorbelegt.",
+        "data": {
+          "insurance_file": "Datei",
+          "document_type": "Dokumenttyp"
+        }
+      },
+      "tax_management": {
+        "title": "Strassensteuer",
+        "description": "Fahrzeug: {vehicle_name}. Jahressteuer als TCO-Basis verwalten. Einmalige Gebühren gehören später zu den sonstigen Kosten.",
+        "menu_options": {
+          "tax_add": "Steuer hinzufügen",
+          "tax_edit": "Steuer bearbeiten",
+          "tax_delete": "Steuer löschen",
+          "init": "Zurück zum Hauptmenü",
+          "costs_management": "Zurück zu Kosten"
+        }
+      },
+      "tax_add": {
+        "title": "Strassensteuer hinzufügen",
+        "description": "Jahressteuer für eine Gültigkeitsperiode erfassen."
+      },
+      "tax_edit": {
+        "title": "Strassensteuer bearbeiten",
+        "description": "Steuerperiode auswählen."
+      },
+      "tax_delete": {
+        "title": "Strassensteuer löschen",
+        "description": "Steuerperiode auswählen und löschen."
+      },
+      "tax_form": {
+        "title": "Strassensteuer",
+        "description": "Die Jahressteuer bildet die TCO-Basis und wird für den monatlichen Fixkostenanteil durch 12 geteilt. Teilrechnungen und einmalige Gebühren verändern diese TCO-Basis nicht.",
+        "data": {
+          "valid_from": "Gültig von (JJJJ-MM-TT)",
+          "valid_to": "Gültig bis (JJJJ-MM-TT)",
+          "annual_tax": "Jahressteuer / TCO-Basis",
+          "currency": "Währung",
+          "authority": "Behörde / Kanton",
+          "notes": "Notiz",
+          "tax_id": "Steuerperiode"
+        }
+      },
+      "maintenance_management": {
+        "title": "Wartung & Reparaturen",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
+        }
+      },
+      "toll_management": {
+        "title": "Maut & Vignetten",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
+        }
+      },
+      "other_cost_management": {
+        "title": "Sonstige Kosten",
+        "description": "{vehicle_name}",
+        "menu_options": {
+          "expense_add": "Kosten hinzufügen",
+          "expense_edit": "Kosten bearbeiten",
+          "expense_delete": "Kosten löschen",
+          "init": "Zurück",
+          "costs_management": "Zurück zu Kosten",
+          "expense_receipt_view": "Belege anzeigen",
+          "expense_receipt_delete": "Beleg löschen"
+        }
+      },
+      "expense_add": {
+        "title": "Kosten hinzufügen"
+      },
+      "expense_edit": {
+        "title": "Kosten bearbeiten",
+        "data": {
+          "expense_id": "Kosten bearbeiten"
+        }
+      },
+      "expense_delete": {
+        "title": "Kosten löschen",
+        "data": {
+          "expense_id": "Kosten löschen"
+        }
+      },
+      "expense_form": {
+        "title": "Kosten erfassen",
+        "data": {
+          "category": "Kategorie *",
+          "description": "Beschreibung",
+          "amount": "Betrag *",
+          "currency": "Währung *",
+          "expense_date": "Zahlungs-/Buchungsdatum",
+          "provider": "Anbieter / Werkstatt / Behörde",
+          "country": "Land",
+          "odometer_km": "Kilometerstand (optional)",
+          "valid_from": "Gültig von (optional)",
+          "valid_to": "Gültig bis (optional)",
+          "notes": "Notiz",
+          "receipt_file": "Rechnung / Beleg",
+          "expense_year": "Jahr (falls Datum unbekannt)"
+        }
+      },
+      "costs_management": {
+        "title": "Kosten",
+        "description": "Finanzierung, Versicherung, Steuern und weitere Fahrzeugkosten verwalten.",
+        "menu_options": {
+          "financing_management": "Fahrzeugfinanzierung",
+          "insurance_management": "Versicherung",
+          "tax_management": "Strassensteuer",
+          "maintenance_management": "Wartung & Reparaturen",
+          "toll_management": "Maut & Vignetten",
+          "other_cost_management": "Sonstige Kosten",
+          "init": "Zurück"
+        },
+        "menu_option_descriptions": {
+          "financing_management": "Leasing, Finanzierung und Fahrzeugkauf verwalten.",
+          "insurance_management": "Fahrzeugversicherungen und Jahresprämien für die TCO-Berechnung verwalten.",
+          "tax_management": "Jahressteuer und Fahrzeugabgaben verwalten.",
+          "maintenance_management": "Service, Reparaturen, Reifen und weitere Werkstattkosten inkl. Rechnungen verwalten.",
+          "toll_management": "Maut- und Vignettenkosten mit optionalem Gültigkeitszeitraum und Beleg verwalten.",
+          "other_cost_management": "Fahrzeugausweis, Kontrollschilder, Mutationen und weitere einmalige Fahrzeugkosten verwalten."
+        }
+      },
+      "expense_receipt_view": {
+        "title": "Belege anzeigen",
+        "description": "Beleg zum Öffnen auswählen.",
+        "data": {
+          "document_id": "Beleg"
+        }
+      },
+      "expense_receipt_delete": {
+        "title": "Beleg löschen",
+        "description": "Beleg zum Löschen auswählen.",
+        "data": {
+          "document_id": "Beleg"
+        }
       }
     },
     "error": {
@@ -1062,7 +1537,35 @@
       "invalid_tariff_period": "Gib ein gültiges Jahr, Von-/Bis-Datum und einen Tarif ein.",
       "invalid_tariff_year": "Gib ein Jahr zwischen 2000 und 2100 ein.",
       "invalid_tariff_range": "Das Ende des Tarifzeitraums darf nicht vor dem Beginn liegen.",
-      "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr."
+      "overlapping_tariff_period": "Dieser Tarifzeitraum überschneidet sich mit einem bestehenden Zeitraum im selben Jahr.",
+      "invalid_financing_data": "Ungültige Vertragsdaten.",
+      "financing_document_import_failed": "Der Finanzierungsbeleg konnte nicht importiert werden.",
+      "financing_ocr_failed": "Der Finanzierungsbeleg konnte nicht ausgewertet werden.",
+      "vehicle_document_import_failed": "Das Fahrzeugdokument konnte nicht importiert werden.",
+      "insurance_invalid": "Versicherungsdaten sind ungültig.",
+      "insurance_document_import_failed": "Versicherungsdokument konnte nicht eingelesen werden.",
+      "tax_invalid": "Steuerdaten sind ungültig.",
+      "expense_invalid": "Kostendaten sind ungültig.",
+      "expense_category_required": "Kategorie auswählen.",
+      "expense_invalid_category": "Ungültige Kategorie.",
+      "expense_amount_required": "Betrag eingeben.",
+      "expense_invalid_amount": "Betrag ist ungültig.",
+      "expense_negative_amount": "Betrag darf nicht negativ sein.",
+      "expense_invalid_expense_date": "Buchungsdatum ist ungültig.",
+      "expense_invalid_year": "Jahr ist ungültig.",
+      "expense_missing_date_or_year": "Datum oder Jahr angeben.",
+      "expense_missing_toll_date_or_year": "Für Maut/Vignette Datum, Gültigkeitsbeginn oder Jahr angeben.",
+      "expense_invalid_valid_from": "Gültig von ist ungültig.",
+      "expense_invalid_valid_to": "Gültig bis ist ungültig.",
+      "expense_both_validity_dates_required": "Für einen Gültigkeitszeitraum müssen Von und Bis angegeben werden.",
+      "expense_invalid_validity_range": "Gültig bis darf nicht vor Gültig von liegen.",
+      "expense_invalid_odometer": "Kilometerstand ist ungültig."
+    },
+    "abort": {
+      "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",
+      "no_insurance_entries": "Keine Versicherungen vorhanden.",
+      "no_tax_entries": "Keine Strassensteuer-Einträge vorhanden.",
+      "no_expense_entries": "Keine Kosten vorhanden."
     }
   },
   "entity": {
@@ -1230,7 +1733,7 @@
         "name": "Routenhistorie"
       },
       "last_trip_soc_recovered": {
-        "name": "SOC-Rückgewinnung der letzten Fahrt"
+        "name": "Rekuperation der letzten Fahrt"
       },
       "last_trip_regenerated_energy": {
         "name": "Netto-Rekuperation der letzten Fahrt"
@@ -1253,6 +1756,18 @@
           "unavailable": "Nicht verfügbar",
           "unknown": "Unbekannt"
         }
+      },
+      "vehicle_details": {
+        "name": "Fahrzeug Details"
+      },
+      "insurance_tco": {
+        "name": "Versicherung TCO"
+      },
+      "financing_tco": {
+        "name": "Finanzierung TCO"
+      },
+      "cost_overview_tco": {
+        "name": "Kostenübersicht TCO"
       }
     },
     "binary_sensor": {

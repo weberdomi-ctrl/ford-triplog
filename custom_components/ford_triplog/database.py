@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.5.0
-Build: 25023
-Changes: Store global home charging tariff periods in SQLite.
+Version: 2.6.0
+Build: 26055
+Changes: Final 2.6 vehicle cost/TCO and configuration recovery schema.
 """
 
 from __future__ import annotations
@@ -463,6 +463,158 @@ class FordTriplogDatabase:
 
         return await self.hass.async_add_executor_job(_read)
 
+    async def async_save_config_snapshot(
+        self,
+        *,
+        vehicle_id: int | None = None,
+        entry_title: str | None = None,
+        entry_unique_id: str | None = None,
+        entry_data: dict[str, Any] | None = None,
+        entry_options: dict[str, Any] | None = None,
+        integration_version: str | None = None,
+        integration_build: str | None = None,
+    ) -> None:
+        """Persist the latest recoverable Home Assistant vehicle configuration.
+
+        The snapshot deliberately mirrors ConfigEntry data/options instead of
+        trying to infer a configuration from vehicle history. It is local to
+        the Ford Triplog SQLite database and is updated on every successful
+        setup/reload of the vehicle ConfigEntry.
+        """
+
+        await self.async_setup()
+        selected_id = int(vehicle_id or self.vehicle_id)
+        if selected_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+
+        data_json = json.dumps(
+            dict(entry_data or {}),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        options_json = json.dumps(
+            dict(entry_options or {}),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+
+        def _save() -> None:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("PRAGMA foreign_keys = ON")
+                db.execute(
+                    """
+                    INSERT INTO vehicle_config_snapshots (
+                        vehicle_id, entry_title, entry_unique_id,
+                        entry_data, entry_options, integration_version,
+                        integration_build, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(vehicle_id) DO UPDATE SET
+                        entry_title = excluded.entry_title,
+                        entry_unique_id = excluded.entry_unique_id,
+                        entry_data = excluded.entry_data,
+                        entry_options = excluded.entry_options,
+                        integration_version = excluded.integration_version,
+                        integration_build = excluded.integration_build,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        selected_id,
+                        str(entry_title).strip() if entry_title else None,
+                        (
+                            str(entry_unique_id).strip()
+                            if entry_unique_id
+                            else None
+                        ),
+                        data_json,
+                        options_json,
+                        (
+                            str(integration_version).strip()
+                            if integration_version
+                            else None
+                        ),
+                        (
+                            str(integration_build).strip()
+                            if integration_build
+                            else None
+                        ),
+                        now,
+                    ),
+                )
+                db.commit()
+
+        await self.hass.async_add_executor_job(_save)
+
+    @staticmethod
+    def _decode_config_snapshot_json(value: Any) -> dict[str, Any]:
+        """Return one stored ConfigEntry mapping or an empty mapping."""
+
+        try:
+            decoded = json.loads(str(value or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+
+    async def async_list_config_snapshots(self) -> list[dict[str, Any]]:
+        """Return recoverable vehicle ConfigEntry snapshots."""
+
+        await self.async_setup()
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    """
+                    SELECT
+                        s.vehicle_id, s.entry_title, s.entry_unique_id,
+                        s.entry_data, s.entry_options,
+                        s.integration_version, s.integration_build,
+                        s.updated_at,
+                        v.vin, v.name, v.manufacturer, v.model,
+                        v.battery_capacity_kwh, v.source,
+                        v.alias_of_vehicle_id, v.is_test_alias
+                    FROM vehicle_config_snapshots AS s
+                    JOIN vehicles AS v ON v.vehicle_id = s.vehicle_id
+                    ORDER BY s.vehicle_id
+                    """
+                ).fetchall()
+
+                result: list[dict[str, Any]] = []
+                for row in rows:
+                    item = dict(row)
+                    item["data"] = self._decode_config_snapshot_json(
+                        item.pop("entry_data", None)
+                    )
+                    item["options"] = self._decode_config_snapshot_json(
+                        item.pop("entry_options", None)
+                    )
+                    result.append(item)
+                return result
+
+        return await self.hass.async_add_executor_job(_read)
+
+    async def async_get_config_snapshot(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the latest recoverable configuration for one vehicle."""
+
+        selected_id = int(vehicle_id or self.vehicle_id)
+        snapshots = await self.async_list_config_snapshots()
+        return next(
+            (
+                snapshot
+                for snapshot in snapshots
+                if int(snapshot.get("vehicle_id") or 0) == selected_id
+            ),
+            None,
+        )
+
     async def validate_json_identity(
         self,
         json_records: dict[str, dict[str, Any] | None],
@@ -752,6 +904,22 @@ class FordTriplogDatabase:
                           AND alias_of_vehicle_id IS NOT NULL
                         """
                     )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_config_snapshots (
+                            vehicle_id INTEGER PRIMARY KEY,
+                            entry_title TEXT,
+                            entry_unique_id TEXT,
+                            entry_data TEXT NOT NULL DEFAULT '{}',
+                            entry_options TEXT NOT NULL DEFAULT '{}',
+                            integration_version TEXT,
+                            integration_build TEXT,
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id)
+                                REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
                     db.execute("PRAGMA foreign_keys = ON")
                     now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
                     db.execute(
@@ -1020,6 +1188,197 @@ class FordTriplogDatabase:
                         )
                         """
                     )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_financing (
+                            financing_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            financing_type TEXT NOT NULL,
+                            provider TEXT,
+                            contract_number TEXT,
+                            start_date TEXT NOT NULL,
+                            end_date TEXT,
+                            duration_months INTEGER NOT NULL CHECK (duration_months > 0),
+                            purchase_price REAL CHECK (purchase_price IS NULL OR purchase_price >= 0),
+                            first_payment REAL NOT NULL DEFAULT 0 CHECK (first_payment >= 0),
+                            regular_payment REAL NOT NULL DEFAULT 0 CHECK (regular_payment >= 0),
+                            number_of_payments INTEGER NOT NULL CHECK (number_of_payments > 0),
+                            residual_value REAL CHECK (residual_value IS NULL OR residual_value >= 0),
+                            interest_rate REAL CHECK (interest_rate IS NULL OR interest_rate >= 0),
+                            annual_mileage INTEGER CHECK (annual_mileage IS NULL OR annual_mileage >= 0),
+                            excess_km_rate REAL CHECK (excess_km_rate IS NULL OR excess_km_rate >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            notes TEXT,
+                            created_at TEXT NOT NULL,
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
+                    # 2.6 financing document linkage. Existing dev databases are
+                    # upgraded in place without rebuilding the financing table.
+                    financing_columns = {
+                        str(row[1])
+                        for row in db.execute("PRAGMA table_info(vehicle_financing)").fetchall()
+                    }
+                    if "document_filename" not in financing_columns:
+                        db.execute("ALTER TABLE vehicle_financing ADD COLUMN document_filename TEXT")
+                    if "document_original_name" not in financing_columns:
+                        db.execute("ALTER TABLE vehicle_financing ADD COLUMN document_original_name TEXT")
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_financing_documents (
+                            document_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            financing_id INTEGER NOT NULL,
+                            filename TEXT NOT NULL,
+                            original_filename TEXT NOT NULL,
+                            media_type TEXT,
+                            note TEXT,
+                            created_at TEXT NOT NULL,
+                            FOREIGN KEY (financing_id) REFERENCES vehicle_financing(financing_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_vehicle_financing_documents_financing
+                        ON vehicle_financing_documents (financing_id, created_at)
+                        """
+                    )
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_details (
+                            vehicle_id INTEGER PRIMARY KEY,
+                            vin TEXT, registration_number TEXT, make TEXT, model TEXT,
+                            first_registration TEXT, type_approval TEXT,
+                            empty_weight_kg REAL, gross_weight_kg REAL, power_kw REAL,
+                            registration_document_filename TEXT,
+                            registration_document_original_name TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_documents (
+                            document_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL, filename TEXT NOT NULL,
+                            original_filename TEXT NOT NULL, media_type TEXT,
+                            document_type TEXT NOT NULL DEFAULT 'other', note TEXT,
+                            created_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_documents_vehicle ON vehicle_documents (vehicle_id, created_at)")
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_warranties (
+                            warranty_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            warranty_type TEXT NOT NULL,
+                            duration_years INTEGER, mileage_limit_km INTEGER,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            UNIQUE(vehicle_id, warranty_type),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_warranties_vehicle ON vehicle_warranties (vehicle_id, warranty_type)")
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_insurance (
+                            insurance_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            provider TEXT, policy_number TEXT,
+                            valid_from TEXT NOT NULL, valid_to TEXT NOT NULL,
+                            period_premium REAL NOT NULL CHECK (period_premium >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            payment_frequency TEXT NOT NULL DEFAULT 'annual',
+                            payment_amount REAL CHECK (payment_amount IS NULL OR payment_amount >= 0),
+                            first_payment_date TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_insurance_vehicle ON vehicle_insurance (vehicle_id, valid_from)")
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_tax (
+                            tax_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            valid_from TEXT NOT NULL, valid_to TEXT NOT NULL,
+                            annual_tax REAL NOT NULL CHECK (annual_tax >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            authority TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_tax_vehicle ON vehicle_tax (vehicle_id, valid_from)")
+
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_expenses (
+                            expense_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            vehicle_id INTEGER NOT NULL,
+                            expense_group TEXT NOT NULL,
+                            category TEXT NOT NULL,
+                            description TEXT,
+                            amount REAL NOT NULL CHECK (amount >= 0),
+                            currency TEXT NOT NULL DEFAULT 'CHF',
+                            expense_date TEXT,
+                            expense_year INTEGER,
+                            valid_from TEXT, valid_to TEXT,
+                            odometer_km REAL, provider TEXT, country TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to IS NULL OR valid_from IS NOT NULL),
+                            CHECK (valid_to IS NULL OR valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE
+                        )
+                        """
+                    )
+                    db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle ON vehicle_expenses (vehicle_id, expense_group, expense_date)")
+                    # dev38: older dev37 databases had expense_date NOT NULL and no expense_year.
+                    cols = {row[1]: row for row in db.execute("PRAGMA table_info(vehicle_expenses)").fetchall()}
+                    if "expense_year" not in cols:
+                        db.execute("ALTER TABLE vehicle_expenses ADD COLUMN expense_year INTEGER")
+                    cols = {row[1]: row for row in db.execute("PRAGMA table_info(vehicle_expenses)").fetchall()}
+                    if cols.get("expense_date") and int(cols["expense_date"][3]) == 1:
+                        db.execute("ALTER TABLE vehicle_expenses RENAME TO vehicle_expenses_dev37")
+                        db.execute("""CREATE TABLE vehicle_expenses (
+                            expense_id INTEGER PRIMARY KEY AUTOINCREMENT, vehicle_id INTEGER NOT NULL,
+                            expense_group TEXT NOT NULL, category TEXT NOT NULL, description TEXT,
+                            amount REAL NOT NULL CHECK (amount >= 0), currency TEXT NOT NULL DEFAULT 'CHF',
+                            expense_date TEXT, expense_year INTEGER, valid_from TEXT, valid_to TEXT,
+                            odometer_km REAL, provider TEXT, country TEXT, notes TEXT,
+                            created_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+                            CHECK (valid_to IS NULL OR valid_from IS NOT NULL),
+                            CHECK (valid_to IS NULL OR valid_to >= valid_from),
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id) ON DELETE CASCADE)""")
+                        db.execute("""INSERT INTO vehicle_expenses
+                            (expense_id,vehicle_id,expense_group,category,description,amount,currency,expense_date,expense_year,valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at)
+                            SELECT expense_id,vehicle_id,expense_group,category,description,amount,currency,expense_date,CAST(substr(expense_date,1,4) AS INTEGER),valid_from,valid_to,odometer_km,provider,country,notes,created_at,updated_at FROM vehicle_expenses_dev37""")
+                        db.execute("DROP TABLE vehicle_expenses_dev37")
+                        db.execute("CREATE INDEX IF NOT EXISTS idx_vehicle_expenses_vehicle ON vehicle_expenses (vehicle_id, expense_group, expense_date)")
+
+                    db.execute(
+                        """
+                        CREATE INDEX IF NOT EXISTS idx_vehicle_financing_vehicle
+                        ON vehicle_financing (vehicle_id, start_date)
+                        """
+                    )
+
                     db.execute(
                         """
                         CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
@@ -1333,6 +1692,170 @@ class FordTriplogDatabase:
                     )
 
 
+
+                    # dev47: one canonical monthly TCO source for all costs
+                    # stored in relational cost tables. Charging and driven
+                    # distance stay in their dedicated statistics sensors.
+                    db.execute("DROP VIEW IF EXISTS v_vehicle_cost_monthly")
+                    db.execute(
+                        """
+                        CREATE VIEW v_vehicle_cost_monthly AS
+                        WITH RECURSIVE
+                        bounds(start_month, end_month) AS (
+                            SELECT
+                                date(COALESCE(
+                                    (SELECT MIN(d) FROM (
+                                        SELECT MIN(start_date) AS d FROM vehicle_financing
+                                        UNION ALL SELECT MIN(valid_from) FROM vehicle_insurance
+                                        UNION ALL SELECT MIN(valid_from) FROM vehicle_tax
+                                        UNION ALL SELECT MIN(COALESCE(expense_date, valid_from, printf('%04d-01-01', expense_year))) FROM vehicle_expenses
+                                    ) WHERE d IS NOT NULL),
+                                    date('now','start of month')
+                                ), 'start of month'),
+                                date('now','start of month')
+                        ),
+                        months(month_start) AS (
+                            SELECT start_month FROM bounds
+                            UNION ALL
+                            SELECT date(month_start,'+1 month')
+                            FROM months,bounds
+                            WHERE month_start < end_month
+                        ),
+                        calendar AS (
+                            SELECT v.vehicle_id,
+                                   m.month_start,
+                                   date(m.month_start,'+1 month','-1 day') AS month_end,
+                                   CAST(julianday(date(m.month_start,'+1 month'))-julianday(m.month_start) AS REAL) AS month_days
+                            FROM vehicles v CROSS JOIN months m
+                        )
+                        SELECT
+                            c.vehicle_id,
+                            strftime('%Y-%m',c.month_start) AS month,
+                            CAST(strftime('%Y',c.month_start) AS INTEGER) AS year,
+                            ROUND(COALESCE((
+                                SELECT SUM(
+                                    ROUND((f.first_payment + MAX(f.number_of_payments-1,0)*f.regular_payment)/f.duration_months,2)
+                                    * MAX(0,julianday(MIN(c.month_end,COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))))
+                                             -julianday(MAX(c.month_start,f.start_date,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),f.start_date)))+1)
+                                    / c.month_days
+                                )
+                                FROM vehicle_financing f
+                                LEFT JOIN vehicle_details vd ON vd.vehicle_id=f.vehicle_id
+                                WHERE f.vehicle_id=c.vehicle_id
+                                  AND MAX(f.start_date,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),f.start_date))<=c.month_end
+                                  AND COALESCE(f.end_date,date(f.start_date,printf('+%d months',f.duration_months),'-1 day'))>=c.month_start
+                            ),0),6) AS financing,
+                            ROUND(COALESCE((
+                                SELECT SUM(
+                                    (i.period_premium/12.0)
+                                    * MAX(0,julianday(MIN(c.month_end,i.valid_to))-julianday(MAX(c.month_start,i.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),i.valid_from)))+1)
+                                    / c.month_days
+                                )
+                                FROM vehicle_insurance i
+                                LEFT JOIN vehicle_details vd ON vd.vehicle_id=i.vehicle_id
+                                WHERE i.vehicle_id=c.vehicle_id
+                                  AND MAX(i.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),i.valid_from))<=c.month_end
+                                  AND i.valid_to>=c.month_start
+                            ),0),6) AS insurance,
+                            ROUND(COALESCE((
+                                SELECT
+                                    (x.annual_tax/12.0)
+                                    * MAX(0,julianday(MIN(c.month_end,x.valid_to))
+                                             -julianday(MAX(c.month_start,x.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),x.valid_from)))+1)
+                                    / c.month_days
+                                FROM vehicle_tax x
+                                LEFT JOIN vehicle_details vd ON vd.vehicle_id=x.vehicle_id
+                                WHERE x.vehicle_id=c.vehicle_id
+                                  AND MAX(x.valid_from,COALESCE((CASE
+                                    WHEN vd.first_registration GLOB '????-??-??' THEN vd.first_registration
+                                    WHEN vd.first_registration GLOB '??.??.????' THEN
+                                        substr(vd.first_registration,7,4)||'-'||substr(vd.first_registration,4,2)||'-'||substr(vd.first_registration,1,2)
+                                    ELSE NULL
+                                END),x.valid_from))<=c.month_end
+                                  AND x.valid_to>=c.month_start
+                                ORDER BY x.valid_from DESC, x.tax_id DESC
+                                LIMIT 1
+                            ),0),6) AS road_tax,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='maintenance'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS maintenance_repairs,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='toll'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS tolls_vignettes,
+                            ROUND(COALESCE((
+                                SELECT SUM(CASE
+                                    WHEN e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL
+                                    THEN e.amount * MAX(0,julianday(MIN(c.month_end,e.valid_to))-julianday(MAX(c.month_start,e.valid_from))+1)
+                                         / (julianday(e.valid_to)-julianday(e.valid_from)+1)
+                                    WHEN e.expense_date IS NOT NULL
+                                    THEN CASE WHEN e.expense_date BETWEEN c.month_start AND c.month_end THEN e.amount ELSE 0 END
+                                    WHEN e.expense_year IS NOT NULL
+                                    THEN e.amount * (julianday(c.month_end)-julianday(c.month_start)+1)
+                                         / (julianday(printf('%04d-12-31',e.expense_year))-julianday(printf('%04d-01-01',e.expense_year))+1)
+                                    ELSE 0 END)
+                                FROM vehicle_expenses e
+                                WHERE e.vehicle_id=c.vehicle_id AND e.expense_group='other'
+                                  AND ((e.valid_from IS NOT NULL AND e.valid_to IS NOT NULL AND e.valid_from<=c.month_end AND e.valid_to>=c.month_start)
+                                    OR (e.expense_date BETWEEN c.month_start AND c.month_end)
+                                    OR e.expense_year=CAST(strftime('%Y',c.month_start) AS INTEGER))
+                            ),0),6) AS other_costs
+                        FROM calendar c
+                        """
+                    )
+
                     db.commit()
 
 
@@ -1352,6 +1875,34 @@ class FordTriplogDatabase:
                 "Ford Triplog SQLite database initialized: %s",
                 self.db_path,
             )
+
+    async def load_vehicle_cost_monthly(
+        self,
+        vehicle_id: int | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return canonical monthly TCO rows from the SQLite cost view."""
+        await self.async_setup()
+        resolved_vehicle_id = int(vehicle_id or self.vehicle_id)
+        self._log_read("view=v_vehicle_cost_monthly")
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as connection:
+                connection.row_factory = sqlite3.Row
+                rows = connection.execute(
+                    """
+                    SELECT vehicle_id, month, year, financing, insurance,
+                           road_tax, maintenance_repairs, tolls_vignettes,
+                           other_costs
+                    FROM v_vehicle_cost_monthly
+                    WHERE vehicle_id = ?
+                    ORDER BY month
+                    """,
+                    (resolved_vehicle_id,),
+                ).fetchall()
+            return [dict(row) for row in rows]
+
+        return await self.hass.async_add_executor_job(_read)
+
 
     async def load_home_charging_tariffs(self) -> list[dict[str, Any]]:
         """Load global home charging tariff periods from SQLite."""

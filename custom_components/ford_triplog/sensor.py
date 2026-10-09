@@ -27,6 +27,8 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.translation import async_get_translations
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
+from homeassistant.helpers.event import async_track_state_change_event
+from homeassistant.helpers import entity_registry as er
 from homeassistant.util import dt as dt_util
 from homeassistant.components.http.auth import async_sign_path
 from .utils import (
@@ -50,6 +52,7 @@ from .icons import (
 from .const import (
     DOMAIN,
     VERSION,
+    STORAGE_DIR,
     SIGNAL_LAST_JOURNEY_UPDATED,
     SIGNAL_LAST_TRIP_UPDATED,
     SIGNAL_VEHICLE_CONTEXT_UPDATED,
@@ -73,6 +76,8 @@ from .vehicle_context import (
     VehicleRuntimeProxy,
     iter_vehicle_runtimes,
     vehicle_display_name,
+    get_selected_vehicle_id,
+    get_vehicle_runtime,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -172,9 +177,40 @@ async def async_setup_entry(
         ),
     }
 
+    # Keep the insurance entity stable across the dev31/dev32 naming experiments.
+    # dev31 used ``ford_triplog_vehicle_insurance`` while dev32 accidentally
+    # introduced a second unique ID.  Reclaim the original registry entry,
+    # remove the duplicate, and give the surviving entity its intended ID.
+    registry = er.async_get(hass)
+    insurance_unique_id = "ford_triplog_vehicle_insurance"
+    duplicate_unique_id = "ford_triplog_insurance_tco"
+    wanted_entity_id = "sensor.garage_ford_triplog_versicherung_tco"
+
+    duplicate_entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, duplicate_unique_id
+    )
+    if duplicate_entity_id is not None:
+        registry.async_remove(duplicate_entity_id)
+
+    insurance_entity_id = registry.async_get_entity_id(
+        "sensor", DOMAIN, insurance_unique_id
+    )
+    if insurance_entity_id is not None and insurance_entity_id != wanted_entity_id:
+        existing_target = registry.async_get(wanted_entity_id)
+        if existing_target is None:
+            registry.async_update_entity(
+                insurance_entity_id, new_entity_id=wanted_entity_id
+            )
+
     async_add_entities(
         [
             FordTriplogVehicleSourceStatusSensor(coordinator),
+            FordTriplogVehicleDetailsSensor(hass),
+            FordTriplogInsuranceTCOSensor(hass),
+            FordTriplogRoadTaxTCOSensor(hass),
+            FordTriplogFinancingTCOSensor(hass),
+            FordTriplogCostOverviewTCOSensor(hass),
+            FordTriplogCostHistorySensor(hass),
             FordTriplogLastJourneySensor(
                 storage,
                 common_translations,
@@ -307,6 +343,721 @@ async def async_setup_entry(
 
 
     )
+
+
+class FordTriplogInsuranceTCOSensor(SensorEntity):
+    """Monthly insurance TCO for the currently selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Versicherung TCO"
+    # Keep the original dev31 unique ID so HA reuses the existing registry row.
+    _attr_unique_id = "ford_triplog_vehicle_insurance"
+    _attr_icon = "mdi:shield-car"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        await self.async_update()
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_insurance import FordTriplogVehicleInsuranceStorage
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+
+        store = FordTriplogVehicleInsuranceStorage(
+            self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
+        )
+        rows = await store.async_load()
+        today = dt_util.now().date().isoformat()
+        active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
+        if not active:
+            self._value = None
+            self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_policy"}
+            return
+
+        policy = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("insurance_id") or 0)))
+        try:
+            annual = float(policy.get("period_premium") or 0)
+        except (TypeError, ValueError):
+            annual = 0.0
+        self._value = round(annual / 12.0, 2)
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "annual_premium": round(annual, 2),
+            "currency": policy.get("currency") or "CHF",
+            "provider": policy.get("provider"),
+            "policy_number": policy.get("policy_number"),
+            "valid_from": policy.get("valid_from"),
+            "valid_to": policy.get("valid_to"),
+            "payment_frequency": policy.get("payment_frequency"),
+            "payment_amount": policy.get("payment_amount"),
+            "first_payment_date": policy.get("first_payment_date"),
+            "notes": policy.get("notes"),
+        }
+
+        # Insurance documents are stored vehicle-wide and typed as insurance_*.
+        # Expose authenticated, short-lived viewer links for dashboard use.
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        source_documents = await docs_store.async_list(vehicle_id)
+        deduplicated: dict[tuple[str, str], dict[str, Any]] = {}
+        for doc in source_documents:
+            dtype = str(doc.get("document_type") or "")
+            if not dtype.startswith("insurance_"):
+                continue
+            name = str(doc.get("original_filename") or doc.get("filename") or "")
+            # async_list() is oldest -> newest, so later duplicates replace
+            # earlier rows and the dashboard gets the newest valid document id.
+            deduplicated[(dtype.casefold(), name.casefold())] = doc
+        documents = []
+        for doc in deduplicated.values():
+            dtype = str(doc.get("document_type") or "")
+            path = f"/api/ford_triplog/vehicle/{vehicle_id}/documents/{doc.get('document_id')}"
+            documents.append({
+                "document_id": doc.get("document_id"),
+                "name": doc.get("original_filename") or doc.get("filename"),
+                "type": dtype,
+                "url": async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+        self._attrs["documents"] = documents
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+class FordTriplogRoadTaxTCOSensor(SensorEntity):
+    """Monthly road-tax TCO for the currently selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Strassensteuer TCO"
+    _attr_unique_id = "ford_triplog_vehicle_road_tax"
+    _attr_icon = "mdi:car-cog"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: float | None = None
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        await self.async_update()
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_tax import FordTriplogVehicleTaxStorage
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+        store = FordTriplogVehicleTaxStorage(
+            self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
+        )
+        rows = await store.async_load()
+        today = dt_util.now().date().isoformat()
+        active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
+        if not active:
+            self._value = None
+            self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_tax"}
+            return
+        tax = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("tax_id") or 0)))
+        try:
+            annual = float(tax.get("annual_tax") or 0)
+        except (TypeError, ValueError):
+            annual = 0.0
+        self._value = round(annual / 12.0, 2)
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "annual_tax": round(annual, 2),
+            "currency": tax.get("currency") or "CHF",
+            "authority": tax.get("authority"),
+            "valid_from": tax.get("valid_from"),
+            "valid_to": tax.get("valid_to"),
+            "notes": tax.get("notes"),
+        }
+
+        # Expose road-tax documents when present in the vehicle document store.
+        # The current UI does not require a tax document, so an empty list is a
+        # valid and useful dashboard contract.
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        documents = []
+        seen_documents: set[tuple[str, str]] = set()
+        for doc in await docs_store.async_list(vehicle_id):
+            dtype = str(doc.get("document_type") or "")
+            if not (dtype.startswith("tax_") or dtype.startswith("road_tax_")):
+                continue
+            name = str(doc.get("original_filename") or doc.get("filename") or "")
+            key = (dtype.casefold(), name.casefold())
+            if key in seen_documents:
+                continue
+            seen_documents.add(key)
+            path = f"/api/ford_triplog/vehicle/{vehicle_id}/documents/{doc.get('document_id')}"
+            documents.append({
+                "document_id": doc.get("document_id"),
+                "name": doc.get("original_filename") or doc.get("filename"),
+                "type": dtype,
+                "url": async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+        self._attrs["documents"] = documents
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
+
+
+
+class FordTriplogFinancingTCOSensor(SensorEntity):
+    """Smoothed monthly financing TCO for the selected vehicle."""
+    _attr_has_entity_name = True
+    _attr_translation_key = "financing_tco"
+    _attr_unique_id = "ford_triplog_financing_tco"
+    _attr_icon = "mdi:cash-sync"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value = None; self._attrs = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        await self.async_update()
+
+    @callback
+    def _changed(self, *_args): self.hass.async_create_task(self._refresh())
+    async def _refresh(self): await self.async_update(); self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
+        vid=get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None: self._value=None; self._attrs={}; return
+        rows=await FordTriplogVehicleFinancingStorage(self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid).async_load()
+        now=dt_util.now(); total=0.0; active=[]
+        for row in rows:
+            try: value=leasing_tco_for_month(row, now.year, now.month)
+            except (ValueError, TypeError, KeyError): value=0.0
+            if value:
+                total += value
+                financing_id = row.get('financing_id')
+                contract = {
+                    'financing_id': financing_id,
+                    'provider': row.get('provider'),
+                    'type': row.get('financing_type'),
+                    'monthly_tco': round(value, 2),
+                    'start_date': row.get('start_date'),
+                    'end_date': row.get('end_date'),
+                    'term_months': row.get('term_months'),
+                    'first_payment': row.get('first_payment'),
+                    'regular_payment': row.get('regular_payment'),
+                    'residual_value': row.get('residual_value'),
+                    'documents': [],
+                }
+                if financing_id is not None:
+                    from .financing_document import FordTriplogFinancingDocumentStorage
+                    doc_store = FordTriplogFinancingDocumentStorage(self.hass)
+                    if row.get('document_filename'):
+                        path = f"/api/ford_triplog/financing/{int(financing_id)}/documents/main"
+                        contract['documents'].append({
+                            'document_id': 'main',
+                            'name': row.get('document_original_name') or 'Vertrag',
+                            'type': 'contract',
+                            'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+                        })
+                    for doc in await doc_store.async_list_for_financing(int(financing_id)):
+                        path = f"/api/ford_triplog/financing/{int(financing_id)}/documents/{doc.get('document_id')}"
+                        contract['documents'].append({
+                            'document_id': doc.get('document_id'),
+                            'name': doc.get('original_filename') or doc.get('filename'),
+                            'type': 'attachment',
+                            'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+                        })
+                active.append(contract)
+        self._value=round(total,2) if active else None
+        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF','contracts':active}
+    @property
+    def native_value(self): return self._value
+    @property
+    def extra_state_attributes(self): return self._attrs
+    @property
+    def available(self): return self._value is not None
+    @property
+    def device_info(self): return {'identifiers':{(DOMAIN,'ford_triplog')},'name':'Ford Triplog','manufacturer':'Ford','model':'Triplog','sw_version':VERSION}
+
+
+class FordTriplogCostHistorySensor(SensorEntity):
+    """Individual vehicle expenses, newest first, including receipt links."""
+
+    _attr_has_entity_name = True
+    _attr_name = "Kostenhistorie"
+    _attr_unique_id = "ford_triplog_cost_history"
+    _attr_icon = "mdi:receipt-text-clock"
+    _attr_should_poll = True
+    _unrecorded_attributes = frozenset({"entries"})
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value = 0
+        self._attrs: dict[str, Any] = {}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        await self.async_update()
+
+    @callback
+    def _changed(self, *_args: Any) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .vehicle_expense import FordTriplogVehicleExpenseStorage
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+
+        vid = get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None:
+            self._value = 0
+            self._attrs = {}
+            return
+
+        store = FordTriplogVehicleExpenseStorage(
+            self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid
+        )
+        rows = await store.async_load()
+        docs_store = FordTriplogVehicleDocumentStorage(self.hass)
+        all_docs = await docs_store.async_list(vid)
+        docs_by_expense: dict[int, list[dict[str, Any]]] = {}
+        for doc in all_docs:
+            dtype = str(doc.get('document_type') or '')
+            if not dtype.startswith('expense_'):
+                continue
+            try:
+                expense_id = int(dtype.split('_', 1)[1])
+            except (ValueError, IndexError):
+                continue
+            path = f"/api/ford_triplog/vehicle/{vid}/documents/{doc.get('document_id')}"
+            docs_by_expense.setdefault(expense_id, []).append({
+                'document_id': doc.get('document_id'),
+                'name': doc.get('original_filename') or doc.get('filename'),
+                'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
+            })
+
+        entries = []
+        for row in rows:
+            expense_id = int(row.get('expense_id') or 0)
+            sort_date = (
+                row.get('expense_date')
+                or row.get('valid_from')
+                or (f"{int(row['expense_year']):04d}-01-01" if row.get('expense_year') else '')
+            )
+            entries.append({
+                'expense_id': expense_id,
+                'date': row.get('expense_date'),
+                'year': row.get('expense_year'),
+                'valid_from': row.get('valid_from'),
+                'valid_to': row.get('valid_to'),
+                'expense_group': row.get('expense_group'),
+                'category': row.get('category'),
+                'description': row.get('description'),
+                'amount': round(float(row.get('amount') or 0), 2),
+                'currency': row.get('currency') or 'CHF',
+                'provider': row.get('provider'),
+                'country': row.get('country'),
+                'odometer_km': row.get('odometer_km'),
+                'notes': row.get('notes'),
+                'documents': docs_by_expense.get(expense_id, []),
+                '_sort_date': sort_date,
+            })
+        entries.sort(key=lambda item: (str(item.get('_sort_date') or ''), int(item.get('expense_id') or 0)), reverse=True)
+        for item in entries:
+            item.pop('_sort_date', None)
+
+        self._value = len(entries)
+        self._attrs = {'vehicle_id': vid, 'entries': entries}
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def device_info(self):
+        return {'identifiers': {(DOMAIN, 'ford_triplog')}, 'name': 'Ford Triplog', 'manufacturer': 'Ford', 'model': 'Triplog', 'sw_version': VERSION}
+
+
+class FordTriplogCostOverviewTCOSensor(SensorEntity):
+    """TCO overview backed by the canonical SQLite monthly cost view."""
+    _attr_has_entity_name = True
+    _attr_translation_key = "cost_overview_tco"
+    _attr_unique_id = "ford_triplog_cost_overview_tco"
+    _attr_icon = "mdi:calculator-variant"
+    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_should_poll = True
+    _unrecorded_attributes = frozenset({"monthly_breakdown", "yearly_summary"})
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._value=None; self._attrs={}
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_CHARGE_DATA_UPDATED, self._changed))
+        self.async_on_remove(async_dispatcher_connect(self.hass, SIGNAL_LAST_TRIP_UPDATED, self._changed))
+        await self.async_update()
+
+    @callback
+    def _changed(self,*_args): self.hass.async_create_task(self._refresh())
+    async def _refresh(self): await self.async_update(); self.async_write_ha_state()
+
+    @staticmethod
+    def _month_key_offset(now: datetime, offset: int) -> str:
+        idx=now.year*12+(now.month-1)+offset
+        y,m0=divmod(idx,12)
+        return f"{y:04d}-{m0+1:02d}"
+
+    async def async_update(self) -> None:
+        from pathlib import Path
+        from .database import FordTriplogDatabase
+
+        vid=get_selected_vehicle_id(self.hass, fallback=1)
+        if vid is None:
+            self._value=None; self._attrs={}; return
+
+        now=dt_util.now()
+        database=FordTriplogDatabase(
+            self.hass,
+            Path(self.hass.config.path('.storage', STORAGE_DIR)),
+            vehicle_id=vid,
+        )
+        cost_rows=await database.load_vehicle_cost_monthly(vid)
+        costs_by_month={str(row['month']):row for row in cost_rows}
+
+        registry=er.async_get(self.hass)
+        charging_monthly={}; charging_yearly={}
+        eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_charging_monthly_statistics')
+        if eid:
+            st=self.hass.states.get(eid)
+            if st:
+                mb=st.attributes.get('monthly_breakdown') or {}
+                ys=st.attributes.get('yearly_summary') or {}
+                charging_monthly={str(k):float((v or {}).get('total_cost') or 0) for k,v in mb.items() if isinstance(v,dict)}
+                charging_yearly={str(k):float((v or {}).get('total_cost') or 0) for k,v in ys.items() if isinstance(v,dict)}
+                if st.attributes.get('month'):
+                    charging_monthly[str(st.attributes['month'])]=float(st.attributes.get('total_cost_month') or 0)
+
+        distance_monthly={}; distance_yearly={}
+        driving_eid=registry.async_get_entity_id('sensor',DOMAIN,'ford_triplog_driving_monthly_statistics')
+        if driving_eid:
+            st=self.hass.states.get(driving_eid)
+            if st:
+                mb=st.attributes.get('monthly_breakdown') or {}
+                ys=st.attributes.get('yearly_summary') or {}
+                distance_monthly={str(k):float((v or {}).get('distance_km') or 0) for k,v in mb.items() if isinstance(v,dict)}
+                distance_yearly={str(k):float((v or {}).get('distance_km') or 0) for k,v in ys.items() if isinstance(v,dict)}
+                if st.attributes.get('month'):
+                    distance_monthly[str(st.attributes['month'])]=float(st.attributes.get('distance_month_km') or st.state or 0)
+
+        def serialize(row,charging,distance):
+            financing=float((row or {}).get('financing') or 0)
+            insurance=float((row or {}).get('insurance') or 0)
+            road_tax=float((row or {}).get('road_tax') or 0)
+            maintenance=float((row or {}).get('maintenance_repairs') or 0)
+            toll=float((row or {}).get('tolls_vignettes') or 0)
+            other=float((row or {}).get('other_costs') or 0)
+            fixed=financing+insurance+road_tax
+            variable=maintenance+toll+other+charging
+            total=fixed+variable
+            return {
+                'financing':round(financing,2),'insurance':round(insurance,2),'road_tax':round(road_tax,2),
+                'fixed_costs':round(fixed,2),'maintenance_repairs':round(maintenance,2),
+                'tolls_vignettes':round(toll,2),'other_costs':round(other,2),
+                'charging':round(charging,2),'variable_costs':round(variable,2),
+                'total_costs':round(total,2),'distance_km':round(distance,1),
+                'fixed_cost_per_km':round(fixed/distance,4) if distance>0 else None,
+                'total_cost_per_km':round(total/distance,4) if distance>0 else None,
+            }
+
+        month_keys=[self._month_key_offset(now,o) for o in range(-11,1)]
+        monthly=[]
+        for key in month_keys:
+            monthly.append({'month':key,**serialize(costs_by_month.get(key),charging_monthly.get(key,0.0),distance_monthly.get(key,0.0))})
+
+        # Annual values are sums of the canonical monthly view rows. This keeps
+        # current-month, 12-month and yearly TCO on exactly the same cost basis.
+        by_year={}
+        for row in cost_rows:
+            year=str(row['year'])
+            if int(year)>=now.year: continue
+            bucket=by_year.setdefault(year,{'financing':0.0,'insurance':0.0,'road_tax':0.0,'maintenance_repairs':0.0,'tolls_vignettes':0.0,'other_costs':0.0})
+            for key in bucket: bucket[key]+=float(row.get(key) or 0)
+
+        years=sorted(set(by_year)|set(charging_yearly)|set(distance_yearly),reverse=True)
+        yearly=[]
+        for year in years:
+            if int(year)>=now.year: continue
+            yearly.append({'year':year,**serialize(by_year.get(year),charging_yearly.get(year,0.0),distance_yearly.get(year,0.0))})
+
+        current=monthly[-1]
+        self._value=current['total_costs']
+        self._attrs={'vehicle_id':vid,'month':current['month'],'currency':'CHF',
+                     **{k:v for k,v in current.items() if k!='month'},
+                     'monthly_breakdown':monthly,'yearly_summary':yearly,
+                     'cost_source':'sqlite_view:v_vehicle_cost_monthly'}
+
+    @property
+    def native_value(self): return self._value
+    @property
+    def extra_state_attributes(self): return self._attrs
+    @property
+    def device_info(self): return {'identifiers':{(DOMAIN,'ford_triplog')},'name':'Ford Triplog','manufacturer':'Ford','model':'Triplog','sw_version':VERSION}
+
+
+class FordTriplogVehicleDetailsSensor(SensorEntity):
+    """Combined vehicle master-data and warranty sensor for the selected vehicle."""
+
+    _attr_has_entity_name = True
+    _attr_translation_key = "vehicle_details"
+    _attr_unique_id = "ford_triplog_vehicle_details"
+    _attr_icon = "mdi:car-info"
+    _attr_should_poll = True
+
+    def __init__(self, hass: HomeAssistant) -> None:
+        self._hass_ref = hass
+        self._value: str | None = None
+        self._attrs: dict[str, Any] = {}
+        self._remove_odometer_listener = None
+        self._watched_odometer_entity: str | None = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_CONTEXT_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(async_dispatcher_connect(
+            self.hass, SIGNAL_VEHICLE_LIST_UPDATED, self._context_changed
+        ))
+        self.async_on_remove(self._remove_odometer_watch)
+        self._bind_odometer_watch()
+        await self.async_update()
+
+    @callback
+    def _remove_odometer_watch(self) -> None:
+        if self._remove_odometer_listener is not None:
+            self._remove_odometer_listener()
+            self._remove_odometer_listener = None
+        self._watched_odometer_entity = None
+
+    @callback
+    def _bind_odometer_watch(self) -> None:
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        resolved = get_vehicle_runtime(self.hass, vehicle_id) if vehicle_id is not None else None
+        runtime = resolved[1] if resolved else {}
+        odometer_entity = (runtime.get("config") or {}).get("odometer")
+        odometer_entity = str(odometer_entity) if odometer_entity else None
+        if odometer_entity == self._watched_odometer_entity:
+            return
+        self._remove_odometer_watch()
+        if odometer_entity:
+            self._watched_odometer_entity = odometer_entity
+            self._remove_odometer_listener = async_track_state_change_event(
+                self.hass, [odometer_entity], self._odometer_changed
+            )
+
+    @callback
+    def _odometer_changed(self, event) -> None:
+        self.hass.async_create_task(self._refresh())
+
+    @callback
+    def _context_changed(self, *args: Any) -> None:
+        self._bind_odometer_watch()
+        self.hass.async_create_task(self._refresh())
+
+    async def _refresh(self) -> None:
+        await self.async_update()
+        self.async_write_ha_state()
+
+    async def async_update(self) -> None:
+        from .vehicle_document import FordTriplogVehicleDocumentStorage
+        from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_date, warranty_remaining_time
+
+        vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
+        if vehicle_id is None:
+            self._value, self._attrs = None, {}
+            return
+        resolved = get_vehicle_runtime(self.hass, vehicle_id)
+        runtime = resolved[1] if resolved else {}
+        name = vehicle_display_name(self.hass, vehicle_id, runtime)
+        details = await FordTriplogVehicleDocumentStorage(self.hass).async_get_details(vehicle_id) or {}
+        warranties = await FordTriplogVehicleWarrantyStorage(self.hass).async_get(vehicle_id)
+
+        config = runtime.get("config") or {}
+        odometer_entity = config.get("odometer")
+        odometer = None
+        if odometer_entity:
+            state = self.hass.states.get(str(odometer_entity))
+            if state is not None and state.state not in ("unknown", "unavailable", ""):
+                try:
+                    odometer = float(str(state.state).replace("'", "").replace(" ", ""))
+                except (TypeError, ValueError):
+                    odometer = None
+        if odometer is None:
+            coordinator = runtime.get("coordinator")
+            try:
+                raw = (coordinator.data or {}).get("odometer") if coordinator is not None else None
+                odometer = float(raw) if raw is not None else None
+            except (TypeError, ValueError, AttributeError):
+                odometer = None
+
+        first_registration = details.get("first_registration")
+        labels = {
+            "vehicle": "Fahrzeuggarantie",
+            "ev_components": "EV-Komponenten",
+            "hv_battery": "HV-Batterie",
+        }
+        warranty_attrs: dict[str, Any] = {}
+        for kind, label in labels.items():
+            row = warranties.get(kind) or {}
+            years = row.get("duration_years")
+            km_limit = row.get("mileage_limit_km")
+            remaining_km = None
+            if km_limit is not None and odometer is not None:
+                remaining_km = max(0, int(round(float(km_limit) - odometer)))
+            valid_until = warranty_end_date(first_registration, years)
+            remaining_time = warranty_remaining_time(valid_until, dt_util.now().date())
+            warranty_attrs[kind] = {
+                "name": label,
+                "years": years,
+                "km_limit": km_limit,
+                "valid_until": valid_until,
+                "remaining_km": remaining_km,
+                **remaining_time,
+            }
+
+        self._value = name
+        self._attrs = {
+            "vehicle_id": vehicle_id,
+            "make": details.get("make"),
+            "model": details.get("model"),
+            "registration_number": details.get("registration_number"),
+            "vin": details.get("vin"),
+            "first_registration": first_registration,
+            "type_approval": details.get("type_approval"),
+            "power_kw": details.get("power_kw"),
+            "empty_weight_kg": details.get("empty_weight_kg"),
+            "gross_weight_kg": details.get("gross_weight_kg"),
+            "odometer_km": round(odometer, 1) if odometer is not None else None,
+            "odometer_entity": odometer_entity,
+            "warranties": warranty_attrs,
+        }
+
+    @property
+    def native_value(self):
+        return self._value
+
+    @property
+    def extra_state_attributes(self):
+        return self._attrs
+
+    @property
+    def available(self) -> bool:
+        return self._value is not None
+
+    @property
+    def device_info(self):
+        return {
+            "identifiers": {(DOMAIN, "ford_triplog")},
+            "name": "Ford Triplog",
+            "manufacturer": "Ford",
+            "model": "Triplog",
+            "sw_version": VERSION,
+        }
 
 
 class FordTriplogVehicleSourceStatusSensor(SensorEntity):
@@ -2557,6 +3308,8 @@ class FordTriplogLastRouteSensor(SensorEntity):
         self._route = route
         self._attr_native_value = trip_id or len(display_coordinates)
 
+        start_longitude, start_latitude = display_coordinates[0]
+        end_longitude, end_latitude = display_coordinates[-1]
         center_latitude = (
             sum(coord[1] for coord in display_coordinates)
             / len(display_coordinates)
@@ -2574,8 +3327,17 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "raw_point_count": len(coordinates),
             "start_time": start_time,
             "end_time": end_time,
-            "latitude": center_latitude,
-            "longitude": center_longitude,
+            "start_latitude": start_latitude,
+            "start_longitude": start_longitude,
+            "end_latitude": end_latitude,
+            "end_longitude": end_longitude,
+            # Home Assistant map-compatible position. Keep this on the route
+            # start so map cards open at the beginning of the drive.
+            "latitude": start_latitude,
+            "longitude": start_longitude,
+            # Preserve the previous geometric centre as explicit metadata.
+            "center_latitude": center_latitude,
+            "center_longitude": center_longitude,
             "osrm_distance_km": osrm_distance_km,
             "osrm_confidence": osrm_confidence,
             "osrm_matched_tracepoints": osrm_matched_tracepoints,
@@ -2743,11 +3505,30 @@ class FordTriplogRouteHistorySensor(SensorEntity):
         }
 
         if coordinates:
-            attrs["latitude"] = (
+            start_longitude = float(coordinates[0][0])
+            start_latitude = float(coordinates[0][1])
+            end_longitude = float(coordinates[-1][0])
+            end_latitude = float(coordinates[-1][1])
+            center_latitude = (
                 sum(float(c[1]) for c in coordinates) / len(coordinates)
             )
-            attrs["longitude"] = (
+            center_longitude = (
                 sum(float(c[0]) for c in coordinates) / len(coordinates)
+            )
+
+            attrs.update(
+                {
+                    "start_latitude": start_latitude,
+                    "start_longitude": start_longitude,
+                    "end_latitude": end_latitude,
+                    "end_longitude": end_longitude,
+                    # Home Assistant map-compatible position. For a day with
+                    # multiple routes this is the start of the first route.
+                    "latitude": start_latitude,
+                    "longitude": start_longitude,
+                    "center_latitude": center_latitude,
+                    "center_longitude": center_longitude,
+                }
             )
 
         self._attr_native_value = selected_date

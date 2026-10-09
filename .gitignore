@@ -8,3 +8,4 @@ home-assistant.log
 dist/
 build/
 custom_components/ford_triplog.zip
+custom_components/ford_triplog_2.5_final.zip
