@@ -15,6 +15,10 @@
         "data_description": {
           "smart_trip": "Pauses short stops and combines them into one trip.",
           "smart_trip_timeout": "Time until a paused trip is finally completed."
+        },
+        "menu_options": {
+          "recover_vehicle": "Recover vehicle configuration",
+          "new_vehicle": "Configure a new vehicle"
         }
       },
       "duplicate_vehicle": {
@@ -26,14 +30,46 @@
         "data_description": {
           "create_test_vehicle": "Creates a new vehicle_id for this source although the VIN already exists. Use only for testing."
         }
+      },
+      "new_vehicle": {
+        "title": "Configure new vehicle",
+        "description": "Configure Ford Triplog for a new vehicle.",
+        "data": {
+          "ignition": "Ignition",
+          "odometer": "Odometer",
+          "tracker": "Vehicle tracker",
+          "charging": "Charging status sensor (available for FordPass electric vehicles only)",
+          "smart_trip": "Enable Smart Trip",
+          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+        },
+        "data_description": {
+          "smart_trip": "Pauses short stops and combines them into one trip.",
+          "smart_trip_timeout": "Time until a paused trip is finally completed."
+        }
+      },
+      "recover_vehicle": {
+        "title": "Recover vehicle configuration",
+        "description": "A Ford Triplog vehicle exists in the local SQLite database without a Home Assistant ConfigEntry. Select the vehicle whose saved configuration you want to restore.",
+        "data": {
+          "recovery_vehicle": "Saved vehicle"
+        }
+      },
+      "recover_vehicle_confirm": {
+        "title": "Confirm vehicle recovery",
+        "description": "Restore **{vehicle}** from the local configuration snapshot?\n\nVIN: **{vin}**  \nSource: **{source}**  \nSnapshot: **{snapshot_version} / build {snapshot_build}**  \nLast updated: **{updated_at}**\n\nThe stored Home Assistant source entities and vehicle settings will be recreated. You can change them afterwards in Ford Triplog settings.",
+        "data": {
+          "recovery_confirm": "Restore configuration"
+        }
       }
     },
     "error": {
-      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source."
+      "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
+      "recovery_snapshot_missing": "The selected configuration snapshot is no longer available."
     },
     "abort": {
       "vehicle_already_configured": "The vehicle {vehicle} is already configured. No second vehicle was created.",
-      "duplicate_vehicle_context_lost": "The duplicate-vehicle setup context was lost. Start adding the vehicle again."
+      "duplicate_vehicle_context_lost": "The duplicate-vehicle setup context was lost. Start adding the vehicle again.",
+      "recovery_snapshot_missing": "The saved configuration snapshot is no longer available."
     }
   },
   "options": {
@@ -1679,7 +1715,7 @@
         "name": "Route History"
       },
       "last_trip_soc_recovered": {
-        "name": "SOC recovered in last trip"
+        "name": "Recuperation in last trip"
       },
       "last_trip_regenerated_energy": {
         "name": "Net recuperation in last trip"

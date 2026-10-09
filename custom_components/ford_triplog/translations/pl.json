@@ -15,6 +15,10 @@
         "data_description": {
           "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
           "smart_trip_timeout": "Czas do ostatecznego zakończenia wstrzymanego przejazdu."
+        },
+        "menu_options": {
+          "recover_vehicle": "Przywróć konfigurację pojazdu",
+          "new_vehicle": "Skonfiguruj nowy pojazd"
         }
       },
       "duplicate_vehicle": {
@@ -26,14 +30,46 @@
         "data_description": {
           "create_test_vehicle": "Tworzy nowy vehicle_id dla tego źródła mimo istniejącego VIN. Używać tylko do testów."
         }
+      },
+      "new_vehicle": {
+        "title": "Skonfiguruj nowy pojazd",
+        "description": "Skonfiguruj Ford Triplog dla nowego pojazdu.",
+        "data": {
+          "ignition": "Zapłon",
+          "odometer": "Przebieg",
+          "tracker": "Lokalizator pojazdu",
+          "charging": "Czujnik stanu ładowania (dostępny tylko dla elektrycznych pojazdów FordPass)",
+          "smart_trip": "Włącz Smart Trip",
+          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)"
+        },
+        "data_description": {
+          "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
+          "smart_trip_timeout": "Czas do ostatecznego zakończenia wstrzymanego przejazdu."
+        }
+      },
+      "recover_vehicle": {
+        "title": "Przywróć konfigurację pojazdu",
+        "description": "W lokalnej bazie SQLite istnieje pojazd Ford Triplog bez wpisu konfiguracji Home Assistant. Wybierz pojazd, którego zapisaną konfigurację chcesz przywrócić.",
+        "data": {
+          "recovery_vehicle": "Zapisany pojazd"
+        }
+      },
+      "recover_vehicle_confirm": {
+        "title": "Potwierdź przywracanie pojazdu",
+        "description": "Przywrócić **{vehicle}** z lokalnej migawki konfiguracji?\n\nVIN: **{vin}**  \nŹródło: **{source}**  \nMigawka: **{snapshot_version} / build {snapshot_build}**  \nOstatnia aktualizacja: **{updated_at}**\n\nZapisane encje źródłowe Home Assistant i ustawienia pojazdu zostaną odtworzone. Można je później zmienić w ustawieniach Ford Triplog.",
+        "data": {
+          "recovery_confirm": "Przywróć konfigurację"
+        }
       }
     },
     "error": {
-      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych."
+      "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych.",
+      "recovery_snapshot_missing": "Wybrana migawka konfiguracji nie jest już dostępna."
     },
     "abort": {
       "vehicle_already_configured": "Pojazd {vehicle} jest już skonfigurowany. Nie utworzono drugiego pojazdu.",
-      "duplicate_vehicle_context_lost": "Utracono kontekst konfiguracji duplikatu pojazdu. Rozpocznij dodawanie pojazdu ponownie."
+      "duplicate_vehicle_context_lost": "Utracono kontekst konfiguracji duplikatu pojazdu. Rozpocznij dodawanie pojazdu ponownie.",
+      "recovery_snapshot_missing": "Zapisana migawka konfiguracji nie jest już dostępna."
     }
   },
   "options": {
@@ -1685,7 +1721,7 @@
         "name": "Energia ostatniej sesji ładowania z FordPass"
       },
       "last_trip_soc_recovered": {
-        "name": "Odzysk SOC podczas ostatniej jazdy"
+        "name": "Rekuperacja podczas ostatniej jazdy"
       },
       "last_trip_regenerated_energy": {
         "name": "Rekuperacja netto podczas ostatniej jazdy"

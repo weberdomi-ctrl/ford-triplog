@@ -15,6 +15,10 @@
         "data_description": {
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
           "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
+        },
+        "menu_options": {
+          "recover_vehicle": "Fahrzeugkonfiguration wiederherstellen",
+          "new_vehicle": "Neues Fahrzeug konfigurieren"
         }
       },
       "duplicate_vehicle": {
@@ -26,14 +30,46 @@
         "data_description": {
           "create_test_vehicle": "Erzeugt für diese Quelle eine neue vehicle_id, obwohl die VIN bereits vorhanden ist. Nur für Tests verwenden."
         }
+      },
+      "new_vehicle": {
+        "title": "Neues Fahrzeug konfigurieren",
+        "description": "Ford Triplog für ein neues Fahrzeug konfigurieren.",
+        "data": {
+          "ignition": "Zündung",
+          "odometer": "Kilometerstand",
+          "tracker": "Fahrzeug-Tracker",
+          "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar)",
+          "smart_trip": "Smart Trip aktivieren",
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+        },
+        "data_description": {
+          "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
+          "smart_trip_timeout": "Zeit, nach der eine pausierte Fahrt endgültig abgeschlossen wird."
+        }
+      },
+      "recover_vehicle": {
+        "title": "Fahrzeugkonfiguration wiederherstellen",
+        "description": "In der lokalen SQLite-Datenbank ist ein Ford-Triplog-Fahrzeug ohne Home-Assistant-Konfiguration vorhanden. Wähle das Fahrzeug aus, dessen gespeicherte Konfiguration wiederhergestellt werden soll.",
+        "data": {
+          "recovery_vehicle": "Gespeichertes Fahrzeug"
+        }
+      },
+      "recover_vehicle_confirm": {
+        "title": "Wiederherstellung bestätigen",
+        "description": "**{vehicle}** aus dem lokalen Konfigurations-Snapshot wiederherstellen?\n\nVIN: **{vin}**  \nQuelle: **{source}**  \nSnapshot: **{snapshot_version} / Build {snapshot_build}**  \nZuletzt aktualisiert: **{updated_at}**\n\nDie gespeicherten Home-Assistant-Quellentitäten und Fahrzeugeinstellungen werden wiederhergestellt. Sie können danach in den Ford-Triplog-Einstellungen geändert werden.",
+        "data": {
+          "recovery_confirm": "Konfiguration wiederherstellen"
+        }
       }
     },
     "error": {
-      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden."
+      "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
+      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar."
     },
     "abort": {
       "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",
-      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten."
+      "duplicate_vehicle_context_lost": "Der Kontext für das doppelte Fahrzeug ist verloren gegangen. Bitte das Hinzufügen erneut starten.",
+      "recovery_snapshot_missing": "Der gespeicherte Konfigurations-Snapshot ist nicht mehr verfügbar."
     }
   },
   "options": {
@@ -1697,7 +1733,7 @@
         "name": "Routenhistorie"
       },
       "last_trip_soc_recovered": {
-        "name": "SOC-Rückgewinnung der letzten Fahrt"
+        "name": "Rekuperation der letzten Fahrt"
       },
       "last_trip_regenerated_energy": {
         "name": "Netto-Rekuperation der letzten Fahrt"

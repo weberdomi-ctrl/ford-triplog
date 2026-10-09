@@ -3,9 +3,9 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.5.0
-Build: 25023
-Changes: Store global home charging tariff periods in SQLite.
+Version: 2.6.0-dev.54
+Build: 26054
+Changes: Add persistent vehicle ConfigEntry recovery snapshots.
 """
 
 from __future__ import annotations
@@ -463,6 +463,158 @@ class FordTriplogDatabase:
 
         return await self.hass.async_add_executor_job(_read)
 
+    async def async_save_config_snapshot(
+        self,
+        *,
+        vehicle_id: int | None = None,
+        entry_title: str | None = None,
+        entry_unique_id: str | None = None,
+        entry_data: dict[str, Any] | None = None,
+        entry_options: dict[str, Any] | None = None,
+        integration_version: str | None = None,
+        integration_build: str | None = None,
+    ) -> None:
+        """Persist the latest recoverable Home Assistant vehicle configuration.
+
+        The snapshot deliberately mirrors ConfigEntry data/options instead of
+        trying to infer a configuration from vehicle history. It is local to
+        the Ford Triplog SQLite database and is updated on every successful
+        setup/reload of the vehicle ConfigEntry.
+        """
+
+        await self.async_setup()
+        selected_id = int(vehicle_id or self.vehicle_id)
+        if selected_id < 1:
+            raise ValueError("vehicle_id must be >= 1")
+
+        data_json = json.dumps(
+            dict(entry_data or {}),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        options_json = json.dumps(
+            dict(entry_options or {}),
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+
+        def _save() -> None:
+            now = time.strftime("%Y-%m-%dT%H:%M:%S%z")
+            with sqlite3.connect(self.db_path) as db:
+                db.execute("PRAGMA foreign_keys = ON")
+                db.execute(
+                    """
+                    INSERT INTO vehicle_config_snapshots (
+                        vehicle_id, entry_title, entry_unique_id,
+                        entry_data, entry_options, integration_version,
+                        integration_build, updated_at
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(vehicle_id) DO UPDATE SET
+                        entry_title = excluded.entry_title,
+                        entry_unique_id = excluded.entry_unique_id,
+                        entry_data = excluded.entry_data,
+                        entry_options = excluded.entry_options,
+                        integration_version = excluded.integration_version,
+                        integration_build = excluded.integration_build,
+                        updated_at = excluded.updated_at
+                    """,
+                    (
+                        selected_id,
+                        str(entry_title).strip() if entry_title else None,
+                        (
+                            str(entry_unique_id).strip()
+                            if entry_unique_id
+                            else None
+                        ),
+                        data_json,
+                        options_json,
+                        (
+                            str(integration_version).strip()
+                            if integration_version
+                            else None
+                        ),
+                        (
+                            str(integration_build).strip()
+                            if integration_build
+                            else None
+                        ),
+                        now,
+                    ),
+                )
+                db.commit()
+
+        await self.hass.async_add_executor_job(_save)
+
+    @staticmethod
+    def _decode_config_snapshot_json(value: Any) -> dict[str, Any]:
+        """Return one stored ConfigEntry mapping or an empty mapping."""
+
+        try:
+            decoded = json.loads(str(value or "{}"))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            return {}
+        return decoded if isinstance(decoded, dict) else {}
+
+    async def async_list_config_snapshots(self) -> list[dict[str, Any]]:
+        """Return recoverable vehicle ConfigEntry snapshots."""
+
+        await self.async_setup()
+
+        def _read() -> list[dict[str, Any]]:
+            with sqlite3.connect(self.db_path) as db:
+                db.row_factory = sqlite3.Row
+                rows = db.execute(
+                    """
+                    SELECT
+                        s.vehicle_id, s.entry_title, s.entry_unique_id,
+                        s.entry_data, s.entry_options,
+                        s.integration_version, s.integration_build,
+                        s.updated_at,
+                        v.vin, v.name, v.manufacturer, v.model,
+                        v.battery_capacity_kwh, v.source,
+                        v.alias_of_vehicle_id, v.is_test_alias
+                    FROM vehicle_config_snapshots AS s
+                    JOIN vehicles AS v ON v.vehicle_id = s.vehicle_id
+                    ORDER BY s.vehicle_id
+                    """
+                ).fetchall()
+
+                result: list[dict[str, Any]] = []
+                for row in rows:
+                    item = dict(row)
+                    item["data"] = self._decode_config_snapshot_json(
+                        item.pop("entry_data", None)
+                    )
+                    item["options"] = self._decode_config_snapshot_json(
+                        item.pop("entry_options", None)
+                    )
+                    result.append(item)
+                return result
+
+        return await self.hass.async_add_executor_job(_read)
+
+    async def async_get_config_snapshot(
+        self,
+        vehicle_id: int | None = None,
+    ) -> dict[str, Any] | None:
+        """Return the latest recoverable configuration for one vehicle."""
+
+        selected_id = int(vehicle_id or self.vehicle_id)
+        snapshots = await self.async_list_config_snapshots()
+        return next(
+            (
+                snapshot
+                for snapshot in snapshots
+                if int(snapshot.get("vehicle_id") or 0) == selected_id
+            ),
+            None,
+        )
+
     async def validate_json_identity(
         self,
         json_records: dict[str, dict[str, Any] | None],
@@ -750,6 +902,22 @@ class FordTriplogDatabase:
                         WHERE vin IS NOT NULL
                           AND source IS NOT NULL
                           AND alias_of_vehicle_id IS NOT NULL
+                        """
+                    )
+                    db.execute(
+                        """
+                        CREATE TABLE IF NOT EXISTS vehicle_config_snapshots (
+                            vehicle_id INTEGER PRIMARY KEY,
+                            entry_title TEXT,
+                            entry_unique_id TEXT,
+                            entry_data TEXT NOT NULL DEFAULT '{}',
+                            entry_options TEXT NOT NULL DEFAULT '{}',
+                            integration_version TEXT,
+                            integration_build TEXT,
+                            updated_at TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id)
+                                REFERENCES vehicles(vehicle_id)
+                        )
                         """
                     )
                     db.execute("PRAGMA foreign_keys = ON")

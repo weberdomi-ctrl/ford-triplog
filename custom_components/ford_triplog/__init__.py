@@ -5,9 +5,9 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.6.0-dev.23
-Build: 26023
-Changes: Reject detached Route Tracker GPS and keep vehicle GPS authoritative.
+Version: 2.6.0-dev.54
+Build: 26054
+Changes: Add SQLite-backed vehicle configuration recovery snapshots.
 """
 
 from __future__ import annotations
@@ -272,8 +272,9 @@ async def _async_cleanup_orphaned_vehicles(
 
     Build 25013 removes a vehicle when its ConfigEntry is deleted. Vehicles
     deleted before that build can still exist in SQLite, including dependent
-    trip/charge/journey/route rows. Only rows that are not referenced by any
-    existing Ford Triplog ConfigEntry are considered orphaned.
+    trip/charge/journey/route rows. Rows protected by a 2.6 configuration
+    recovery snapshot are intentionally preserved even when their ConfigEntry
+    is missing; older unprotected rows can still be cleaned up.
     """
 
     configured_ids = _configured_vehicle_ids(hass)
@@ -282,11 +283,25 @@ async def _async_cleanup_orphaned_vehicles(
     # Assistant has not yet reflected async_update_entry on the object.
     configured_ids.add(int(current_vehicle_id))
     vehicles = await database.async_list_vehicles()
+    recovery_snapshots = await database.async_list_config_snapshots()
+    protected_vehicle_ids = {
+        int(snapshot["vehicle_id"])
+        for snapshot in recovery_snapshots
+        if snapshot.get("vehicle_id") is not None
+    }
     orphan_ids = [
         int(vehicle["vehicle_id"])
         for vehicle in vehicles
         if int(vehicle["vehicle_id"]) not in configured_ids
+        and int(vehicle["vehicle_id"]) not in protected_vehicle_ids
     ]
+    preserved_ids = sorted(protected_vehicle_ids - configured_ids)
+    if preserved_ids:
+        _LOGGER.warning(
+            "Ford Triplog vehicle rows without ConfigEntries preserved for "
+            "configuration recovery: %s",
+            preserved_ids,
+        )
     if not orphan_ids:
         return []
 
@@ -563,6 +578,31 @@ async def async_setup_entry(
     await hass.config_entries.async_forward_entry_setups(
         entry,
         PLATFORMS,
+    )
+
+    # Persist the recovery snapshot only after the complete integration setup
+    # succeeded. This keeps the previous known-good snapshot intact when a
+    # future configuration change makes setup fail part-way through. Global
+    # home tariffs are central SQLite master data and the auto-detected plug
+    # sensor is runtime-only, so neither belongs in the ConfigEntry snapshot.
+    snapshot_data = dict(entry.data)
+    snapshot_options = dict(entry.options)
+    snapshot_data[CONF_VEHICLE_ID] = vehicle_id
+    if config.get(CONF_VEHICLE_NAME):
+        snapshot_data.setdefault(
+            CONF_VEHICLE_NAME,
+            config[CONF_VEHICLE_NAME],
+        )
+    snapshot_data.pop(CONF_HOME_TARIFF_PERIODS, None)
+    snapshot_options.pop(CONF_HOME_TARIFF_PERIODS, None)
+    await storage.database.async_save_config_snapshot(
+        vehicle_id=vehicle_id,
+        entry_title=entry.title,
+        entry_unique_id=entry.unique_id,
+        entry_data=snapshot_data,
+        entry_options=snapshot_options,
+        integration_version=VERSION,
+        integration_build=BUILD,
     )
 
     _LOGGER.info(

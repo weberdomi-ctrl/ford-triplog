@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.5.0
-Phase: Multi-vehicle context
-Build: 25023
-Release: 2.5.0
+Version: 2.6.0-dev.54
+Phase: Vehicle configuration recovery
+Build: 26054
+Release: Development
 
 
 """
@@ -66,6 +66,7 @@ from .osrm_client import (
 )
 
 from .export import FordTriplogExporter
+from .database import FordTriplogDatabase
 from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
@@ -142,6 +143,8 @@ from .const import (
 
 
 CONF_CREATE_TEST_VEHICLE = "create_test_vehicle"
+CONF_RECOVERY_VEHICLE = "recovery_vehicle"
+CONF_RECOVERY_CONFIRM = "recovery_confirm"
 
 CONF_CHARGING_SITE_FILE = "charging_site_file"
 CONF_CHARGING_SITE_COUNTRY = "charging_site_country"
@@ -433,11 +436,95 @@ class FordTriplogConfigFlow(
         title = f"{NAME} – {configured_name}" if configured_name else NAME
         return self.async_create_entry(title=title, data=entry_data)
 
+    async def _async_available_recovery_snapshots(self) -> list[dict[str, Any]]:
+        """Return stored vehicle configurations not owned by a ConfigEntry."""
+
+        base_path = Path(self.hass.config.path(".storage", STORAGE_DIR))
+        db_path = base_path / "ford_triplog.db"
+        if not db_path.exists():
+            return []
+
+        database = FordTriplogDatabase(self.hass, base_path, 1)
+        snapshots = await database.async_list_config_snapshots()
+
+        configured_vehicle_ids: set[int] = set()
+        configured_unique_ids: set[str] = set()
+        for entry in self.hass.config_entries.async_entries(DOMAIN):
+            merged = {**entry.data, **entry.options}
+            raw_vehicle_id = merged.get(CONF_VEHICLE_ID)
+            try:
+                configured_vehicle_ids.add(int(raw_vehicle_id))
+            except (TypeError, ValueError):
+                if entry.unique_id in (None, DOMAIN):
+                    configured_vehicle_ids.add(1)
+            if entry.unique_id:
+                configured_unique_ids.add(str(entry.unique_id))
+
+        return [
+            snapshot
+            for snapshot in snapshots
+            if int(snapshot.get("vehicle_id") or 0)
+            not in configured_vehicle_ids
+            and (
+                not snapshot.get("entry_unique_id")
+                or str(snapshot.get("entry_unique_id"))
+                not in configured_unique_ids
+            )
+        ]
+
+    @staticmethod
+    def _recovery_snapshot_label(snapshot: dict[str, Any]) -> str:
+        """Return a concise human-readable recovery selector label."""
+
+        vehicle_id = int(snapshot.get("vehicle_id") or 0)
+        name = str(
+            snapshot.get("name")
+            or snapshot.get("model")
+            or snapshot.get("entry_title")
+            or f"Vehicle {vehicle_id}"
+        ).strip()
+        vin = str(snapshot.get("vin") or "").strip()
+        source = FordTriplogConfigFlow._source_display_name(
+            snapshot.get("source")
+        )
+        parts = [name]
+        if vin:
+            parts.append(vin)
+        if source:
+            parts.append(source)
+        parts.append(f"ID {vehicle_id}")
+        return " · ".join(parts)
+
     async def async_step_user(
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Handle the initial configuration."""
+        """Offer recovery when an unclaimed vehicle snapshot exists."""
+
+        if user_input is not None:
+            return await self.async_step_new_vehicle(user_input)
+
+        snapshots = await self._async_available_recovery_snapshots()
+        if snapshots:
+            self._recovery_snapshots = {
+                str(snapshot["vehicle_id"]): snapshot
+                for snapshot in snapshots
+            }
+            return self.async_show_menu(
+                step_id="user",
+                menu_options=[
+                    "recover_vehicle",
+                    "new_vehicle",
+                ],
+            )
+
+        return await self.async_step_new_vehicle()
+
+    async def async_step_new_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Handle normal configuration of a new vehicle."""
 
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -465,9 +552,150 @@ class FordTriplogConfigFlow(
                 )
 
         return self.async_show_form(
-            step_id="user",
+            step_id="new_vehicle",
             data_schema=self._build_schema(),
             errors=errors,
+        )
+
+    async def async_step_recover_vehicle(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Select a stored vehicle configuration for recovery."""
+
+        snapshots = await self._async_available_recovery_snapshots()
+        snapshot_map = {
+            str(snapshot["vehicle_id"]): snapshot
+            for snapshot in snapshots
+        }
+        self._recovery_snapshots = snapshot_map
+
+        if not snapshot_map:
+            return await self.async_step_new_vehicle()
+
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            selected = str(user_input.get(CONF_RECOVERY_VEHICLE) or "")
+            snapshot = snapshot_map.get(selected)
+            if snapshot is None:
+                errors["base"] = "recovery_snapshot_missing"
+            else:
+                self._pending_recovery_snapshot = snapshot
+                return await self.async_step_recover_vehicle_confirm()
+
+        options = [
+            selector.SelectOptionDict(
+                value=vehicle_id,
+                label=self._recovery_snapshot_label(snapshot),
+            )
+            for vehicle_id, snapshot in snapshot_map.items()
+        ]
+
+        return self.async_show_form(
+            step_id="recover_vehicle",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECOVERY_VEHICLE,
+                        default=options[0]["value"],
+                    ): selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=options,
+                            mode=selector.SelectSelectorMode.DROPDOWN,
+                        )
+                    )
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_recover_vehicle_confirm(
+        self,
+        user_input: dict[str, Any] | None = None,
+    ) -> ConfigFlowResult:
+        """Confirm and recreate a ConfigEntry from its SQLite snapshot."""
+
+        snapshot = getattr(self, "_pending_recovery_snapshot", None)
+        if not isinstance(snapshot, dict):
+            return await self.async_step_recover_vehicle()
+
+        vehicle_id = int(snapshot.get("vehicle_id") or 0)
+        if vehicle_id < 1:
+            return self.async_abort(reason="recovery_snapshot_missing")
+
+        if user_input is not None:
+            if not bool(user_input.get(CONF_RECOVERY_CONFIRM, False)):
+                self._pending_recovery_snapshot = None
+                return await self.async_step_user()
+
+            recovered_data = dict(snapshot.get("data") or {})
+            recovered_data.update(dict(snapshot.get("options") or {}))
+            recovered_data[CONF_VEHICLE_ID] = vehicle_id
+
+            recovered_name = str(
+                recovered_data.get(CONF_VEHICLE_NAME)
+                or snapshot.get("name")
+                or snapshot.get("model")
+                or ""
+            ).strip()
+            if recovered_name:
+                recovered_data[CONF_VEHICLE_NAME] = recovered_name
+
+            unique_id = str(
+                snapshot.get("entry_unique_id")
+                or (
+                    f"vehicle:{str(snapshot.get('vin')).strip().lower()}"
+                    if snapshot.get("vin")
+                    else ""
+                )
+            ).strip()
+            if unique_id:
+                await self.async_set_unique_id(unique_id)
+                self._abort_if_unique_id_configured()
+
+            title = str(snapshot.get("entry_title") or "").strip()
+            if not title:
+                title = (
+                    f"{NAME} – {recovered_name}"
+                    if recovered_name
+                    else NAME
+                )
+
+            _LOGGER.warning(
+                "Recovering Ford Triplog ConfigEntry from SQLite snapshot: "
+                "vehicle_id=%s vin=%s snapshot_build=%s",
+                vehicle_id,
+                snapshot.get("vin") or "unknown",
+                snapshot.get("integration_build") or "unknown",
+            )
+            self._pending_recovery_snapshot = None
+            return self.async_create_entry(
+                title=title,
+                data=recovered_data,
+            )
+
+        return self.async_show_form(
+            step_id="recover_vehicle_confirm",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_RECOVERY_CONFIRM,
+                        default=False,
+                    ): selector.BooleanSelector(),
+                }
+            ),
+            description_placeholders={
+                "vehicle": self._recovery_snapshot_label(snapshot),
+                "vin": str(snapshot.get("vin") or "—"),
+                "source": self._source_display_name(snapshot.get("source")),
+                "updated_at": str(snapshot.get("updated_at") or "—"),
+                "snapshot_version": str(
+                    snapshot.get("integration_version") or "—"
+                ),
+                "snapshot_build": str(
+                    snapshot.get("integration_build") or "—"
+                ),
+            },
         )
 
     async def async_step_duplicate_vehicle(
