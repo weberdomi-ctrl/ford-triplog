@@ -23,7 +23,7 @@
 ------------------------------------------------------------------------
 
 Ford Triplog is a Home Assistant custom integration that automatically
-records trips and charging sessions from compatible vehicle entities.
+records trips and charging sessions of your Ford electric vehicles.
 
 Ford Triplog remains Ford-focused. Version 2.6 builds on the production
 multi-vehicle architecture from 2.5 and adds vehicle master data, documents,
@@ -32,11 +32,8 @@ recovery. Each configured vehicle keeps its own local Trips, charging sessions,
 Journeys, Routes, costs and related history while the shared dashboard entities
 can switch between loaded vehicles.
 
-For Ford vehicles, Ford Connect is the recommended vehicle data source.
-Compatible FordPass entities can still be used where available. Other
-Home Assistant vehicle sources can also be used when they expose compatible
-entities; Ford-specific features such as automatic physical plug-state
-detection are only enabled for supported Ford sources.
+For Ford Triplog 2.5, Ford Connect is the recommended vehicle data source.
+Compatible FordPass entities can still be used where available.
 
 All data is stored locally inside Home Assistant.
 
