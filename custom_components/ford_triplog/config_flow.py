@@ -7026,8 +7026,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         store = ZoneTariffStorage(self.hass)
         await store.async_setup()
         zones = sorted(
-            (entity_id, state.attributes.get("friendly_name", entity_id))
-            for entity_id, state in self.hass.states.async_all("zone")
+            (state.entity_id, state.attributes.get("friendly_name", state.entity_id))
+            for state in self.hass.states.async_all("zone")
         )
         if not zones:
             return self.async_abort(reason="no_zones")
