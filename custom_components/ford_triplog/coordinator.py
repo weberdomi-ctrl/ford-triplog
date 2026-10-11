@@ -1099,7 +1099,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             else None
         )
 
-        tracker = self.hass.states.get(self.config.get("tracker"))
+        tracker_entity_id = self.config.get("tracker")
+        tracker = (
+            self.hass.states.get(tracker_entity_id)
+            if tracker_entity_id
+            else None
+        )
         data["latitude"] = tracker.attributes.get("latitude") if tracker else None
         data["longitude"] = tracker.attributes.get("longitude") if tracker else None
         data["gps_updated_at"] = (
