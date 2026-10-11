@@ -5670,12 +5670,61 @@ class FordTriplogOptionsFlow(OptionsFlow):
             step_id="export",
             menu_options=[
                 "export_trips",
+                "export_routes",
                 "export_journeys",
                 "export_charges",
                 "export_charging_monthly",
                 "export_driving_monthly",
                 "init",
             ],
+        )
+
+    async def async_step_export_routes(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Export one Trip, Journey or calendar day as GPX/GeoJSON."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            try:
+                runtime = self._get_context_runtime_data()
+                route_storage = runtime.get("route_storage")
+                if route_storage is None:
+                    raise HomeAssistantError("Route storage is not initialized")
+                exporter = FordTriplogExporter(self.hass, self._get_trip_storage())
+                result = await exporter.async_export_routes(
+                    route_storage,
+                    scope=user_input["scope"],
+                    identifier=user_input["identifier"],
+                    format=user_input["format"],
+                    geometry=user_input["geometry"],
+                    journey_storage=self._get_export_journey_storage(),
+                )
+                filename = result["filename"]
+                signed_path = async_sign_path(self.hass, f"/api/ford_triplog/exports/{filename}", timedelta(minutes=10), use_content_user=True)
+                try:
+                    base_url = get_url(self.hass, allow_internal=True, allow_external=True, allow_cloud=True, allow_ip=True, prefer_external=True).rstrip("/")
+                    self._selected_export_url = f"{base_url}{signed_path}"
+                except NoURLAvailableError:
+                    self._selected_export_url = signed_path
+                self._export_kind = "routes"
+                self._export_result = {
+                    "record_count": str(result["record_count"]),
+                    "record_type": "Routes",
+                    "filename": filename,
+                    "path": str(result["path"]),
+                    "period": user_input["identifier"],
+                }
+                return await self.async_step_export_result()
+            except (HomeAssistantError, OSError, RuntimeError, ValueError, KeyError):
+                _LOGGER.exception("Route export failed")
+                errors["base"] = "export_failed"
+        return self.async_show_form(
+            step_id="export_routes",
+            data_schema=vol.Schema({
+                vol.Required("scope", default="day"): vol.In({"trip": "Trip", "journey": "Journey", "day": "Day"}),
+                vol.Required("identifier"): str,
+                vol.Required("format", default="gpx"): vol.In({"gpx": "GPX", "geojson": "GeoJSON"}),
+                vol.Required("geometry", default="raw"): vol.In({"raw": "Original GPS", "osrm": "OSRM (if available)"}),
+            }),
+            errors=errors,
         )
 
     async def async_step_export_trips(

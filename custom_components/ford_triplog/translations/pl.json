@@ -774,7 +774,8 @@
           "export_charges": "Eksportuj sesje ładowania do CSV",
           "init": "Wróć do menu głównego",
           "export_charging_monthly": "Eksportuj miesięczne statystyki ładowania do CSV",
-          "export_driving_monthly": "Eksportuj miesięczne statystyki jazdy jako CSV"
+          "export_driving_monthly": "Eksportuj miesięczne statystyki jazdy jako CSV",
+          "export_routes": "Eksportuj trasy GPS"
         },
         "menu_option_descriptions": {
           "export_trips": "Eksportuj zapisane przejazdy do pliku CSV, opcjonalnie ograniczając zakres dat.",
@@ -782,7 +783,8 @@
           "export_charges": "Eksportuj zapisane sesje ładowania do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "init": "Wróć do przeglądu Ford Triplog.",
           "export_charging_monthly": "Eksportuj pełną historię ładowania zagregowaną według miesięcy kalendarzowych do pliku CSV.",
-          "export_driving_monthly": "Eksportuj pełną historię jazdy zagregowaną według miesięcy kalendarzowych jako plik CSV."
+          "export_driving_monthly": "Eksportuj pełną historię jazdy zagregowaną według miesięcy kalendarzowych jako plik CSV.",
+          "export_routes": "Eksport tras GPS do GPX lub GeoJSON"
         }
       },
       "export_trips": {
@@ -1460,6 +1462,16 @@
         "description": "Wybierz rachunek do usunięcia.",
         "data": {
           "document_id": "Rachunek"
+        }
+      },
+      "export_routes": {
+        "title": "Eksport tras GPS",
+        "description": "Podaj identyfikator przejazdu, podróży lub datę (RRRR-MM-DD).",
+        "data": {
+          "scope": "Scope",
+          "identifier": "ID / Date",
+          "format": "Format",
+          "geometry": "GPS / OSRM"
         }
       }
     },
