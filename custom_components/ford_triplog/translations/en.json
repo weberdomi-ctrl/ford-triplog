@@ -1525,6 +1525,12 @@
         "error": {
           "invalid_tariff": "Ungültige oder überlappende Tarifperiode"
         }
+      },
+      "zone_tariff_vehicle": {
+        "title": "Select vehicle",
+        "data": {
+          "vehicle_id": "Vehicle"
+        }
       }
     },
     "error": {

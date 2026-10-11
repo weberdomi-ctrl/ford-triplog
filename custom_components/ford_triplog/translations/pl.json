@@ -1503,6 +1503,12 @@
         "error": {
           "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
+      },
+      "zone_tariff_vehicle": {
+        "title": "Select vehicle",
+        "data": {
+          "vehicle_id": "Vehicle"
+        }
       }
     },
     "error": {
