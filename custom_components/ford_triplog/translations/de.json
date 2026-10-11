@@ -40,7 +40,8 @@
           "tracker": "Fahrzeug-Tracker",
           "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar)",
           "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "standalone_test_vehicle": "Testfahrzeug (ohne Sensoren) anlegen"
         },
         "data_description": {
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
-      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar."
+      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar.",
+      "missing_vehicle_sources": "Zündung, Kilometerstand und Fahrzeug-Tracker sind für normale Fahrzeuge erforderlich."
     },
     "abort": {
       "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",

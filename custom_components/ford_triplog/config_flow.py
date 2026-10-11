@@ -143,6 +143,7 @@ from .const import (
 
 
 CONF_CREATE_TEST_VEHICLE = "create_test_vehicle"
+CONF_STANDALONE_TEST_VEHICLE = "standalone_test_vehicle"
 CONF_RECOVERY_VEHICLE = "recovery_vehicle"
 CONF_RECOVERY_CONFIRM = "recovery_confirm"
 
@@ -421,8 +422,12 @@ class FordTriplogConfigFlow(
         else:
             if detected_name:
                 entry_data.setdefault(CONF_VEHICLE_NAME, detected_name)
-            unique_id = identity.unique_key or (
-                f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
+            unique_id = (
+                f"standalone-test:{entry_data['standalone_test_id']}"
+                if entry_data.get(CONF_STANDALONE_TEST_VEHICLE)
+                else identity.unique_key or (
+                    f"entity:{str(user_input.get(CONF_IGNITION) or '').lower()}"
+                )
             )
 
         await self.async_set_unique_id(unique_id)
@@ -528,6 +533,11 @@ class FordTriplogConfigFlow(
 
         errors: dict[str, str] = {}
         if user_input is not None:
+            if not user_input.get(CONF_STANDALONE_TEST_VEHICLE, False) and any(
+                not user_input.get(key) for key in (CONF_IGNITION, CONF_ODOMETER, CONF_TRACKER)
+            ):
+                errors["base"] = "missing_vehicle_sources"
+                return self.async_show_form(step_id="new_vehicle", data_schema=self._build_schema(), errors=errors)
             if _contains_ford_triplog_input(
                 self.hass,
                 user_input,
@@ -535,6 +545,15 @@ class FordTriplogConfigFlow(
             ):
                 errors["base"] = "ford_triplog_entity_not_allowed"
             else:
+                if user_input.get(CONF_STANDALONE_TEST_VEHICLE, False):
+                    # No real vehicle source or VIN is needed for a sandbox entry.
+                    # A random UUID gives every test vehicle its own DB identity.
+                    from uuid import uuid4
+                    test_data = dict(user_input)
+                    test_data[CONF_VEHICLE_NAME] = f"TEST Dynamic {uuid4().hex[:6]}"
+                    test_data["standalone_test_id"] = uuid4().hex
+                    identity = async_detect_vehicle_identity(self.hass, {})
+                    return await self._async_create_vehicle_entry(test_data, identity)
                 identity = async_detect_vehicle_identity(
                     self.hass,
                     user_input,
@@ -781,15 +800,18 @@ class FordTriplogConfigFlow(
         blocked_sensors = _ford_triplog_entities(self.hass, {"sensor"})
         blocked_trackers = _ford_triplog_entities(self.hass, {"device_tracker"})
 
+        # Optional selectors for all source entities. Normal vehicles are
+        # validated below; standalone test vehicles need no source entities.
         return vol.Schema(
             {
-                vol.Required(CONF_IGNITION): selector.EntitySelector(
+                vol.Required(CONF_STANDALONE_TEST_VEHICLE, default=False): selector.BooleanSelector(),
+                vol.Optional(CONF_IGNITION): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
-                vol.Required(CONF_ODOMETER): selector.EntitySelector(
+                vol.Optional(CONF_ODOMETER): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="sensor", exclude_entities=blocked_sensors)
                 ),
-                vol.Required(CONF_TRACKER): selector.EntitySelector(
+                vol.Optional(CONF_TRACKER): selector.EntitySelector(
                     selector.EntitySelectorConfig(domain="device_tracker", exclude_entities=blocked_trackers)
                 ),
                 vol.Optional(CONF_SOC): selector.EntitySelector(

@@ -40,7 +40,8 @@
           "tracker": "Lokalizator pojazdu",
           "charging": "Czujnik stanu ładowania (dostępny tylko dla elektrycznych pojazdów FordPass)",
           "smart_trip": "Włącz Smart Trip",
-          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)"
+          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
+          "standalone_test_vehicle": "Utwórz pojazd testowy (bez czujników)"
         },
         "data_description": {
           "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych.",
-      "recovery_snapshot_missing": "Wybrana migawka konfiguracji nie jest już dostępna."
+      "recovery_snapshot_missing": "Wybrana migawka konfiguracji nie jest już dostępna.",
+      "missing_vehicle_sources": "Zwykły pojazd wymaga zapłonu, licznika i lokalizatora."
     },
     "abort": {
       "vehicle_already_configured": "Pojazd {vehicle} jest już skonfigurowany. Nie utworzono drugiego pojazdu.",

@@ -40,7 +40,8 @@
           "tracker": "Vehicle tracker",
           "charging": "Charging status sensor (available for FordPass electric vehicles only)",
           "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+          "smart_trip_timeout": "Smart Trip timeout (seconds)",
+          "standalone_test_vehicle": "Create test vehicle (no sensors)"
         },
         "data_description": {
           "smart_trip": "Pauses short stops and combines them into one trip.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
-      "recovery_snapshot_missing": "The selected configuration snapshot is no longer available."
+      "recovery_snapshot_missing": "The selected configuration snapshot is no longer available.",
+      "missing_vehicle_sources": "Ignition, odometer and vehicle tracker are required for normal vehicles."
     },
     "abort": {
       "vehicle_already_configured": "The vehicle {vehicle} is already configured. No second vehicle was created.",
