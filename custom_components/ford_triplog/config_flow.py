@@ -7003,6 +7003,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not zones:
             return self.async_abort(reason="no_zones")
         options = [selector.SelectOptionDict(value=key, label=str(label)) for key, label in zones]
+        options.append(selector.SelectOptionDict(value="__back_to_settings__", label="← Zurück zu den Einstellungen"))
         overview_rows = []
         vehicles = self._vehicle_context_options()
         for zone_id, zone_name in zones:
@@ -7027,6 +7028,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 overview_rows.append(f"| {zone_name} | {vehicle['label']} | {details} |")
         overview = "| Ladeort | Fahrzeug | Tarif |\n|---|---|---|\n" + "\n".join(overview_rows)
         if user_input is not None:
+            if user_input["zone_id"] == "__back_to_settings__":
+                return await self.async_step_settings()
             self._zone_tariff_selected = user_input["zone_id"]
             return await self.async_step_zone_tariff_vehicle()
         return self.async_show_form(

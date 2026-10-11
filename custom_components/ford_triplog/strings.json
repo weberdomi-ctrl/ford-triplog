@@ -1471,9 +1471,6 @@
         "description": "Charging zone: {zone_name}",
         "data": {
           "tariff_mode": "Tariftyp"
-        },
-        "error": {
-          "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
       },
       "zone_tariff_values": {
@@ -1483,9 +1480,6 @@
           "price_sensor": "HA-Preissensor",
           "interval_minutes": "Intervall (Minuten)",
           "currency": "Währung"
-        },
-        "error": {
-          "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
       },
       "zone_seasonal_menu": {
@@ -1503,9 +1497,6 @@
           "price_per_kwh": "Preis pro kWh",
           "currency": "Währung",
           "delete": "Tarifperiode löschen"
-        },
-        "error": {
-          "invalid_tariff": "Ungültige oder überlappende Tarifperiode"
         }
       },
       "zone_tariff_vehicle": {
@@ -1599,7 +1590,8 @@
       "expense_invalid_valid_to": "Valid to is invalid.",
       "expense_both_validity_dates_required": "Both valid from and valid to are required for a validity period.",
       "expense_invalid_validity_range": "Valid to cannot be before valid from.",
-      "expense_invalid_odometer": "The odometer value is invalid."
+      "expense_invalid_odometer": "The odometer value is invalid.",
+      "invalid_tariff": "Invalid or overlapping tariff period"
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",
