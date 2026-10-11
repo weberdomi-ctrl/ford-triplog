@@ -697,7 +697,13 @@ class FordTriplogExporter:
         if scope == "trip":
             routes = await route_storage.async_load_routes_for_trip_ids([identifier])
         elif scope == "day":
-            selected = date.fromisoformat(identifier)
+            try:
+                selected = date.fromisoformat(identifier)
+            except ValueError:
+                try:
+                    selected = datetime.strptime(identifier, "%d.%m.%Y").date()
+                except ValueError as exc:
+                    raise ValueError(f"Unsupported route export date: {identifier!r}") from exc
             routes = await route_storage.async_load_routes_for_date(selected)
         else:
             if journey_storage is None:
