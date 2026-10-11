@@ -6846,7 +6846,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             return str(value or "—")
 
     async def _async_ensure_home_tariff_periods(self) -> list[dict[str, Any]]:
-        """Load the global SQLite home tariff table into this Options Flow."""
+        """Load SQLite home tariffs for the selected vehicle."""
 
         if self._home_tariff_periods_cache is not None:
             return [dict(item) for item in self._home_tariff_periods_cache]
@@ -6855,11 +6855,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
             self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
             await self._home_tariff_storage.async_setup()
 
-        self._home_tariff_periods_cache = await self._home_tariff_storage.async_load()
+        self._home_tariff_periods_cache = await self._home_tariff_storage.async_load(self._ensure_vehicle_context_id())
         return [dict(item) for item in self._home_tariff_periods_cache]
 
     def _home_tariff_periods(self) -> list[dict[str, Any]]:
-        """Return the already-loaded global home tariff periods."""
+        """Return the selected vehicle home tariff periods."""
 
         return [dict(item) for item in (self._home_tariff_periods_cache or [])]
 
@@ -7294,19 +7294,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         periods: list[dict[str, Any]],
     ) -> None:
-        """Store global home tariff periods in SQLite and apply them live."""
+        """Store the selected vehicle tariffs and apply them live."""
 
         if self._home_tariff_storage is None:
             self._home_tariff_storage = FordTriplogHomeTariffStorage(self.hass)
             await self._home_tariff_storage.async_setup()
 
-        saved = await self._home_tariff_storage.async_save(periods)
+        saved = await self._home_tariff_storage.async_save(periods, self._ensure_vehicle_context_id())
         self._home_tariff_periods_cache = [dict(item) for item in saved]
 
-        # The tariff table is global. Every loaded vehicle gets the same period
-        # list immediately, while per-vehicle enable/home-zone settings remain
-        # untouched. No ConfigEntry reload is needed.
+        # Update only the selected vehicle. Other vehicles must keep their
+        # own tariff periods and charging cost calculators unchanged.
+        selected_vehicle_id = self._ensure_vehicle_context_id()
         for _vehicle_id, _entry_id, runtime_data in iter_vehicle_runtimes(self.hass):
+            if int(_vehicle_id) != selected_vehicle_id:
+                continue
             runtime_config = dict(runtime_data.get("config") or {})
             runtime_config[CONF_HOME_TARIFF_PERIODS] = [dict(item) for item in saved]
             runtime_data["config"] = runtime_config

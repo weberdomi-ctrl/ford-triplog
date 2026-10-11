@@ -394,15 +394,11 @@ async def async_setup_entry(
         )
         notify_vehicle_list_updated(hass)
 
-    # Home charging tariff periods are global Triplog master data. Build 25021
-    # moves them from per-vehicle ConfigEntry options into the central SQLite
-    # database. Existing 25016/25017 periods are imported once.
+    # 2.7-dev04: SQLite setup migrates global periods once. Each runtime
+    # receives only the periods assigned to its vehicle.
     home_tariff_storage = FordTriplogHomeTariffStorage(hass)
     await home_tariff_storage.async_setup()
-    global_home_tariffs = await home_tariff_storage.async_migrate_config_entries(
-        hass.config_entries.async_entries(DOMAIN)
-    )
-    config[CONF_HOME_TARIFF_PERIODS] = global_home_tariffs
+    config[CONF_HOME_TARIFF_PERIODS] = await home_tariff_storage.async_load(vehicle_id)
 
     geo = FordTriplogGeo(
         hass,
