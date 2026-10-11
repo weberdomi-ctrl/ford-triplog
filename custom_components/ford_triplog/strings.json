@@ -1468,7 +1468,7 @@
       },
       "zone_tariff_edit": {
         "title": "Charging zone tariff",
-        "description": "Charging zone: {zone_name}",
+        "description": "Charging zone: {zone_name}\\n\\n{tariff_details}",
         "data": {
           "tariff_mode": "Tariftyp"
         },
@@ -1492,7 +1492,8 @@
         "title": "Saisonale Tarifperioden",
         "data": {
           "action": "Tarifperiode auswählen oder hinzufügen"
-        }
+        },
+        "description": "{period_overview}"
       },
       "zone_seasonal_period": {
         "title": "Tarifperiode bearbeiten",

@@ -6986,37 +6986,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self,
         user_input: dict[str, Any] | None = None,
     ) -> ConfigFlowResult:
-        """Show year-based home tariff management."""
-
-        await self._async_ensure_home_tariff_periods()
-
-        periods = self._home_tariff_periods()
-        translations = await self._async_get_home_tariff_translations()
-        menu_options = ["zone_tariff_settings", "home_tariff_add"]
-        if periods:
-            menu_options.append("home_tariff_selection")
-
-        context_entry = self._get_context_config_entry()
-        context_config = {**context_entry.data, **context_entry.options}
-        if (
-            not periods
-            and (
-                CONF_HOME_TARIFF_SUMMER_PRICE in context_config
-                or CONF_HOME_TARIFF_WINTER_PRICE in context_config
-            )
-        ):
-            menu_options.append("home_tariff_legacy_import")
-
-        menu_options.append("settings")
-
-        return self.async_show_menu(
-            step_id="home_tariff_settings",
-            menu_options=menu_options,
-            description_placeholders={
-                "tariff_table": self._home_tariff_table(translations),
-                "currency": self._home_tariff_currency(),
-            },
-        )
+        """Open the zone-based tariff management (legacy tariffs remain stored)."""
+        return await self.async_step_zone_tariff_settings()
 
     async def async_step_zone_tariff_settings(self, user_input=None) -> ConfigFlowResult:
         """Configure independent tariff modes for Home Assistant charging zones.
@@ -7079,9 +7050,27 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 await store.async_save(zone_id=zone_id, mode="seasonal", currency=current.get("currency", "CHF"))
                 return await self.async_step_zone_seasonal_menu()
             return await self.async_step_zone_tariff_values()
+        periods = await store.async_load_periods(zone_id) if current.get("mode") == "seasonal" else []
+        if periods:
+            rows = [
+                f"| {p['valid_from']} | {p['valid_to']} | {p['price_per_kwh']:.4f} {p['currency']}/kWh |"
+                for p in periods
+            ]
+            tariff_details = "**Gespeicherte Tarifperioden**\n\n| Von | Bis | Tarif |\n|---|---|---|\n" + "\n".join(rows)
+        elif current.get("mode") == "seasonal":
+            tariff_details = "Noch keine saisonalen Tarifperioden gespeichert."
+        elif current.get("mode") == "fixed":
+            tariff_details = f"Fixpreis: {float(current.get('price_per_kwh') or 0):.4f} {current.get('currency', 'CHF')}/kWh"
+        elif current.get("mode") == "dynamic":
+            tariff_details = f"Preissensor: {current.get('price_sensor') or 'nicht gewählt'} · {current.get('interval_minutes', 15)} Min."
+        else:
+            tariff_details = "Noch kein Tarif konfiguriert."
         return self.async_show_form(
             step_id="zone_tariff_edit",
-            description_placeholders={"zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id))},
+            description_placeholders={
+                "zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id)),
+                "tariff_details": tariff_details,
+            },
             data_schema=vol.Schema({
                 vol.Required("tariff_mode", default=current.get("mode", "fixed")):
                     selector.SelectSelector(selector.SelectSelectorConfig(options=[
@@ -7148,9 +7137,21 @@ class FordTriplogOptionsFlow(OptionsFlow):
             *[selector.SelectOptionDict(value=str(p["period_id"]), label=f'{p["valid_from"]} – {p["valid_to"]}: {p["price_per_kwh"]:.4f} {p["currency"]}/kWh') for p in periods],
             selector.SelectOptionDict(value="back", label="Zurück"),
         ]
-        return self.async_show_form(step_id="zone_seasonal_menu", data_schema=vol.Schema({
-            vol.Required("action"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
-        }))
+        overview = (
+            "| Von | Bis | Tarif |\n|---|---|---|\n"
+            + "\n".join(
+                f"| {p['valid_from']} | {p['valid_to']} | {p['price_per_kwh']:.4f} {p['currency']}/kWh |"
+                for p in periods
+            )
+            if periods else "Noch keine Tarifperioden gespeichert."
+        )
+        return self.async_show_form(
+            step_id="zone_seasonal_menu",
+            description_placeholders={"period_overview": overview},
+            data_schema=vol.Schema({
+                vol.Required("action"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+            }),
+        )
 
     async def async_step_zone_seasonal_import(self, user_input=None) -> ConfigFlowResult:
         """Explicitly select one vehicle's legacy periods for an empty home zone."""
