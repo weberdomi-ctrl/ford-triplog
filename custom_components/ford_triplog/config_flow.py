@@ -69,6 +69,7 @@ from .export import FordTriplogExporter
 from .database import FordTriplogDatabase
 from .route_rebuilder import FordTriplogRouteRebuilder
 from .home_tariff_storage import FordTriplogHomeTariffStorage
+from .zone_tariff_storage import ZoneTariffStorage
 from .charging_costs import FordTriplogChargingCostCalculator
 from .vehicle_financing import FordTriplogVehicleFinancingStorage, calculate_leasing_summary
 from .vehicle_document import FordTriplogVehicleDocumentStorage, extract_vehicle_registration_fields, render_vehicle_registration_png
@@ -6991,7 +6992,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         periods = self._home_tariff_periods()
         translations = await self._async_get_home_tariff_translations()
-        menu_options = ["home_tariff_add"]
+        menu_options = ["zone_tariff_settings", "home_tariff_add"]
         if periods:
             menu_options.append("home_tariff_selection")
 
@@ -7015,6 +7016,78 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 "tariff_table": self._home_tariff_table(translations),
                 "currency": self._home_tariff_currency(),
             },
+        )
+
+    async def async_step_zone_tariff_settings(self, user_input=None) -> ConfigFlowResult:
+        """Configure independent tariff modes for Home Assistant charging zones.
+
+        Step 1 only: no charging-cost calculation changes.
+        """
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        zones = sorted(
+            (entity_id, state.attributes.get("friendly_name", entity_id))
+            for entity_id, state in self.hass.states.async_all("zone")
+        )
+        if not zones:
+            return self.async_abort(reason="no_zones")
+        options = [selector.SelectOptionDict(value=key, label=str(label)) for key, label in zones]
+        if user_input is not None:
+            self._zone_tariff_selected = user_input["zone_id"]
+            return await self.async_step_zone_tariff_edit()
+        return self.async_show_form(
+            step_id="zone_tariff_settings",
+            data_schema=vol.Schema({
+                vol.Required("zone_id"): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN)
+                )
+            }),
+        )
+
+    async def async_step_zone_tariff_edit(self, user_input=None) -> ConfigFlowResult:
+        """Save tariff settings for one HA zone, shared by all vehicles."""
+        zone_id = getattr(self, "_zone_tariff_selected", None)
+        if not zone_id or self.hass.states.get(zone_id) is None or not zone_id.startswith("zone."):
+            return await self.async_step_zone_tariff_settings()
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        current = await store.async_load(zone_id)
+        errors = {}
+        if user_input is not None:
+            try:
+                await store.async_save(
+                    zone_id=zone_id,
+                    mode=user_input["tariff_mode"],
+                    price_per_kwh=user_input.get("price_per_kwh", 0),
+                    price_sensor=user_input.get("price_sensor", ""),
+                    interval_minutes=int(user_input.get("interval_minutes", 15)),
+                    currency=user_input.get("currency", "CHF"),
+                )
+            except (ValueError, TypeError):
+                errors["base"] = "invalid_tariff"
+            else:
+                return await self.async_step_home_tariff_settings()
+        values = user_input or current or {}
+        return self.async_show_form(
+            step_id="zone_tariff_edit",
+            description_placeholders={"zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id))},
+            data_schema=vol.Schema({
+                vol.Required("tariff_mode", default=values.get("mode", values.get("tariff_mode", "fixed"))):
+                    selector.SelectSelector(selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value="fixed", label="Fixpreis"),
+                        selector.SelectOptionDict(value="seasonal", label="Saisonale Tarife (bestehende Fahrzeugtarife)"),
+                        selector.SelectOptionDict(value="dynamic", label="Dynamisch"),
+                    ])),
+                vol.Optional("price_per_kwh", default=float(values.get("price_per_kwh", 0))): vol.All(vol.Coerce(float), vol.Range(min=0)),
+                vol.Optional("price_sensor", **({"default": values["price_sensor"]} if values.get("price_sensor") else {})): selector.EntitySelector(
+                    selector.EntitySelectorConfig(domain="sensor")
+                ),
+                vol.Required("interval_minutes", default=int(values.get("interval_minutes", 15))):
+                    selector.SelectSelector(selector.SelectSelectorConfig(options=["5", "15", "30", "60"])),
+                vol.Required("currency", default=values.get("currency", "CHF")): selector.SelectSelector(
+                    selector.SelectSelectorConfig(options=["CHF", "EUR"])
+                ),
+            }), errors=errors,
         )
 
     async def async_step_home_tariff_selection(

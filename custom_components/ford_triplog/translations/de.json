@@ -996,7 +996,8 @@
           "home_tariff_add": "Tarifzeitraum hinzufügen",
           "home_tariff_selection": "Tarifzeitraum bearbeiten",
           "home_tariff_legacy_import": "Bisherige Sommer-/Wintertarife übernehmen",
-          "settings": "Zurück zu den Einstellungen"
+          "settings": "Zurück zu den Einstellungen",
+          "zone_tariff_settings": "Ladeorte (HA-Zonen) verwalten"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Einen neuen globalen Tarifzeitraum in der Ford-Triplog-Datenbank erfassen.",
@@ -1492,6 +1493,26 @@
           "identifier": "Vorhandene Route / Journey / Tag",
           "format": "Format",
           "geometry": "GPS / OSRM"
+        }
+      },
+      "zone_tariff_settings": {
+        "title": "Ladeort auswählen",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        }
+      },
+      "zone_tariff_edit": {
+        "title": "Ladeort-Tarif",
+        "description": "Ladeort: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp",
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor (nur dynamisch)",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
       }
     },

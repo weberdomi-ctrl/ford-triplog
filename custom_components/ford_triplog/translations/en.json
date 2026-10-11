@@ -996,7 +996,8 @@
           "home_tariff_add": "Add tariff period",
           "home_tariff_selection": "Edit tariff period",
           "home_tariff_legacy_import": "Import previous summer/winter tariffs",
-          "settings": "Back to settings"
+          "settings": "Back to settings",
+          "zone_tariff_settings": "Configure charging zones"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Add a new global tariff period to the Ford Triplog database.",
@@ -1474,6 +1475,26 @@
           "identifier": "Available route / Journey / day",
           "format": "Format",
           "geometry": "GPS / OSRM"
+        }
+      },
+      "zone_tariff_settings": {
+        "title": "Select charging zone",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        }
+      },
+      "zone_tariff_edit": {
+        "title": "Charging zone tariff",
+        "description": "Charging zone: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp",
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor (nur dynamisch)",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
       }
     },

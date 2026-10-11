@@ -996,7 +996,8 @@
           "home_tariff_add": "Dodaj okres taryfy",
           "home_tariff_selection": "Edytuj okres taryfy",
           "home_tariff_legacy_import": "Importuj poprzednie taryfy lato/zima",
-          "settings": "Powrót do ustawień"
+          "settings": "Powrót do ustawień",
+          "zone_tariff_settings": "Configure charging zones"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Dodaj nowy zakres dat dla roku z ceną za kWh.",
@@ -1480,6 +1481,26 @@
           "identifier": "Dostępna trasa / podróż / dzień",
           "format": "Format",
           "geometry": "GPS / OSRM"
+        }
+      },
+      "zone_tariff_settings": {
+        "title": "Select charging zone",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        }
+      },
+      "zone_tariff_edit": {
+        "title": "Charging zone tariff",
+        "description": "Charging zone: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp",
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor (nur dynamisch)",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige Tarifkonfiguration"
         }
       }
     },
