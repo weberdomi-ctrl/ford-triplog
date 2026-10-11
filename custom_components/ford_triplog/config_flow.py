@@ -7068,8 +7068,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         return self.async_show_form(
             step_id="zone_tariff_edit",
             description_placeholders={
-                "zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id)),
-                "tariff_details": tariff_details,
+                "zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id)) + "\n\n" + tariff_details,
             },
             data_schema=vol.Schema({
                 vol.Required("tariff_mode", default=current.get("mode", "fixed")):

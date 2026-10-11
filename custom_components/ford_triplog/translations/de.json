@@ -1504,7 +1504,7 @@
       },
       "zone_tariff_edit": {
         "title": "Ladeort-Tarif",
-        "description": "Ladeort: {zone_name}\\n\\n{tariff_details}",
+        "description": "Ladeort: {zone_name}",
         "data": {
           "tariff_mode": "Tariftyp"
         },

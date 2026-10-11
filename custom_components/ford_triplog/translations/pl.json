@@ -1492,7 +1492,7 @@
       },
       "zone_tariff_edit": {
         "title": "Charging zone tariff",
-        "description": "Charging zone: {zone_name}\\n\\n{tariff_details}",
+        "description": "Charging zone: {zone_name}",
         "data": {
           "tariff_mode": "Tariftyp",
           "price_per_kwh": "Fixpreis pro kWh",
