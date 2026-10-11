@@ -1481,20 +1481,48 @@
         "title": "Select charging zone",
         "data": {
           "zone_id": "Home Assistant Zone"
-        }
+        },
+        "description": "**Ladeorte und Tarife**\n\n{zone_overview}"
       },
       "zone_tariff_edit": {
         "title": "Charging zone tariff",
         "description": "Charging zone: {zone_name}",
         "data": {
-          "tariff_mode": "Tariftyp",
+          "tariff_mode": "Tariff mode"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige Tarifkonfiguration"
+        }
+      },
+      "zone_tariff_values": {
+        "title": "Tarifeinstellungen",
+        "data": {
           "price_per_kwh": "Fixpreis pro kWh",
-          "price_sensor": "HA-Preissensor (nur dynamisch)",
+          "price_sensor": "HA-Preissensor",
           "interval_minutes": "Intervall (Minuten)",
           "currency": "Währung"
         },
         "error": {
           "invalid_tariff": "Ungültige Tarifkonfiguration"
+        }
+      },
+      "zone_seasonal_menu": {
+        "title": "Saisonale Tarifperioden",
+        "data": {
+          "action": "Tarifperiode auswählen oder hinzufügen"
+        }
+      },
+      "zone_seasonal_period": {
+        "title": "Tarifperiode bearbeiten",
+        "data": {
+          "valid_from": "Gültig ab",
+          "valid_to": "Gültig bis",
+          "price_per_kwh": "Preis pro kWh",
+          "currency": "Währung",
+          "delete": "Tarifperiode löschen"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige oder überlappende Tarifperiode"
         }
       }
     },

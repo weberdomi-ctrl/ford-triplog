@@ -1487,7 +1487,8 @@
         "title": "Select charging zone",
         "data": {
           "zone_id": "Home Assistant Zone"
-        }
+        },
+        "description": "**Ladeorte und Tarife**\n\n{zone_overview}"
       },
       "zone_tariff_edit": {
         "title": "Charging zone tariff",

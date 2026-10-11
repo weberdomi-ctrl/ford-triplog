@@ -7032,11 +7032,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not zones:
             return self.async_abort(reason="no_zones")
         options = [selector.SelectOptionDict(value=key, label=str(label)) for key, label in zones]
+        overview_rows = []
+        for zone_id, zone_name in zones:
+            config = await store.async_load(zone_id)
+            if not config:
+                details = "Nicht konfiguriert"
+            elif config["mode"] == "fixed":
+                details = f"Fixpreis: {config['price_per_kwh']:.4f} {config['currency']}/kWh"
+            elif config["mode"] == "dynamic":
+                details = f"Dynamisch: {config.get('price_sensor') or 'kein Sensor'} · {config['interval_minutes']} Min."
+            else:
+                periods = await store.async_load_periods(zone_id)
+                details = f"Saisonal: {len(periods)} Tarifperiode(n)"
+                if periods:
+                    from datetime import date
+                    today = date.today().isoformat()
+                    active = next((period for period in periods if period['valid_from'] <= today <= period['valid_to']), None)
+                    if active:
+                        details += f" · aktuell {active['price_per_kwh']:.4f} {active['currency']}/kWh"
+            overview_rows.append(f"| {zone_name} (`{zone_id}`) | {details} |")
+        overview = "| Ladeort | Tarif |\n|---|---|\n" + "\n".join(overview_rows)
         if user_input is not None:
             self._zone_tariff_selected = user_input["zone_id"]
             return await self.async_step_zone_tariff_edit()
         return self.async_show_form(
             step_id="zone_tariff_settings",
+            description_placeholders={"zone_overview": overview},
             data_schema=vol.Schema({
                 vol.Required("zone_id"): selector.SelectSelector(
                     selector.SelectSelectorConfig(options=options, mode=selector.SelectSelectorMode.DROPDOWN)
@@ -7045,19 +7066,44 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
 
     async def async_step_zone_tariff_edit(self, user_input=None) -> ConfigFlowResult:
-        """Save tariff settings for one HA zone, shared by all vehicles."""
+        """Select tariff mode first; only relevant fields appear in subsequent forms."""
         zone_id = getattr(self, "_zone_tariff_selected", None)
-        if not zone_id or self.hass.states.get(zone_id) is None or not zone_id.startswith("zone."):
+        if not zone_id or not zone_id.startswith("zone.") or self.hass.states.get(zone_id) is None:
             return await self.async_step_zone_tariff_settings()
         store = ZoneTariffStorage(self.hass)
         await store.async_setup()
-        current = await store.async_load(zone_id)
+        current = await store.async_load(zone_id) or {}
+        if user_input is not None:
+            self._zone_tariff_mode = user_input["tariff_mode"]
+            if self._zone_tariff_mode == "seasonal":
+                await store.async_save(zone_id=zone_id, mode="seasonal", currency=current.get("currency", "CHF"))
+                return await self.async_step_zone_seasonal_menu()
+            return await self.async_step_zone_tariff_values()
+        return self.async_show_form(
+            step_id="zone_tariff_edit",
+            description_placeholders={"zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id))},
+            data_schema=vol.Schema({
+                vol.Required("tariff_mode", default=current.get("mode", "fixed")):
+                    selector.SelectSelector(selector.SelectSelectorConfig(options=[
+                        selector.SelectOptionDict(value="fixed", label="Fixpreis"),
+                        selector.SelectOptionDict(value="seasonal", label="Saisonale Tarife"),
+                        selector.SelectOptionDict(value="dynamic", label="Dynamisch"),
+                    ]))
+            }),
+        )
+
+    async def async_step_zone_tariff_values(self, user_input=None) -> ConfigFlowResult:
+        """Configure only fields belonging to the selected tariff mode."""
+        zone_id = self._zone_tariff_selected
+        mode = getattr(self, "_zone_tariff_mode", "fixed")
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        current = await store.async_load(zone_id) or {}
         errors = {}
         if user_input is not None:
             try:
                 await store.async_save(
-                    zone_id=zone_id,
-                    mode=user_input["tariff_mode"],
+                    zone_id=zone_id, mode=mode,
                     price_per_kwh=user_input.get("price_per_kwh", 0),
                     price_sensor=user_input.get("price_sensor", ""),
                     interval_minutes=int(user_input.get("interval_minutes", 15)),
@@ -7066,29 +7112,106 @@ class FordTriplogOptionsFlow(OptionsFlow):
             except (ValueError, TypeError):
                 errors["base"] = "invalid_tariff"
             else:
-                return await self.async_step_home_tariff_settings()
-        values = user_input or current or {}
+                return await self.async_step_zone_tariff_settings()
+        values = user_input or current
+        schema = {}
+        if mode == "fixed":
+            schema[vol.Required("price_per_kwh", default=float(values.get("price_per_kwh") or 0))] = vol.All(vol.Coerce(float), vol.Range(min=0))
+        else:
+            sensor_value = values.get("price_sensor")
+            kwargs = {"default": sensor_value} if sensor_value else {}
+            schema[vol.Required("price_sensor", **kwargs)] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+            schema[vol.Required("interval_minutes", default=str(values.get("interval_minutes", 15)))] = selector.SelectSelector(selector.SelectSelectorConfig(options=["5", "15", "30", "60"]))
+        schema[vol.Required("currency", default=values.get("currency", "CHF"))] = selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR"]))
+        return self.async_show_form(step_id="zone_tariff_values", data_schema=vol.Schema(schema), errors=errors)
+
+    async def async_step_zone_seasonal_menu(self, user_input=None) -> ConfigFlowResult:
+        """Manage seasonal tariff periods for the selected charging zone."""
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        periods = await store.async_load_periods(self._zone_tariff_selected)
+        sources = await store.async_legacy_sources(self._zone_tariff_selected)
+        if user_input is not None:
+            action = user_input["action"]
+            if action == "import_legacy":
+                return await self.async_step_zone_seasonal_import()
+            if action == "add":
+                self._zone_period_id = None
+                return await self.async_step_zone_seasonal_period()
+            if action == "back":
+                return await self.async_step_zone_tariff_settings()
+            self._zone_period_id = int(action)
+            return await self.async_step_zone_seasonal_period()
+        options = [
+            selector.SelectOptionDict(value="add", label="Neue Tarifperiode hinzufügen"),
+            *([selector.SelectOptionDict(value="import_legacy", label="Bestehende Fahrzeugtarife nach zone.home übernehmen (nur leere Zone)")] if not periods and sources and self._zone_tariff_selected == "zone.home" else []),
+            *[selector.SelectOptionDict(value=str(p["period_id"]), label=f'{p["valid_from"]} – {p["valid_to"]}: {p["price_per_kwh"]:.4f} {p["currency"]}/kWh') for p in periods],
+            selector.SelectOptionDict(value="back", label="Zurück"),
+        ]
+        return self.async_show_form(step_id="zone_seasonal_menu", data_schema=vol.Schema({
+            vol.Required("action"): selector.SelectSelector(selector.SelectSelectorConfig(options=options))
+        }))
+
+    async def async_step_zone_seasonal_import(self, user_input=None) -> ConfigFlowResult:
+        """Explicitly select one vehicle's legacy periods for an empty home zone."""
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        zone_id = self._zone_tariff_selected
+        if zone_id != "zone.home":
+            return await self.async_step_zone_seasonal_menu()
+        sources = await store.async_legacy_sources(zone_id)
+        if not sources:
+            return await self.async_step_zone_seasonal_menu()
+        errors = {}
+        if user_input is not None:
+            try:
+                await store.async_import_legacy(zone_id, int(user_input["vehicle_id"]))
+            except (ValueError, TypeError):
+                errors["base"] = "invalid_tariff"
+            else:
+                return await self.async_step_zone_seasonal_menu()
         return self.async_show_form(
-            step_id="zone_tariff_edit",
-            description_placeholders={"zone_name": str(self.hass.states.get(zone_id).attributes.get("friendly_name", zone_id))},
-            data_schema=vol.Schema({
-                vol.Required("tariff_mode", default=values.get("mode", values.get("tariff_mode", "fixed"))):
-                    selector.SelectSelector(selector.SelectSelectorConfig(options=[
-                        selector.SelectOptionDict(value="fixed", label="Fixpreis"),
-                        selector.SelectOptionDict(value="seasonal", label="Saisonale Tarife (bestehende Fahrzeugtarife)"),
-                        selector.SelectOptionDict(value="dynamic", label="Dynamisch"),
-                    ])),
-                vol.Optional("price_per_kwh", default=float(values.get("price_per_kwh", 0))): vol.All(vol.Coerce(float), vol.Range(min=0)),
-                vol.Optional("price_sensor", **({"default": values["price_sensor"]} if values.get("price_sensor") else {})): selector.EntitySelector(
-                    selector.EntitySelectorConfig(domain="sensor")
-                ),
-                vol.Required("interval_minutes", default=int(values.get("interval_minutes", 15))):
-                    selector.SelectSelector(selector.SelectSelectorConfig(options=["5", "15", "30", "60"])),
-                vol.Required("currency", default=values.get("currency", "CHF")): selector.SelectSelector(
-                    selector.SelectSelectorConfig(options=["CHF", "EUR"])
-                ),
-            }), errors=errors,
+            step_id="zone_seasonal_import",
+            data_schema=vol.Schema({vol.Required("vehicle_id"): selector.SelectSelector(
+                selector.SelectSelectorConfig(options=[
+                    selector.SelectOptionDict(value=str(item["vehicle_id"]),
+                        label=f'Fahrzeug-ID {item["vehicle_id"]} ({item["count"]} Tarifperioden)')
+                    for item in sources
+                ]))}),
+            errors=errors,
         )
+
+    async def async_step_zone_seasonal_period(self, user_input=None) -> ConfigFlowResult:
+        """Add, update or remove one zone-scoped seasonal period."""
+        store = ZoneTariffStorage(self.hass)
+        await store.async_setup()
+        period_id = getattr(self, "_zone_period_id", None)
+        current = await store.async_get_period(period_id) if period_id is not None else None
+        errors = {}
+        if user_input is not None:
+            try:
+                if user_input.get("delete", False) and period_id is not None:
+                    await store.async_delete_period(period_id, self._zone_tariff_selected)
+                else:
+                    await store.async_save_period(
+                        zone_id=self._zone_tariff_selected, period_id=period_id,
+                        valid_from=str(user_input["valid_from"]), valid_to=str(user_input["valid_to"]),
+                        price_per_kwh=float(user_input["price_per_kwh"]), currency=user_input["currency"],
+                    )
+            except (ValueError, TypeError):
+                errors["base"] = "invalid_tariff"
+            else:
+                return await self.async_step_zone_seasonal_menu()
+        from datetime import date as _date
+        schema = {
+            vol.Required("valid_from", default=_date.fromisoformat(current["valid_from"]) if current else _date.today()): selector.DateSelector(),
+            vol.Required("valid_to", default=_date.fromisoformat(current["valid_to"]) if current else _date(_date.today().year, 12, 31)): selector.DateSelector(),
+            vol.Required("price_per_kwh", default=float(current["price_per_kwh"]) if current else 0.0): vol.All(vol.Coerce(float), vol.Range(min=0)),
+            vol.Required("currency", default=current["currency"] if current else "CHF"): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR"])),
+        }
+        if period_id is not None:
+            schema[vol.Optional("delete", default=False)] = selector.BooleanSelector()
+        return self.async_show_form(step_id="zone_seasonal_period", data_schema=vol.Schema(schema), errors=errors)
 
     async def async_step_home_tariff_selection(
         self,
