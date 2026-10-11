@@ -5001,25 +5001,53 @@ class FordTriplogOptionsFlow(OptionsFlow):
             if isinstance(parsed_energy, (int, float))
             else float(getattr(charge, "energy_billed_kwh", None) or 0.0)
         )
+        # Preview the configured vehicle/zone tariff instead of reusing a stale
+        # finalized total when OCR did not detect a payable amount.
+        calculated_total = None
+        if not isinstance(parsed_total, (int, float)):
+            from copy import copy
+
+            preview = copy(charge)
+            preview.begin_manual_cost_edit()
+            preview.energy_billed_kwh = default_energy
+            preview.energy_billed_source = "receipt"
+            preview.cost_source = "none"
+            preview.cost_total = None
+            preview.energy_cost = None
+            preview.session_fee = None
+            preview.time_fee = None
+            preview.blocking_fee = None
+            preview.parking_fee = None
+            preview.other_cost = None
+            self._get_charge_manager().cost_calculator.recalculate(preview)
+            if preview.cost_total is not None:
+                calculated_total = round(float(preview.cost_total), 4)
         default_total = (
             float(parsed_total)
             if isinstance(parsed_total, (int, float))
-            else float(getattr(charge, "cost_total", None) or 0.0)
+            else calculated_total
         )
 
         if user_input is not None:
             energy_billed = float(
                 user_input.get(CONF_RECEIPT_APPLY_ENERGY, 0.0)
             )
-            total_cost = float(
-                user_input.get(CONF_RECEIPT_APPLY_TOTAL, 0.0)
+            entered_total = user_input.get(CONF_RECEIPT_APPLY_TOTAL)
+            total_cost = float(entered_total) if entered_total is not None else None
+            # If the user left the tariff preview unchanged, a changed energy
+            # value must trigger a fresh calculation, not store the preview as
+            # a manually entered total.
+            explicit_total = total_cost is not None and (
+                isinstance(parsed_total, (int, float))
+                or calculated_total is None
+                or abs(total_cost - calculated_total) > 0.00005
             )
             currency = str(
                 user_input.get(CONF_RECEIPT_APPLY_CURRENCY) or "CHF"
             ).upper()
 
             try:
-                if isinstance(parsed_total, (int, float)):
+                if explicit_total:
                     result = await self._get_charge_manager().async_set_cost(
                         target_id,
                         currency=currency,
@@ -5040,6 +5068,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             target_id,
                             energy_billed_kwh=energy_billed,
                             energy_billed_source="receipt",
+                            replace_ocr_total=True,
                         )
                     )
             except (HomeAssistantError, OSError, RuntimeError, ValueError):
@@ -5127,9 +5156,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
-                    vol.Required(
+                    vol.Optional(
                         CONF_RECEIPT_APPLY_TOTAL,
-                        default=default_total,
+                        **({"default": default_total} if default_total is not None else {}),
                     ): selector.NumberSelector(
                         selector.NumberSelectorConfig(
                             min=0,

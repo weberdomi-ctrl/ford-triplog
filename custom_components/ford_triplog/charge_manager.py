@@ -426,6 +426,7 @@ class FordTriplogChargeManager:
         energy_billed_kwh: float | None,
         energy_billed_source: str = "manual",
         cost_source: str = "manual",
+        replace_ocr_total: bool = False,
     ) -> ChargeManagerResult:
         """Update billed energy without replacing real stored costs."""
 
@@ -446,9 +447,29 @@ class FordTriplogChargeManager:
             energy_billed_source or "manual"
         ).strip().lower()
 
-        # Billed-energy edits do not implicitly reprice a finalized session.
-        if not charge.cost_finalized:
+        # An explicit user/receipt edit may reprice a completed session.
+        # Preserve an independently entered manual/OCR total: the receipt
+        # energy alone must not overwrite a real amount paid.
+        previous_source = str(charge.cost_source or "").lower()
+        protected_total = previous_source == "manual" or (
+            previous_source == "ocr" and not replace_ocr_total
+        )
+        if not protected_total:
+            charge.begin_manual_cost_edit()
+            if replace_ocr_total and previous_source == "ocr":
+                charge.cost_source = "none"
+                charge.cost_total = None
+                charge.energy_cost = None
+                charge.session_fee = None
+                charge.time_fee = None
+                charge.blocking_fee = None
+                charge.parking_fee = None
+                charge.other_cost = None
             self.cost_calculator.recalculate(charge)
+            charge.finalize_costs()
+        else:
+            # Recalculate losses/derived energy without changing frozen costs.
+            charge.recalculate_costs()
 
         saved = await self.storage.update_charge(
             normalized_id,
