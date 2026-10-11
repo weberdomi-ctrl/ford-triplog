@@ -278,6 +278,11 @@ class FordTriplogChargingCostCalculator:
     ) -> bool:
         """Recalculate one charge and return whether stored values changed."""
 
+        # Completed charges, including legacy records, are immutable unless
+        # a user explicitly edits the charge or its receipt.
+        if charge.cost_finalized:
+            return False
+
         before = charge.to_dict()
 
         charge.recalculate_costs()

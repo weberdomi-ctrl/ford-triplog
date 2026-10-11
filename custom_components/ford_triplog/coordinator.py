@@ -3686,6 +3686,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
 
             await self._apply_home_charging_costs(charge_obj)
+            charge_obj.finalize_costs()
             charge = charge_obj.to_dict()
 
             archive_saved = await self.storage.save_charge(charge)

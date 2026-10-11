@@ -372,6 +372,8 @@ class FordTriplogChargeManager:
                 continue
 
             before = charge.to_dict()
+            if charge.cost_finalized:
+                continue
             self.cost_calculator.recalculate(charge)
             after = charge.to_dict()
 
@@ -444,7 +446,9 @@ class FordTriplogChargeManager:
             energy_billed_source or "manual"
         ).strip().lower()
 
-        self.cost_calculator.recalculate(charge)
+        # Billed-energy edits do not implicitly reprice a finalized session.
+        if not charge.cost_finalized:
+            self.cost_calculator.recalculate(charge)
 
         saved = await self.storage.update_charge(
             normalized_id,
@@ -529,6 +533,7 @@ class FordTriplogChargeManager:
                 reason="charge_not_found",
             )
 
+        charge.begin_manual_cost_edit()
         charge.energy_billed_kwh = normalized_energy_billed
         charge.energy_billed_source = str(
             energy_billed_source or "manual"
@@ -562,7 +567,7 @@ class FordTriplogChargeManager:
         charge.cost_verified = True
         # Keep an existing receipt filename when updating costs manually or
         # from OCR/parser data.
-        charge.recalculate_costs()
+        charge.finalize_costs()
 
         saved = await self.storage.update_charge(
             normalized_id,
@@ -612,6 +617,7 @@ class FordTriplogChargeManager:
                 reason="charge_not_found",
             )
 
+        charge.begin_manual_cost_edit()
         charge.energy_billed_kwh = None
         charge.energy_billed_source = "none"
         charge.charging_loss_kwh = None
@@ -632,7 +638,7 @@ class FordTriplogChargeManager:
         charge.cost_source = "none"
         charge.cost_verified = False
         charge.receipt_filename = None
-        charge.recalculate_costs()
+        charge.finalize_costs()
 
         saved = await self.storage.update_charge(
             normalized_id,
