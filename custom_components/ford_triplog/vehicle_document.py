@@ -90,7 +90,10 @@ def render_vehicle_registration_png(content: bytes, page_number: int = 0) -> byt
     stored original document.
     """
     from io import BytesIO
-    import fitz
+    try:
+        import fitz
+    except ImportError as err:
+        raise RuntimeError("PDF image rendering is unavailable on this platform. Use JPG/PNG for scanned documents.") from err
     from PIL import Image, ImageChops, ImageEnhance, ImageOps
 
     document = fitz.open(stream=content, filetype="pdf")
