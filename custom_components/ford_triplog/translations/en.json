@@ -1460,10 +1460,16 @@
       },
       "export_routes": {
         "title": "Export GPS routes",
-        "description": "Enter Trip ID, Journey ID or date (YYYY-MM-DD).",
+        "description": "First select a Trip, Journey or calendar day.",
         "data": {
-          "scope": "Scope",
-          "identifier": "ID / Date",
+          "scope": "Scope"
+        }
+      },
+      "export_routes_select": {
+        "title": "Select stored routes",
+        "description": "Only selections with stored GPS routes are shown.",
+        "data": {
+          "identifier": "Available route / Journey / day",
           "format": "Format",
           "geometry": "GPS / OSRM"
         }

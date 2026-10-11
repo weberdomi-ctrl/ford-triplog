@@ -5680,49 +5680,115 @@ class FordTriplogOptionsFlow(OptionsFlow):
         )
 
     async def async_step_export_routes(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """Export one Trip, Journey or calendar day as GPX/GeoJSON."""
-        errors: dict[str, str] = {}
+        """Choose which kind of stored route to export."""
         if user_input is not None:
-            try:
-                runtime = self._get_context_runtime_data()
-                route_storage = runtime.get("route_storage")
-                if route_storage is None:
-                    raise HomeAssistantError("Route storage is not initialized")
-                exporter = FordTriplogExporter(self.hass, self._get_trip_storage())
-                result = await exporter.async_export_routes(
-                    route_storage,
-                    scope=user_input["scope"],
-                    identifier=user_input["identifier"],
-                    format=user_input["format"],
-                    geometry=user_input["geometry"],
-                    journey_storage=self._get_export_journey_storage(),
-                )
-                filename = result["filename"]
-                signed_path = async_sign_path(self.hass, f"/api/ford_triplog/exports/{filename}", timedelta(minutes=10), use_content_user=True)
-                try:
-                    base_url = get_url(self.hass, allow_internal=True, allow_external=True, allow_cloud=True, allow_ip=True, prefer_external=True).rstrip("/")
-                    self._selected_export_url = f"{base_url}{signed_path}"
-                except NoURLAvailableError:
-                    self._selected_export_url = signed_path
-                self._export_kind = "routes"
-                self._export_result = {
-                    "record_count": str(result["record_count"]),
-                    "record_type": "Routes",
-                    "filename": filename,
-                    "path": str(result["path"]),
-                    "period": user_input["identifier"],
-                }
-                return await self.async_step_export_result()
-            except (HomeAssistantError, OSError, RuntimeError, ValueError, KeyError):
-                _LOGGER.exception("Route export failed")
-                errors["base"] = "export_failed"
+            self._route_export_scope = user_input["scope"]
+            return await self.async_step_export_routes_select()
         return self.async_show_form(
             step_id="export_routes",
             data_schema=vol.Schema({
-                vol.Required("scope", default="day"): vol.In({"trip": "Trip", "journey": "Journey", "day": "Day"}),
-                vol.Required("identifier"): str,
+                vol.Required("scope", default="day"): vol.In({
+                    "trip": "Trip", "journey": "Journey", "day": "Day"
+                }),
+            }),
+        )
+
+    async def async_step_export_routes_select(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select an existing route, Journey or day; never require manual IDs."""
+        from .route_export import _valid_coordinates
+
+        scope = getattr(self, "_route_export_scope", "day")
+        errors: dict[str, str] = {}
+        choices: dict[str, str] = {}
+        route_storage = None
+        journey_storage = None
+        try:
+            runtime = self._get_context_runtime_data()
+            route_storage = runtime.get("route_storage")
+            if route_storage is None:
+                raise HomeAssistantError("Route storage is not initialized")
+            all_routes = await route_storage.async_list_routes()
+            valid_routes = [r for r in all_routes if _valid_coordinates(r, "raw")[0] or _valid_coordinates(r, "osrm")[0]]
+            route_by_id = {str(r.get("trip_id")): r for r in valid_routes if r.get("trip_id") is not None}
+            if scope == "trip":
+                for route in reversed(valid_routes):
+                    trip_id = str(route.get("trip_id") or "")
+                    if not trip_id:
+                        continue
+                    stamp = route_storage._route_timestamp(route)
+                    when = dt_util.as_local(stamp).strftime("%d.%m.%Y %H:%M") if stamp and stamp.tzinfo else str(stamp or "")
+                    points = len(route.get("points") or [])
+                    choices[trip_id] = f"{when} | {points} GPS-Punkte | {trip_id}"
+            elif scope == "day":
+                days: dict[str, int] = {}
+                for route in valid_routes:
+                    local_date = route_storage._route_local_date(route)
+                    if local_date is not None:
+                        key = local_date.isoformat()
+                        days[key] = days.get(key, 0) + 1
+                for key in sorted(days, reverse=True):
+                    choices[key] = f"{key[8:10]}.{key[5:7]}.{key[:4]} | {days[key]} Routen"
+            else:
+                journey_storage = self._get_export_journey_storage()
+                journeys = await journey_storage.get_all_journeys()
+                for item in journeys:
+                    data = item.to_dict() if hasattr(item, "to_dict") else item
+                    if not isinstance(data, dict):
+                        continue
+                    journey_id = str(data.get("journey_id") or "")
+                    ids = data.get("trip_ids") or []
+                    if not journey_id or not isinstance(ids, (list, tuple)):
+                        continue
+                    available = sum(str(tid) in route_by_id for tid in ids)
+                    if available:
+                        day = str(data.get("date") or data.get("start_time") or "")[:10]
+                        choices[journey_id] = f"{day} | {available}/{len(ids)} Routen | {journey_id}"
+                choices = dict(reversed(list(choices.items())))
+        except (HomeAssistantError, OSError, RuntimeError, ValueError, KeyError, TypeError):
+            _LOGGER.exception("Failed to list stored routes for export")
+            errors["base"] = "export_failed"
+
+        if user_input is not None and not errors:
+            identifier = str(user_input["identifier"])
+            if identifier not in choices:
+                errors["base"] = "export_failed"
+            else:
+                try:
+                    exporter = FordTriplogExporter(self.hass, self._get_trip_storage())
+                    result = await exporter.async_export_routes(
+                        route_storage,
+                        scope=scope,
+                        identifier=identifier,
+                        format=user_input["format"],
+                        geometry=user_input["geometry"],
+                        journey_storage=journey_storage or self._get_export_journey_storage(),
+                    )
+                    filename = result["filename"]
+                    signed_path = async_sign_path(self.hass, f"/api/ford_triplog/exports/{filename}", timedelta(minutes=10), use_content_user=True)
+                    try:
+                        base_url = get_url(self.hass, allow_internal=True, allow_external=True, allow_cloud=True, allow_ip=True, prefer_external=True).rstrip("/")
+                        self._selected_export_url = f"{base_url}{signed_path}"
+                    except NoURLAvailableError:
+                        self._selected_export_url = signed_path
+                    self._export_kind = "routes"
+                    self._export_result = {
+                        "record_count": str(result["record_count"]),
+                        "record_type": "Routes",
+                        "filename": filename,
+                        "path": str(result["path"]),
+                        "period": choices[identifier],
+                    }
+                    return await self.async_step_export_result()
+                except (HomeAssistantError, OSError, RuntimeError, ValueError, KeyError):
+                    _LOGGER.exception("Route export failed")
+                    errors["base"] = "export_failed"
+
+        return self.async_show_form(
+            step_id="export_routes_select",
+            data_schema=vol.Schema({
+                vol.Required("identifier"): vol.In(choices) if choices else vol.In({"": "Keine gespeicherten Routen vorhanden"}),
                 vol.Required("format", default="gpx"): vol.In({"gpx": "GPX", "geojson": "GeoJSON"}),
-                vol.Required("geometry", default="raw"): vol.In({"raw": "Original GPS", "osrm": "OSRM (if available)"}),
+                vol.Required("geometry", default="raw"): vol.In({"raw": "Original GPS", "osrm": "OSRM (Fallback: Original GPS)"}),
             }),
             errors=errors,
         )

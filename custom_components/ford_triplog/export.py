@@ -709,7 +709,7 @@ class FordTriplogExporter:
             if journey_storage is None:
                 raise ValueError("Journey storage unavailable")
             journeys = await journey_storage.get_all_journeys()
-            journey = next((j for j in journeys if isinstance(j, dict) and str(j.get("journey_id")) == identifier), None)
+            journey = next((data for j in journeys if isinstance(data := (j.to_dict() if hasattr(j, "to_dict") else j), dict) and str(data.get("journey_id")) == identifier), None)
             if journey is None:
                 raise ValueError("Journey not found")
             ids = journey.get("trip_ids") or []

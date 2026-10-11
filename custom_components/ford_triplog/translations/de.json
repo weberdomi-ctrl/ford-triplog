@@ -1478,10 +1478,16 @@
       },
       "export_routes": {
         "title": "GPS-Routen exportieren",
-        "description": "Trip-ID, Journey-ID oder Datum (JJJJ-MM-TT) eingeben.",
+        "description": "Wähle zuerst, ob du eine Fahrt, Journey oder einen Kalendertag exportieren möchtest.",
         "data": {
-          "scope": "Bereich",
-          "identifier": "ID / Datum",
+          "scope": "Bereich"
+        }
+      },
+      "export_routes_select": {
+        "title": "Gespeicherte Routen auswählen",
+        "description": "Es werden nur Auswahlen mit gespeicherten GPS-Routen angeboten.",
+        "data": {
+          "identifier": "Vorhandene Route / Journey / Tag",
           "format": "Format",
           "geometry": "GPS / OSRM"
         }
