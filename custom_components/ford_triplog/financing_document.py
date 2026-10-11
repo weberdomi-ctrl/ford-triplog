@@ -260,7 +260,10 @@ def extract_pdf_text(content: bytes, max_pages: int = 5) -> str:
 
 def render_pdf_page_png(content: bytes, page_number: int = 0) -> bytes:
     """Render a PDF page to PNG for OCR fallback."""
-    import fitz
+    try:
+        import fitz
+    except ImportError as err:
+        raise RuntimeError("PDF image rendering is unavailable on this platform. Use JPG/PNG for scanned documents.") from err
 
     document = fitz.open(stream=content, filetype="pdf")
     try:
