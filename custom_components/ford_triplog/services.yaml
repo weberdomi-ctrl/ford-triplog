@@ -218,3 +218,32 @@ rebuild_last_route:
       required: false
       selector:
         text:
+
+simulate_dynamic_charging:
+  name: Simulate dynamic charging (TEST Dynamic only)
+  description: Isolated tariff simulation; does not create real charging sessions. Returns step costs.
+  fields:
+    action:
+      required: true
+      selector:
+        select:
+          options: [start, step, stop, status, reset]
+    vehicle_id:
+      required: false
+      selector:
+        number:
+          min: 1
+          max: 99999
+          mode: box
+    zone_id:
+      required: false
+      selector:
+        text:
+    energy_kwh:
+      required: false
+      selector:
+        number:
+          min: 0.001
+          max: 100
+          step: 0.001
+          mode: box
