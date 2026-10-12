@@ -58,6 +58,21 @@ class FordTriplogReceiptOCR:
         input_value: Any = str(path)
         suffix = path.suffix.lower()
         if suffix == ".pdf":
+            # Embedded PDF text can be extracted without native PDF rendering.
+            from .financing_document import extract_pdf_text
+
+            text = extract_pdf_text(path.read_bytes())
+            if text.strip():
+                lines = [OCRLine(line.strip()) for line in text.splitlines() if line.strip()]
+                return {
+                    "engine": "pypdf",
+                    "completed_at": datetime.now(timezone.utc).isoformat(),
+                    "raw_text": text,
+                    "lines": [{"text": line.text, "confidence": None} for line in lines],
+                    "confidence": None,
+                    "suggestions": self._extract_suggestions(lines),
+                }
+            # Image-only PDFs require a PDF renderer.
             input_value = self._render_pdf_first_page(path)
 
         try:
@@ -97,7 +112,7 @@ class FordTriplogReceiptOCR:
         try:
             import fitz
         except ImportError as err:
-            raise RuntimeError("PyMuPDF is not installed") from err
+            raise RuntimeError("Scanned/image-only PDFs require a PDF renderer (PyMuPDF unavailable on this HA platform). Upload the receipt as JPG or PNG instead.") from err
 
         document = fitz.open(path)
         try:

@@ -18,8 +18,7 @@
     "custom_components.ford_triplog"
   ],
   "requirements": [
-    "pypdf==5.9.0",
-    "PyMuPDF==1.26.7"
+    "pypdf==5.9.0"
   ],
   "version": "2.6.0"
 }
