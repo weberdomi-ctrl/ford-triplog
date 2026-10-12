@@ -17,7 +17,7 @@ from .zone_tariff_storage import ZoneTariffStorage
 
 SERVICE = 'simulate_dynamic_charging'
 SCHEMA = vol.Schema({
-    vol.Required('action'): vol.In(['start', 'step', 'stop', 'status', 'reset']),
+    vol.Required('action'): vol.In(['start', 'step', 'stop', 'status', 'reset', 'publish']),
     vol.Optional('vehicle_id'): vol.Coerce(int),
     vol.Optional('zone_id', default='zone.home'): str,
     vol.Optional('energy_kwh', default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.000001)),
@@ -84,6 +84,50 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         if action == 'stop' and not row[2]:
             db.execute('UPDATE dynamic_sim_sessions SET closed=1,closed_at=? WHERE vehicle_id=? AND zone_id=?',
                        (datetime.now(timezone.utc).isoformat(), *key))
+        if action == 'publish':
+            if not row[2]:
+                raise ServiceValidationError('Stop the simulation before publishing')
+            # A stable, test-only charge ID avoids collisions with real sessions.
+            charge_id = 'SIMDYN_' + str(vehicle_id) + '_' + row[1].replace('-', '').replace(':', '').replace('+', '_').replace('.', '_')
+            existing = db.execute('SELECT data FROM charges WHERE vehicle_id=? AND charge_id=?',
+                                  (vehicle_id, charge_id)).fetchone()
+            if existing is not None:
+                saved = json.loads(existing[0])
+                return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
+                        'charge_id': charge_id, 'already_published': True,
+                        'total_energy_kwh': saved.get('energy_added_kwh'),
+                        'total_cost': saved.get('cost_total'), 'currency': saved.get('currency')}
+            step_rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
+                WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
+            if not step_rows:
+                raise ServiceValidationError('Cannot publish a simulation without energy steps')
+            total_energy = round(sum(r[1] for r in step_rows), 6)
+            total_cost = round(sum(r[3] for r in step_rows), 6)
+            closed_at = db.execute('SELECT closed_at FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+            effective_price = total_cost / total_energy
+            # This is an explicitly labelled test charge, excluded from statistics.
+            payload = {
+                'charge_id': charge_id, 'created': row[1], 'start_time': row[1],
+                'end_time': closed_at, 'detected_start_time': row[1],
+                'detected_end_time': closed_at, 'charging_type': 'AC_BASIC',
+                'data_source': 'dynamic_simulation', 'energy_added_kwh': total_energy,
+                'energy_source': 'simulation', 'energy_billed_kwh': total_energy,
+                'energy_billed_source': 'estimated', 'energy_cost': total_cost,
+                'cost_total': total_cost, 'currency': saved_tariff['currency'],
+                'energy_price_per_kwh': effective_price,
+                'effective_price_per_kwh': effective_price,
+                'price_per_kwh': effective_price, 'cost_source': 'dynamic_simulation',
+                'cost_finalized': True, 'cost_verified': False,
+                'include_in_statistics': False, 'exclusion_reason': 'Test Dynamic simulation',
+                'notes': 'TEST Dynamic – simulated dynamic tariff (' + zone_id + ')',
+                'dynamic_price_steps': [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in step_rows],
+            }
+            db.execute('INSERT INTO charges(vehicle_id,charge_id,data) VALUES(?,?,?)',
+                       (vehicle_id, charge_id, json.dumps(payload, ensure_ascii=False)))
+            return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
+                    'charge_id': charge_id, 'already_published': False,
+                    'total_energy_kwh': total_energy, 'total_cost': total_cost,
+                    'currency': saved_tariff['currency'], 'excluded_from_statistics': True}
         rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
             WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
         steps = [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in rows]
