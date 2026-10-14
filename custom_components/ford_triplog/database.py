@@ -2422,10 +2422,13 @@ class FordTriplogDatabase:
                     SELECT data
                     FROM routes
                     WHERE vehicle_id = ?
-                      AND COALESCE(
-                        json_extract(data, '$.status'),
-                        'completed'
-                    ) = 'completed'
+                      AND CASE
+                        WHEN json_valid(data) THEN COALESCE(
+                          json_extract(data, '$.status'),
+                          'completed'
+                        )
+                        ELSE 'invalid'
+                      END = 'completed'
                     ORDER BY rowid DESC
                     LIMIT 1
                     """,
