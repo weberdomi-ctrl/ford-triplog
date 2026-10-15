@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.7.0-beta.1 (pre-release)
+
+### Added
+- Dynamic charging tariff support using a Home Assistant electricity-price entity.
+- Vehicle-specific and Home Assistant zone-based charging tariff configuration.
+- Additional route export functionality.
+
+### Improved
+- Persisted charging costs to avoid recalculation using a later tariff value.
+- Tariff migration and configuration handling.
+
+### Fixed
+- Handling of malformed legacy JSON in stored route data.
+
+### Testing and limitations
+- Dynamic tariff calculation and persistence tested with simulated price data.
+- A full charging session with a live dynamic tariff provider has not yet been validated.
+- Optional EV-versus-combustion cost comparison (issue #70) is not included.
+- Back up `ford_triplog.db` and Home Assistant configuration before upgrading.
+
+
 ## 2.6.0
 
 ### Added
