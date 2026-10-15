@@ -45,6 +45,16 @@ Your data always remains under your control.
 
 ------------------------------------------------------------------------
 
+## Version 2.7.0-beta.1 — Preview
+
+This pre-release adds **dynamic Home Assistant electricity-price entities**, vehicle- and zone-specific charging tariffs, charging-cost persistence and route export improvements.
+
+Dynamic pricing has been tested with simulated prices; full validation with a live dynamic tariff remains pending. **Back up the local SQLite database before testing.**
+
+- [Dynamic charging tariff beta guide](docs/dynamic_charging_tariffs_2_7_beta.md)
+- [Beta test guide](docs/beta_test_2_7.md)
+- [Pre-release notes](RELEASE_NOTES.md)
+
 # Features
 
 ## 🚙 Multi-Vehicle Support
@@ -623,13 +633,13 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - Route map focus defaults to the route start
 - Recuperation display-name cleanup
 
-## Version 2.7 – Planned
+## Version 2.7 — Beta testing
 
-- Route export and route-data portability
-- Raw GPS export with timestamps
-- GPX / GeoJSON export
-- Optional enriched GPS metadata such as altitude, accuracy, speed and course
-- Additional cost/reporting refinements based on 2.6 field experience
+- Dynamic electricity tariffs through Home Assistant price entities
+- Per-vehicle and Home Assistant zone-based charging tariffs
+- Persisted calculated charging costs
+- Route export improvements
+- Further validation of real-world dynamic charging and upgrade paths pending
 
 ## 3.x – Research
 

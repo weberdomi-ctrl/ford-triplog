@@ -40,7 +40,8 @@
           "tracker": "Vehicle tracker",
           "charging": "Charging status sensor (available for FordPass electric vehicles only)",
           "smart_trip": "Enable Smart Trip",
-          "smart_trip_timeout": "Smart Trip timeout (seconds)"
+          "smart_trip_timeout": "Smart Trip timeout (seconds)",
+          "standalone_test_vehicle": "Create test vehicle (no sensors)"
         },
         "data_description": {
           "smart_trip": "Pauses short stops and combines them into one trip.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford Triplog entities cannot be used as a data source.",
-      "recovery_snapshot_missing": "The selected configuration snapshot is no longer available."
+      "recovery_snapshot_missing": "The selected configuration snapshot is no longer available.",
+      "missing_vehicle_sources": "Ignition, odometer and vehicle tracker are required for normal vehicles."
     },
     "abort": {
       "vehicle_already_configured": "The vehicle {vehicle} is already configured. No second vehicle was created.",
@@ -992,7 +994,8 @@
           "home_tariff_add": "Add tariff period",
           "home_tariff_selection": "Edit tariff period",
           "home_tariff_legacy_import": "Import previous summer/winter tariffs",
-          "settings": "Back to settings"
+          "settings": "Back to settings",
+          "zone_tariff_settings": "Configure charging zones"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Add a new global tariff period to the Ford Triplog database.",
@@ -1455,6 +1458,52 @@
         "data": {
           "document_id": "Receipt"
         }
+      },
+      "zone_tariff_settings": {
+        "title": "Select charging zone",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        },
+        "description": "**Ladeorte und Tarife**\n\n{zone_overview}"
+      },
+      "zone_tariff_edit": {
+        "title": "Charging zone tariff",
+        "description": "Charging zone: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp"
+        }
+      },
+      "zone_tariff_values": {
+        "title": "Tarifeinstellungen",
+        "data": {
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        }
+      },
+      "zone_seasonal_menu": {
+        "title": "Saisonale Tarifperioden",
+        "data": {
+          "action": "Tarifperiode auswählen oder hinzufügen"
+        },
+        "description": "{period_overview}"
+      },
+      "zone_seasonal_period": {
+        "title": "Tarifperiode bearbeiten",
+        "data": {
+          "valid_from": "Gültig ab",
+          "valid_to": "Gültig bis",
+          "price_per_kwh": "Preis pro kWh",
+          "currency": "Währung",
+          "delete": "Tarifperiode löschen"
+        }
+      },
+      "zone_tariff_vehicle": {
+        "title": "Select vehicle",
+        "data": {
+          "vehicle_id": "Vehicle"
+        }
       }
     },
     "error": {
@@ -1541,7 +1590,8 @@
       "expense_invalid_valid_to": "Valid to is invalid.",
       "expense_both_validity_dates_required": "Both valid from and valid to are required for a validity period.",
       "expense_invalid_validity_range": "Valid to cannot be before valid from.",
-      "expense_invalid_odometer": "The odometer value is invalid."
+      "expense_invalid_odometer": "The odometer value is invalid.",
+      "invalid_tariff": "Invalid or overlapping tariff period"
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",

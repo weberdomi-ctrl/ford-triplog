@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import math
+import sqlite3
 from datetime import date
 from typing import Any
 
@@ -11,7 +12,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
 from .charge import Charge
-from .const import CONF_JOURNEY_HOME_ZONE
+from .const import CONF_JOURNEY_HOME_ZONE, CONF_VEHICLE_ID, STORAGE_DIR
+from .zone_tariff_storage import ZoneTariffStorage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -38,6 +40,8 @@ class FordTriplogChargingCostCalculator:
         config: dict[str, Any],
     ) -> None:
         self.hass = hass
+        self._vehicle_id = config.get(CONF_VEHICLE_ID)
+        self._zone_tariff_db_path = ZoneTariffStorage(hass).database.db_path
 
         self.home_tariff_enabled = bool(
             config.get(CONF_HOME_TARIFF_ENABLED, False)
@@ -238,6 +242,53 @@ class FordTriplogChargingCostCalculator:
             <= zone_radius
         )
 
+    def _zone_tariff_for_charge(self, charge: Charge):
+        """Resolve a configured vehicle/zone tariff; never use legacy fallback."""
+        latitude = charge.end_latitude if charge.end_latitude is not None else charge.start_latitude
+        longitude = charge.end_longitude if charge.end_longitude is not None else charge.start_longitude
+        if latitude is None or longitude is None:
+            return None
+        try:
+            lat, lon = float(latitude), float(longitude)
+            vehicle_id = int(self._vehicle_id)
+        except (ValueError, TypeError):
+            return None
+        matches = []
+        for state in self.hass.states.async_all("zone"):
+            try:
+                attrs = state.attributes
+                radius = max(0.0, float(attrs.get("radius", 100)))
+                distance = self._distance_meters(lat, lon, float(attrs["latitude"]), float(attrs["longitude"]))
+                if distance <= radius:
+                    matches.append((distance, state.entity_id))
+            except (ValueError, TypeError, KeyError):
+                continue
+        if not matches:
+            return None
+        # The closest matching zone wins; never silently use a different zone's price.
+        zone_id = min(matches)[1]
+        try:
+            with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
+                db.row_factory = sqlite3.Row
+                row = db.execute("SELECT mode, price_per_kwh, currency FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?", (vehicle_id, zone_id)).fetchone()
+                if row is None or row["mode"] == "dynamic":
+                    return None
+                if row["mode"] == "fixed":
+                    return (zone_id, float(row["price_per_kwh"]), row["currency"])
+                if row["mode"] != "seasonal":
+                    return None
+                start = self._parse_datetime(charge.start_time)
+                if start is None:
+                    return None
+                day = dt_util.as_local(start).date().isoformat()
+                period = db.execute("""SELECT price_per_kwh, currency FROM charging_vehicle_zone_periods
+                    WHERE vehicle_id=? AND zone_id=? AND valid_from<=? AND valid_to>=?
+                    ORDER BY valid_from DESC LIMIT 1""", (vehicle_id, zone_id, day, day)).fetchone()
+                return (zone_id, float(period["price_per_kwh"]), period["currency"]) if period else None
+        except (sqlite3.Error, ValueError, TypeError):
+            _LOGGER.exception("Unable to resolve vehicle/zone charging tariff")
+            return None
+
     @staticmethod
     def _parse_datetime(value: Any):
         if not value:
@@ -278,6 +329,11 @@ class FordTriplogChargingCostCalculator:
     ) -> bool:
         """Recalculate one charge and return whether stored values changed."""
 
+        # Completed charges, including legacy records, are immutable unless
+        # a user explicitly edits the charge or its receipt.
+        if charge.cost_finalized:
+            return False
+
         before = charge.to_dict()
 
         charge.recalculate_costs()
@@ -286,16 +342,9 @@ class FordTriplogChargingCostCalculator:
             getattr(charge, "cost_source", "none") or "none"
         ).strip().lower()
 
-        is_home_charge = self._is_home_charge(charge)
-
-        # Remove an earlier automatic Home tariff when repaired/newer GPS
-        # proves that the charging session was not at Home. Never touch manual
-        # or OCR costs.
-        if cost_source == "home_tariff" and (
-            not allow_automatic_tariff
-            or not self.home_tariff_enabled
-            or not is_home_charge
-        ):
+        tariff = self._zone_tariff_for_charge(charge) if allow_automatic_tariff else None
+        # Clear stale automatic costs if no matching configured zone/tariff exists.
+        if cost_source == "home_tariff" and tariff is None:
             charge.energy_cost = None
             charge.session_fee = None
             charge.time_fee = None
@@ -309,23 +358,10 @@ class FordTriplogChargingCostCalculator:
             charge.recalculate_costs()
             cost_source = "none"
 
-        if (
-            allow_automatic_tariff
-            and cost_source not in _PROTECTED_COST_SOURCES
-            and self.home_tariff_enabled
-            and is_home_charge
-        ):
-            start_time = self._parse_datetime(charge.start_time)
+        if allow_automatic_tariff and cost_source not in _PROTECTED_COST_SOURCES and tariff:
             energy, energy_source = self._pricing_energy(charge)
-
-            tariff = None
-            if start_time is not None:
-                local_start = dt_util.as_local(start_time)
-                tariff = self._tariff_for_date(local_start.date())
-
-            if start_time is not None and energy is not None and tariff:
-                tariff_name, tariff_price, tariff_currency = tariff
-
+            if energy is not None:
+                zone_id, tariff_price, tariff_currency = tariff
                 charge.energy_cost = round(energy * tariff_price, 4)
                 charge.session_fee = 0.0
                 charge.time_fee = 0.0
@@ -335,41 +371,10 @@ class FordTriplogChargingCostCalculator:
                 charge.currency = tariff_currency
                 charge.cost_source = "home_tariff"
                 charge.cost_verified = True
-
-                if (
-                    charge.energy_billed_kwh is None
-                    and energy_source == "added"
-                ):
+                if charge.energy_billed_kwh is None and energy_source == "added":
                     charge.energy_billed_source = "estimated"
-
                 charge.recalculate_costs()
-
-                _LOGGER.debug(
-                    "Home tariff recalculated: charge=%s tariff=%s "
-                    "energy=%.2f source=%s total=%.2f %s",
-                    charge.charge_id,
-                    tariff_name,
-                    energy,
-                    energy_source,
-                    charge.cost_total or 0.0,
-                    charge.currency,
-                )
-            elif cost_source == "home_tariff" and start_time is not None:
-                # A year-based tariff schedule is authoritative. If the
-                # charging date is no longer covered, remove the stale
-                # automatically calculated cost instead of silently using a
-                # tariff from another year or period.
-                charge.energy_cost = None
-                charge.session_fee = None
-                charge.time_fee = None
-                charge.blocking_fee = None
-                charge.parking_fee = None
-                charge.other_cost = None
-                charge.cost_total = None
-                charge.currency = None
-                charge.cost_source = "none"
-                charge.cost_verified = False
-                charge.recalculate_costs()
+                _LOGGER.debug("Zone tariff: charge=%s zone=%s energy=%.3f price=%.4f", charge.charge_id, zone_id, energy, tariff_price)
 
         after = charge.to_dict()
         return after != before

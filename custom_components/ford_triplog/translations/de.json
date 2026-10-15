@@ -40,7 +40,8 @@
           "tracker": "Fahrzeug-Tracker",
           "charging": "Ladestatus-Sensor (nur für FordPass-Elektrofahrzeuge verfügbar)",
           "smart_trip": "Smart Trip aktivieren",
-          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)"
+          "smart_trip_timeout": "Smart-Trip-Timeout (Sekunden)",
+          "standalone_test_vehicle": "Testfahrzeug (ohne Sensoren) anlegen"
         },
         "data_description": {
           "smart_trip": "Fasst kurze Zwischenstopps automatisch zu einer Fahrt zusammen.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Ford-Triplog-Entitäten können nicht als Datenquelle verwendet werden.",
-      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar."
+      "recovery_snapshot_missing": "Der ausgewählte Konfigurations-Snapshot ist nicht mehr verfügbar.",
+      "missing_vehicle_sources": "Zündung, Kilometerstand und Fahrzeug-Tracker sind für normale Fahrzeuge erforderlich."
     },
     "abort": {
       "vehicle_already_configured": "Das Fahrzeug {vehicle} ist bereits eingerichtet. Es wurde kein zweites Fahrzeug angelegt.",
@@ -774,7 +776,8 @@
           "export_charges": "Ladevorgänge als CSV exportieren",
           "init": "Zurück zum Hauptmenü",
           "export_charging_monthly": "Monatliche Ladestatistik als CSV exportieren",
-          "export_driving_monthly": "Monatliche Fahrstatistik als CSV exportieren"
+          "export_driving_monthly": "Monatliche Fahrstatistik als CSV exportieren",
+          "export_routes": "GPS-Routen exportieren"
         },
         "menu_option_descriptions": {
           "export_trips": "Gespeicherte Fahrten optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
@@ -782,7 +785,8 @@
           "init": "Zur Ford-Triplog-Übersicht zurückkehren.",
           "export_charges": "Gespeicherte Ladevorgänge optional für einen bestimmten Zeitraum als CSV-Datei exportieren.",
           "export_charging_monthly": "Die komplette Ladehistorie nach Kalendermonat aggregiert als CSV-Datei exportieren.",
-          "export_driving_monthly": "Die komplette Fahrhistorie nach Kalendermonat aggregiert als CSV-Datei exportieren."
+          "export_driving_monthly": "Die komplette Fahrhistorie nach Kalendermonat aggregiert als CSV-Datei exportieren.",
+          "export_routes": "GPS-Routen als GPX oder GeoJSON exportieren"
         }
       },
       "export_trips": {
@@ -992,7 +996,8 @@
           "home_tariff_add": "Tarifzeitraum hinzufügen",
           "home_tariff_selection": "Tarifzeitraum bearbeiten",
           "home_tariff_legacy_import": "Bisherige Sommer-/Wintertarife übernehmen",
-          "settings": "Zurück zu den Einstellungen"
+          "settings": "Zurück zu den Einstellungen",
+          "zone_tariff_settings": "Ladeorte (HA-Zonen) verwalten"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Einen neuen globalen Tarifzeitraum in der Ford-Triplog-Datenbank erfassen.",
@@ -1473,6 +1478,68 @@
         "data": {
           "document_id": "Beleg"
         }
+      },
+      "export_routes": {
+        "title": "GPS-Routen exportieren",
+        "description": "Wähle zuerst, ob du eine Fahrt, Journey oder einen Kalendertag exportieren möchtest.",
+        "data": {
+          "scope": "Bereich"
+        }
+      },
+      "export_routes_select": {
+        "title": "Gespeicherte Routen auswählen",
+        "description": "Es werden nur Auswahlen mit gespeicherten GPS-Routen angeboten.",
+        "data": {
+          "identifier": "Vorhandene Route / Journey / Tag",
+          "format": "Format",
+          "geometry": "GPS / OSRM"
+        }
+      },
+      "zone_tariff_settings": {
+        "title": "Ladeort auswählen",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        },
+        "description": "**Ladeorte und Tarife**\n\n{zone_overview}"
+      },
+      "zone_tariff_edit": {
+        "title": "Ladeort-Tarif",
+        "description": "Ladeort: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp"
+        }
+      },
+      "zone_tariff_values": {
+        "title": "Tarifeinstellungen",
+        "data": {
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        }
+      },
+      "zone_seasonal_menu": {
+        "title": "Saisonale Tarifperioden",
+        "data": {
+          "action": "Tarifperiode auswählen oder hinzufügen"
+        },
+        "description": "{period_overview}"
+      },
+      "zone_seasonal_period": {
+        "title": "Tarifperiode bearbeiten",
+        "data": {
+          "valid_from": "Gültig ab",
+          "valid_to": "Gültig bis",
+          "price_per_kwh": "Preis pro kWh",
+          "currency": "Währung",
+          "delete": "Tarifperiode löschen"
+        }
+      },
+      "zone_tariff_vehicle": {
+        "title": "Fahrzeug auswählen",
+        "data": {
+          "vehicle_id": "Fahrzeug"
+        }
       }
     },
     "error": {
@@ -1559,7 +1626,8 @@
       "expense_invalid_valid_to": "Gültig bis ist ungültig.",
       "expense_both_validity_dates_required": "Für einen Gültigkeitszeitraum müssen Von und Bis angegeben werden.",
       "expense_invalid_validity_range": "Gültig bis darf nicht vor Gültig von liegen.",
-      "expense_invalid_odometer": "Kilometerstand ist ungültig."
+      "expense_invalid_odometer": "Kilometerstand ist ungültig.",
+      "invalid_tariff": "Ungültige oder überlappende Tarifperiode"
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",

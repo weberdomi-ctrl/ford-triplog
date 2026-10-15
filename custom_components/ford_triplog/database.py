@@ -3,8 +3,8 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.6.0
-Build: 26055
+Version: 2.7.0-beta.1
+Build: 27001
 Changes: Final 2.6 vehicle cost/TCO and configuration recovery schema.
 """
 
@@ -763,18 +763,10 @@ class FordTriplogDatabase:
             self.hass.data[lock_key] = lock
 
         if self.hass.data.get(runtime_key, False):
-            _LOGGER.debug(
-                "Ford Triplog SQLite database already initialized in this HA runtime: %s",
-                self.db_path,
-            )
             return
 
         async with lock:
             if self.hass.data.get(runtime_key, False):
-                _LOGGER.debug(
-                    "Ford Triplog SQLite database already initialized in this HA runtime: %s",
-                    self.db_path,
-                )
                 return
 
             def _setup() -> None:
@@ -1379,11 +1371,56 @@ class FordTriplogDatabase:
                         """
                     )
 
+                    # 2.7-dev04: migrate the former global home tariff table
+                    # once, copying identical periods to every existing real vehicle.
+                    tariff_columns = {
+                        str(row[1]) for row in db.execute(
+                            "PRAGMA table_info(home_charging_tariffs)"
+                        ).fetchall()
+                    }
+                    if "vehicle_id" not in tariff_columns:
+                        existing_tariffs = [dict(row) for row in db.execute(
+                            "SELECT * FROM home_charging_tariffs ORDER BY tariff_id"
+                        ).fetchall()]
+                        real_vehicle_ids = [int(row[0]) for row in db.execute(
+                            "SELECT vehicle_id FROM vehicles "
+                            "WHERE COALESCE(is_test_alias, 0) = 0 ORDER BY vehicle_id"
+                        ).fetchall()]
+                        db.execute("DROP INDEX IF EXISTS idx_home_charging_tariffs_range")
+                        db.execute(
+                            "ALTER TABLE home_charging_tariffs ADD COLUMN vehicle_id INTEGER"
+                        )
+                        if existing_tariffs and real_vehicle_ids:
+                            db.execute(
+                                "UPDATE home_charging_tariffs SET vehicle_id = ?",
+                                (real_vehicle_ids[0],),
+                            )
+                            for target_vehicle_id in real_vehicle_ids[1:]:
+                                db.executemany(
+                                    """INSERT INTO home_charging_tariffs
+                                    (vehicle_id, valid_from, valid_to,
+                                     price_per_kwh, currency, created_at, updated_at)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                                    [
+                                        (target_vehicle_id, item["valid_from"],
+                                         item["valid_to"], item["price_per_kwh"],
+                                         item["currency"], item["created_at"],
+                                         item["updated_at"])
+                                        for item in existing_tariffs
+                                    ],
+                                )
+                        db.execute(
+                            """INSERT OR IGNORE INTO migration_state
+                            (migration_id, completed_at)
+                            VALUES ('2.7_dev04_home_tariffs_per_vehicle_v1', datetime('now'))"""
+                        )
                     db.execute(
-                        """
-                        CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
-                        ON home_charging_tariffs (valid_from, valid_to)
-                        """
+                        """CREATE UNIQUE INDEX IF NOT EXISTS idx_home_charging_tariffs_range
+                        ON home_charging_tariffs (vehicle_id, valid_from, valid_to)"""
+                    )
+                    db.execute(
+                        """CREATE INDEX IF NOT EXISTS idx_home_charging_tariffs_vehicle_dates
+                        ON home_charging_tariffs (vehicle_id, valid_from, valid_to)"""
                     )
                     db.execute(
                         """
@@ -1904,8 +1941,8 @@ class FordTriplogDatabase:
         return await self.hass.async_add_executor_job(_read)
 
 
-    async def load_home_charging_tariffs(self) -> list[dict[str, Any]]:
-        """Load global home charging tariff periods from SQLite."""
+    async def load_home_charging_tariffs(self, vehicle_id: int) -> list[dict[str, Any]]:
+        """Load home tariffs for exactly one vehicle."""
 
         await self.async_setup()
         self._log_read("home_charging_tariffs")
@@ -1916,10 +1953,11 @@ class FordTriplogDatabase:
                 rows = db.execute(
                     """
                     SELECT tariff_id, valid_from, valid_to, price_per_kwh,
-                           currency, created_at, updated_at
+                           currency, created_at, updated_at, vehicle_id
                     FROM home_charging_tariffs
+                    WHERE vehicle_id = ?
                     ORDER BY valid_from ASC, valid_to ASC, tariff_id ASC
-                    """
+                    """, (vehicle_id,)
                 ).fetchall()
             return [dict(row) for row in rows]
 
@@ -1939,8 +1977,9 @@ class FordTriplogDatabase:
     async def save_home_charging_tariffs(
         self,
         tariffs: list[dict[str, Any]],
+        vehicle_id: int,
     ) -> bool:
-        """Replace the global tariff set while preserving stable row IDs."""
+        """Replace only one vehicle's tariff set while preserving its row IDs."""
 
         await self.async_setup()
 
@@ -1986,40 +2025,46 @@ class FordTriplogDatabase:
                 db.execute("BEGIN IMMEDIATE")
                 try:
                     existing_rows = db.execute(
-                        "SELECT tariff_id, created_at FROM home_charging_tariffs"
+                        "SELECT tariff_id, created_at FROM home_charging_tariffs WHERE vehicle_id = ?",
+                        (vehicle_id,),
                     ).fetchall()
                     created_at_by_id = {
                         int(row["tariff_id"]): str(row["created_at"])
                         for row in existing_rows
                     }
 
-                    # Rebuild the small master-data table atomically, but re-use
+                    # Rebuild this vehicle's tariff rows atomically, but re-use
                     # each supplied tariff_id explicitly. This keeps IDs stable
                     # across edits while still making list replacement simple.
-                    db.execute("DELETE FROM home_charging_tariffs")
+                    # Reject IDs belonging to another vehicle rather than hijacking them.
+                    supplied_ids = [row[0] for row in normalized if row[0] is not None]
+                    if any(row_id not in created_at_by_id for row_id in supplied_ids):
+                        raise ValueError("Tariff ID does not belong to selected vehicle")
+                    db.execute("DELETE FROM home_charging_tariffs WHERE vehicle_id = ?", (vehicle_id,))
                     for tariff_id, valid_from, valid_to, price, currency in normalized:
                         if tariff_id is None:
                             db.execute(
                                 """
                                 INSERT INTO home_charging_tariffs (
-                                    valid_from, valid_to, price_per_kwh, currency,
+                                    vehicle_id, valid_from, valid_to, price_per_kwh, currency,
                                     created_at, updated_at
-                                ) VALUES (?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?)
                                 """,
                                 (
-                                    valid_from, valid_to, price, currency, now, now,
+                                    vehicle_id, valid_from, valid_to, price, currency, now, now,
                                 ),
                             )
                         else:
                             db.execute(
                                 """
                                 INSERT INTO home_charging_tariffs (
-                                    tariff_id, valid_from, valid_to, price_per_kwh,
+                                    tariff_id, vehicle_id, valid_from, valid_to, price_per_kwh,
                                     currency, created_at, updated_at
-                                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                                 """,
                                 (
                                     tariff_id,
+                                    vehicle_id,
                                     valid_from,
                                     valid_to,
                                     price,
@@ -2358,32 +2403,38 @@ class FordTriplogDatabase:
             return None
 
     async def load_last_route(self) -> dict[str, Any] | None:
-        """Load the most recently created route from SQLite."""
+        """Load the newest valid completed route, skipping malformed JSON."""
 
         self._log_read("last_route")
 
         def _read() -> dict[str, Any] | None:
+            # Do not use SQLite json_extract here: one malformed JSON payload
+            # can abort the entire query with "malformed JSON".
             with sqlite3.connect(self.db_path) as db:
-                row = db.execute(
+                cursor = db.execute(
                     """
-                    SELECT data
+                    SELECT rowid, data
                     FROM routes
                     WHERE vehicle_id = ?
-                      AND COALESCE(
-                        json_extract(data, '$.status'),
-                        'completed'
-                    ) = 'completed'
                     ORDER BY rowid DESC
-                    LIMIT 1
                     """,
                     (self.vehicle_id,),
-                ).fetchone()
-
-            if row is None:
-                return None
-
-            data = json.loads(row[0])
-            return data if isinstance(data, dict) else None
+                )
+                for rowid, raw_data in cursor:
+                    try:
+                        data = json.loads(raw_data)
+                    except (TypeError, ValueError, UnicodeDecodeError):
+                        _LOGGER.warning(
+                            "Skipping invalid route JSON (vehicle_id=%s, rowid=%s)",
+                            self.vehicle_id,
+                            rowid,
+                        )
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("status", "completed") == "completed":
+                        return data
+            return None
 
         try:
             return await self.hass.async_add_executor_job(

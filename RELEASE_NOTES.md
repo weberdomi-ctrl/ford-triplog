@@ -1,3 +1,35 @@
+# Ford Triplog 2.7.0-beta.1 — Pre-release
+
+This is a **beta release** intended for testing. Back up your Ford Triplog database and Home Assistant configuration before upgrading.
+
+## Highlights
+
+- **Dynamic charging tariffs:** use a suitable Home Assistant price entity instead of relying only on fixed seasonal tariffs. The charging-cost calculation is designed to account for price changes during a charging session, subject to available energy and price data.
+- **Vehicle-specific charging tariffs:** configure tariffs per vehicle and charging location, including Home Assistant zones.
+- **Charging-cost persistence:** calculated costs are retained after Home Assistant restarts rather than silently being recalculated from a later tariff value.
+- **Route export:** additional route export capabilities.
+- **Reliability fixes:** improved handling of malformed legacy JSON in stored route data, and fixes around tariff migration and configuration handling.
+
+## Test status
+
+- Dynamic tariff calculation and cost persistence were tested with simulated Home Assistant price data and a test charging session.
+- Home Assistant startup logs showed no obvious Ford Triplog initialization, SQLite, or JSON errors in the reviewed environment.
+- **Not yet verified:** a complete real-world charging session with a live dynamic tariff provider; all upgrade paths and tariff/zone combinations.
+
+## Known scope limits
+
+- The optional EV-versus-combustion-vehicle cost comparison requested in issue #70 is **not included** in this beta.
+- This beta should not be treated as a stable release.
+
+## Feedback
+
+Please report the Home Assistant version, Ford Triplog version, tariff sensor entity, price unit, charging start/end times, charged energy, expected cost, actual cost, and relevant logs (with personal data removed).
+
+Related request: https://github.com/weberdomi-ctrl/ford-triplog/issues/70
+
+
+---
+
 # Ford Triplog 2.6.0
 
 **Final release: Build 26055**

@@ -130,6 +130,8 @@ class Charge:
 
         self.cost_source: str = "none"
         self.cost_verified: bool = False
+        self.cost_finalized: bool = False
+        self._finalized_cost_snapshot: dict[str, Any] | None = None
         self.receipt_filename: str | None = None
 
         self.include_in_statistics: bool = True
@@ -177,8 +179,31 @@ class Charge:
 
         self.end_address = address
 
+    # Only explicit user actions may replace a finalized cost snapshot.
+    _FROZEN_COST_FIELDS = (
+        "energy_cost", "session_fee", "time_fee", "blocking_fee",
+        "parking_fee", "other_cost", "cost_total", "currency",
+        "energy_price_per_kwh", "effective_price_per_kwh", "price_per_kwh",
+        "cost_source", "cost_verified",
+    )
+
+    def finalize_costs(self) -> None:
+        """Freeze the costs of a completed charging session."""
+        self.recalculate_costs()
+        self.cost_finalized = True
+        self._finalized_cost_snapshot = {
+            key: getattr(self, key) for key in self._FROZEN_COST_FIELDS
+        }
+
+    def begin_manual_cost_edit(self) -> None:
+        """Allow an explicit user edit, not an automatic recalculation."""
+        self.cost_finalized = False
+        self._finalized_cost_snapshot = None
+
     def recalculate_costs(self) -> None:
         """Recalculate billed energy, charging losses and cost values."""
+
+        frozen = self._finalized_cost_snapshot if self.cost_finalized else None
 
         self.energy_billed_kwh = self._optional_non_negative_float(
             self.energy_billed_kwh
@@ -335,6 +360,10 @@ class Charge:
             memo_parts.append(loss_text)
         self.auto_memo = " · ".join(memo_parts) or None
 
+        if frozen is not None:
+            for key, value in frozen.items():
+                setattr(self, key, value)
+
     @staticmethod
     def _optional_non_negative_float(
         value: Any,
@@ -440,6 +469,7 @@ class Charge:
             "price_per_kwh": self.price_per_kwh,
             "cost_source": self.cost_source,
             "cost_verified": self.cost_verified,
+            "cost_finalized": self.cost_finalized,
             "receipt_filename": self.receipt_filename,
             "include_in_statistics": self.include_in_statistics,
             "exclusion_reason": self.exclusion_reason,
@@ -617,6 +647,12 @@ class Charge:
             data.get("cost_verified", False)
         )
         charge.receipt_filename = data.get("receipt_filename")
+        # Legacy archived charges have no flag: their costs are already final.
+        charge.cost_finalized = bool(data.get("cost_finalized", bool(charge.end_time)))
+        if charge.cost_finalized:
+            charge._finalized_cost_snapshot = {
+                key: getattr(charge, key) for key in charge._FROZEN_COST_FIELDS
+            }
         charge.recalculate_costs()
 
         charge.include_in_statistics = bool(

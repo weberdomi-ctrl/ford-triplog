@@ -823,3 +823,10 @@ For the most reliable results:
 - Use validity periods for recurring costs so TCO allocation reflects the covered period.
 - Review OCR-prefilled vehicle/financing/insurance values before saving.
 - Keep `ford_triplog.db` together with the local document directories when restoring a full Triplog backup.
+
+
+---
+
+## Ford Triplog 2.7.0-beta.1 — Dynamic tariff preview
+
+The 2.7 beta extends the fixed home charging tariffs described above with dynamic Home Assistant electricity-price entities and vehicle-/zone-specific charging tariffs. See the [dynamic charging tariff beta guide](dynamic_charging_tariffs_2_7_beta.md) for setup, test status and limitations. These additions are **pre-release** features; the 2.6 instructions remain applicable to the stable release.

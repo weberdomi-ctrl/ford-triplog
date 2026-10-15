@@ -307,3 +307,9 @@ Only for:
 - Downloading OpenStreetMap charging databases
 
 Normal charging detection and charging history operate entirely locally.
+
+---
+
+## Ford Triplog 2.7.0-beta.1 — Dynamic tariff preview
+
+The 2.7 beta extends the fixed home charging tariffs described above with dynamic Home Assistant electricity-price entities and vehicle-/zone-specific charging tariffs. See the [dynamic charging tariff beta guide](dynamic_charging_tariffs_2_7_beta.md) for setup, test status and limitations. These additions are **pre-release** features; the 2.6 instructions remain applicable to the stable release.

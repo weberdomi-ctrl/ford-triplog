@@ -12,6 +12,7 @@ from __future__ import annotations
 import csv
 import functools
 import math
+import json
 from datetime import date, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.util import dt as dt_util
 
+from .route_export import route_geojson, route_gpx
 from .const import DOMAIN
 from .storage import FordTriplogStorage
 from .user_charging_site_storage import UserChargingSiteStorage
@@ -645,7 +647,7 @@ class FordTriplogExportView(HomeAssistantView):
         hass: HomeAssistant = request.app["hass"]
         safe_name = Path(str(filename)).name
 
-        if safe_name != filename or not safe_name.lower().endswith(".csv"):
+        if safe_name != filename or Path(safe_name).suffix.lower() not in (".csv", ".gpx", ".geojson"):
             raise web.HTTPNotFound()
 
         export_directory = Path(
@@ -668,7 +670,7 @@ class FordTriplogExportView(HomeAssistantView):
         response.headers["Content-Disposition"] = (
             f'attachment; filename="{safe_name.replace(chr(34), "")}"'
         )
-        response.headers["Content-Type"] = "text/csv; charset=utf-8"
+        response.headers["Content-Type"] = {".csv": "text/csv", ".gpx": "application/gpx+xml", ".geojson": "application/geo+json"}[path.suffix.lower()] + "; charset=utf-8"
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Cache-Control"] = "private, no-store"
         return response
@@ -684,6 +686,50 @@ class FordTriplogExporter:
         if not domain_data.get("export_view_registered"):
             hass.http.register_view(FordTriplogExportView())
             domain_data["export_view_registered"] = True
+
+    async def async_export_routes(self, route_storage: Any, *, scope: str = "day", identifier: str = "", format: str = "gpx", geometry: str = "raw", journey_storage: Any = None) -> dict[str, Any]:
+        """Export vehicle-scoped stored routes; no database modifications."""
+        if scope not in ("trip", "journey", "day") or format not in ("gpx", "geojson") or geometry not in ("raw", "osrm"):
+            raise ValueError("Unsupported route export options")
+        identifier = identifier.strip()
+        if not identifier:
+            raise ValueError("Trip ID, Journey ID or date required")
+        if scope == "trip":
+            routes = await route_storage.async_load_routes_for_trip_ids([identifier])
+        elif scope == "day":
+            try:
+                selected = date.fromisoformat(identifier)
+            except ValueError:
+                try:
+                    selected = datetime.strptime(identifier, "%d.%m.%Y").date()
+                except ValueError as exc:
+                    raise ValueError(f"Unsupported route export date: {identifier!r}") from exc
+            routes = await route_storage.async_load_routes_for_date(selected)
+        else:
+            if journey_storage is None:
+                raise ValueError("Journey storage unavailable")
+            journeys = await journey_storage.get_all_journeys()
+            journey = next((data for j in journeys if isinstance(data := (j.to_dict() if hasattr(j, "to_dict") else j), dict) and str(data.get("journey_id")) == identifier), None)
+            if journey is None:
+                raise ValueError("Journey not found")
+            ids = journey.get("trip_ids") or []
+            if not isinstance(ids, list):
+                raise ValueError("Journey trip_ids invalid")
+            routes = await route_storage.async_load_routes_for_trip_ids([str(i) for i in ids])
+        routes = sorted(routes, key=lambda r: str(r.get("start_time") or r.get("trip_id") or ""))
+        content = route_gpx(routes, geometry=geometry) if format == "gpx" else json.dumps(route_geojson(routes, geometry=geometry), ensure_ascii=False, indent=2)
+        count = len(route_geojson(routes, geometry=geometry)["features"])
+        if not count:
+            raise ValueError("No route geometry found for selection")
+        filename = "ford_triplog_routes_" + dt_util.now().strftime("%Y-%m-%d_%H-%M-%S_%f") + "." + format
+        output_file = self.export_path / filename
+        await self.hass.async_add_executor_job(self._write_route_text, output_file, content)
+        return {"record_count": count, "filename": filename, "path": str(output_file), "start_date": "", "end_date": ""}
+
+    @staticmethod
+    def _write_route_text(path: Path, content: str) -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
 
     async def async_export_trips(
         self,

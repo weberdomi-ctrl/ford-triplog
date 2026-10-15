@@ -40,7 +40,8 @@
           "tracker": "Lokalizator pojazdu",
           "charging": "Czujnik stanu ładowania (dostępny tylko dla elektrycznych pojazdów FordPass)",
           "smart_trip": "Włącz Smart Trip",
-          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)"
+          "smart_trip_timeout": "Limit czasu Smart Trip (sekundy)",
+          "standalone_test_vehicle": "Utwórz pojazd testowy (bez czujników)"
         },
         "data_description": {
           "smart_trip": "Krótkie postoje są wstrzymywane i łączone w jeden przejazd.",
@@ -64,7 +65,8 @@
     },
     "error": {
       "ford_triplog_entity_not_allowed": "Encje Ford Triplog nie mogą być używane jako źródło danych.",
-      "recovery_snapshot_missing": "Wybrana migawka konfiguracji nie jest już dostępna."
+      "recovery_snapshot_missing": "Wybrana migawka konfiguracji nie jest już dostępna.",
+      "missing_vehicle_sources": "Zwykły pojazd wymaga zapłonu, licznika i lokalizatora."
     },
     "abort": {
       "vehicle_already_configured": "Pojazd {vehicle} jest już skonfigurowany. Nie utworzono drugiego pojazdu.",
@@ -774,7 +776,8 @@
           "export_charges": "Eksportuj sesje ładowania do CSV",
           "init": "Wróć do menu głównego",
           "export_charging_monthly": "Eksportuj miesięczne statystyki ładowania do CSV",
-          "export_driving_monthly": "Eksportuj miesięczne statystyki jazdy jako CSV"
+          "export_driving_monthly": "Eksportuj miesięczne statystyki jazdy jako CSV",
+          "export_routes": "Eksportuj trasy GPS"
         },
         "menu_option_descriptions": {
           "export_trips": "Eksportuj zapisane przejazdy do pliku CSV, opcjonalnie ograniczając zakres dat.",
@@ -782,7 +785,8 @@
           "export_charges": "Eksportuj zapisane sesje ładowania do pliku CSV, opcjonalnie ograniczając zakres dat.",
           "init": "Wróć do przeglądu Ford Triplog.",
           "export_charging_monthly": "Eksportuj pełną historię ładowania zagregowaną według miesięcy kalendarzowych do pliku CSV.",
-          "export_driving_monthly": "Eksportuj pełną historię jazdy zagregowaną według miesięcy kalendarzowych jako plik CSV."
+          "export_driving_monthly": "Eksportuj pełną historię jazdy zagregowaną według miesięcy kalendarzowych jako plik CSV.",
+          "export_routes": "Eksport tras GPS do GPX lub GeoJSON"
         }
       },
       "export_trips": {
@@ -992,7 +996,8 @@
           "home_tariff_add": "Dodaj okres taryfy",
           "home_tariff_selection": "Edytuj okres taryfy",
           "home_tariff_legacy_import": "Importuj poprzednie taryfy lato/zima",
-          "settings": "Powrót do ustawień"
+          "settings": "Powrót do ustawień",
+          "zone_tariff_settings": "Configure charging zones"
         },
         "menu_option_descriptions": {
           "home_tariff_add": "Dodaj nowy zakres dat dla roku z ceną za kWh.",
@@ -1460,6 +1465,49 @@
         "description": "Wybierz rachunek do usunięcia.",
         "data": {
           "document_id": "Rachunek"
+        }
+      },
+      "export_routes": {
+        "title": "Eksport tras GPS",
+        "description": "Najpierw wybierz przejazd, podróż lub dzień.",
+        "data": {
+          "scope": "Scope"
+        }
+      },
+      "export_routes_select": {
+        "title": "Wybierz zapisane trasy",
+        "description": "Wyświetlane są tylko pozycje z zapisanymi trasami GPS.",
+        "data": {
+          "identifier": "Dostępna trasa / podróż / dzień",
+          "format": "Format",
+          "geometry": "GPS / OSRM"
+        }
+      },
+      "zone_tariff_settings": {
+        "title": "Select charging zone",
+        "data": {
+          "zone_id": "Home Assistant Zone"
+        },
+        "description": "**Ladeorte und Tarife**\n\n{zone_overview}"
+      },
+      "zone_tariff_edit": {
+        "title": "Charging zone tariff",
+        "description": "Charging zone: {zone_name}",
+        "data": {
+          "tariff_mode": "Tariftyp",
+          "price_per_kwh": "Fixpreis pro kWh",
+          "price_sensor": "HA-Preissensor (nur dynamisch)",
+          "interval_minutes": "Intervall (Minuten)",
+          "currency": "Währung"
+        },
+        "error": {
+          "invalid_tariff": "Ungültige Tarifkonfiguration"
+        }
+      },
+      "zone_tariff_vehicle": {
+        "title": "Select vehicle",
+        "data": {
+          "vehicle_id": "Vehicle"
         }
       }
     },

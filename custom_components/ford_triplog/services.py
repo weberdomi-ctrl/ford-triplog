@@ -1122,6 +1122,9 @@ async def _async_rebuild_last_route(
 async def async_register_services(hass: HomeAssistant) -> None:
     """Register Ford Triplog service actions once."""
 
+    from .dynamic_test_simulator import register as register_dynamic_test_simulator
+    register_dynamic_test_simulator(hass)
+
     if not hass.services.has_service(
         DOMAIN,
         SERVICE_IMPORT_CHARGING_SITES,

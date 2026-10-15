@@ -1,4 +1,4 @@
-"""Global SQLite-backed home charging tariff storage for Ford Triplog."""
+"""Vehicle-scoped SQLite-backed home charging tariff storage for Ford Triplog."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ _MIGRATION_LOCK_KEY = "_home_tariff_migration_lock"
 
 
 class FordTriplogHomeTariffStorage:
-    """Persist global home charging tariffs in the Triplog database."""
+    """Persist vehicle-specific home charging tariffs in the Triplog database."""
 
     def __init__(self, hass: HomeAssistant) -> None:
         self.hass = hass
@@ -69,8 +69,8 @@ class FordTriplogHomeTariffStorage:
             "currency": currency or DEFAULT_HOME_TARIFF_CURRENCY,
         }
 
-    async def async_load(self) -> list[dict[str, Any]]:
-        rows = await self.database.load_home_charging_tariffs()
+    async def async_load(self, vehicle_id: int) -> list[dict[str, Any]]:
+        rows = await self.database.load_home_charging_tariffs(vehicle_id)
         periods: list[dict[str, Any]] = []
         for row in rows:
             try:
@@ -83,7 +83,7 @@ class FordTriplogHomeTariffStorage:
         periods.sort(key=lambda item: (item["year"], item["valid_from"], item["valid_to"]))
         return periods
 
-    async def async_save(self, periods: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    async def async_save(self, periods: list[dict[str, Any]], vehicle_id: int) -> list[dict[str, Any]]:
         normalized = [self._normalize_period(item) for item in periods]
         normalized.sort(key=lambda item: (item["year"], item["valid_from"], item["valid_to"]))
 
@@ -97,96 +97,10 @@ class FordTriplogHomeTariffStorage:
             }
             for item in normalized
         ]
-        if not await self.database.save_home_charging_tariffs(rows):
+        if not await self.database.save_home_charging_tariffs(rows, vehicle_id):
             raise OSError("Unable to save home charging tariffs")
-        return await self.async_load()
+        return await self.async_load(vehicle_id)
 
-    async def async_migrate_config_entries(
-        self,
-        entries: Iterable[ConfigEntry],
-    ) -> list[dict[str, Any]]:
-        """Import build-25016/25017 ConfigEntry periods once into SQLite."""
-
-        await self.async_setup()
-
-        # Multiple vehicle ConfigEntries are set up concurrently. Serialize the
-        # one-time import so Explorer/JAC cannot both pass the migration marker
-        # check before either one has written it.
-        domain_data = self.hass.data.setdefault(DOMAIN, {})
-        migration_lock = domain_data.setdefault(_MIGRATION_LOCK_KEY, asyncio.Lock())
-        async with migration_lock:
-            if await self.database.is_migration_completed(_MIGRATION_ID):
-                return await self.async_load()
-
-            existing = await self.async_load()
-            if existing:
-                await self.database.mark_migration_completed(_MIGRATION_ID)
-                return existing
-
-            candidates: list[dict[str, Any]] = []
-            for entry in entries:
-                if getattr(entry, "domain", DOMAIN) != DOMAIN:
-                    continue
-                config = {**entry.data, **entry.options}
-                raw_periods = config.get(CONF_HOME_TARIFF_PERIODS)
-                if not isinstance(raw_periods, list):
-                    continue
-                currency = str(
-                    config.get(CONF_HOME_TARIFF_CURRENCY, DEFAULT_HOME_TARIFF_CURRENCY)
-                    or DEFAULT_HOME_TARIFF_CURRENCY
-                ).strip().upper()
-                for item in raw_periods:
-                    if not isinstance(item, dict):
-                        continue
-                    try:
-                        candidate = self._normalize_period(
-                            item,
-                            default_currency=currency,
-                        )
-                    except (TypeError, ValueError):
-                        continue
-                    candidate["currency"] = currency or DEFAULT_HOME_TARIFF_CURRENCY
-                    candidates.append(candidate)
-
-            accepted: list[dict[str, Any]] = []
-            for candidate in sorted(
-                candidates,
-                key=lambda item: (item["year"], item["valid_from"], item["valid_to"]),
-            ):
-                duplicate = next(
-                    (
-                        item for item in accepted
-                        if item["year"] == candidate["year"]
-                        and item["valid_from"] == candidate["valid_from"]
-                        and item["valid_to"] == candidate["valid_to"]
-                        and item["price_per_kwh"] == candidate["price_per_kwh"]
-                        and item["currency"] == candidate["currency"]
-                    ),
-                    None,
-                )
-                if duplicate is not None:
-                    continue
-
-                overlaps = any(
-                    item["year"] == candidate["year"]
-                    and candidate["valid_from"] <= item["valid_to"]
-                    and candidate["valid_to"] >= item["valid_from"]
-                    for item in accepted
-                )
-                if overlaps:
-                    _LOGGER.warning(
-                        "Skipped conflicting ConfigEntry home tariff during SQLite migration: %s",
-                        candidate,
-                    )
-                    continue
-                accepted.append(candidate)
-
-            if accepted:
-                await self.async_save(accepted)
-                _LOGGER.info(
-                    "Migrated %d ConfigEntry home tariff periods to SQLite",
-                    len(accepted),
-                )
-
-            await self.database.mark_migration_completed(_MIGRATION_ID)
-            return await self.async_load()
+    async def async_migrate_config_entries(self, entries: Iterable[ConfigEntry]) -> None:
+        """Deprecated: database.async_setup now performs the one-time migration."""
+        raise RuntimeError("Use vehicle-specific async_load(vehicle_id) instead")
