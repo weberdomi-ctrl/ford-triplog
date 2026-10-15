@@ -7899,6 +7899,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
             }),
         )
 
+    @staticmethod
+    def _cost_form_validation_error(kind: str, error: Exception) -> tuple[str, str]:
+        """Map storage validation failures to a field and translated error key."""
+        message = str(error).lower()
+        if kind in ("insurance", "tax"):
+            if "valid_to before valid_from" in message:
+                return "valid_to", "cost_invalid_date_range"
+            if "invalid tax date" in message:
+                return ("valid_from" if "valid_from" in message else "valid_to"), "cost_invalid_date"
+            if "bad frequency" in message:
+                return "payment_frequency", "cost_invalid_frequency"
+            if "negative premium" in message or "negative annual tax" in message:
+                return ("period_premium" if kind == "insurance" else "annual_tax"), "cost_negative_amount"
+            if "could not convert string to float" in message or "invalid literal" in message:
+                return ("period_premium" if kind == "insurance" else "annual_tax"), "cost_invalid_amount"
+            if "invalid isoformat" in message or "does not match format" in message:
+                return "base", "cost_invalid_date"
+            return "base", f"{kind}_invalid"
+        if kind == "financing":
+            if "duration" in message or "month" in message:
+                return "duration_months", "cost_invalid_duration"
+            if "date" in message:
+                return "start_date", "cost_invalid_date"
+            return "base", "invalid_financing_data"
+        return "base", "expense_invalid"
+
     async def _async_step_leasing_form(
         self, user_input: dict[str, Any] | None
     ) -> ConfigFlowResult:
@@ -7934,8 +7960,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         data[key] = None
                 saved = await storage.async_save(data)
                 calculate_leasing_summary(saved)
-            except (ValueError, TypeError, KeyError):
-                errors["base"] = "invalid_financing_data"
+            except (ValueError, TypeError, KeyError) as err:
+                field, code = self._cost_form_validation_error("financing", err)
+                errors[field] = code
+                _LOGGER.warning("Financing form validation failed: %s", err)
             else:
                 self._selected_financing_id = None
                 self._financing_prefill = {}
@@ -7943,6 +7971,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_financing_management()
 
         def d(key: str, fallback: Any = "") -> Any:
+            if user_input is not None and key in user_input:
+                return user_input[key]
             if selected:
                 return selected.get(key, fallback)
             return self._financing_prefill.get(key, fallback)
@@ -8239,16 +8269,40 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = dict(self._insurance_prefill)
         errors: dict[str, str] = {}
         if user_input is not None:
+            # Retain submitted values even if the backend rejects the save.
+            existing.update(user_input)
             try:
                 data = dict(user_input)
                 if self._selected_insurance_id is not None:
                     data["insurance_id"] = self._selected_insurance_id
+                from datetime import date as _cost_date
+                for date_field in ("valid_from", "valid_to"):
+                    raw_date = str(data.get(date_field) or "").strip()
+                    try:
+                        if not raw_date:
+                            raise ValueError("empty")
+                        # Storage accepts ISO dates; tax additionally accepts localized dates.
+                        if raw_date.count(".") == 2:
+                            from datetime import datetime as _cost_datetime
+                            data[date_field] = _cost_datetime.strptime(raw_date, "%d.%m.%Y").date().isoformat()
+                        elif raw_date.count("/") == 2:
+                            from datetime import datetime as _cost_datetime
+                            data[date_field] = _cost_datetime.strptime(raw_date, "%d/%m/%Y").date().isoformat()
+                        else:
+                            _cost_date.fromisoformat(raw_date)
+                    except ValueError:
+                        errors[date_field] = "cost_invalid_date"
+                if errors:
+                    raise ValueError("invalid_form_dates")
                 await store.async_save(data)
                 self._selected_insurance_id = None
                 self._insurance_prefill = {}
                 return await self.async_step_insurance_management()
-            except (ValueError, TypeError):
-                errors["base"] = "insurance_invalid"
+            except (ValueError, TypeError) as err:
+                field, code = self._cost_form_validation_error("insurance", err)
+                if not errors:
+                    errors[field] = code
+                _LOGGER.warning("Insurance form validation failed: %s", err)
         payment_options = [
             selector.SelectOptionDict(value="monthly", label="Monatlich"),
             selector.SelectOptionDict(value="quarterly", label="Vierteljährlich"),
@@ -8337,15 +8391,39 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = next((x for x in await store.async_load() if int(x["tax_id"]) == tax_id), {})
         errors: dict[str, str] = {}
         if user_input is not None:
+            # Retain submitted values even if the backend rejects the save.
+            existing.update(user_input)
             try:
                 data = dict(user_input)
                 if tax_id is not None:
                     data["tax_id"] = tax_id
+                from datetime import date as _cost_date
+                for date_field in ("valid_from", "valid_to"):
+                    raw_date = str(data.get(date_field) or "").strip()
+                    try:
+                        if not raw_date:
+                            raise ValueError("empty")
+                        # Storage accepts ISO dates; tax additionally accepts localized dates.
+                        if raw_date.count(".") == 2:
+                            from datetime import datetime as _cost_datetime
+                            data[date_field] = _cost_datetime.strptime(raw_date, "%d.%m.%Y").date().isoformat()
+                        elif raw_date.count("/") == 2:
+                            from datetime import datetime as _cost_datetime
+                            data[date_field] = _cost_datetime.strptime(raw_date, "%d/%m/%Y").date().isoformat()
+                        else:
+                            _cost_date.fromisoformat(raw_date)
+                    except ValueError:
+                        errors[date_field] = "cost_invalid_date"
+                if errors:
+                    raise ValueError("invalid_form_dates")
                 await store.async_save(data)
                 self._selected_tax_id = None
                 return await self.async_step_tax_management()
-            except (ValueError, TypeError):
-                errors["base"] = "tax_invalid"
+            except (ValueError, TypeError) as err:
+                field, code = self._cost_form_validation_error("tax", err)
+                if not errors:
+                    errors[field] = code
+                _LOGGER.warning("Tax form validation failed: %s", err)
         def txt(key: str, default: str = "") -> str:
             value = existing.get(key)
             return default if value is None else str(value)

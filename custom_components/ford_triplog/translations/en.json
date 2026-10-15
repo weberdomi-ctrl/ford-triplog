@@ -1609,7 +1609,13 @@
       "expense_both_validity_dates_required": "Both valid from and valid to are required for a validity period.",
       "expense_invalid_validity_range": "Valid to cannot be before valid from.",
       "expense_invalid_odometer": "The odometer value is invalid.",
-      "invalid_tariff": "Invalid or overlapping tariff period"
+      "invalid_tariff": "Invalid or overlapping tariff period",
+      "cost_invalid_date": "Invalid date. Please enter YYYY-MM-DD.",
+      "cost_invalid_date_range": "Valid until must not be earlier than valid from.",
+      "cost_invalid_frequency": "Invalid payment frequency.",
+      "cost_negative_amount": "Amount must not be negative.",
+      "cost_invalid_amount": "Invalid amount. Enter a number.",
+      "cost_invalid_duration": "Invalid duration. Check the number of months."
     },
     "abort": {
       "no_financing_contracts": "No financing contracts exist.",
