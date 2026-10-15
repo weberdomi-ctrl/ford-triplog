@@ -2411,35 +2411,38 @@ class FordTriplogDatabase:
             return None
 
     async def load_last_route(self) -> dict[str, Any] | None:
-        """Load the most recently created route from SQLite."""
+        """Load the newest valid completed route, skipping malformed JSON."""
 
         self._log_read("last_route")
 
         def _read() -> dict[str, Any] | None:
+            # Do not use SQLite json_extract here: one malformed JSON payload
+            # can abort the entire query with "malformed JSON".
             with sqlite3.connect(self.db_path) as db:
-                row = db.execute(
+                cursor = db.execute(
                     """
-                    SELECT data
+                    SELECT rowid, data
                     FROM routes
                     WHERE vehicle_id = ?
-                      AND CASE
-                        WHEN json_valid(data) THEN COALESCE(
-                          json_extract(data, '$.status'),
-                          'completed'
-                        )
-                        ELSE 'invalid'
-                      END = 'completed'
                     ORDER BY rowid DESC
-                    LIMIT 1
                     """,
                     (self.vehicle_id,),
-                ).fetchone()
-
-            if row is None:
-                return None
-
-            data = json.loads(row[0])
-            return data if isinstance(data, dict) else None
+                )
+                for rowid, raw_data in cursor:
+                    try:
+                        data = json.loads(raw_data)
+                    except (TypeError, ValueError, UnicodeDecodeError):
+                        _LOGGER.warning(
+                            "Skipping invalid route JSON (vehicle_id=%s, rowid=%s)",
+                            self.vehicle_id,
+                            rowid,
+                        )
+                        continue
+                    if not isinstance(data, dict):
+                        continue
+                    if data.get("status", "completed") == "completed":
+                        return data
+            return None
 
         try:
             return await self.hass.async_add_executor_job(
