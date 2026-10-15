@@ -1913,6 +1913,24 @@ class FordTriplogDatabase:
                 self.db_path,
             )
 
+    async def load_vehicle_tco_currencies(self, vehicle_id: int) -> set[str]:
+        """Return currencies in the vehicle's TCO records; no FX conversion."""
+        await self.async_setup()
+
+        def _read() -> set[str]:
+            with sqlite3.connect(self.db_path) as connection:
+                currencies = set()
+                for table in ("vehicle_financing", "vehicle_insurance", "vehicle_tax", "vehicle_expenses"):
+                    rows = connection.execute(
+                        f"SELECT DISTINCT UPPER(TRIM(currency)) FROM {table} WHERE vehicle_id = ?",
+                        (int(vehicle_id),),
+                    ).fetchall()
+                    currencies.update(str(row[0]) for row in rows if row[0])
+                return currencies
+
+        return await self.hass.async_add_executor_job(_read)
+
+
     async def load_vehicle_cost_monthly(
         self,
         vehicle_id: int | None = None,

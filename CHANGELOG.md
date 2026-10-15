@@ -1,5 +1,14 @@
 # Changelog
 
+## 2.7.0-beta.2 (pre-release)
+
+### Fixed
+- Aligned `manifest.json` and `const.py` version to `2.7.0-beta.2`.
+- TCO insurance, road-tax, financing and overview sensors now expose the stored currency instead of a hard-coded CHF unit.
+- Financing contracts expose their individual currencies.
+- Mixed-currency TCO totals are marked unavailable instead of presenting an unconverted sum as one currency. Currency conversion is not implemented.
+
+
 ## 2.7.0-beta.1 (pre-release)
 
 ### Added
