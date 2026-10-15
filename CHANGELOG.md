@@ -1,5 +1,12 @@
 # Changelog
 
+## 2.7.0-beta.3 (pre-release)
+
+### Fixed
+- New vehicle financing, insurance, road-tax and expense forms now preselect the Home Assistant currency (`hass.config.currency`) instead of hard-coded CHF.
+- Existing stored currencies and explicitly recognized document currencies are preserved; no data migration or currency conversion is performed.
+
+
 ## 2.7.0-beta.2 (pre-release)
 
 ### Fixed

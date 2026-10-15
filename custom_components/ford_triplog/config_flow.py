@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.7.0-beta.1
+Version: 2.7.0-beta.3
 Phase: 2.6 final release
 Build: 27001
 Release: Final
@@ -7819,6 +7819,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
             },
         )
 
+    def _default_cost_currency(self) -> str:
+        """Use HA's currency only as the default for newly entered vehicle costs.
+
+        Existing records and explicitly recognized document currencies are never
+        rewritten when Home Assistant's configured currency changes.
+        """
+        return str(self.hass.config.currency or "CHF").strip().upper() or "CHF"
+
     async def async_step_financing_add_leasing(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -7976,7 +7984,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("interest_rate", default=text_d("interest_rate")): selector.TextSelector(),
             vol.Optional("annual_mileage", default=text_d("annual_mileage")): selector.TextSelector(),
             vol.Optional("excess_km_rate", default=text_d("excess_km_rate")): selector.TextSelector(),
-            vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
+            vol.Required("currency", default=d("currency", self._default_cost_currency())): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
             vol.Optional("notes", default=text_d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
         })
 
@@ -8258,7 +8266,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
             vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
             vol.Required("period_premium", default=txt("period_premium", "0")): selector.TextSelector(),
-            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Required("payment_frequency", default=txt("payment_frequency", "annual")): selector.SelectSelector(selector.SelectSelectorConfig(options=payment_options)),
             vol.Optional("payment_amount", default=txt("payment_amount")): selector.TextSelector(),
             vol.Optional("first_payment_date", default=txt("first_payment_date")): selector.TextSelector(),
@@ -8345,7 +8353,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
             vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
             vol.Required("annual_tax", default=txt("annual_tax", "0")): selector.TextSelector(),
-            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Optional("authority", default=txt("authority")): selector.TextSelector(),
             vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
         })
@@ -8512,7 +8520,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
             vol.Optional("description", default=v("description")): selector.TextSelector(),
             vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
-            vol.Required("currency", default=v("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
             vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
             vol.Optional("provider", default=v("provider")): selector.TextSelector(),
