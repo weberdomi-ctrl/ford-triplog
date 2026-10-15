@@ -3,8 +3,8 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.6.0
-Build: 26055
+Version: 2.7.0-beta.1
+Build: 27001
 Changes: Final 2.6 vehicle cost/TCO and configuration recovery schema.
 """
 
@@ -763,18 +763,10 @@ class FordTriplogDatabase:
             self.hass.data[lock_key] = lock
 
         if self.hass.data.get(runtime_key, False):
-            _LOGGER.debug(
-                "Ford Triplog SQLite database already initialized in this HA runtime: %s",
-                self.db_path,
-            )
             return
 
         async with lock:
             if self.hass.data.get(runtime_key, False):
-                _LOGGER.debug(
-                    "Ford Triplog SQLite database already initialized in this HA runtime: %s",
-                    self.db_path,
-                )
                 return
 
             def _setup() -> None:

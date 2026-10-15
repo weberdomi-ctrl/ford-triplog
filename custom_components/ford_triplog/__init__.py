@@ -5,9 +5,9 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.6.0
-Build: 26055
-Changes: Final 2.6 release with vehicle TCO, route metadata and configuration recovery.
+Version: 2.7.0-beta.1
+Build: 27001
+Changes: 2.7 pre-release with route export, per-vehicle tariffs and dynamic charging prices.
 """
 
 from __future__ import annotations
