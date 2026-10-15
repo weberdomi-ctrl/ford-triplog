@@ -1610,7 +1610,7 @@
       "expense_invalid_validity_range": "Valid to cannot be before valid from.",
       "expense_invalid_odometer": "The odometer value is invalid.",
       "invalid_tariff": "Invalid or overlapping tariff period",
-      "cost_invalid_date": "Invalid date. Please enter YYYY-MM-DD.",
+      "cost_invalid_date": "Invalid date. Enter DD.MM.YYYY, DD.MM.YY or YYYY-MM-DD.",
       "cost_invalid_date_range": "Valid until must not be earlier than valid from.",
       "cost_invalid_frequency": "Invalid payment frequency.",
       "cost_negative_amount": "Amount must not be negative.",

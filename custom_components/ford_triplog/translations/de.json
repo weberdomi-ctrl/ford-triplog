@@ -1628,7 +1628,7 @@
       "expense_invalid_validity_range": "Gültig bis darf nicht vor Gültig von liegen.",
       "expense_invalid_odometer": "Kilometerstand ist ungültig.",
       "invalid_tariff": "Ungültige oder überlappende Tarifperiode",
-      "cost_invalid_date": "Datum ungültig. Bitte JJJJ-MM-TT eingeben.",
+      "cost_invalid_date": "Ungültiges Datum. Bitte TT.MM.JJJJ, TT.MM.JJ oder JJJJ-MM-TT eingeben.",
       "cost_invalid_date_range": "Gültig bis darf nicht vor Gültig von liegen.",
       "cost_invalid_frequency": "Zahlungsintervall ist ungültig.",
       "cost_negative_amount": "Betrag darf nicht negativ sein.",

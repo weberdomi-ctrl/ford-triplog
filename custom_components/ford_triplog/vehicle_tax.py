@@ -1,5 +1,6 @@
 """Vehicle road-tax storage for Ford Triplog."""
 from __future__ import annotations
+from .date_input import parse_user_date
 
 import functools
 import sqlite3
@@ -101,13 +102,10 @@ class FordTriplogVehicleTaxStorage:
                 return value.date()
             if isinstance(value, date):
                 return value
-            text = str(value or "").strip()
-            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y"):
-                try:
-                    return datetime.strptime(text, fmt).date()
-                except ValueError:
-                    pass
-            raise ValueError(f"invalid tax date: {text!r}")
+            try:
+                return parse_user_date(value)
+            except ValueError:
+                raise ValueError(f"invalid tax date: {value!r}") from None
 
         def _parse_amount(value: Any) -> float:
             text = str(value or "").strip().replace("CHF", "").replace("Fr.", "")

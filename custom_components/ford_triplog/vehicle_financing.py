@@ -1,6 +1,7 @@
 """Vehicle financing storage and TCO calculations for Ford Triplog."""
 
 from __future__ import annotations
+from .date_input import normalize_user_date
 
 import functools
 import sqlite3
@@ -188,9 +189,9 @@ class FordTriplogVehicleFinancingStorage:
         if kind not in SUPPORTED_FINANCING_TYPES:
             raise ValueError(f"Unsupported financing type: {kind}")
         result["financing_type"] = kind
-        result["start_date"] = date.fromisoformat(str(result["start_date"])).isoformat()
+        result["start_date"] = normalize_user_date(result["start_date"])
         if result.get("end_date"):
-            result["end_date"] = date.fromisoformat(str(result["end_date"])).isoformat()
+            result["end_date"] = normalize_user_date(result["end_date"])
         result["duration_months"] = int(result["duration_months"])
         result["number_of_payments"] = int(result["number_of_payments"])
         result["first_payment"] = float(result.get("first_payment") or 0.0)
