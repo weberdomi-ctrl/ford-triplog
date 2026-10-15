@@ -58,7 +58,7 @@ class FordTriplogReceiptOCR:
         input_value: Any = str(path)
         suffix = path.suffix.lower()
         if suffix == ".pdf":
-            # Embedded PDF text can be extracted without native PDF rendering.
+            # Embedded PDF text works on HA OS ARM64 without native renderers.
             from .financing_document import extract_pdf_text
 
             text = extract_pdf_text(path.read_bytes())
@@ -72,7 +72,7 @@ class FordTriplogReceiptOCR:
                     "confidence": None,
                     "suggestions": self._extract_suggestions(lines),
                 }
-            # Image-only PDFs require a PDF renderer.
+            # Image-only PDF still needs a PDF renderer; report clearly.
             input_value = self._render_pdf_first_page(path)
 
         try:
