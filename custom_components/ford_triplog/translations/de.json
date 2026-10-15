@@ -1627,7 +1627,13 @@
       "expense_both_validity_dates_required": "Für einen Gültigkeitszeitraum müssen Von und Bis angegeben werden.",
       "expense_invalid_validity_range": "Gültig bis darf nicht vor Gültig von liegen.",
       "expense_invalid_odometer": "Kilometerstand ist ungültig.",
-      "invalid_tariff": "Ungültige oder überlappende Tarifperiode"
+      "invalid_tariff": "Ungültige oder überlappende Tarifperiode",
+      "cost_invalid_date": "Ungültiges Datum. Bitte TT.MM.JJJJ, TT.MM.JJ oder JJJJ-MM-TT eingeben.",
+      "cost_invalid_date_range": "Gültig bis darf nicht vor Gültig von liegen.",
+      "cost_invalid_frequency": "Zahlungsintervall ist ungültig.",
+      "cost_negative_amount": "Betrag darf nicht negativ sein.",
+      "cost_invalid_amount": "Betrag ungültig. Bitte eine Zahl eingeben.",
+      "cost_invalid_duration": "Laufzeit ungültig. Bitte Monate prüfen."
     },
     "abort": {
       "no_financing_contracts": "Keine Finanzierungsverträge vorhanden.",

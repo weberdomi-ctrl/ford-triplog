@@ -1,5 +1,6 @@
 """Variable vehicle expenses (maintenance, tolls/vignettes and other costs)."""
 from __future__ import annotations
+from .date_input import normalize_user_date
 import functools, sqlite3, time
 from datetime import date, datetime
 from pathlib import Path
@@ -62,12 +63,10 @@ class FordTriplogVehicleExpenseStorage:
             text = str(value or "").strip()
             if not text:
                 return None
-            for fmt in ("%Y-%m-%d", "%d.%m.%Y", "%d/%m/%Y", "%d.%m.%y", "%d/%m/%y"):
-                try:
-                    return datetime.strptime(text, fmt).date().isoformat()
-                except ValueError:
-                    pass
-            raise ValueError(code)
+            try:
+                return normalize_user_date(text)
+            except ValueError:
+                raise ValueError(code) from None
 
         def num(value, empty_code, invalid_code):
             text = str(value or "").strip()

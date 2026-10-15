@@ -345,6 +345,16 @@ async def async_setup_entry(
     )
 
 
+def _tco_currency(value: Any, fallback: str = "CHF") -> str:
+    """Normalize a stored three-letter TCO currency code."""
+    code = str(value or fallback).strip().upper()
+    return code if len(code) == 3 and code.isalpha() else fallback
+
+
+def _tco_month_unit(currency: str) -> str:
+    return f"{currency}/month"
+
+
 class FordTriplogInsuranceTCOSensor(SensorEntity):
     """Monthly insurance TCO for the currently selected vehicle."""
 
@@ -353,7 +363,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
     # Keep the original dev31 unique ID so HA reuses the existing registry row.
     _attr_unique_id = "ford_triplog_vehicle_insurance"
     _attr_icon = "mdi:shield-car"
-    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_native_unit_of_measurement = None
     _attr_should_poll = True
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -405,6 +415,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         except (TypeError, ValueError):
             annual = 0.0
         self._value = round(annual / 12.0, 2)
+        self._attr_native_unit_of_measurement = _tco_month_unit(_tco_currency(policy.get("currency")))
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_premium": round(annual, 2),
@@ -475,7 +486,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
     _attr_name = "Strassensteuer TCO"
     _attr_unique_id = "ford_triplog_vehicle_road_tax"
     _attr_icon = "mdi:car-cog"
-    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_native_unit_of_measurement = None
     _attr_should_poll = True
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -525,6 +536,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         except (TypeError, ValueError):
             annual = 0.0
         self._value = round(annual / 12.0, 2)
+        self._attr_native_unit_of_measurement = _tco_month_unit(_tco_currency(tax.get("currency")))
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_tax": round(annual, 2),
@@ -590,7 +602,7 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
     _attr_translation_key = "financing_tco"
     _attr_unique_id = "ford_triplog_financing_tco"
     _attr_icon = "mdi:cash-sync"
-    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_native_unit_of_measurement = None
     _attr_should_poll = True
 
     def __init__(self, hass: HomeAssistant) -> None:
@@ -612,11 +624,12 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
         vid=get_selected_vehicle_id(self.hass, fallback=1)
         if vid is None: self._value=None; self._attrs={}; return
         rows=await FordTriplogVehicleFinancingStorage(self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid).async_load()
-        now=dt_util.now(); total=0.0; active=[]
+        now=dt_util.now(); total=0.0; active=[]; currencies=set()
         for row in rows:
             try: value=leasing_tco_for_month(row, now.year, now.month)
             except (ValueError, TypeError, KeyError): value=0.0
             if value:
+                currencies.add(_tco_currency(row.get("currency")))
                 total += value
                 financing_id = row.get('financing_id')
                 contract = {
@@ -624,6 +637,7 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
                     'provider': row.get('provider'),
                     'type': row.get('financing_type'),
                     'monthly_tco': round(value, 2),
+                    'currency': _tco_currency(row.get('currency')),
                     'start_date': row.get('start_date'),
                     'end_date': row.get('end_date'),
                     'term_months': row.get('term_months'),
@@ -652,8 +666,11 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
                             'url': async_sign_path(self.hass, path, timedelta(minutes=30), use_content_user=True),
                         })
                 active.append(contract)
-        self._value=round(total,2) if active else None
-        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':'CHF','contracts':active}
+        currency = next(iter(currencies)) if len(currencies) == 1 else None
+        self._value=round(total,2) if active and currency else None
+        self._attr_native_unit_of_measurement = _tco_month_unit(currency) if currency else None
+        self._attrs={'vehicle_id':vid,'month':now.strftime('%Y-%m'),'currency':currency,
+                     'contracts':active, 'mixed_currencies': sorted(currencies) if len(currencies)>1 else []}
     @property
     def native_value(self): return self._value
     @property
@@ -777,7 +794,7 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
     _attr_translation_key = "cost_overview_tco"
     _attr_unique_id = "ford_triplog_cost_overview_tco"
     _attr_icon = "mdi:calculator-variant"
-    _attr_native_unit_of_measurement = "CHF/month"
+    _attr_native_unit_of_measurement = None
     _attr_should_poll = True
     _unrecorded_attributes = frozenset({"monthly_breakdown", "yearly_summary"})
 
@@ -817,6 +834,7 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
             vehicle_id=vid,
         )
         cost_rows=await database.load_vehicle_cost_monthly(vid)
+        stored_currencies = await database.load_vehicle_tco_currencies(vid)
         costs_by_month={str(row['month']):row for row in cost_rows}
 
         registry=er.async_get(self.hass)
@@ -829,6 +847,9 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
                 ys=st.attributes.get('yearly_summary') or {}
                 charging_monthly={str(k):float((v or {}).get('total_cost') or 0) for k,v in mb.items() if isinstance(v,dict)}
                 charging_yearly={str(k):float((v or {}).get('total_cost') or 0) for k,v in ys.items() if isinstance(v,dict)}
+                charge_currency = st.attributes.get('currency')
+                if charge_currency and any(charging_monthly.values()):
+                    stored_currencies.add(_tco_currency(charge_currency))
                 if st.attributes.get('month'):
                     charging_monthly[str(st.attributes['month'])]=float(st.attributes.get('total_cost_month') or 0)
 
@@ -885,8 +906,16 @@ class FordTriplogCostOverviewTCOSensor(SensorEntity):
             yearly.append({'year':year,**serialize(by_year.get(year),charging_yearly.get(year,0.0),distance_yearly.get(year,0.0))})
 
         current=monthly[-1]
-        self._value=current['total_costs']
-        self._attrs={'vehicle_id':vid,'month':current['month'],'currency':'CHF',
+        # Never label an arithmetic sum of different currencies as CHF or EUR.
+        # The canonical SQL view does not perform currency conversion.
+        mixed = len(stored_currencies) > 1
+        currency = (next(iter(stored_currencies)) if stored_currencies else
+                    _tco_currency(getattr(self.hass.config, 'currency', None))) if not mixed else None
+        self._value=None if mixed else current['total_costs']
+        self._attr_native_unit_of_measurement = _tco_month_unit(currency) if currency else None
+        self._attrs={'vehicle_id':vid,'month':current['month'],'currency':currency,
+                     'mixed_currencies': sorted(stored_currencies) if mixed else [],
+                     'status': 'mixed_currencies_no_conversion' if mixed else 'ok',
                      **{k:v for k,v in current.items() if k!='month'},
                      'monthly_breakdown':monthly,'yearly_summary':yearly,
                      'cost_source':'sqlite_view:v_vehicle_cost_monthly'}

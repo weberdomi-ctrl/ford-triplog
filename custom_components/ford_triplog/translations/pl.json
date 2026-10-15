@@ -1595,7 +1595,13 @@
       "expense_invalid_valid_to": "Data końca ważności jest nieprawidłowa.",
       "expense_both_validity_dates_required": "Dla okresu ważności wymagane są obie daty od i do.",
       "expense_invalid_validity_range": "Data końca ważności nie może być wcześniejsza niż data początku.",
-      "expense_invalid_odometer": "Stan licznika jest nieprawidłowy."
+      "expense_invalid_odometer": "Stan licznika jest nieprawidłowy.",
+      "cost_invalid_date": "Nieprawidłowa data. Użyj RRRR-MM-DD.",
+      "cost_invalid_date_range": "Data końcowa nie może poprzedzać początkowej.",
+      "cost_invalid_frequency": "Nieprawidłowa częstotliwość płatności.",
+      "cost_negative_amount": "Kwota nie może być ujemna.",
+      "cost_invalid_amount": "Nieprawidłowa kwota. Wprowadź liczbę.",
+      "cost_invalid_duration": "Nieprawidłowy okres. Sprawdź liczbę miesięcy."
     },
     "abort": {
       "no_insurance_entries": "Brak wpisów ubezpieczenia.",

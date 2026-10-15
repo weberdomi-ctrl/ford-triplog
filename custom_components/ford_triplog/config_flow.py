@@ -5,7 +5,7 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.7.0-beta.1
+Version: 2.7.0-beta.3
 Phase: 2.6 final release
 Build: 27001
 Release: Final
@@ -16,6 +16,7 @@ Release: Final
 from __future__ import annotations
 
 import re
+from .date_input import parse_user_date, normalize_user_date
 
 import logging
 
@@ -838,7 +839,7 @@ def _financing_add_months_iso(start_date: str, months: int) -> str:
     """Return ISO date after adding whole calendar months."""
     import calendar
     from datetime import date as _date
-    value = _date.fromisoformat(start_date)
+    value = parse_user_date(start_date)
     total = value.year * 12 + (value.month - 1) + int(months)
     year, month0 = divmod(total, 12)
     month = month0 + 1
@@ -7819,6 +7820,14 @@ class FordTriplogOptionsFlow(OptionsFlow):
             },
         )
 
+    def _default_cost_currency(self) -> str:
+        """Use HA's currency only as the default for newly entered vehicle costs.
+
+        Existing records and explicitly recognized document currencies are never
+        rewritten when Home Assistant's configured currency changes.
+        """
+        return str(self.hass.config.currency or "CHF").strip().upper() or "CHF"
+
     async def async_step_financing_add_leasing(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
@@ -7891,6 +7900,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
             }),
         )
 
+    @staticmethod
+    def _cost_form_validation_error(kind: str, error: Exception) -> tuple[str, str]:
+        """Map storage validation failures to a field and translated error key."""
+        message = str(error).lower()
+        if kind in ("insurance", "tax"):
+            if "valid_to before valid_from" in message:
+                return "valid_to", "cost_invalid_date_range"
+            if "invalid tax date" in message:
+                return ("valid_from" if "valid_from" in message else "valid_to"), "cost_invalid_date"
+            if "bad frequency" in message:
+                return "payment_frequency", "cost_invalid_frequency"
+            if "negative premium" in message or "negative annual tax" in message:
+                return ("period_premium" if kind == "insurance" else "annual_tax"), "cost_negative_amount"
+            if "could not convert string to float" in message or "invalid literal" in message:
+                return ("period_premium" if kind == "insurance" else "annual_tax"), "cost_invalid_amount"
+            if "invalid isoformat" in message or "does not match format" in message:
+                return "base", "cost_invalid_date"
+            return "base", f"{kind}_invalid"
+        if kind == "financing":
+            if "duration" in message or "month" in message:
+                return "duration_months", "cost_invalid_duration"
+            if "date" in message:
+                return "start_date", "cost_invalid_date"
+            return "base", "invalid_financing_data"
+        return "base", "expense_invalid"
+
     async def _async_step_leasing_form(
         self, user_input: dict[str, Any] | None
     ) -> ConfigFlowResult:
@@ -7914,8 +7949,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     data.update(self._financing_document)
                 # Contract end is derived exclusively from start date + duration.
                 # Never trust a manually edited/displayed end date.
+                try:
+                    data["start_date"] = normalize_user_date(data["start_date"])
+                except ValueError:
+                    errors["start_date"] = "cost_invalid_date"
+                    raise ValueError("invalid start_date")
                 data["end_date"] = _financing_add_months_iso(
-                    str(data["start_date"]), int(data["duration_months"])
+                    data["start_date"], int(data["duration_months"])
                 )
                 # Empty optional text fields become NULL in SQLite.
                 for key in ("provider", "contract_number", "notes"):
@@ -7926,8 +7966,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         data[key] = None
                 saved = await storage.async_save(data)
                 calculate_leasing_summary(saved)
-            except (ValueError, TypeError, KeyError):
-                errors["base"] = "invalid_financing_data"
+            except (ValueError, TypeError, KeyError) as err:
+                field, code = self._cost_form_validation_error("financing", err)
+                if not errors:
+                    errors[field] = code
+                _LOGGER.warning("Financing form validation failed: %s", err)
             else:
                 self._selected_financing_id = None
                 self._financing_prefill = {}
@@ -7935,6 +7978,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 return await self.async_step_financing_management()
 
         def d(key: str, fallback: Any = "") -> Any:
+            if user_input is not None and key in user_input:
+                return user_input[key]
             if selected:
                 return selected.get(key, fallback)
             return self._financing_prefill.get(key, fallback)
@@ -7960,9 +8005,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("contract_number", default=text_d("contract_number")): selector.TextSelector(),
         }
         if start_date:
-            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.DateSelector()
+            schema_fields[vol.Required("start_date", default=str(start_date))] = selector.TextSelector()
         else:
-            schema_fields[vol.Required("start_date")] = selector.DateSelector()
+            schema_fields[vol.Required("start_date")] = selector.TextSelector()
         schema_fields.update({
             vol.Required("duration_months", default=duration): selector.NumberSelector(selector.NumberSelectorConfig(min=1, max=240, step=1, mode=selector.NumberSelectorMode.BOX)),
             # Displayed directly below duration for clarity. It is overwritten
@@ -7976,7 +8021,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("interest_rate", default=text_d("interest_rate")): selector.TextSelector(),
             vol.Optional("annual_mileage", default=text_d("annual_mileage")): selector.TextSelector(),
             vol.Optional("excess_km_rate", default=text_d("excess_km_rate")): selector.TextSelector(),
-            vol.Required("currency", default=d("currency", "CHF")): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
+            vol.Required("currency", default=d("currency", self._default_cost_currency())): selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR", "GBP", "USD"])),
             vol.Optional("notes", default=text_d("notes")): selector.TextSelector(selector.TextSelectorConfig(multiline=True)),
         })
 
@@ -8231,16 +8276,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = dict(self._insurance_prefill)
         errors: dict[str, str] = {}
         if user_input is not None:
+            # Retain submitted values even if the backend rejects the save.
+            existing.update(user_input)
             try:
                 data = dict(user_input)
                 if self._selected_insurance_id is not None:
                     data["insurance_id"] = self._selected_insurance_id
+                for date_field in ("valid_from", "valid_to", "first_payment_date"):
+                    raw_date = str(data.get(date_field) or "").strip()
+                    if not raw_date and date_field == "first_payment_date":
+                        data[date_field] = None
+                        continue
+                    try:
+                        data[date_field] = normalize_user_date(raw_date)
+                    except ValueError:
+                        errors[date_field] = "cost_invalid_date"
+                if errors:
+                    raise ValueError("invalid_form_dates")
                 await store.async_save(data)
                 self._selected_insurance_id = None
                 self._insurance_prefill = {}
                 return await self.async_step_insurance_management()
-            except (ValueError, TypeError):
-                errors["base"] = "insurance_invalid"
+            except (ValueError, TypeError) as err:
+                field, code = self._cost_form_validation_error("insurance", err)
+                if not errors:
+                    errors[field] = code
+                _LOGGER.warning("Insurance form validation failed: %s", err)
         payment_options = [
             selector.SelectOptionDict(value="monthly", label="Monatlich"),
             selector.SelectOptionDict(value="quarterly", label="Vierteljährlich"),
@@ -8258,7 +8319,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
             vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
             vol.Required("period_premium", default=txt("period_premium", "0")): selector.TextSelector(),
-            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Required("payment_frequency", default=txt("payment_frequency", "annual")): selector.SelectSelector(selector.SelectSelectorConfig(options=payment_options)),
             vol.Optional("payment_amount", default=txt("payment_amount")): selector.TextSelector(),
             vol.Optional("first_payment_date", default=txt("first_payment_date")): selector.TextSelector(),
@@ -8329,15 +8390,31 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = next((x for x in await store.async_load() if int(x["tax_id"]) == tax_id), {})
         errors: dict[str, str] = {}
         if user_input is not None:
+            # Retain submitted values even if the backend rejects the save.
+            existing.update(user_input)
             try:
                 data = dict(user_input)
                 if tax_id is not None:
                     data["tax_id"] = tax_id
+                for date_field in ("valid_from", "valid_to"):
+                    raw_date = str(data.get(date_field) or "").strip()
+                    if not raw_date and date_field == "first_payment_date":
+                        data[date_field] = None
+                        continue
+                    try:
+                        data[date_field] = normalize_user_date(raw_date)
+                    except ValueError:
+                        errors[date_field] = "cost_invalid_date"
+                if errors:
+                    raise ValueError("invalid_form_dates")
                 await store.async_save(data)
                 self._selected_tax_id = None
                 return await self.async_step_tax_management()
-            except (ValueError, TypeError):
-                errors["base"] = "tax_invalid"
+            except (ValueError, TypeError) as err:
+                field, code = self._cost_form_validation_error("tax", err)
+                if not errors:
+                    errors[field] = code
+                _LOGGER.warning("Tax form validation failed: %s", err)
         def txt(key: str, default: str = "") -> str:
             value = existing.get(key)
             return default if value is None else str(value)
@@ -8345,7 +8422,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("valid_from", default=txt("valid_from")): selector.TextSelector(),
             vol.Required("valid_to", default=txt("valid_to")): selector.TextSelector(),
             vol.Required("annual_tax", default=txt("annual_tax", "0")): selector.TextSelector(),
-            vol.Required("currency", default=txt("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=txt("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Optional("authority", default=txt("authority")): selector.TextSelector(),
             vol.Optional("notes", default=txt("notes")): selector.TextSelector(),
         })
@@ -8512,7 +8589,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
             vol.Optional("description", default=v("description")): selector.TextSelector(),
             vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
-            vol.Required("currency", default=v("currency", "CHF")): selector.TextSelector(),
+            vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
             vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
             vol.Optional("provider", default=v("provider")): selector.TextSelector(),
@@ -8668,13 +8745,23 @@ class FordTriplogOptionsFlow(OptionsFlow):
         """Review/edit vehicle master data."""
         docs=FordTriplogVehicleDocumentStorage(self.hass); vehicle_id=self._ensure_vehicle_context_id(); existing=await docs.async_get_details(vehicle_id) or {}
         pre={**existing,**self._vehicle_registration_prefill}
+        errors: dict[str, str] = {}
         if user_input is not None:
-            data=dict(user_input); data.update(self._vehicle_registration_document or {k:existing.get(k) for k in ("registration_document_filename","registration_document_original_name")})
-            await docs.async_save_details(vehicle_id,data); self._vehicle_registration_prefill={}; self._vehicle_registration_document={}
-            return await self.async_step_vehicle_data_management()
+            pre.update(user_input)
+            data = dict(user_input)
+            raw_registration = str(data.get("first_registration") or "").strip()
+            if raw_registration:
+                try:
+                    data["first_registration"] = normalize_user_date(raw_registration)
+                except ValueError:
+                    errors["first_registration"] = "cost_invalid_date"
+            if not errors:
+                data.update(self._vehicle_registration_document or {k:existing.get(k) for k in ("registration_document_filename","registration_document_original_name")})
+                await docs.async_save_details(vehicle_id,data); self._vehicle_registration_prefill={}; self._vehicle_registration_document={}
+                return await self.async_step_vehicle_data_management()
         def d(k): return "" if pre.get(k) is None else str(pre.get(k))
         schema=vol.Schema({vol.Optional("vin",default=d("vin")):selector.TextSelector(),vol.Optional("registration_number",default=d("registration_number")):selector.TextSelector(),vol.Optional("make",default=d("make")):selector.TextSelector(),vol.Optional("model",default=d("model")):selector.TextSelector(),vol.Optional("first_registration",default=d("first_registration")):selector.TextSelector(),vol.Optional("type_approval",default=d("type_approval")):selector.TextSelector(),vol.Optional("power_kw",default=d("power_kw")):selector.TextSelector(),vol.Optional("empty_weight_kg",default=d("empty_weight_kg")):selector.TextSelector(),vol.Optional("gross_weight_kg",default=d("gross_weight_kg")):selector.TextSelector()})
-        return self.async_show_form(step_id="vehicle_registration_manual",data_schema=schema)
+        return self.async_show_form(step_id="vehicle_registration_manual",data_schema=schema,errors=errors)
 
     async def async_step_vehicle_document_add(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors={}; vehicle_id=self._ensure_vehicle_context_id()
