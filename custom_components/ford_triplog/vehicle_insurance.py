@@ -5,6 +5,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 from homeassistant.core import HomeAssistant
+from .date_input import parse_user_date, normalize_user_date
 from .database import FordTriplogDatabase
 
 PAYMENT_FREQUENCIES = {"monthly", "quarterly", "semiannual", "annual", "single", "individual"}
@@ -40,7 +41,7 @@ class FordTriplogVehicleInsuranceStorage:
         await self.hass.async_add_executor_job(functools.partial(_d))
     @staticmethod
     def _normalize(item):
-        d=dict(item); start=date.fromisoformat(str(d['valid_from']).strip()); end=date.fromisoformat(str(d['valid_to']).strip())
+        d=dict(item); start=parse_user_date(d['valid_from']); end=parse_user_date(d['valid_to'])
         if end < start: raise ValueError('valid_to before valid_from')
         d['valid_from']=start.isoformat(); d['valid_to']=end.isoformat(); d['period_premium']=float(str(d['period_premium']).replace("'",'').replace(',','.'))
         if d['period_premium'] < 0: raise ValueError('negative premium')
@@ -48,7 +49,7 @@ class FordTriplogVehicleInsuranceStorage:
         if freq not in PAYMENT_FREQUENCIES: raise ValueError('bad frequency')
         d['payment_frequency']=freq
         raw=str(d.get('payment_amount') or '').strip(); d['payment_amount']=float(raw.replace("'",'').replace(',','.')) if raw else None
-        rawdate=str(d.get('first_payment_date') or '').strip(); d['first_payment_date']=date.fromisoformat(rawdate).isoformat() if rawdate else None
+        rawdate=str(d.get('first_payment_date') or '').strip(); d['first_payment_date']=normalize_user_date(rawdate) if rawdate else None
         d['provider']=str(d.get('provider') or '').strip() or None; d['policy_number']=str(d.get('policy_number') or '').strip() or None; d['notes']=str(d.get('notes') or '').strip() or None
         return d
 

@@ -5,7 +5,7 @@ Track your Ford.
 
 Home Assistant integration setup.
 
-Version: 2.7.0-beta.1
+Version: 2.7.0-beta.3
 Build: 27001
 Changes: 2.7 pre-release with route export, per-vehicle tariffs and dynamic charging prices.
 """

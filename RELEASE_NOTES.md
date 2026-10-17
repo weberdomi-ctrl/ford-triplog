@@ -1,3 +1,30 @@
+# Ford Triplog 2.7.0-beta.3 — Pre-release
+
+This beta corrects the currency preselection for newly entered vehicle costs.
+
+- New financing, insurance, road-tax and vehicle-expense forms use the currency configured in Home Assistant as their initial default.
+- Previously stored amounts and currencies remain unchanged, even if the Home Assistant currency is changed later.
+- Manually chosen or document-extracted currencies are retained.
+- No currency conversion is included; cross-currency conversion is deferred to the 2.8 roadmap.
+- Dynamic charging tariff logic is unchanged.
+
+Back up your Ford Triplog database and Home Assistant configuration before upgrading.
+
+---
+
+# Ford Triplog 2.7.0-beta.2 — Pre-release
+
+This beta fixes version metadata and TCO currency display issues reported during beta.1 testing.
+
+- Correct version in `manifest.json` and `const.py`.
+- TCO sensor units follow stored currency values (e.g. EUR/month).
+- Mixed-currency financing/overview totals are not displayed as a misleading single-currency amount; currency conversion is not yet supported.
+- Dynamic charging tariff logic is unchanged from beta.1. Live tariff charging sessions still need field validation.
+
+Back up your Ford Triplog database and Home Assistant configuration before upgrading.
+
+---
+
 # Ford Triplog 2.7.0-beta.1 — Pre-release
 
 This is a **beta release** intended for testing. Back up your Ford Triplog database and Home Assistant configuration before upgrading.
