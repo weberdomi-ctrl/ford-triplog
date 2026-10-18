@@ -1,0 +1,79 @@
+# Ford Triplog – Starter Dashboard (Home Assistant, Standardkarten)
+# In einem neuen Dashboard: Raw-Konfigurationseditor -> gesamten Inhalt einfügen.
+# WICHTIG: Alle Entity-IDs mit MEIN_... und die beiden garage_... IDs anpassen.
+title: Ford Triplog
+views:
+  - title: Übersicht
+    path: ford-triplog
+    icon: mdi:car-electric
+    cards:
+      - type: entities
+        title: Fahrzeug – aktuelle Daten
+        show_header_toggle: false
+        entities:
+          # Diese drei Werte kommen üblicherweise aus der Fahrzeug-Integration,
+          # nicht zwingend aus Ford Triplog. Entity-IDs ersetzen.
+          - entity: sensor.MEIN_AUTO_BATTERIESTAND
+            name: Batteriestand
+          - entity: sensor.MEIN_AUTO_REICHWEITE
+            name: Reichweite
+          - entity: sensor.MEIN_AUTO_KILOMETERSTAND
+            name: Kilometerstand
+
+      - type: markdown
+        title: Letzte Ladung
+        content: |-
+          {% set s = 'sensor.garage_ford_triplog_letzter_ladevorgang' %}
+          {% if states(s) in ['unknown', 'unavailable'] and state_attr(s, 'cost_total') is none %}
+          Keine Ladedaten vorhanden. Bitte die Entity-ID prüfen.
+          {% else %}
+          {% set c = state_attr(s, 'currency') or '' %}
+          {% set energy = state_attr(s, 'energy_added_kwh') %}
+          {% set cost = state_attr(s, 'cost_total') %}
+          {% set price = state_attr(s, 'effective_price_per_kwh') %}
+          {% set start = state_attr(s, 'start_soc') %}
+          {% set finish = state_attr(s, 'end_soc') %}
+          {% set location = state_attr(s, 'display_location') or state_attr(s, 'zone_name') or state_attr(s, 'charging_location') or 'Unbekannt' %}
+          **Ladeort:** {{ location }}
+
+          **Ladezustand:** {{ start if start is not none else '–' }} % → {{ finish if finish is not none else '–' }} %
+
+          **Energie:** {{ (energy | float(0) | round(2)) if energy is not none else '–' }} kWh
+
+          **Kosten:** {{ (cost | float(0) | round(2)) if cost is not none else '–' }} {{ c }}
+
+          **Effektiver Preis:** {{ (price | float(0) | round(4)) if price is not none else '–' }} {{ c }}/kWh
+          {% endif %}
+
+      - type: markdown
+        title: Ladehistorie – ausgewählter Tag
+        content: |-
+          {% set s = 'sensor.garage_ford_triplog_charging_history' %}
+          {% set charges = state_attr(s, 'charges') or [] %}
+          {% set c = state_attr(s, 'currency') or '' %}
+          **Ladevorgänge:** {{ state_attr(s, 'charge_count') | int(0) }}
+
+          **Geladene Energie:** {{ state_attr(s, 'energy_added_kwh') | float(0) | round(2) }} kWh
+
+          **Kosten:** {{ state_attr(s, 'cost_total') | float(0) | round(2) }} {{ c }}
+
+          {% if charges | count == 0 %}
+          Keine Ladevorgänge für den ausgewählten Tag vorhanden.
+          {% else %}
+          {% for charge in charges %}
+          - **{{ charge.get('location') or 'Unbekannter Ladeort' }}**: {{ charge.get('energy_added_kwh') | float(0) | round(2) }} kWh · {{ charge.get('cost_total') | float(0) | round(2) }} {{ charge.get('currency') or c }}
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Letzte Tour
+        content: |-
+          {% set s = 'sensor.garage_ford_triplog_letzte_tour_ubersicht' %}
+          {% set d = state_attr(s, 'distance_km') %}
+          {% set duration = state_attr(s, 'total_duration') %}
+          {% set energy = state_attr(s, 'energy_used_kwh') %}
+          **Distanz:** {{ (d | float(0) | round(1)) if d is not none else '–' }} km
+
+          **Dauer:** {{ duration if duration is not none else '–' }}
+
+          **Energieverbrauch:** {{ (energy | float(0) | round(2)) if energy is not none else '–' }} kWh
