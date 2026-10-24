@@ -1,4 +1,4 @@
-# Ford Triplog 2.7.0-beta.3 — Beta test guide
+# Ford Triplog 2.7.0-beta.1 — Beta test guide
 
 ## Before upgrading
 

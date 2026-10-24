@@ -622,6 +622,39 @@ class FordTriplogChargeManager:
             updated=True,
         )
 
+    async def async_confirm_cost(self, charge_id: str) -> ChargeManagerResult:
+        """Confirm unchanged cost values without converting their source to manual."""
+
+        normalized_id = self._normalize_charge_id(charge_id)
+        charge = await self.async_get_charge(normalized_id)
+        if charge is None:
+            return ChargeManagerResult(
+                action="confirm_cost", charge_id=normalized_id,
+                reason="charge_not_found",
+            )
+
+        charge.cost_verified = True
+        if charge.cost_finalized:
+            # Keep the frozen values intact, including home tariff and receipt data.
+            if charge._finalized_cost_snapshot is not None:
+                charge._finalized_cost_snapshot["cost_verified"] = True
+        else:
+            charge.finalize_costs()
+
+        saved = await self.storage.update_charge(normalized_id, charge.to_dict())
+        if not saved:
+            return ChargeManagerResult(
+                action="confirm_cost", charge_id=normalized_id,
+                charge=charge, reason="save_failed",
+            )
+
+        await self._async_refresh_dependents(charge)
+        async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
+        return ChargeManagerResult(
+            action="confirm_cost", charge_id=normalized_id,
+            charge=charge, updated=True,
+        )
+
     async def async_clear_cost(
         self,
         charge_id: str,

@@ -61,6 +61,11 @@ class Charge:
         # segment counter so the charging-status total can be accumulated.
         self.charging_energy_accumulated_kwh: float = 0.0
         self.charging_resume_count: int = 0
+        self.pause_count: int = 0
+        self.pause_started_at: str | None = None
+        self.pause_duration_seconds: float = 0.0
+        # Wait for the first meaningful counter change after resuming.
+        self.charging_resume_pending: bool = False
         self.last_live_charging_soc: float | None = None
         self.last_live_charging_status: str | None = None
         self.last_live_charging_updated_at: str | None = None
@@ -410,6 +415,11 @@ class Charge:
                 self.charging_energy_accumulated_kwh
             ),
             "charging_resume_count": self.charging_resume_count,
+            "pause_count": self.pause_count,
+            "was_paused": self.pause_count > 0,
+            "pause_started_at": self.pause_started_at,
+            "pause_duration_seconds": self.pause_duration_seconds,
+            "charging_resume_pending": self.charging_resume_pending,
             "last_live_charging_soc": self.last_live_charging_soc,
             "last_live_charging_status": self.last_live_charging_status,
             "last_live_charging_updated_at": (
@@ -546,6 +556,20 @@ class Charge:
             )
         except (TypeError, ValueError):
             charge.charging_resume_count = 0
+        try:
+            charge.pause_count = max(0, int(data.get("pause_count", 0) or 0))
+        except (TypeError, ValueError):
+            charge.pause_count = 0
+        charge.pause_started_at = data.get("pause_started_at")
+        try:
+            charge.pause_duration_seconds = max(
+                0.0, float(data.get("pause_duration_seconds", 0.0) or 0.0)
+            )
+        except (TypeError, ValueError):
+            charge.pause_duration_seconds = 0.0
+        charge.charging_resume_pending = bool(
+            data.get("charging_resume_pending", False)
+        )
         charge.last_live_charging_soc = data.get(
             "last_live_charging_soc"
         )
