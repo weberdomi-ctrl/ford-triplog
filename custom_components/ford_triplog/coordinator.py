@@ -1008,40 +1008,51 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         """Return current plug state, retaining the last valid state on gaps."""
         return current if current is not None else self.last_plug_connected
 
-    def _prepare_plug_session_resume(self, charge: Charge) -> bool:
-        """Prepare an existing plugged charge for another transfer segment."""
-
-        if charge.completion_time is None:
+    def _mark_plug_session_paused(self, charge: Charge, state: dict[str, Any]) -> bool:
+        """Keep physical plug session open and persist STOPPED/COMPLETED pause."""
+        if charge.pause_started_at is not None:
             return False
-
-        previous_segment_energy = optional_float(
-            charge.charger_energy_output_kwh
-        )
-        if previous_segment_energy is not None and previous_segment_energy > 0:
-            charge.charging_energy_accumulated_kwh = round(
-                max(0.0, charge.charging_energy_accumulated_kwh)
-                + previous_segment_energy,
-                3,
+        # Ford can publish its final counter with the STOPPED transition.
+        reading = optional_float(state.get("charger_energy_output_kwh"))
+        previous = optional_float(charge.charger_energy_output_kwh)
+        if reading is not None and reading >= 0 and (
+            previous is None or reading >= previous
+        ):
+            charge.charger_energy_output_kwh = reading
+            charge.energy_added_kwh_charging_status = round(
+                charge.charging_energy_accumulated_kwh + reading, 2
             )
-
-        charge.charging_resume_count += 1
-        charge.charger_energy_output_kwh = None
-        charge.energy_added_kwh_charging_status = (
-            round(charge.charging_energy_accumulated_kwh, 2)
-            if charge.charging_energy_accumulated_kwh > 0
-            else None
+        charge.pause_count += 1
+        charge.pause_started_at = dt_util.now().isoformat()
+        _LOGGER.info(
+            "Plug session paused: charge=%s pauses=%s segment_kwh=%s",
+            charge.charge_id, charge.pause_count, charge.charger_energy_output_kwh,
         )
+        return True
+
+    def _prepare_plug_session_resume(self, charge: Charge) -> bool:
+        """Resume the same plug session; detect Ford counter reset on next reading."""
+        if charge.pause_started_at is None and charge.completion_time is None:
+            return False
+        if charge.pause_started_at is not None:
+            started = self._parse_fordpass_datetime(charge.pause_started_at)
+            if started is not None:
+                charge.pause_duration_seconds += max(
+                    0.0, (dt_util.now() - started).total_seconds()
+                )
+            charge.pause_started_at = None
+        charge.charging_resume_count += 1
+        # Do not commit previous kWh yet: Ford sometimes continues the old
+        # counter instead of resetting it. Compare with first fresh reading.
+        charge.charging_resume_pending = True
         charge.completion_time = None
         charge.completion_soc = None
         charge.last_live_charging_status = None
         charge.last_live_charging_updated_at = None
-
         _LOGGER.info(
-            "Charging resumed within the same plug session: charge=%s "
-            "resume=%s accumulated_energy=%s kWh",
-            charge.charge_id,
-            charge.charging_resume_count,
-            charge.charging_energy_accumulated_kwh,
+            "Plug session resumed: charge=%s resumes=%s previous_counter=%s",
+            charge.charge_id, charge.charging_resume_count,
+            charge.charger_energy_output_kwh,
         )
         return True
 
@@ -1175,7 +1186,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             charge_started
             and self.plug_entity
             and self.current_charge is not None
-            and self.current_charge.completion_time is not None
+            and (
+                self.current_charge.completion_time is not None
+                or self.current_charge.pause_started_at is not None
+            )
             and not self.waiting_for_last_charge
             and not self.current_charge.fordpass_pending
             and effective_plug_connected is True
@@ -1197,10 +1211,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                     self.current_charge.to_dict()
                 )
         elif self.current_charge is not None and charging_state == "COMPLETED":
-            if self._capture_charging_completion_snapshot(
-                self.current_charge,
-                self.vehicle_state,
-            ):
+            changed = self._capture_charging_completion_snapshot(
+                self.current_charge, self.vehicle_state,
+            )
+            if self.plug_entity and effective_plug_connected is True:
+                changed = self._mark_plug_session_paused(
+                    self.current_charge, self.vehicle_state
+                ) or changed
+            if changed:
                 await self.storage.save_current_charge(
                     self.current_charge.to_dict()
                 )
@@ -1271,14 +1289,24 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 await self.start_charge()
         elif charge_stopped:
             if self.plug_entity and effective_plug_connected is True:
+                if self.current_charge is not None and self._mark_plug_session_paused(
+                    self.current_charge, self.vehicle_state
+                ):
+                    await self.storage.save_current_charge(
+                        self.current_charge.to_dict()
+                    )
                 _LOGGER.info(
                     "Charging transfer stopped while EV plug remains connected; "
                     "keeping session %s open (state=%s)",
                     self.current_charge.charge_id if self.current_charge else "unknown",
                     charging_state or "UNKNOWN",
                 )
-            else:
+            elif not self.plug_entity:
                 await self.finish_charge()
+            else:
+                _LOGGER.debug(
+                    "Charging stopped with unknown plug status; keeping charge open"
+                )
 
         self._schedule_coordinator_update(self.vehicle_state)
 
@@ -3192,10 +3220,23 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 and charger_energy >= 0
                 and charger_energy != charge.charger_energy_output_kwh
             ):
-                # ChargerEnergyOutput is session-based but can reset late at
-                # the start of a new charge. Keep the newest valid observation
-                # rather than the maximum so a stale previous-session value
-                # can be replaced by the current session value.
+                # On resume, distinguish a reset counter from a continuing one.
+                # Keep the decision pending if Ford repeats the old reading.
+                if charge.charging_resume_pending:
+                    previous = optional_float(charge.charger_energy_output_kwh)
+                    if previous is not None and charger_energy < previous - 0.05:
+                        charge.charging_energy_accumulated_kwh = round(
+                            charge.charging_energy_accumulated_kwh + previous, 3
+                        )
+                        charge.charging_resume_pending = False
+                        _LOGGER.info(
+                            "Ford charging counter reset: charge=%s previous=%s "
+                            "new=%s accumulated=%s",
+                            charge.charge_id, previous, charger_energy,
+                            charge.charging_energy_accumulated_kwh,
+                        )
+                    elif previous is None or charger_energy > previous + 0.05:
+                        charge.charging_resume_pending = False
                 charge.charger_energy_output_kwh = charger_energy
                 charge.energy_added_kwh_charging_status = round(
                     max(0.0, charge.charging_energy_accumulated_kwh)
@@ -3440,6 +3481,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
 
             charge = self.current_charge
+            if charge.pause_started_at is not None:
+                started = self._parse_fordpass_datetime(charge.pause_started_at)
+                if started is not None:
+                    charge.pause_duration_seconds += max(
+                        0.0, (dt_util.now() - started).total_seconds()
+                    )
+                charge.pause_started_at = None
             self._cancel_charge_start_soc_recheck()
 
             # Capture COMPLETED immediately. Ford may switch the same entity to
