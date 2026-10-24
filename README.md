@@ -45,7 +45,7 @@ Your data always remains under your control.
 
 ------------------------------------------------------------------------
 
-## Version 2.7.0-beta.3 — Preview
+## Version 2.7.0-beta.1 — Preview
 
 This pre-release adds **dynamic Home Assistant electricity-price entities**, vehicle- and zone-specific charging tariffs, charging-cost persistence and route export improvements.
 
