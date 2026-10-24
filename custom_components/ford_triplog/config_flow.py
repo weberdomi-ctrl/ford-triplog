@@ -1755,35 +1755,65 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         self._selected_charge_id
                     )
                 else:
-                    result = await manager.async_set_cost(
-                        self._selected_charge_id,
-                        currency=user_input[
-                            CONF_CHARGE_CURRENCY
-                        ],
-                        cost_total=None,
-                        energy_billed_kwh=user_input.get(
-                            CONF_CHARGE_ENERGY_BILLED_KWH
-                        ),
-                        energy_cost=user_input.get(
-                            CONF_CHARGE_ENERGY_COST
-                        ),
-                        session_fee=user_input.get(
-                            CONF_CHARGE_SESSION_FEE
-                        ),
-                        time_fee=user_input.get(
-                            CONF_CHARGE_TIME_FEE
-                        ),
-                        blocking_fee=user_input.get(
-                            CONF_CHARGE_BLOCKING_FEE
-                        ),
-                        parking_fee=user_input.get(
-                            CONF_CHARGE_PARKING_FEE
-                        ),
-                        other_cost=user_input.get(
-                            CONF_CHARGE_OTHER_COST
-                        ),
-                        energy_billed_source="manual",
+                    # The form shows rounded values and represents missing
+                    # optional amounts as 0. Treat these as unchanged, so an
+                    # OK click confirms the existing home tariff / OCR values
+                    # without converting them to manual or writing 0 kWh.
+                    cost_fields = (
+                        (CONF_CHARGE_ENERGY_BILLED_KWH, "energy_billed_kwh"),
+                        (CONF_CHARGE_ENERGY_COST, "energy_cost"),
+                        (CONF_CHARGE_SESSION_FEE, "session_fee"),
+                        (CONF_CHARGE_TIME_FEE, "time_fee"),
+                        (CONF_CHARGE_BLOCKING_FEE, "blocking_fee"),
+                        (CONF_CHARGE_PARKING_FEE, "parking_fee"),
+                        (CONF_CHARGE_OTHER_COST, "other_cost"),
                     )
+                    unchanged = (
+                        str(user_input[CONF_CHARGE_CURRENCY]).upper()
+                        == str(charge.currency or "CHF").upper()
+                    )
+                    for field, attr in cost_fields:
+                        if field not in user_input:
+                            continue
+                        supplied = user_input[field]
+                        original = getattr(charge, attr, None)
+                        if abs(float(supplied or 0) - float(original or 0)) > 0.011:
+                            unchanged = False
+                            break
+                    if unchanged:
+                        result = await manager.async_confirm_cost(
+                            self._selected_charge_id
+                        )
+                    else:
+                        result = await manager.async_set_cost(
+                            self._selected_charge_id,
+                            currency=user_input[
+                                CONF_CHARGE_CURRENCY
+                            ],
+                            cost_total=None,
+                            energy_billed_kwh=user_input.get(
+                                CONF_CHARGE_ENERGY_BILLED_KWH
+                            ),
+                            energy_cost=user_input.get(
+                                CONF_CHARGE_ENERGY_COST
+                            ),
+                            session_fee=user_input.get(
+                                CONF_CHARGE_SESSION_FEE
+                            ),
+                            time_fee=user_input.get(
+                                CONF_CHARGE_TIME_FEE
+                            ),
+                            blocking_fee=user_input.get(
+                                CONF_CHARGE_BLOCKING_FEE
+                            ),
+                            parking_fee=user_input.get(
+                                CONF_CHARGE_PARKING_FEE
+                            ),
+                            other_cost=user_input.get(
+                                CONF_CHARGE_OTHER_COST
+                            ),
+                            energy_billed_source="manual",
+                        )
             except (HomeAssistantError, ValueError):
                 errors["base"] = "charge_cost_save_failed"
             else:

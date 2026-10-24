@@ -370,7 +370,8 @@ class FordTriplogChargingCostCalculator:
                 charge.other_cost = 0.0
                 charge.currency = tariff_currency
                 charge.cost_source = "home_tariff"
-                charge.cost_verified = True
+                # Automatic calculation never constitutes user verification.
+                # Preserve an existing explicit confirmation on recalculation.
                 if charge.energy_billed_kwh is None and energy_source == "added":
                     charge.energy_billed_source = "estimated"
                 charge.recalculate_costs()
