@@ -114,6 +114,17 @@ class Charge:
         # Billed energy and charging losses
         self.energy_billed_kwh: float | None = None
         self.energy_billed_source: str = "none"
+        # External HA grid meter for optional dynamic tariff, per charge.
+        # The counter snapshots are persisted so delayed FordPass completion
+        # and Home Assistant restarts cannot replace the original endpoint.
+        self.external_meter_entity_id: str | None = None
+        self.external_meter_zone_id: str | None = None
+        self.external_meter_kind: str | None = None
+        self.external_meter_start_kwh: float | None = None
+        self.external_meter_last_kwh: float | None = None
+        self.external_meter_end_kwh: float | None = None
+        self.external_meter_reset_seen: bool = False
+        self.external_meter_end_captured: bool = False
         self.charging_loss_kwh: float | None = None
         self.charging_loss_percent: float | None = None
 
@@ -464,6 +475,14 @@ class Charge:
             "energy_source": self.energy_source,
             "energy_billed_kwh": self.energy_billed_kwh,
             "energy_billed_source": self.energy_billed_source,
+            "external_meter_entity_id": self.external_meter_entity_id,
+            "external_meter_zone_id": self.external_meter_zone_id,
+            "external_meter_kind": self.external_meter_kind,
+            "external_meter_start_kwh": self.external_meter_start_kwh,
+            "external_meter_last_kwh": self.external_meter_last_kwh,
+            "external_meter_end_kwh": self.external_meter_end_kwh,
+            "external_meter_reset_seen": self.external_meter_reset_seen,
+            "external_meter_end_captured": self.external_meter_end_captured,
             "charging_loss_kwh": self.charging_loss_kwh,
             "charging_loss_percent": self.charging_loss_percent,
             "energy_cost": self.energy_cost,
@@ -644,6 +663,14 @@ class Charge:
             "energy_billed_source",
             "none",
         )
+        charge.external_meter_entity_id = data.get("external_meter_entity_id")
+        charge.external_meter_zone_id = data.get("external_meter_zone_id")
+        charge.external_meter_kind = data.get("external_meter_kind")
+        charge.external_meter_start_kwh = data.get("external_meter_start_kwh")
+        charge.external_meter_last_kwh = data.get("external_meter_last_kwh")
+        charge.external_meter_end_kwh = data.get("external_meter_end_kwh")
+        charge.external_meter_reset_seen = bool(data.get("external_meter_reset_seen", False))
+        charge.external_meter_end_captured = bool(data.get("external_meter_end_captured", False))
         charge.charging_loss_kwh = data.get("charging_loss_kwh")
         charge.charging_loss_percent = data.get(
             "charging_loss_percent"

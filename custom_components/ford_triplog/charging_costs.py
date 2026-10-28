@@ -289,6 +289,45 @@ class FordTriplogChargingCostCalculator:
             _LOGGER.exception("Unable to resolve vehicle/zone charging tariff")
             return None
 
+    def dynamic_energy_sensor_for_charge(self, charge: Charge) -> tuple[str, str] | None:
+        """Return (zone_id, sensor_id) if this vehicle has a dynamic meter.
+
+        Coordinates must match an actual HA zone. This prevents a configured
+        home meter from contaminating a charge at a public station.
+        """
+        latitude = charge.start_latitude if charge.start_latitude is not None else charge.end_latitude
+        longitude = charge.start_longitude if charge.start_longitude is not None else charge.end_longitude
+        try:
+            lat, lon = float(latitude), float(longitude)
+            vehicle_id = int(self._vehicle_id)
+        except (TypeError, ValueError):
+            return None
+        matches = []
+        for state in self.hass.states.async_all("zone"):
+            try:
+                attrs = state.attributes
+                radius = max(0.0, float(attrs.get("radius", 100)))
+                dist = self._distance_meters(lat, lon, float(attrs["latitude"]), float(attrs["longitude"]))
+                if dist <= radius:
+                    matches.append((dist, state.entity_id))
+            except (ValueError, TypeError, KeyError):
+                continue
+        if not matches:
+            return None
+        zone_id = min(matches)[1]
+        try:
+            with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
+                row = db.execute(
+                    "SELECT mode, energy_sensor FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
+                    (vehicle_id, zone_id),
+                ).fetchone()
+        except sqlite3.Error:
+            _LOGGER.exception("Failed to read dynamic energy meter configuration")
+            return None
+        if row and row[0] == "dynamic" and isinstance(row[1], str) and row[1].startswith("sensor."):
+            return zone_id, row[1]
+        return None
+
     @staticmethod
     def _parse_datetime(value: Any):
         if not value:

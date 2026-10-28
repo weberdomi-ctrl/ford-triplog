@@ -15,6 +15,7 @@ from homeassistant.core import SupportsResponse
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED
+from .external_energy_meter import read_energy_kwh, charging_energy_kwh
 
 from .zone_tariff_storage import ZoneTariffStorage
 
@@ -50,12 +51,35 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             tariff_json TEXT NOT NULL, started_at TEXT NOT NULL,
             closed INTEGER NOT NULL DEFAULT 0, closed_at TEXT,
             PRIMARY KEY(vehicle_id, zone_id))''')
+        # Additive migration for existing simulator databases.
+        cols = {r[1] for r in db.execute('PRAGMA table_info(dynamic_sim_sessions)')}
+        for col, typ in [('meter_start', 'REAL'), ('meter_end', 'REAL'),
+                         ('meter_kind', 'TEXT'), ('meter_sensor', 'TEXT'),
+                         ('meter_energy', 'REAL')]:
+            if col not in cols:
+                db.execute(f'ALTER TABLE dynamic_sim_sessions ADD COLUMN {col} {typ}')
         db.execute('''CREATE TABLE IF NOT EXISTS dynamic_sim_steps (
             step_id INTEGER PRIMARY KEY AUTOINCREMENT,
             vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
             at TEXT NOT NULL, energy_kwh REAL NOT NULL,
             price_per_kwh REAL NOT NULL, cost REAL NOT NULL, sensor TEXT NOT NULL)''')
         key = (vehicle_id, zone_id)
+        if action == 'meter_snapshot':
+            # Snapshot is stored in the same SQLite DB and keyed to the
+            # active/closed session; no real vehicle charge is touched.
+            if step is None:
+                raise ServiceValidationError('Missing simulated meter reading')
+            row = db.execute('SELECT closed, meter_start, meter_kind, meter_sensor, meter_end FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+            if not row:
+                raise ServiceValidationError('Simulation session missing')
+            if step['phase'] == 'start' and not row[0]:
+                db.execute('UPDATE dynamic_sim_sessions SET meter_sensor=?,meter_start=?,meter_kind=?,meter_end=NULL,meter_energy=NULL WHERE vehicle_id=? AND zone_id=?',
+                           (step['sensor'], step['value'], step['kind'], *key))
+            elif step['phase'] == 'stop' and row[0] and row[3] == step['sensor'] and row[4] is None:
+                measured = charging_energy_kwh(row[1], step['value'], row[2]) if row[2] == step['kind'] else None
+                db.execute('UPDATE dynamic_sim_sessions SET meter_end=?,meter_energy=? WHERE vehicle_id=? AND zone_id=?',
+                           (step['value'], measured, *key))
+            return {'action': 'meter_snapshot', 'phase': step['phase'], 'meter_energy_kwh': measured if step['phase'] == 'stop' else None}
         if action == 'reset':
             db.execute('DELETE FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key)
             db.execute('DELETE FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key)
@@ -69,7 +93,8 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 VALUES (?,?,?,?,0,NULL)
                 ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
                 tariff_json=excluded.tariff_json, started_at=excluded.started_at,
-                closed=0, closed_at=NULL''', (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat()))
+                closed=0, closed_at=NULL, meter_start=NULL, meter_end=NULL,
+                meter_kind=NULL, meter_sensor=NULL, meter_energy=NULL''', (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat()))
         row = db.execute('SELECT tariff_json,started_at,closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
         if row is None:
             raise ServiceValidationError('No simulation session; call start first')
@@ -84,7 +109,8 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             db.execute('''INSERT INTO dynamic_sim_steps
                 (vehicle_id,zone_id,at,energy_kwh,price_per_kwh,cost,sensor)
                 VALUES (?,?,?,?,?,?,?)''', (*key, step['at'], step['energy_kwh'], step['price_per_kwh'], step['cost'], step['sensor']))
-        if action == 'stop' and not row[2]:
+        just_closed = action == 'stop' and not row[2]
+        if just_closed:
             db.execute('UPDATE dynamic_sim_sessions SET closed=1,closed_at=? WHERE vehicle_id=? AND zone_id=?',
                        (datetime.now(timezone.utc).isoformat(), *key))
         if action == 'publish':
@@ -107,15 +133,24 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             total_energy = round(sum(r[1] for r in step_rows), 6)
             total_cost = round(sum(r[3] for r in step_rows), 6)
             closed_at = db.execute('SELECT closed_at FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
-            effective_price = total_cost / total_energy
+            meter_row = db.execute('SELECT meter_energy, meter_sensor, meter_start, meter_end, meter_kind FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+            meter_energy = float(meter_row[0]) if meter_row and meter_row[0] is not None else None
+            billed = meter_energy if meter_energy is not None else total_energy
+            billed_source = 'meter' if meter_energy is not None else 'estimated'
+            effective_price = total_cost / billed
             # This is an explicitly labelled test charge, excluded from statistics.
             payload = {
                 'charge_id': charge_id, 'created': row[1], 'start_time': row[1],
                 'end_time': closed_at, 'detected_start_time': row[1],
                 'detected_end_time': closed_at, 'charging_type': 'AC_BASIC',
                 'data_source': 'dynamic_simulation', 'energy_added_kwh': total_energy,
-                'energy_source': 'simulation', 'energy_billed_kwh': total_energy,
-                'energy_billed_source': 'estimated', 'energy_cost': total_cost,
+                'energy_source': 'simulation', 'energy_billed_kwh': billed,
+                'energy_billed_source': billed_source,
+                'external_meter_entity_id': meter_row[1] if meter_row else None,
+                'external_meter_start_kwh': meter_row[2] if meter_row else None,
+                'external_meter_end_kwh': meter_row[3] if meter_row else None,
+                'external_meter_kind': meter_row[4] if meter_row else None,
+                'energy_cost': total_cost,
                 'cost_total': total_cost, 'currency': saved_tariff['currency'],
                 'energy_price_per_kwh': effective_price,
                 'effective_price_per_kwh': effective_price,
@@ -129,7 +164,8 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                        (vehicle_id, charge_id, json.dumps(payload, ensure_ascii=False)))
             return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
                     'charge_id': charge_id, 'already_published': False,
-                    'total_energy_kwh': total_energy, 'total_cost': total_cost,
+                    'total_energy_kwh': total_energy, 'energy_billed_kwh': billed,
+                    'energy_billed_source': billed_source, 'total_cost': total_cost,
                     'currency': saved_tariff['currency'], 'excluded_from_statistics': True}
         rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
             WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
@@ -138,7 +174,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         return {
             'action': action, 'vehicle_id': vehicle_id, 'zone_id': zone_id,
             'currency': saved_tariff['currency'], 'price_sensor': saved_tariff['price_sensor'],
-            'closed': closed, 'started_at': row[1],
+            'closed': closed, 'just_closed': bool(just_closed), 'started_at': row[1],
             'total_energy_kwh': round(sum(s['energy_kwh'] for s in steps), 6),
             'total_cost': round(sum(s['cost'] for s in steps), 6), 'steps': steps,
             'note': 'Persistent SQLite simulation; production charging records unchanged',
@@ -199,6 +235,22 @@ def register(hass):
                 action,
                 bool(response.get('closed', False)),
             )
+        if action == 'start' or (action == 'stop' and response.get('just_closed')):
+            current_tariff = tariff if action == 'start' else await storage.async_load_vehicle(vehicle_id, zone_id)
+            sensor_id = (current_tariff or {}).get('energy_sensor')
+            if sensor_id and (current_tariff or {}).get('mode') == 'dynamic':
+                state = hass.states.get(sensor_id)
+                # The test-only meter must belong to this test vehicle.
+                if state and state.attributes.get('test_only') and state.attributes.get('vehicle_id') not in (None, vehicle_id):
+                    state = None
+                reading = read_energy_kwh(state)
+                if reading is not None:
+                    value, kind = reading
+                    await hass.async_add_executor_job(
+                        _transaction, storage.database.db_path, vehicle_id, zone_id,
+                        'meter_snapshot', None,
+                        {'phase': action, 'sensor': sensor_id, 'value': value, 'kind': kind},
+                    )
         return response
 
     hass.services.async_register('ford_triplog', SERVICE, handler, schema=SCHEMA, supports_response=SupportsResponse.ONLY)
