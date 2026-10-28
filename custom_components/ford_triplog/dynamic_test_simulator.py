@@ -12,6 +12,9 @@ from math import isfinite
 import voluptuous as vol
 from homeassistant.exceptions import ServiceValidationError
 from homeassistant.core import SupportsResponse
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+from .const import SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED
 
 from .zone_tariff_storage import ZoneTariffStorage
 
@@ -183,7 +186,19 @@ def register(hass):
             energy = float(call.data.get('energy_kwh', 1.0))
             step = {'at': datetime.now(timezone.utc).isoformat(), 'energy_kwh': energy,
                     'price_per_kwh': price, 'cost': round(energy * price, 8), 'sensor': sensor_id}
-        return await hass.async_add_executor_job(
+        response = await hass.async_add_executor_job(
             _transaction, storage.database.db_path, vehicle_id, zone_id, action, tariff, step)
+        # A test-only HA sensor mirrors the session meter; no production charge
+        # or energy calculation is changed by this notification.
+        if zone_id == 'zone.home':
+            async_dispatcher_send(
+                hass,
+                SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED,
+                vehicle_id,
+                float(response.get('total_energy_kwh') or 0.0),
+                action,
+                bool(response.get('closed', False)),
+            )
+        return response
 
     hass.services.async_register('ford_triplog', SERVICE, handler, schema=SCHEMA, supports_response=SupportsResponse.ONLY)

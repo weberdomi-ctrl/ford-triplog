@@ -5,9 +5,9 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.7.0-Beta.6
+Version: 2.7.0-Beta.7
 Phase: 2.6 final release
-Build: 27006
+Build: 27007
 Release: Beta 6
 
 

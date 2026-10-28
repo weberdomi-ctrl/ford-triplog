@@ -64,6 +64,7 @@ from .const import (
     VEHICLE_SOURCE_HEALTH_UNKNOWN,
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
+from .dynamic_test_energy_sensor import FordTriplogDynamicTestEnergySensor
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
@@ -204,6 +205,8 @@ async def async_setup_entry(
 
     async_add_entities(
         [
+            # Simulator-only HA entity for testing dynamic tariffs without a physical meter.
+            FordTriplogDynamicTestEnergySensor(hass, storage.database.db_path),
             FordTriplogVehicleSourceStatusSensor(coordinator),
             FordTriplogVehicleDetailsSensor(hass),
             FordTriplogInsuranceTCOSensor(hass),
