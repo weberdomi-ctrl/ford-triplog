@@ -5,10 +5,10 @@ Track your Ford.
 
 Configuration Flow.
 
-Version: 2.7.0-beta.3
+Version: 2.7.0-Beta.6
 Phase: 2.6 final release
-Build: 27001
-Release: Final
+Build: 27006
+Release: Beta 6
 
 
 """
@@ -7076,6 +7076,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     details = f"Fixpreis: {config['price_per_kwh']:.4f} {config['currency']}/kWh"
                 elif config["mode"] == "dynamic":
                     details = f"Dynamisch: {config.get('price_sensor') or 'kein Sensor'} · {config['interval_minutes']} Min."
+                    if config.get("energy_sensor"):
+                        details += f" · Energie: {config['energy_sensor']}"
                 else:
                     periods = await store.async_load_vehicle_periods(vehicle_id, zone_id)
                     details = f"Saisonal: {len(periods)} Tarifperiode(n)"
@@ -7140,6 +7142,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             tariff_details = f"Fixpreis: {float(current.get('price_per_kwh') or 0):.4f} {current.get('currency', 'CHF')}/kWh"
         elif current.get("mode") == "dynamic":
             tariff_details = f"Preissensor: {current.get('price_sensor') or 'nicht gewählt'} · {current.get('interval_minutes', 15)} Min."
+            tariff_details += f" · Energiesensor: {current.get('energy_sensor') or 'nicht gewählt'}"
         else:
             tariff_details = "Noch kein Tarif konfiguriert."
         return self.async_show_form(
@@ -7171,6 +7174,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     vehicle_id=self._zone_tariff_vehicle_id, zone_id=zone_id, mode=mode,
                     price_per_kwh=user_input.get("price_per_kwh", 0),
                     price_sensor=user_input.get("price_sensor", ""),
+                    energy_sensor=user_input.get("energy_sensor"),
                     interval_minutes=int(user_input.get("interval_minutes", 15)),
                     currency=user_input.get("currency", "CHF"),
                 )
@@ -7186,6 +7190,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
             sensor_value = values.get("price_sensor")
             kwargs = {"default": sensor_value} if sensor_value else {}
             schema[vol.Required("price_sensor", **kwargs)] = selector.EntitySelector(selector.EntitySelectorConfig(domain="sensor"))
+            # Suggested (not defaulted) so clearing an existing selection works.
+            energy_value = values.get("energy_sensor")
+            energy_kwargs = {"description": {"suggested_value": energy_value}} if energy_value else {}
+            schema[vol.Optional("energy_sensor", **energy_kwargs)] = selector.EntitySelector(
+                selector.EntitySelectorConfig(domain="sensor")
+            )
             schema[vol.Required("interval_minutes", default=str(values.get("interval_minutes", 15)))] = selector.SelectSelector(selector.SelectSelectorConfig(options=["5", "15", "30", "60"]))
         schema[vol.Required("currency", default=values.get("currency", "CHF"))] = selector.SelectSelector(selector.SelectSelectorConfig(options=["CHF", "EUR"]))
         return self.async_show_form(step_id="zone_tariff_values", data_schema=vol.Schema(schema), errors=errors)

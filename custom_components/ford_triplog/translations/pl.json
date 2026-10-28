@@ -1509,6 +1509,16 @@
         "data": {
           "vehicle_id": "Vehicle"
         }
+      },
+      "zone_tariff_values": {
+        "title": "Ustawienia taryfy",
+        "data": {
+          "price_per_kwh": "Cena stała za kWh",
+          "price_sensor": "Czujnik ceny HA",
+          "energy_sensor": "Czujnik energii HA (opcjonalnie)",
+          "interval_minutes": "Interwał (minuty)",
+          "currency": "Waluta"
+        }
       }
     },
     "error": {

@@ -3,7 +3,7 @@ Ford Triplog
 
 SQLite storage backend.
 
-Version: 2.7.0-beta.3
+Version: 2.7.0-Beta.6
 Build: 27001
 Changes: Final 2.6 vehicle cost/TCO and configuration recovery schema.
 """

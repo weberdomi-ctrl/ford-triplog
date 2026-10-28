@@ -39,10 +39,20 @@ class ZoneTariffStorage:
             db.execute("""CREATE TABLE IF NOT EXISTS charging_vehicle_zone_tariffs (
                 vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
                 mode TEXT NOT NULL DEFAULT 'seasonal', price_per_kwh REAL NOT NULL DEFAULT 0,
-                price_sensor TEXT, interval_minutes INTEGER NOT NULL DEFAULT 15,
+                price_sensor TEXT, energy_sensor TEXT,
+                interval_minutes INTEGER NOT NULL DEFAULT 15,
                 currency TEXT NOT NULL DEFAULT 'CHF', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(vehicle_id, zone_id)
             )""")
+            # Existing installations predate the optional energy meter field.
+            # ALTER TABLE is intentionally additive; existing tariffs stay intact.
+            columns = {row[1] for row in db.execute(
+                "PRAGMA table_info(charging_vehicle_zone_tariffs)"
+            )}
+            if "energy_sensor" not in columns:
+                db.execute(
+                    "ALTER TABLE charging_vehicle_zone_tariffs ADD COLUMN energy_sensor TEXT"
+                )
             db.execute("""CREATE TABLE IF NOT EXISTS charging_vehicle_zone_periods (
                 period_id INTEGER PRIMARY KEY AUTOINCREMENT,
                 vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
@@ -218,22 +228,29 @@ class ZoneTariffStorage:
                 return dict(row) if row else None
         return await self.hass.async_add_executor_job(load)
 
-    async def async_save_vehicle(self, *, vehicle_id, zone_id, mode, price_per_kwh=0, price_sensor='', interval_minutes=15, currency='CHF'):
+    async def async_save_vehicle(self, *, vehicle_id, zone_id, mode, price_per_kwh=0, price_sensor='', energy_sensor=None, interval_minutes=15, currency='CHF'):
         if int(vehicle_id) < 1 or not zone_id.startswith('zone.') or mode not in ('fixed','seasonal','dynamic'):
             raise ValueError('Invalid vehicle, zone or mode')
         if int(interval_minutes) not in (5,15,30,60) or float(price_per_kwh) < 0 or currency not in ('CHF','EUR'):
             raise ValueError('Invalid tariff values')
         if mode == 'dynamic' and (not isinstance(price_sensor,str) or not price_sensor.startswith('sensor.')):
             raise ValueError('Dynamic tariff requires a price sensor')
+        if energy_sensor is not None and not isinstance(energy_sensor, str):
+            raise ValueError('Invalid energy sensor')
+        energy_sensor = (energy_sensor or '').strip() if mode == 'dynamic' else ''
+        if energy_sensor and not energy_sensor.startswith('sensor.'):
+            raise ValueError('Energy sensor must be an HA sensor entity')
         def save():
             with sqlite3.connect(self.database.db_path) as db:
                 db.execute("""INSERT INTO charging_vehicle_zone_tariffs
-                    (vehicle_id,zone_id,mode,price_per_kwh,price_sensor,interval_minutes,currency)
-                    VALUES (?,?,?,?,?,?,?) ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
+                    (vehicle_id,zone_id,mode,price_per_kwh,price_sensor,energy_sensor,interval_minutes,currency)
+                    VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
                     mode=excluded.mode,price_per_kwh=excluded.price_per_kwh,
-                    price_sensor=excluded.price_sensor,interval_minutes=excluded.interval_minutes,
+                    price_sensor=excluded.price_sensor,energy_sensor=excluded.energy_sensor,
+                    interval_minutes=excluded.interval_minutes,
                     currency=excluded.currency,updated_at=CURRENT_TIMESTAMP""",
-                    (int(vehicle_id),zone_id,mode,float(price_per_kwh),price_sensor or None,int(interval_minutes),currency))
+                    (int(vehicle_id),zone_id,mode,float(price_per_kwh),price_sensor or None,
+                     energy_sensor or None,int(interval_minutes),currency))
         await self.hass.async_add_executor_job(save)
 
     async def async_load_vehicle_periods(self, vehicle_id, zone_id):
