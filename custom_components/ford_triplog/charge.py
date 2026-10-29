@@ -125,6 +125,17 @@ class Charge:
         self.external_meter_end_kwh: float | None = None
         self.external_meter_reset_seen: bool = False
         self.external_meter_end_captured: bool = False
+        # R7: real dynamic tariff price snapshots, captured during the
+        # charging session and persisted along with the current charge.
+        self.dynamic_price_sensor: str | None = None
+        self.dynamic_price_currency: str | None = None
+        self.dynamic_price_samples: list[dict[str, Any]] = []
+        self.dynamic_price_valid: bool = False
+        self.dynamic_price_finished: bool = False
+        self.dynamic_price_failure_reason: str | None = None
+        self.dynamic_meter_pricing_applied: bool = False
+        self.dynamic_meter_allocation_method: str | None = None
+        self.dynamic_price_steps: list[dict[str, Any]] = []
         self.charging_loss_kwh: float | None = None
         self.charging_loss_percent: float | None = None
 
@@ -483,6 +494,15 @@ class Charge:
             "external_meter_end_kwh": self.external_meter_end_kwh,
             "external_meter_reset_seen": self.external_meter_reset_seen,
             "external_meter_end_captured": self.external_meter_end_captured,
+            "dynamic_price_sensor": self.dynamic_price_sensor,
+            "dynamic_price_currency": self.dynamic_price_currency,
+            "dynamic_price_samples": self.dynamic_price_samples,
+            "dynamic_price_valid": self.dynamic_price_valid,
+            "dynamic_price_finished": self.dynamic_price_finished,
+            "dynamic_price_failure_reason": self.dynamic_price_failure_reason,
+            "dynamic_meter_pricing_applied": self.dynamic_meter_pricing_applied,
+            "dynamic_meter_allocation_method": self.dynamic_meter_allocation_method,
+            "dynamic_price_steps": self.dynamic_price_steps,
             "charging_loss_kwh": self.charging_loss_kwh,
             "charging_loss_percent": self.charging_loss_percent,
             "energy_cost": self.energy_cost,
@@ -671,6 +691,15 @@ class Charge:
         charge.external_meter_end_kwh = data.get("external_meter_end_kwh")
         charge.external_meter_reset_seen = bool(data.get("external_meter_reset_seen", False))
         charge.external_meter_end_captured = bool(data.get("external_meter_end_captured", False))
+        charge.dynamic_price_sensor = data.get("dynamic_price_sensor")
+        charge.dynamic_price_currency = data.get("dynamic_price_currency")
+        charge.dynamic_price_samples = list(data.get("dynamic_price_samples") or [])
+        charge.dynamic_price_valid = bool(data.get("dynamic_price_valid", False))
+        charge.dynamic_price_finished = bool(data.get("dynamic_price_finished", False))
+        charge.dynamic_price_failure_reason = data.get("dynamic_price_failure_reason")
+        charge.dynamic_meter_pricing_applied = bool(data.get("dynamic_meter_pricing_applied", False))
+        charge.dynamic_meter_allocation_method = data.get("dynamic_meter_allocation_method")
+        charge.dynamic_price_steps = list(data.get("dynamic_price_steps") or [])
         charge.charging_loss_kwh = data.get("charging_loss_kwh")
         charge.charging_loss_percent = data.get(
             "charging_loss_percent"

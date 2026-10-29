@@ -221,7 +221,7 @@ rebuild_last_route:
 
 simulate_dynamic_charging:
   name: Simulate dynamic charging (TEST Dynamic only)
-  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy.
+  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. On a valid external energy meter measurement, its total kWh are allocated proportionally across the stored dynamic price steps; this is an interval estimate, not interval-level meter readings. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy.
   fields:
     action:
       required: true

@@ -16,6 +16,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .const import SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED
 from .external_energy_meter import read_energy_kwh, charging_energy_kwh
+from .dynamic_energy_pricing import calculate_dynamic_pricing
 
 from .zone_tariff_storage import ZoneTariffStorage
 
@@ -138,19 +139,26 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
                         'charge_id': charge_id, 'already_published': True,
                         'total_energy_kwh': saved.get('energy_added_kwh'),
-                        'meter_total_energy_kwh': float(saved.get('external_meter_end_kwh') or 0.0),
-                        'total_cost': saved.get('cost_total'), 'currency': saved.get('currency')}
+                        'meter_total_energy_kwh': saved.get('energy_billed_kwh'),
+                        'energy_billed_kwh': saved.get('energy_billed_kwh'),
+                        'energy_billed_source': saved.get('energy_billed_source'),
+                        'total_cost': saved.get('cost_total'), 'currency': saved.get('currency'),
+                        'meter_pricing_applied': saved.get('dynamic_meter_pricing_applied', False),
+                        'meter_allocation_method': saved.get('dynamic_meter_allocation_method'),
+                        'excluded_from_statistics': True}
             step_rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
                 WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
             if not step_rows:
                 raise ServiceValidationError('Cannot publish a simulation without energy steps')
-            total_energy = round(sum(r[1] for r in step_rows), 6)
-            total_cost = round(sum(r[3] for r in step_rows), 6)
+            original_steps = [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in step_rows]
             closed_at = db.execute('SELECT closed_at FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
             meter_row = db.execute('SELECT meter_energy, meter_sensor, meter_start, meter_end, meter_kind FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
             meter_energy = float(meter_row[0]) if meter_row and meter_row[0] is not None else None
-            billed = meter_energy if meter_energy is not None else total_energy
-            billed_source = 'meter' if meter_energy is not None else 'estimated'
+            priced = calculate_dynamic_pricing(original_steps, meter_energy)
+            total_energy = priced['total_energy_kwh']
+            billed = priced['energy_billed_kwh']
+            total_cost = priced['total_cost']
+            billed_source = 'meter' if priced['meter_pricing_applied'] else 'estimated'
             effective_price = total_cost / billed
             # This is an explicitly labelled test charge, excluded from statistics.
             payload = {
@@ -172,31 +180,45 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 'cost_finalized': True, 'cost_verified': False,
                 'include_in_statistics': False, 'exclusion_reason': 'Test Dynamic simulation',
                 'notes': 'TEST Dynamic – simulated dynamic tariff (' + zone_id + ')',
-                'dynamic_price_steps': [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in step_rows],
+                'dynamic_price_steps': priced['steps'],
+                'dynamic_vehicle_only_cost': priced['vehicle_only_cost'],
+                'dynamic_meter_pricing_applied': priced['meter_pricing_applied'],
+                'dynamic_meter_allocation_method': priced['meter_allocation_method'],
             }
             db.execute('INSERT INTO charges(vehicle_id,charge_id,data) VALUES(?,?,?)',
                        (vehicle_id, charge_id, json.dumps(payload, ensure_ascii=False)))
             return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
                     'charge_id': charge_id, 'already_published': False,
                     'total_energy_kwh': total_energy,
-                    'meter_total_energy_kwh': float(meter_row[3]) if meter_row and meter_row[3] is not None else total_energy,
+                    'meter_total_energy_kwh': billed if priced['meter_pricing_applied'] else total_energy,
                     'energy_billed_kwh': billed,
                     'energy_billed_source': billed_source, 'total_cost': total_cost,
+                    'vehicle_only_cost': priced['vehicle_only_cost'],
+                    'meter_pricing_applied': priced['meter_pricing_applied'],
+                    'meter_allocation_method': priced['meter_allocation_method'],
                     'currency': saved_tariff['currency'], 'excluded_from_statistics': True}
         rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
             WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
         steps = [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in rows]
-        session_row = db.execute('''SELECT closed, meter_adjustment FROM dynamic_sim_sessions
+        session_row = db.execute('''SELECT closed, meter_adjustment, meter_energy FROM dynamic_sim_sessions
             WHERE vehicle_id=? AND zone_id=?''', key).fetchone()
         closed = bool(session_row[0])
-        meter_total = round(sum(s['energy_kwh'] for s in steps) + float(session_row[1] or 0), 6)
+        meter_total = (round(float(session_row[2]), 6) if closed and session_row[2] is not None
+                       else round(sum(s['energy_kwh'] for s in steps) + float(session_row[1] or 0), 6))
+        # Use the captured, validated meter reading only after stop. An
+        # unconfirmed live HA state must never overwrite the finalized result.
+        priced = calculate_dynamic_pricing(steps, session_row[2] if closed else None)
         return {
             'action': action, 'vehicle_id': vehicle_id, 'zone_id': zone_id,
             'currency': saved_tariff['currency'], 'price_sensor': saved_tariff['price_sensor'],
             'closed': closed, 'just_closed': bool(just_closed), 'started_at': row[1],
-            'total_energy_kwh': round(sum(s['energy_kwh'] for s in steps), 6),
+            'total_energy_kwh': priced['total_energy_kwh'],
             'meter_total_energy_kwh': meter_total,
-            'total_cost': round(sum(s['cost'] for s in steps), 6), 'steps': steps,
+            'energy_billed_kwh': priced['energy_billed_kwh'] if priced['meter_pricing_applied'] else None,
+            'total_cost': priced['total_cost'], 'vehicle_only_cost': priced['vehicle_only_cost'],
+            'meter_pricing_applied': priced['meter_pricing_applied'],
+            'meter_allocation_method': priced['meter_allocation_method'],
+            'steps': priced['steps'],
             'note': 'Persistent SQLite simulation; production charging records unchanged',
         }
 
@@ -277,6 +299,13 @@ def register(hass):
                         'meter_snapshot', None,
                         {'phase': action, 'sensor': sensor_id, 'value': value, 'kind': kind},
                     )
+                    if action == 'stop':
+                        updated = await hass.async_add_executor_job(
+                            _transaction, storage.database.db_path, vehicle_id, zone_id, 'status'
+                        )
+                        updated['action'] = 'stop'
+                        updated['just_closed'] = response.get('just_closed', False)
+                        response = updated
         return response
 
     hass.services.async_register('ford_triplog', SERVICE, handler, schema=SCHEMA, supports_response=SupportsResponse.ONLY)

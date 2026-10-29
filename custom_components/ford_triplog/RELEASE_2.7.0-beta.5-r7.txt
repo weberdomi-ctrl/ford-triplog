@@ -1,0 +1,9 @@
+Ford Triplog 2.7.0 Beta 5 / Release 7
+- Production-only dynamic charging tariffs when both price and grid-energy sensors are configured.
+- Capture immutable price/meter snapshots at charge start, each price change and charger completion.
+- Calculate energy-based costs per sampled price boundary; preserve original FordPass vehicle energy.
+- Persist samples with active charge and archive the audit trail on completion.
+- Skip dynamic cost calculation on sensor errors, counter reset or Home Assistant restart.
+- Fixed and seasonal tariff logic unchanged; historic charges are not repriced.
+Note: This build is not yet tested with a live FordPass charging session. Sampled meter
+boundary readings can lag the exact price-change instant; interval allocation is approximate.

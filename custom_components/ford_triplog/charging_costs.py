@@ -328,6 +328,28 @@ class FordTriplogChargingCostCalculator:
             return zone_id, row[1]
         return None
 
+    def dynamic_price_tariff_for_charge(self, charge: Charge) -> tuple[str, str] | None:
+        """Return (price sensor, currency) for the already matched meter zone."""
+        zone_id = charge.external_meter_zone_id
+        if not zone_id or not charge.external_meter_entity_id:
+            return None
+        try:
+            vehicle_id = int(self._vehicle_id)
+            with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
+                row = db.execute(
+                    "SELECT mode, price_sensor, energy_sensor, currency "
+                    "FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
+                    (vehicle_id, zone_id),
+                ).fetchone()
+        except (sqlite3.Error, ValueError, TypeError):
+            _LOGGER.exception("Failed to read dynamic charging price configuration")
+            return None
+        if (row is None or row[0] != "dynamic" or row[2] != charge.external_meter_entity_id
+                or not isinstance(row[1], str) or not row[1].startswith("sensor.")
+                or str(row[3]).upper() not in ("CHF", "EUR")):
+            return None
+        return row[1], str(row[3]).upper()
+
     @staticmethod
     def _parse_datetime(value: Any):
         if not value:
