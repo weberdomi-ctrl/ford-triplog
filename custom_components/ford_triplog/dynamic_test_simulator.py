@@ -17,15 +17,18 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from .const import SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED
 from .external_energy_meter import read_energy_kwh, charging_energy_kwh
 from .dynamic_energy_pricing import calculate_dynamic_pricing
+from .live_dynamic_pricing import price_meter_boundaries
 
 from .zone_tariff_storage import ZoneTariffStorage
 
 SERVICE = 'simulate_dynamic_charging'
 SCHEMA = vol.Schema({
-    vol.Required('action'): vol.In(['start', 'step', 'meter_adjust', 'stop', 'status', 'reset', 'publish']),
+    vol.Required('action'): vol.In(['start', 'step', 'meter_adjust', 'price_change', 'stop', 'status', 'reset', 'publish']),
     vol.Optional('vehicle_id'): vol.Coerce(int),
     vol.Optional('zone_id', default='zone.home'): str,
     vol.Optional('energy_kwh'): vol.All(vol.Coerce(float), vol.Range(min=0.000001)),
+    vol.Optional('pricing_mode'): vol.In(['steps', 'meter_boundaries']),
+    vol.Optional('test_price_per_kwh'): vol.All(vol.Coerce(float), vol.Range(min=0)),
 })
 
 
@@ -56,7 +59,9 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         cols = {r[1] for r in db.execute('PRAGMA table_info(dynamic_sim_sessions)')}
         for col, typ in [('meter_start', 'REAL'), ('meter_end', 'REAL'),
                          ('meter_kind', 'TEXT'), ('meter_sensor', 'TEXT'),
-                         ('meter_energy', 'REAL'), ('meter_adjustment', 'REAL NOT NULL DEFAULT 0')]:
+                         ('meter_energy', 'REAL'), ('meter_adjustment', 'REAL NOT NULL DEFAULT 0'),
+                         ('test_pricing_mode', "TEXT NOT NULL DEFAULT 'steps'"),
+                         ('test_current_price', 'REAL')]:
             if col not in cols:
                 db.execute(f'ALTER TABLE dynamic_sim_sessions ADD COLUMN {col} {typ}')
         db.execute('''CREATE TABLE IF NOT EXISTS dynamic_sim_steps (
@@ -64,7 +69,32 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
             at TEXT NOT NULL, energy_kwh REAL NOT NULL,
             price_per_kwh REAL NOT NULL, cost REAL NOT NULL, sensor TEXT NOT NULL)''')
+        db.execute('''CREATE TABLE IF NOT EXISTS dynamic_sim_meter_boundaries (
+            boundary_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
+            at TEXT NOT NULL, meter_kwh REAL NOT NULL, price_per_kwh REAL)''')
         key = (vehicle_id, zone_id)
+        if action == 'test_meta':
+            row = db.execute('SELECT test_pricing_mode,test_current_price,tariff_json,closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+            if row is None:
+                raise ServiceValidationError('No simulation session; call start first')
+            return {'mode': row[0], 'price': row[1], 'tariff': json.loads(row[2]), 'closed': bool(row[3])}
+        if action == 'price_change':
+            if not step or step.get('test_price_per_kwh') is None:
+                raise ServiceValidationError('test_price_per_kwh required for price_change')
+            row = db.execute('SELECT test_pricing_mode, closed, test_current_price FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+            if row is None or row[0] != 'meter_boundaries' or row[1]:
+                raise ServiceValidationError('price_change requires an open meter_boundaries test session')
+            price = float(step['test_price_per_kwh'])
+            if not isfinite(price) or price < 0:
+                raise ServiceValidationError('Invalid test price')
+            if price != row[2]:
+                used = db.execute('SELECT COALESCE(SUM(energy_kwh),0) FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+                adjust = db.execute('SELECT meter_adjustment FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+                meter = round(float(used or 0)+float(adjust or 0), 6)
+                db.execute('INSERT INTO dynamic_sim_meter_boundaries(vehicle_id,zone_id,at,meter_kwh,price_per_kwh) VALUES(?,?,?,?,?)', (*key, datetime.now(timezone.utc).isoformat(), meter, price))
+                db.execute('UPDATE dynamic_sim_sessions SET test_current_price=? WHERE vehicle_id=? AND zone_id=?', (price,*key))
+
         if action == 'meter_snapshot':
             # Snapshot is stored in the same SQLite DB and keyed to the
             # active/closed session; no real vehicle charge is touched.
@@ -73,6 +103,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             row = db.execute('SELECT closed, meter_start, meter_kind, meter_sensor, meter_end FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
             if not row:
                 raise ServiceValidationError('Simulation session missing')
+            measured = None
             if step['phase'] == 'start' and not row[0]:
                 db.execute('UPDATE dynamic_sim_sessions SET meter_sensor=?,meter_start=?,meter_kind=?,meter_end=NULL,meter_energy=NULL WHERE vehicle_id=? AND zone_id=?',
                            (step['sensor'], step['value'], step['kind'], *key))
@@ -96,19 +127,30 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 WHERE vehicle_id=? AND zone_id=?''', (step['energy_kwh'], *key))
         if action == 'reset':
             db.execute('DELETE FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key)
+            db.execute('DELETE FROM dynamic_sim_meter_boundaries WHERE vehicle_id=? AND zone_id=?', key)
             db.execute('DELETE FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key)
             return {'action': action, 'vehicle_id': vehicle_id, 'zone_id': zone_id, 'reset': True}
         if action == 'start':
             if tariff is None:
                 raise ServiceValidationError('Dynamic tariff missing')
             db.execute('DELETE FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key)
+            db.execute('DELETE FROM dynamic_sim_meter_boundaries WHERE vehicle_id=? AND zone_id=?', key)
+            mode = str(tariff.get('_test_pricing_mode') or 'steps')
+            test_price = tariff.get('_test_initial_price')
+            if mode == 'meter_boundaries' and (test_price is None or not isfinite(float(test_price)) or float(test_price) < 0):
+                raise ServiceValidationError('Initial test_price_per_kwh required')
             db.execute('''INSERT INTO dynamic_sim_sessions
-                (vehicle_id,zone_id,tariff_json,started_at,closed,closed_at)
-                VALUES (?,?,?,?,0,NULL)
+                (vehicle_id,zone_id,tariff_json,started_at,closed,closed_at,test_pricing_mode,test_current_price)
+                VALUES (?,?,?,?,0,NULL,?,?)
                 ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
                 tariff_json=excluded.tariff_json, started_at=excluded.started_at,
                 closed=0, closed_at=NULL, meter_start=NULL, meter_end=NULL,
-                meter_kind=NULL, meter_sensor=NULL, meter_energy=NULL, meter_adjustment=0''', (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat()))
+                meter_kind=NULL, meter_sensor=NULL, meter_energy=NULL, meter_adjustment=0,
+                test_pricing_mode=excluded.test_pricing_mode, test_current_price=excluded.test_current_price''',
+                (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat(), mode, test_price))
+            if mode == 'meter_boundaries':
+                db.execute('INSERT INTO dynamic_sim_meter_boundaries(vehicle_id,zone_id,at,meter_kwh,price_per_kwh) VALUES(?,?,?,?,?)',
+                           (*key, datetime.now(timezone.utc).isoformat(), 0.0, float(test_price)))
         row = db.execute('SELECT tariff_json,started_at,closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
         if row is None:
             raise ServiceValidationError('No simulation session; call start first')
@@ -127,6 +169,13 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         if just_closed:
             db.execute('UPDATE dynamic_sim_sessions SET closed=1,closed_at=? WHERE vehicle_id=? AND zone_id=?',
                        (datetime.now(timezone.utc).isoformat(), *key))
+            mode = db.execute('SELECT test_pricing_mode FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+            if mode == 'meter_boundaries':
+                used = db.execute('SELECT COALESCE(SUM(energy_kwh),0) FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+                adjust = db.execute('SELECT meter_adjustment FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+                meter = round(float(used or 0)+float(adjust or 0), 6)
+                db.execute('INSERT INTO dynamic_sim_meter_boundaries(vehicle_id,zone_id,at,meter_kwh,price_per_kwh) VALUES(?,?,?,?,NULL)',
+                           (*key, datetime.now(timezone.utc).isoformat(), meter))
         if action == 'publish':
             if not row[2]:
                 raise ServiceValidationError('Stop the simulation before publishing')
@@ -143,6 +192,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                         'energy_billed_kwh': saved.get('energy_billed_kwh'),
                         'energy_billed_source': saved.get('energy_billed_source'),
                         'total_cost': saved.get('cost_total'), 'currency': saved.get('currency'),
+                        'vehicle_only_cost': saved.get('dynamic_vehicle_only_cost'),
                         'meter_pricing_applied': saved.get('dynamic_meter_pricing_applied', False),
                         'meter_allocation_method': saved.get('dynamic_meter_allocation_method'),
                         'excluded_from_statistics': True}
@@ -154,7 +204,26 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
             closed_at = db.execute('SELECT closed_at FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
             meter_row = db.execute('SELECT meter_energy, meter_sensor, meter_start, meter_end, meter_kind FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
             meter_energy = float(meter_row[0]) if meter_row and meter_row[0] is not None else None
-            priced = calculate_dynamic_pricing(original_steps, meter_energy)
+            mode = db.execute('SELECT test_pricing_mode FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0]
+            if mode == 'meter_boundaries':
+                if meter_energy is None:
+                    raise ServiceValidationError('Valid external test energy sensor required; no measured grid energy')
+                boundaries = [dict(zip(('at','meter_kwh','price_per_kwh'), r)) for r in db.execute(
+                    'SELECT at,meter_kwh,price_per_kwh FROM dynamic_sim_meter_boundaries WHERE vehicle_id=? AND zone_id=? ORDER BY boundary_id', key)]
+                live = price_meter_boundaries(boundaries, meter_energy)
+                if live is None:
+                    raise ServiceValidationError('Meter boundary readings incomplete or inconsistent; refusing to publish calculated costs')
+                priced = {
+                    'total_energy_kwh': round(sum(v['energy_kwh'] for v in original_steps),6),
+                    'energy_billed_kwh': live['energy_billed_kwh'],
+                    'total_cost': live['total_cost'],
+                    'vehicle_only_cost': round(sum(v['cost'] for v in original_steps),8),
+                    'steps': live['steps'],
+                    'meter_pricing_applied': True,
+                    'meter_allocation_method': live['meter_allocation_method'],
+                }
+            else:
+                priced = calculate_dynamic_pricing(original_steps, meter_energy)
             total_energy = priced['total_energy_kwh']
             billed = priced['energy_billed_kwh']
             total_cost = priced['total_cost']
@@ -208,9 +277,24 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         # Use the captured, validated meter reading only after stop. An
         # unconfirmed live HA state must never overwrite the finalized result.
         priced = calculate_dynamic_pricing(steps, session_row[2] if closed else None)
+        mode_row = db.execute('SELECT test_pricing_mode,test_current_price FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+        mode = mode_row[0]
+        samples = None
+        if mode == 'meter_boundaries':
+            samples = [dict(zip(('at','meter_kwh','price_per_kwh'), r)) for r in db.execute(
+                'SELECT at,meter_kwh,price_per_kwh FROM dynamic_sim_meter_boundaries WHERE vehicle_id=? AND zone_id=? ORDER BY boundary_id', key)]
+            if closed and session_row[2] is not None:
+                live = price_meter_boundaries(samples, session_row[2])
+                if live is not None:
+                    priced.update(total_cost=live['total_cost'], steps=live['steps'],
+                                  energy_billed_kwh=live['energy_billed_kwh'],
+                                  meter_pricing_applied=True,
+                                  meter_allocation_method=live['meter_allocation_method'])
         return {
             'action': action, 'vehicle_id': vehicle_id, 'zone_id': zone_id,
             'currency': saved_tariff['currency'], 'price_sensor': saved_tariff['price_sensor'],
+            'test_pricing_mode': mode, 'test_current_price': mode_row[1],
+            'test_price_boundaries': samples,
             'closed': closed, 'just_closed': bool(just_closed), 'started_at': row[1],
             'total_energy_kwh': priced['total_energy_kwh'],
             'meter_total_energy_kwh': meter_total,
@@ -241,7 +325,21 @@ def register(hass):
                 raise ServiceValidationError('TEST Dynamic has no dynamic tariff for this zone')
             if not tariff.get('price_sensor'):
                 raise ServiceValidationError('Dynamic price sensor missing')
+            mode = call.data.get('pricing_mode', 'steps')
+            if mode == 'meter_boundaries':
+                if 'test_price_per_kwh' not in call.data:
+                    raise ServiceValidationError('test_price_per_kwh required for meter_boundaries test')
+                if not tariff.get('energy_sensor'):
+                    raise ServiceValidationError('Configure optional test energy sensor for TEST Dynamic before testing')
+                tariff['_test_initial_price'] = call.data['test_price_per_kwh']
+                tariff['_test_pricing_mode'] = mode
+        if action == 'price_change':
+            if 'test_price_per_kwh' not in call.data:
+                raise ServiceValidationError('test_price_per_kwh required for price_change')
+            step = {'test_price_per_kwh': call.data['test_price_per_kwh']}
         if action == 'step':
+            session_meta = await hass.async_add_executor_job(
+                _transaction, storage.database.db_path, vehicle_id, zone_id, 'test_meta')
             # Read the current sensor for this configured vehicle/zone. The transaction
             # checks the sensor matches the snapshot stored at session start.
             current_tariff = await storage.async_load_vehicle(vehicle_id, zone_id)
@@ -249,18 +347,22 @@ def register(hass):
                 raise ServiceValidationError('Dynamic tariff not configured')
             sensor_id = current_tariff.get('price_sensor')
             state = hass.states.get(sensor_id) if sensor_id else None
-            if state is None or state.state in ('unknown', 'unavailable'):
+            if session_meta['mode'] == 'meter_boundaries':
+                price = session_meta['price']
+            elif state is None or state.state in ('unknown', 'unavailable'):
                 raise ServiceValidationError(f'Price sensor unavailable: {sensor_id}')
-            try:
-                price = float(state.state)
-            except (ValueError, TypeError) as exc:
-                raise ServiceValidationError('Price sensor is not numeric') from exc
+            if session_meta['mode'] != 'meter_boundaries':
+                try:
+                    price = float(state.state)
+                except (ValueError, TypeError) as exc:
+                    raise ServiceValidationError('Price sensor is not numeric') from exc
             if not isfinite(price) or price < 0:
                 raise ServiceValidationError('Invalid price sensor value')
-            unit = str(state.attributes.get('unit_of_measurement') or '').upper()
-            currency = str(current_tariff.get('currency') or 'CHF').upper()
-            if unit and not unit.startswith(currency + '/'):
-                raise ServiceValidationError(f'Currency mismatch: {unit} vs {currency}/kWh')
+            if session_meta['mode'] != 'meter_boundaries':
+                unit = str(state.attributes.get('unit_of_measurement') or '').upper()
+                currency = str(current_tariff.get('currency') or 'CHF').upper()
+                if unit and not unit.startswith(currency + '/'):
+                    raise ServiceValidationError(f'Currency mismatch: {unit} vs {currency}/kWh')
             energy = float(call.data.get('energy_kwh', 1.0))
             step = {'at': datetime.now(timezone.utc).isoformat(), 'energy_kwh': energy,
                     'price_per_kwh': price, 'cost': round(energy * price, 8), 'sensor': sensor_id}

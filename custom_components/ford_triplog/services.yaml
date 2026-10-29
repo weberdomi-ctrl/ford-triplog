@@ -221,13 +221,13 @@ rebuild_last_route:
 
 simulate_dynamic_charging:
   name: Simulate dynamic charging (TEST Dynamic only)
-  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. On a valid external energy meter measurement, its total kWh are allocated proportionally across the stored dynamic price steps; this is an interval estimate, not interval-level meter readings. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy.
+  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. On a valid external energy meter measurement, its total kWh are allocated proportionally across the stored dynamic price steps; this is an interval estimate, not interval-level meter readings. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy. New meter_boundaries test mode: start with pricing_mode: meter_boundaries and test_price_per_kwh, add step energy, call price_change with test_price_per_kwh, add more step energy, stop and publish. This invokes the exact production price_meter_boundaries calculation and still only creates excluded TEST Dynamic charges. This does NOT validate production FordPass callbacks or HA price listener events.
   fields:
     action:
       required: true
       selector:
         select:
-          options: [start, step, meter_adjust, stop, status, reset, publish]
+          options: [start, step, meter_adjust, price_change, stop, status, reset, publish]
     vehicle_id:
       required: false
       selector:
@@ -246,4 +246,19 @@ simulate_dynamic_charging:
           min: 0.001
           max: 100
           step: 0.001
+          mode: box
+    pricing_mode:
+      required: false
+      description: Optional at start. meter_boundaries tests the production interval pricing function; default steps keeps the previous simulator.
+      selector:
+        select:
+          options: [steps, meter_boundaries]
+    test_price_per_kwh:
+      required: false
+      description: Test-only price at start (meter_boundaries) or price_change; EUR/kWh or CHF/kWh per configured tariff. Does not change the HA price sensor.
+      selector:
+        number:
+          min: 0
+          max: 100
+          step: 0.0001
           mode: box
