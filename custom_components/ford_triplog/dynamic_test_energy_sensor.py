@@ -1,7 +1,7 @@
 """Test-only Home Assistant energy meter for TEST Dynamic charging sessions.
 
 The meter is deliberately independent of real vehicles and charges. It mirrors
-"simulate_dynamic_charging" steps, persists through the simulator's SQLite
+"simulate_dynamic_charging" steps plus explicit test meter adjustments, persists through the simulator's SQLite
 storage, and resets on each new simulated charging session.
 """
 from __future__ import annotations
@@ -28,11 +28,16 @@ def _restore_test_energy(db_path: Path) -> dict:
         ).fetchone()
         if not table:
             return empty
-        row = db.execute("""
+        # Handle installations upgrading from Release 4 before the service
+        # has had a chance to migrate the simulation table.
+        cols = {r[1] for r in db.execute('PRAGMA table_info(dynamic_sim_sessions)')}
+        adjustment = 'COALESCE(s.meter_adjustment, 0)' if 'meter_adjustment' in cols else '0'
+        row = db.execute(f"""
             SELECT s.vehicle_id, s.closed,
                    (SELECT COALESCE(SUM(st.energy_kwh), 0)
                     FROM dynamic_sim_steps st
                     WHERE st.vehicle_id=s.vehicle_id AND st.zone_id=s.zone_id)
+                   + {adjustment}
             FROM dynamic_sim_sessions s
             JOIN vehicles v ON v.vehicle_id=s.vehicle_id
             WHERE s.zone_id='zone.home' AND lower(trim(v.name)) LIKE 'test dynamic%'

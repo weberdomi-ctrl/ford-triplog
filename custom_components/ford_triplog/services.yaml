@@ -221,13 +221,13 @@ rebuild_last_route:
 
 simulate_dynamic_charging:
   name: Simulate dynamic charging (TEST Dynamic only)
-  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop.
+  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy.
   fields:
     action:
       required: true
       selector:
         select:
-          options: [start, step, stop, status, reset, publish]
+          options: [start, step, meter_adjust, stop, status, reset, publish]
     vehicle_id:
       required: false
       selector:

@@ -21,10 +21,10 @@ from .zone_tariff_storage import ZoneTariffStorage
 
 SERVICE = 'simulate_dynamic_charging'
 SCHEMA = vol.Schema({
-    vol.Required('action'): vol.In(['start', 'step', 'stop', 'status', 'reset', 'publish']),
+    vol.Required('action'): vol.In(['start', 'step', 'meter_adjust', 'stop', 'status', 'reset', 'publish']),
     vol.Optional('vehicle_id'): vol.Coerce(int),
     vol.Optional('zone_id', default='zone.home'): str,
-    vol.Optional('energy_kwh', default=1.0): vol.All(vol.Coerce(float), vol.Range(min=0.000001)),
+    vol.Optional('energy_kwh'): vol.All(vol.Coerce(float), vol.Range(min=0.000001)),
 })
 
 
@@ -55,7 +55,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
         cols = {r[1] for r in db.execute('PRAGMA table_info(dynamic_sim_sessions)')}
         for col, typ in [('meter_start', 'REAL'), ('meter_end', 'REAL'),
                          ('meter_kind', 'TEXT'), ('meter_sensor', 'TEXT'),
-                         ('meter_energy', 'REAL')]:
+                         ('meter_energy', 'REAL'), ('meter_adjustment', 'REAL NOT NULL DEFAULT 0')]:
             if col not in cols:
                 db.execute(f'ALTER TABLE dynamic_sim_sessions ADD COLUMN {col} {typ}')
         db.execute('''CREATE TABLE IF NOT EXISTS dynamic_sim_steps (
@@ -80,6 +80,19 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 db.execute('UPDATE dynamic_sim_sessions SET meter_end=?,meter_energy=? WHERE vehicle_id=? AND zone_id=?',
                            (step['value'], measured, *key))
             return {'action': 'meter_snapshot', 'phase': step['phase'], 'meter_energy_kwh': measured if step['phase'] == 'stop' else None}
+        if action == 'meter_adjust':
+            # Test-only network energy adjustment, separate from vehicle energy
+            # and from the dynamic price steps. Useful to simulate AC losses.
+            row = db.execute('SELECT closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
+            if row is None:
+                raise ServiceValidationError('No simulation session; call start first')
+            if row[0]:
+                raise ServiceValidationError('Simulation already stopped')
+            if step is None:
+                raise ServiceValidationError('Meter adjustment missing')
+            db.execute('''UPDATE dynamic_sim_sessions
+                SET meter_adjustment=meter_adjustment+?
+                WHERE vehicle_id=? AND zone_id=?''', (step['energy_kwh'], *key))
         if action == 'reset':
             db.execute('DELETE FROM dynamic_sim_steps WHERE vehicle_id=? AND zone_id=?', key)
             db.execute('DELETE FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key)
@@ -94,7 +107,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
                 tariff_json=excluded.tariff_json, started_at=excluded.started_at,
                 closed=0, closed_at=NULL, meter_start=NULL, meter_end=NULL,
-                meter_kind=NULL, meter_sensor=NULL, meter_energy=NULL''', (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat()))
+                meter_kind=NULL, meter_sensor=NULL, meter_energy=NULL, meter_adjustment=0''', (*key, json.dumps(tariff), datetime.now(timezone.utc).isoformat()))
         row = db.execute('SELECT tariff_json,started_at,closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()
         if row is None:
             raise ServiceValidationError('No simulation session; call start first')
@@ -125,6 +138,7 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                 return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
                         'charge_id': charge_id, 'already_published': True,
                         'total_energy_kwh': saved.get('energy_added_kwh'),
+                        'meter_total_energy_kwh': float(saved.get('external_meter_end_kwh') or 0.0),
                         'total_cost': saved.get('cost_total'), 'currency': saved.get('currency')}
             step_rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
                 WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
@@ -164,18 +178,24 @@ def _transaction(db_path, vehicle_id, zone_id, action, tariff=None, step=None):
                        (vehicle_id, charge_id, json.dumps(payload, ensure_ascii=False)))
             return {'action': 'publish', 'vehicle_id': vehicle_id, 'zone_id': zone_id,
                     'charge_id': charge_id, 'already_published': False,
-                    'total_energy_kwh': total_energy, 'energy_billed_kwh': billed,
+                    'total_energy_kwh': total_energy,
+                    'meter_total_energy_kwh': float(meter_row[3]) if meter_row and meter_row[3] is not None else total_energy,
+                    'energy_billed_kwh': billed,
                     'energy_billed_source': billed_source, 'total_cost': total_cost,
                     'currency': saved_tariff['currency'], 'excluded_from_statistics': True}
         rows = db.execute('''SELECT at,energy_kwh,price_per_kwh,cost,sensor FROM dynamic_sim_steps
             WHERE vehicle_id=? AND zone_id=? ORDER BY step_id''', key).fetchall()
         steps = [dict(zip(('at','energy_kwh','price_per_kwh','cost','sensor'), r)) for r in rows]
-        closed = bool(db.execute('SELECT closed FROM dynamic_sim_sessions WHERE vehicle_id=? AND zone_id=?', key).fetchone()[0])
+        session_row = db.execute('''SELECT closed, meter_adjustment FROM dynamic_sim_sessions
+            WHERE vehicle_id=? AND zone_id=?''', key).fetchone()
+        closed = bool(session_row[0])
+        meter_total = round(sum(s['energy_kwh'] for s in steps) + float(session_row[1] or 0), 6)
         return {
             'action': action, 'vehicle_id': vehicle_id, 'zone_id': zone_id,
             'currency': saved_tariff['currency'], 'price_sensor': saved_tariff['price_sensor'],
             'closed': closed, 'just_closed': bool(just_closed), 'started_at': row[1],
             'total_energy_kwh': round(sum(s['energy_kwh'] for s in steps), 6),
+            'meter_total_energy_kwh': meter_total,
             'total_cost': round(sum(s['cost'] for s in steps), 6), 'steps': steps,
             'note': 'Persistent SQLite simulation; production charging records unchanged',
         }
@@ -222,6 +242,12 @@ def register(hass):
             energy = float(call.data.get('energy_kwh', 1.0))
             step = {'at': datetime.now(timezone.utc).isoformat(), 'energy_kwh': energy,
                     'price_per_kwh': price, 'cost': round(energy * price, 8), 'sensor': sensor_id}
+        if action == 'meter_adjust':
+            if 'energy_kwh' not in call.data:
+                raise ServiceValidationError('energy_kwh required for meter_adjust')
+            # The adjustment is an independent test meter increment; it does
+            # not add FordPass energy or a price step to the charge.
+            step = {'energy_kwh': float(call.data['energy_kwh'])}
         response = await hass.async_add_executor_job(
             _transaction, storage.database.db_path, vehicle_id, zone_id, action, tariff, step)
         # A test-only HA sensor mirrors the session meter; no production charge
@@ -231,7 +257,7 @@ def register(hass):
                 hass,
                 SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED,
                 vehicle_id,
-                float(response.get('total_energy_kwh') or 0.0),
+                float(response.get('meter_total_energy_kwh', response.get('total_energy_kwh')) or 0.0),
                 action,
                 bool(response.get('closed', False)),
             )
