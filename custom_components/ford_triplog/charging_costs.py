@@ -289,8 +289,8 @@ class FordTriplogChargingCostCalculator:
             _LOGGER.exception("Unable to resolve vehicle/zone charging tariff")
             return None
 
-    def dynamic_energy_sensor_for_charge(self, charge: Charge) -> tuple[str, str] | None:
-        """Return (zone_id, sensor_id) if this vehicle has a dynamic meter.
+    def dynamic_energy_sensor_for_charge(self, charge: Charge) -> tuple[str, str, str] | None:
+        """Return (zone_id, sensor_id, meter_mode) for a dynamic meter.
 
         Coordinates must match an actual HA zone. This prevents a configured
         home meter from contaminating a charge at a public station.
@@ -318,14 +318,15 @@ class FordTriplogChargingCostCalculator:
         try:
             with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
                 row = db.execute(
-                    "SELECT mode, energy_sensor FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
+                    "SELECT mode, energy_sensor, energy_meter_mode FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
                     (vehicle_id, zone_id),
                 ).fetchone()
         except sqlite3.Error:
             _LOGGER.exception("Failed to read dynamic energy meter configuration")
             return None
         if row and row[0] == "dynamic" and isinstance(row[1], str) and row[1].startswith("sensor."):
-            return zone_id, row[1]
+            mode = row[2] if row[2] in ("auto", "session", "total") else "auto"
+            return zone_id, row[1], mode
         return None
 
     def dynamic_price_tariff_for_charge(self, charge: Charge) -> tuple[str, str] | None:

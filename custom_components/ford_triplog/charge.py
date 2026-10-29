@@ -120,6 +120,7 @@ class Charge:
         self.external_meter_entity_id: str | None = None
         self.external_meter_zone_id: str | None = None
         self.external_meter_kind: str | None = None
+        self.external_meter_mode: str = "auto"
         self.external_meter_start_kwh: float | None = None
         self.external_meter_last_kwh: float | None = None
         self.external_meter_end_kwh: float | None = None
@@ -489,6 +490,7 @@ class Charge:
             "external_meter_entity_id": self.external_meter_entity_id,
             "external_meter_zone_id": self.external_meter_zone_id,
             "external_meter_kind": self.external_meter_kind,
+            "external_meter_mode": self.external_meter_mode,
             "external_meter_start_kwh": self.external_meter_start_kwh,
             "external_meter_last_kwh": self.external_meter_last_kwh,
             "external_meter_end_kwh": self.external_meter_end_kwh,
@@ -686,6 +688,7 @@ class Charge:
         charge.external_meter_entity_id = data.get("external_meter_entity_id")
         charge.external_meter_zone_id = data.get("external_meter_zone_id")
         charge.external_meter_kind = data.get("external_meter_kind")
+        charge.external_meter_mode = data.get("external_meter_mode") or "auto"
         charge.external_meter_start_kwh = data.get("external_meter_start_kwh")
         charge.external_meter_last_kwh = data.get("external_meter_last_kwh")
         charge.external_meter_end_kwh = data.get("external_meter_end_kwh")

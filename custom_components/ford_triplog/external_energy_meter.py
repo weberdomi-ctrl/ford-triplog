@@ -11,12 +11,16 @@ from math import isfinite
 _SESSION_KINDS = {"session_counter", "session", "session_total"}
 
 
-def read_energy_kwh(state):
+def read_energy_kwh(state, *, mode="auto"):
     """Return (kWh, kind) or None for invalid/unavailable sensor readings.
 
-    Without an explicit session-counter attribute, default to the safer
-    cumulative-counter interpretation (end minus start). Units must be known.
+    Explicit 'session'/'total' overrides the HA meter_type attribute.
+    Automatic mode recognises declared session counters; otherwise a meter
+    is treated as cumulative. A single reading cannot reliably distinguish
+    a session meter from a lifetime counter. Units must be known.
     """
+    if mode not in ("auto", "session", "total"):
+        return None
     if state is None or str(state.state).strip().lower() in {
         "", "unknown", "unavailable", "none", "null",
     }:
@@ -33,7 +37,12 @@ def read_energy_kwh(state):
     if unit == "wh":
         value /= 1000
     raw_kind = str(state.attributes.get("meter_type") or "").strip().lower()
-    kind = "session_counter" if raw_kind in _SESSION_KINDS else "total_counter"
+    if mode == "session":
+        kind = "session_counter"
+    elif mode == "total":
+        kind = "total_counter"
+    else:
+        kind = "session_counter" if raw_kind in _SESSION_KINDS else "total_counter"
     return round(value, 6), kind
 
 

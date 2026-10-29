@@ -1,9 +1,0 @@
-Ford Triplog 2.7.0 Beta 5 / Release 8
-- TEST Dynamic simulator gains meter_boundaries pricing mode and price_change test action.
-- Simulate controlled price transitions without editing the real HA price entity.
-- Calls the same price_meter_boundaries() calculator as production R7.
-- Simulated network energy boundaries and tested results persist in isolated SQLite test tables.
-- Publish requires a valid captured external test energy meter and matching boundary totals; fail closed otherwise.
-- Prior steps/proportional simulator mode unchanged. No changes to production FordPass code.
-- Limitation: This test confirms the production calculation function and test DB persistence,
-  not real FordPass charging callbacks, HA price-listener timing or HA restart recovery.

@@ -40,6 +40,7 @@ class ZoneTariffStorage:
                 vehicle_id INTEGER NOT NULL, zone_id TEXT NOT NULL,
                 mode TEXT NOT NULL DEFAULT 'seasonal', price_per_kwh REAL NOT NULL DEFAULT 0,
                 price_sensor TEXT, energy_sensor TEXT,
+                energy_meter_mode TEXT NOT NULL DEFAULT 'auto',
                 interval_minutes INTEGER NOT NULL DEFAULT 15,
                 currency TEXT NOT NULL DEFAULT 'CHF', updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY(vehicle_id, zone_id)
@@ -52,6 +53,11 @@ class ZoneTariffStorage:
             if "energy_sensor" not in columns:
                 db.execute(
                     "ALTER TABLE charging_vehicle_zone_tariffs ADD COLUMN energy_sensor TEXT"
+                )
+            if "energy_meter_mode" not in columns:
+                db.execute(
+                    "ALTER TABLE charging_vehicle_zone_tariffs "
+                    "ADD COLUMN energy_meter_mode TEXT NOT NULL DEFAULT 'auto'"
                 )
             db.execute("""CREATE TABLE IF NOT EXISTS charging_vehicle_zone_periods (
                 period_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -228,7 +234,7 @@ class ZoneTariffStorage:
                 return dict(row) if row else None
         return await self.hass.async_add_executor_job(load)
 
-    async def async_save_vehicle(self, *, vehicle_id, zone_id, mode, price_per_kwh=0, price_sensor='', energy_sensor=None, interval_minutes=15, currency='CHF'):
+    async def async_save_vehicle(self, *, vehicle_id, zone_id, mode, price_per_kwh=0, price_sensor='', energy_sensor=None, energy_meter_mode='auto', interval_minutes=15, currency='CHF'):
         if int(vehicle_id) < 1 or not zone_id.startswith('zone.') or mode not in ('fixed','seasonal','dynamic'):
             raise ValueError('Invalid vehicle, zone or mode')
         if int(interval_minutes) not in (5,15,30,60) or float(price_per_kwh) < 0 or currency not in ('CHF','EUR'):
@@ -240,17 +246,21 @@ class ZoneTariffStorage:
         energy_sensor = (energy_sensor or '').strip() if mode == 'dynamic' else ''
         if energy_sensor and not energy_sensor.startswith('sensor.'):
             raise ValueError('Energy sensor must be an HA sensor entity')
+        if energy_meter_mode not in ('auto', 'session', 'total'):
+            raise ValueError('Invalid energy meter mode')
+        # A mode without an energy sensor has no effect.
+        energy_meter_mode = energy_meter_mode if mode == 'dynamic' and energy_sensor else 'auto'
         def save():
             with sqlite3.connect(self.database.db_path) as db:
                 db.execute("""INSERT INTO charging_vehicle_zone_tariffs
-                    (vehicle_id,zone_id,mode,price_per_kwh,price_sensor,energy_sensor,interval_minutes,currency)
-                    VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
+                    (vehicle_id,zone_id,mode,price_per_kwh,price_sensor,energy_sensor,energy_meter_mode,interval_minutes,currency)
+                    VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(vehicle_id,zone_id) DO UPDATE SET
                     mode=excluded.mode,price_per_kwh=excluded.price_per_kwh,
                     price_sensor=excluded.price_sensor,energy_sensor=excluded.energy_sensor,
-                    interval_minutes=excluded.interval_minutes,
+                    energy_meter_mode=excluded.energy_meter_mode,interval_minutes=excluded.interval_minutes,
                     currency=excluded.currency,updated_at=CURRENT_TIMESTAMP""",
                     (int(vehicle_id),zone_id,mode,float(price_per_kwh),price_sensor or None,
-                     energy_sensor or None,int(interval_minutes),currency))
+                     energy_sensor or None,energy_meter_mode,int(interval_minutes),currency))
         await self.hass.async_add_executor_job(save)
 
     async def async_load_vehicle_periods(self, vehicle_id, zone_id):

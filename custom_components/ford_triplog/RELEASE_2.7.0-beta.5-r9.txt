@@ -1,0 +1,39 @@
+Ford Triplog 2.7.0 – Beta 5 / Release 9
+Version: 2.7.0-beta.5-r9 · Build: 27009
+
+NEU
+- Bei dynamischen Fahrzeug-/Zone-Tarifen steht unmittelbar unter „HA-Energiemengensensor“
+  das Feld „Zählertyp des Energiesensors“ mit drei Einstellungen:
+  * Automatisch erkennen (Standard)
+  * Sitzungszähler (beginnt pro Ladung neu)
+  * Gesamtzähler (fortlaufend)
+- Automatisch erkennt bekannte HA-Attribute „meter_type: session_counter/session/session_total“.
+  Sonst wird konservativ ein fortlaufender Gesamtzähler angenommen.
+- Eine explizite Auswahl hat Vorrang vor den HA-Sensorattributen.
+- Der ausgewählte Modus wird fahrzeug- und zonenbezogen in SQLite gespeichert und
+  beim Ladestart in der laufenden Ladung fixiert (auch für HA-Recovery).
+- Die TEST-Dynamic-Simulation verwendet den gewählten Modus ebenfalls.
+- Bestehende Tarife werden automatisch auf den Standard „auto“ migriert.
+- Fix- und Saisontarife, die reine Fahrzeugenergie sowie historische Ladungen bleiben unverändert.
+
+HINWEISE / GRENZEN
+- Automatische Erkennung ist nicht zuverlässig allein am Zahlenwert möglich.
+  Sensoren ohne entsprechendes Attribut bitte manuell korrekt zuordnen.
+- Ein unplausibler Rücksprung des Gesamtzählers wird verworfen; es wird keine
+  Netzenergie oder dynamische Kostenberechnung aus einem falschen Delta erzeugt.
+- Bei einem Sitzungszähler kann ein Reset die Gesamtenergie liefern, die exakte
+  Preisintervallzuordnung bei Reset innerhalb einer Ladung ist aber nicht garantiert.
+- Der Live-Ablauf mit FordPass/evcc/Tibber und HA-Neustarts bleibt ein Praxistest.
+
+TEST IN HOME ASSISTANT
+1. Integration aktualisieren, Home Assistant neu starten.
+2. TEST Dynamic > zone.home > Dynamisch > optionalen Energiesensor auswählen.
+3. Zählertyp unterhalb des Sensors auf auto / Sitzung / Gesamt einstellen und speichern.
+4. Menü erneut öffnen: Auswahl muss erhalten bleiben.
+5. Test über ford_triplog.simulate_dynamic_charging starten und Preiswechsel,
+   meter_adjust, stop, publish durchführen.
+6. In publish: energy_billed_source=meter, energy_billed_kwh und
+   meter_allocation_method=meter_boundary_samples kontrollieren.
+
+Achtung: Testladungen bleiben aus Produktivstatistiken ausgeschlossen.
+Version im ZIP, manifest.json und const.py muss 2.7.0-beta.5-r9 entsprechen.

@@ -3366,7 +3366,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             elif charge.dynamic_price_valid and charge.dynamic_price_samples:
                 previous_price = charge.dynamic_price_samples[-1]["price_per_kwh"]
                 if new_price != previous_price:
-                    reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id))
+                    reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id), mode=charge.external_meter_mode)
                     if reading is None or reading[1] != charge.external_meter_kind:
                         charge.dynamic_price_valid = False
                         charge.dynamic_price_failure_reason = "meter_unavailable_at_price_change"
@@ -3469,7 +3469,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
             if event.data.get("entity_id") != charge.external_meter_entity_id:
                 return
-            reading = read_energy_kwh(event.data.get("new_state"))
+            reading = read_energy_kwh(event.data.get("new_state"), mode=charge.external_meter_mode)
             if reading is None:
                 return
             value, kind = reading
@@ -3486,10 +3486,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         configured = self.charging_cost_calculator.dynamic_energy_sensor_for_charge(charge)
         if configured is None:
             return
-        zone_id, sensor_id = configured
+        zone_id, sensor_id, meter_mode = configured
+        charge.external_meter_mode = meter_mode
         charge.external_meter_zone_id = zone_id
         charge.external_meter_entity_id = sensor_id
-        reading = read_energy_kwh(self.hass.states.get(sensor_id))
+        reading = read_energy_kwh(self.hass.states.get(sensor_id), mode=meter_mode)
         if reading is not None:
             charge.external_meter_start_kwh, charge.external_meter_kind = reading
             charge.external_meter_last_kwh = charge.external_meter_start_kwh
@@ -3509,7 +3510,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             _LOGGER.warning("External meter end sample unavailable for recovered finished charge %s", charge.charge_id)
             self._unsubscribe_external_meter()
             return
-        reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id))
+        reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id), mode=charge.external_meter_mode)
         if reading is not None:
             value, kind = reading
             if charge.external_meter_kind is not None and kind != charge.external_meter_kind:

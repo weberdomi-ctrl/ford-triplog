@@ -386,14 +386,21 @@ def register(hass):
                 bool(response.get('closed', False)),
             )
         if action == 'start' or (action == 'stop' and response.get('just_closed')):
-            current_tariff = tariff if action == 'start' else await storage.async_load_vehicle(vehicle_id, zone_id)
+            if action == 'start':
+                current_tariff = tariff
+            else:
+                session_meta = await hass.async_add_executor_job(
+                    _transaction, storage.database.db_path, vehicle_id, zone_id, 'test_meta'
+                )
+                current_tariff = session_meta['tariff']
             sensor_id = (current_tariff or {}).get('energy_sensor')
             if sensor_id and (current_tariff or {}).get('mode') == 'dynamic':
                 state = hass.states.get(sensor_id)
                 # The test-only meter must belong to this test vehicle.
                 if state and state.attributes.get('test_only') and state.attributes.get('vehicle_id') not in (None, vehicle_id):
                     state = None
-                reading = read_energy_kwh(state)
+                meter_mode = (current_tariff or {}).get('energy_meter_mode') or 'auto'
+                reading = read_energy_kwh(state, mode=meter_mode)
                 if reading is not None:
                     value, kind = reading
                     await hass.async_add_executor_job(

@@ -1515,6 +1515,7 @@
           "price_per_kwh": "Fixpreis pro kWh",
           "price_sensor": "HA-Preissensor",
           "energy_sensor": "HA-Energiemengensensor (optional)",
+          "energy_meter_mode": "Zählertyp des Energiesensors",
           "interval_minutes": "Intervall (Minuten)",
           "currency": "Währung"
         }
