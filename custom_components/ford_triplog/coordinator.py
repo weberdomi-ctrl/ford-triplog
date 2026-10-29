@@ -61,6 +61,8 @@ from .history import FordTriplogHistory
 from .storage import FordTriplogStorage
 from .trip import Trip
 from .charge import Charge
+from .external_energy_meter import read_energy_kwh, charging_energy_kwh
+from .live_dynamic_pricing import read_price_per_kwh, price_meter_boundaries
 from .utils import optional_float
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
@@ -285,6 +287,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self.last_charge_timeout_timer: asyncio.TimerHandle | None = None
 
         self.remove_listener = None
+        self._external_meter_unsub = None
+        self._dynamic_price_unsub = None
 
         # Prevent overlapping charge handlers from changing current_charge
         # while another handler is awaiting Home Assistant or file I/O.
@@ -564,6 +568,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.current_charge = recovered_charge
 
 
+        # Restore meter monitoring, but invalidate dynamic prices after a
+        # restart: missed HA price transitions cannot be reconstructed safely.
+        if self.current_charge is not None and self.current_charge.dynamic_price_sensor:
+            if not self.current_charge.dynamic_price_finished:
+                self.current_charge.dynamic_price_valid = False
+                self.current_charge.dynamic_price_failure_reason = "home_assistant_restart"
+                await self.storage.save_current_charge(self.current_charge.to_dict())
+        self._subscribe_external_meter()
+        self._subscribe_dynamic_price()
+
         entities = [
             e for e in (
                 self.config.get("ignition"),
@@ -734,6 +748,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         if self.remove_listener is not None:
             self.remove_listener()
             self.remove_listener = None
+        self._unsubscribe_external_meter()
+        self._unsubscribe_dynamic_price()
 
         if self.smart_trip_timer is not None:
             self.smart_trip_timer.cancel()
@@ -3320,6 +3336,211 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         return after != before
 
+    def _unsubscribe_dynamic_price(self) -> None:
+        if self._dynamic_price_unsub is not None:
+            self._dynamic_price_unsub()
+            self._dynamic_price_unsub = None
+
+    def _subscribe_dynamic_price(self) -> None:
+        self._unsubscribe_dynamic_price()
+        charge = self.current_charge
+        if (charge is not None and charge.dynamic_price_sensor
+                and not charge.dynamic_price_finished and not charge.end_time):
+            self._dynamic_price_unsub = async_track_state_change_event(
+                self.hass, [charge.dynamic_price_sensor], self._dynamic_price_changed
+            )
+
+    async def _dynamic_price_changed(self, event: Event) -> None:
+        async with self._charge_lock:
+            charge = self.current_charge
+            if (charge is None or charge.dynamic_price_finished
+                    or charge.external_meter_end_captured or charge.end_time
+                    or event.data.get("entity_id") != charge.dynamic_price_sensor):
+                return
+            new_price = read_price_per_kwh(
+                event.data.get("new_state"), charge.dynamic_price_currency
+            )
+            if new_price is None:
+                charge.dynamic_price_valid = False
+                charge.dynamic_price_failure_reason = "invalid_price_during_charge"
+            elif charge.dynamic_price_valid and charge.dynamic_price_samples:
+                previous_price = charge.dynamic_price_samples[-1]["price_per_kwh"]
+                if new_price != previous_price:
+                    reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id), mode=charge.external_meter_mode)
+                    if reading is None or reading[1] != charge.external_meter_kind:
+                        charge.dynamic_price_valid = False
+                        charge.dynamic_price_failure_reason = "meter_unavailable_at_price_change"
+                    elif float(reading[0]) < float(charge.dynamic_price_samples[-1]["meter_kwh"]) - 0.000001:
+                        charge.dynamic_price_valid = False
+                        charge.dynamic_price_failure_reason = "meter_reset_at_price_change"
+                    else:
+                        charge.dynamic_price_samples.append({
+                            "at": dt_util.now().isoformat(),
+                            "meter_kwh": reading[0],
+                            "price_per_kwh": new_price,
+                        })
+            await self.storage.save_current_charge(charge.to_dict())
+
+    def _begin_dynamic_price(self, charge: Charge) -> None:
+        tariff = self.charging_cost_calculator.dynamic_price_tariff_for_charge(charge)
+        if tariff is None:
+            return
+        sensor_id, currency = tariff
+        charge.dynamic_price_sensor = sensor_id
+        charge.dynamic_price_currency = currency
+        price = read_price_per_kwh(self.hass.states.get(sensor_id), currency)
+        valid = price is not None and charge.external_meter_start_kwh is not None
+        charge.dynamic_price_valid = valid
+        charge.dynamic_price_failure_reason = None if valid else "invalid_initial_price_or_meter"
+        charge.dynamic_price_samples = ([{
+            "at": dt_util.now().isoformat(),
+            "meter_kwh": charge.external_meter_start_kwh,
+            "price_per_kwh": price,
+        }] if valid else [])
+        self._subscribe_dynamic_price()
+
+    def _finish_dynamic_price(self, charge: Charge) -> None:
+        if not charge.dynamic_price_sensor or charge.dynamic_price_finished:
+            return
+        charge.dynamic_price_finished = True
+        self._unsubscribe_dynamic_price()
+        if (not charge.dynamic_price_valid or not charge.dynamic_price_samples
+                or charge.external_meter_end_kwh is None or charge.external_meter_reset_seen):
+            charge.dynamic_price_valid = False
+            charge.dynamic_price_failure_reason = (
+                charge.dynamic_price_failure_reason or "invalid_final_meter_or_price"
+            )
+            return
+        charge.dynamic_price_samples.append({
+            "at": dt_util.now().isoformat(),
+            "meter_kwh": charge.external_meter_end_kwh,
+            "price_per_kwh": None,
+        })
+
+    def _apply_dynamic_meter_costs(self, charge: Charge) -> bool:
+        if (not charge.dynamic_price_valid or not charge.dynamic_price_finished
+                or charge.energy_billed_source != "meter"
+                or charge.cost_source in ("manual", "ocr")
+                or charge.cost_finalized):
+            return False
+        result = price_meter_boundaries(
+            charge.dynamic_price_samples, charge.energy_billed_kwh
+        )
+        if result is None:
+            charge.dynamic_price_failure_reason = "invalid_price_boundaries_or_energy"
+            _LOGGER.warning("Dynamic tariff costs unavailable for charge %s", charge.charge_id)
+            return False
+        charge.energy_cost = result["total_cost"]
+        charge.session_fee = charge.time_fee = charge.blocking_fee = 0.0
+        charge.parking_fee = charge.other_cost = 0.0
+        charge.currency = charge.dynamic_price_currency
+        charge.cost_source = "home_tariff"
+        charge.cost_verified = False
+        charge.dynamic_meter_pricing_applied = True
+        charge.dynamic_meter_allocation_method = result["meter_allocation_method"]
+        # Retain metered interval energies and prices for audit and diagnostics.
+        charge.dynamic_price_steps = result["steps"]
+        charge.recalculate_costs()
+        _LOGGER.info("Dynamic charging costs for %s: %.4f %s from %.3f kWh (%d intervals)",
+                     charge.charge_id, result["total_cost"], charge.currency,
+                     charge.energy_billed_kwh, len(result["steps"]))
+        return True
+
+    def _unsubscribe_external_meter(self) -> None:
+        if self._external_meter_unsub is not None:
+            self._external_meter_unsub()
+            self._external_meter_unsub = None
+
+    def _subscribe_external_meter(self) -> None:
+        self._unsubscribe_external_meter()
+        charge = self.current_charge
+        if (charge is not None and charge.external_meter_entity_id
+                and not charge.external_meter_end_captured and not charge.end_time):
+            self._external_meter_unsub = async_track_state_change_event(
+                self.hass, [charge.external_meter_entity_id], self._external_meter_changed
+            )
+
+    async def _external_meter_changed(self, event: Event) -> None:
+        # Same lock as charge start/finish: a delayed meter event must not
+        # resurrect current_charge after final archive cleanup.
+        async with self._charge_lock:
+            charge = self.current_charge
+            if charge is None or charge.external_meter_end_captured or charge.end_time:
+                return
+            if event.data.get("entity_id") != charge.external_meter_entity_id:
+                return
+            reading = read_energy_kwh(event.data.get("new_state"), mode=charge.external_meter_mode)
+            if reading is None:
+                return
+            value, kind = reading
+            if charge.external_meter_kind is not None and charge.external_meter_kind != kind:
+                _LOGGER.warning("Energy meter %s changed type during charge %s", charge.external_meter_entity_id, charge.charge_id)
+                charge.external_meter_reset_seen = True
+            previous = charge.external_meter_last_kwh
+            if previous is not None and value < previous - 0.000001:
+                charge.external_meter_reset_seen = True
+            charge.external_meter_last_kwh = value
+            await self.storage.save_current_charge(charge.to_dict())
+
+    def _begin_external_meter(self, charge: Charge) -> None:
+        configured = self.charging_cost_calculator.dynamic_energy_sensor_for_charge(charge)
+        if configured is None:
+            return
+        zone_id, sensor_id, meter_mode = configured
+        charge.external_meter_mode = meter_mode
+        charge.external_meter_zone_id = zone_id
+        charge.external_meter_entity_id = sensor_id
+        reading = read_energy_kwh(self.hass.states.get(sensor_id), mode=meter_mode)
+        if reading is not None:
+            charge.external_meter_start_kwh, charge.external_meter_kind = reading
+            charge.external_meter_last_kwh = charge.external_meter_start_kwh
+        _LOGGER.info("External charging meter armed for %s: %s (start=%s kWh)",
+                     charge.charge_id, sensor_id, charge.external_meter_start_kwh)
+        self._subscribe_external_meter()
+
+    def _finish_external_meter(self, charge: Charge) -> None:
+        if not charge.external_meter_entity_id or charge.external_meter_end_captured:
+            return
+        # A failed end reading remains explicitly unavailable; never accept a
+        # later value while waiting for FordPass Last Charge.
+        charge.external_meter_end_captured = True
+        # If HA restarted after the charger finished without an end snapshot,
+        # a new meter value could belong to an entirely different session.
+        if charge.end_time is not None:
+            _LOGGER.warning("External meter end sample unavailable for recovered finished charge %s", charge.charge_id)
+            self._unsubscribe_external_meter()
+            return
+        reading = read_energy_kwh(self.hass.states.get(charge.external_meter_entity_id), mode=charge.external_meter_mode)
+        if reading is not None:
+            value, kind = reading
+            if charge.external_meter_kind is not None and kind != charge.external_meter_kind:
+                charge.external_meter_reset_seen = True
+            charge.external_meter_end_kwh = value
+        self._unsubscribe_external_meter()
+
+    def _apply_external_meter_energy(self, charge: Charge) -> None:
+        if not charge.external_meter_entity_id:
+            return
+        # User-confirmed/receipt values have priority over automation.
+        if charge.energy_billed_source in ("manual", "receipt", "ocr") and charge.energy_billed_kwh is not None:
+            return
+        energy = charging_energy_kwh(
+            charge.external_meter_start_kwh,
+            charge.external_meter_end_kwh,
+            charge.external_meter_kind,
+            reset_seen=charge.external_meter_reset_seen,
+        )
+        if energy is None:
+            _LOGGER.warning("No valid external charging energy for %s (%s, start=%s, end=%s, reset=%s); retaining existing energy",
+                            charge.charge_id, charge.external_meter_entity_id,
+                            charge.external_meter_start_kwh, charge.external_meter_end_kwh,
+                            charge.external_meter_reset_seen)
+            return
+        charge.energy_billed_kwh = energy
+        charge.energy_billed_source = "meter"
+        _LOGGER.info("External meter %s billed energy %.3f kWh for %s",
+                     charge.external_meter_entity_id, energy, charge.charge_id)
+
     def _update_charge_energy_values(self, charge: Charge) -> None:
         """Reconcile vehicle-energy sources without discarding provenance."""
 
@@ -3454,6 +3675,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self._apply_charging_site(charging_site)
 
             await self._try_link_charge_to_trip(state)
+            self._begin_external_meter(self.current_charge)
+            self._begin_dynamic_price(self.current_charge)
 
             await self.storage.save_current_charge(
                 self.current_charge.to_dict()
@@ -3497,6 +3720,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charge,
                 completion_state,
             )
+            # Freeze the HA grid meter when the charger actually finishes,
+            # not when delayed FordPass Last Charge is finally archived.
+            self._finish_external_meter(charge)
+            self._finish_dynamic_price(charge)
 
             state = await self._wait_for_stable_vehicle_state()
             # Ford can publish ChargerEnergyOutput a few seconds after the
@@ -3724,6 +3951,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 charge_obj
             )
             self._update_charge_energy_values(charge_obj)
+            self._finish_external_meter(charge_obj)
+            self._finish_dynamic_price(charge_obj)
+            self._apply_external_meter_energy(charge_obj)
 
             _LOGGER.info(
                 "Charging energy reconciled: charge=%s source=%s "
@@ -3739,6 +3969,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
 
             await self._apply_home_charging_costs(charge_obj)
+            self._apply_dynamic_meter_costs(charge_obj)
             charge_obj.finalize_costs()
             charge = charge_obj.to_dict()
 
@@ -3793,6 +4024,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                     )
 
             if self.current_charge is charge_obj:
+                self._unsubscribe_external_meter()
+                self._unsubscribe_dynamic_price()
                 await self.storage.delete_current_charge()
                 self.current_charge = None
 

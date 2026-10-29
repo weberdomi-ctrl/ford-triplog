@@ -18,8 +18,11 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.7.0-beta.3"
-BUILD: Final = "27001"
+VERSION: Final = "2.7.0-beta.5-r11"
+BUILD: Final = "27011"
+
+# Test-only energy meter, fed by the TEST Dynamic simulation service.
+SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED: Final = "ford_triplog_dynamic_test_energy_updated"
 
 #
 # Storage

@@ -289,6 +289,68 @@ class FordTriplogChargingCostCalculator:
             _LOGGER.exception("Unable to resolve vehicle/zone charging tariff")
             return None
 
+    def dynamic_energy_sensor_for_charge(self, charge: Charge) -> tuple[str, str, str] | None:
+        """Return (zone_id, sensor_id, meter_mode) for a dynamic meter.
+
+        Coordinates must match an actual HA zone. This prevents a configured
+        home meter from contaminating a charge at a public station.
+        """
+        latitude = charge.start_latitude if charge.start_latitude is not None else charge.end_latitude
+        longitude = charge.start_longitude if charge.start_longitude is not None else charge.end_longitude
+        try:
+            lat, lon = float(latitude), float(longitude)
+            vehicle_id = int(self._vehicle_id)
+        except (TypeError, ValueError):
+            return None
+        matches = []
+        for state in self.hass.states.async_all("zone"):
+            try:
+                attrs = state.attributes
+                radius = max(0.0, float(attrs.get("radius", 100)))
+                dist = self._distance_meters(lat, lon, float(attrs["latitude"]), float(attrs["longitude"]))
+                if dist <= radius:
+                    matches.append((dist, state.entity_id))
+            except (ValueError, TypeError, KeyError):
+                continue
+        if not matches:
+            return None
+        zone_id = min(matches)[1]
+        try:
+            with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
+                row = db.execute(
+                    "SELECT mode, energy_sensor, energy_meter_mode FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
+                    (vehicle_id, zone_id),
+                ).fetchone()
+        except sqlite3.Error:
+            _LOGGER.exception("Failed to read dynamic energy meter configuration")
+            return None
+        if row and row[0] == "dynamic" and isinstance(row[1], str) and row[1].startswith("sensor."):
+            mode = row[2] if row[2] in ("auto", "session", "total") else "auto"
+            return zone_id, row[1], mode
+        return None
+
+    def dynamic_price_tariff_for_charge(self, charge: Charge) -> tuple[str, str] | None:
+        """Return (price sensor, currency) for the already matched meter zone."""
+        zone_id = charge.external_meter_zone_id
+        if not zone_id or not charge.external_meter_entity_id:
+            return None
+        try:
+            vehicle_id = int(self._vehicle_id)
+            with sqlite3.connect(self._zone_tariff_db_path, timeout=2) as db:
+                row = db.execute(
+                    "SELECT mode, price_sensor, energy_sensor, currency "
+                    "FROM charging_vehicle_zone_tariffs WHERE vehicle_id=? AND zone_id=?",
+                    (vehicle_id, zone_id),
+                ).fetchone()
+        except (sqlite3.Error, ValueError, TypeError):
+            _LOGGER.exception("Failed to read dynamic charging price configuration")
+            return None
+        if (row is None or row[0] != "dynamic" or row[2] != charge.external_meter_entity_id
+                or not isinstance(row[1], str) or not row[1].startswith("sensor.")
+                or str(row[3]).upper() not in ("CHF", "EUR")):
+            return None
+        return row[1], str(row[3]).upper()
+
     @staticmethod
     def _parse_datetime(value: Any):
         if not value:
