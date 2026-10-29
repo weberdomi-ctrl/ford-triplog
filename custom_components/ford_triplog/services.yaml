@@ -221,7 +221,16 @@ rebuild_last_route:
 
 simulate_dynamic_charging:
   name: Simulate dynamic charging (TEST Dynamic only)
-  description: SQLite-backed TEST Dynamic simulation. The publish action creates an excluded test charge after stop. On a valid external energy meter measurement, its total kWh are allocated proportionally across the stored dynamic price steps; this is an interval estimate, not interval-level meter readings. Use meter_adjust with energy_kwh to simulate extra grid energy (e.g. charging losses) without changing the vehicle energy. New meter_boundaries test mode: start with pricing_mode: meter_boundaries and test_price_per_kwh, add step energy, call price_change with test_price_per_kwh, add more step energy, stop and publish. This invokes the exact production price_meter_boundaries calculation and still only creates excluded TEST Dynamic charges. This does NOT validate production FordPass callbacks or HA price listener events.
+  description: >-
+    Persistent SQLite-backed simulation for TEST Dynamic only. Publishing creates a
+    test charge excluded from production statistics. External meter energy is
+    allocated to dynamic tariff intervals when valid readings are available.
+    The meter_adjust action adds simulated grid energy without changing vehicle
+    energy. For boundary tests, start with pricing_mode set to meter_boundaries
+    and supply test_price_per_kwh. Add energy with step, change the test price
+    with price_change, add more energy, then stop and publish. This exercises
+    the production meter-boundary calculation, but not the live FordPass
+    callbacks or Home Assistant price listener events.
   fields:
     action:
       required: true
