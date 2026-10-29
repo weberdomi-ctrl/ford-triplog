@@ -1,0 +1,20 @@
+Ford Triplog 2.7.0 – Beta 5 / Release 11
+Version: 2.7.0-beta.5-r11 · Build: 27011
+
+FIX: Home Assistant Hassfest services.yaml validation
+- Fixed `simulate_dynamic_charging.fields.test_price_per_kwh.selector.number.step`:
+  0.0001 is below the minimum allowed number-selector step (0.001).
+  Uses `step: any` to preserve arbitrary test price precision.
+- Removed the lengthy `simulate_dynamic_charging` service description,
+  keeping its service name and action fields intact.
+- The `target` message was a secondary schema-branch validation error;
+  the simulation service is not a target-based action.
+- No changes to charging logic, tariffs, SQLite schema or meter mode support.
+
+Beta 5 includes optional Home Assistant energy sensors, session/total meter
+selection, dynamic tariff cost accounting and a simulation test mode.
+
+Validation: YAML/JSON/Python syntax, service field checks, zip integrity and
+version consistency. Full GitHub Hassfest CI and HA runtime not executed here.
+
+GitHub pre-release tag: 2.7.0-beta.5-r11
