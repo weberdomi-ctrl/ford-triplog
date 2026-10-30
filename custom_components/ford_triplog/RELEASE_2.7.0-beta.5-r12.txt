@@ -1,0 +1,13 @@
+Ford Triplog 2.7.0 Beta 5 – Release 12 (27012)
+
+Bug fix: Smart Trip completion / missing ignition ON transition
+
+- Fixed a race condition when a new ignition ON event occurs while the previous trip is being archived at the 180-second Smart Trip timeout.
+- A new trip start arriving during finalization is deferred until the previous trip has been saved.
+- Before starting the deferred trip, the live ignition state is rechecked to prevent false/ghost trips.
+- An OFF event while the old trip is being finalized cannot re-pause the old trip.
+- Preserves normal Smart Trip resume behavior for ignition ON before the timeout.
+- Does not change charging logic, pricing, storage layout, or fixed/seasonal tariffs.
+
+Testing: isolated asyncio tests of the race, normal resume, transient ON/OFF, fallback, and normal timeout.
+Note: a trip that was never recorded cannot be recovered automatically by this update.

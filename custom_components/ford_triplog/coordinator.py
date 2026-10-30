@@ -297,6 +297,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Defensive guard against finalizing the same charging session twice.
         self._charge_finalizing = False
         self._trip_finishing = False
+        # An ignition ON edge can arrive while the Smart Trip timeout is
+        # still archiving the previous trip. Do not drop that new start.
+        self._smart_trip_finalizing = False
+        self._trip_start_deferred = False
         self._charge_start_soc_task: asyncio.Task | None = None
 
         # Coalesce rapid coordinator publishes. FordPass/Home Assistant can
@@ -2920,7 +2924,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         return True
 
     async def start_trip(self):
-        
+        # The Smart Trip timeout temporarily places the old trip back into
+        # current_trip while saving it. A new ignition edge during this window
+        # belongs to a *new* trip, not the one being finalized.
+        if self._smart_trip_finalizing:
+            self._trip_start_deferred = True
+            _LOGGER.info(
+                "Ignition ON during Smart Trip finalization; "
+                "deferring new trip start until archive completes"
+            )
+            return
+
         # Smart Trip: Resume paused trip
         if self.trip_pause_data is not None:
             
@@ -2988,6 +3002,16 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def finish_trip(self):
         """Pause the trip and capture its end state immediately."""
+
+        # While the Smart Trip timeout saves the previous trip, current_trip
+        # temporarily points to that already-ended trip. A rapid ON/OFF edge
+        # must not pause or overwrite this archived trip again.
+        if self._smart_trip_finalizing:
+            _LOGGER.debug(
+                "Ignoring ignition OFF during Smart Trip finalization; "
+                "previous trip is already ending"
+            )
+            return
 
         if self._trip_finishing:
             _LOGGER.debug("Trip finalization already in progress")
@@ -4339,7 +4363,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         return end_state
 
     async def _smart_trip_timeout(self):
-        """Finalize a paused trip after refreshing its final GPS position."""
+        """Finalize a paused trip while preserving any concurrent ignition ON."""
 
         _LOGGER.info("Smart Trip timeout reached")
         self.smart_trip_timer = None
@@ -4348,9 +4372,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
 
         if self.current_trip:
-            _LOGGER.debug(
-                "Smart Trip cancelled - trip already resumed"
-            )
+            _LOGGER.debug("Smart Trip cancelled - trip already resumed")
             return
 
         if not self.trip_end_state:
@@ -4359,40 +4381,66 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             return
 
-        self.current_trip = self.trip_pause_data
-        self.trip_pause_data = None
+        self._smart_trip_finalizing = True
+        try:
+            self.current_trip = self.trip_pause_data
+            self.trip_pause_data = None
 
-        end_state = self.trip_end_state
-        self.trip_end_state = None
+            end_state = self.trip_end_state
+            self.trip_end_state = None
 
-        fresh_gps_state = await self._wait_for_fresh_trip_end_gps(
-            end_state.get("gps_updated_at")
-        )
-
-        end_state = await self._validate_trip_end_gps(
-            end_state,
-            fresh_gps_state,
-        )
-
-        self.current_trip.finish(
-            odometer=end_state.get("odometer"),
-            soc=end_state.get("soc"),
-            latitude=end_state.get("latitude"),
-            longitude=end_state.get("longitude"),
-            address=end_state.get("address"),
-            end_time=end_state.get("end_time"),
-        )
-
-        if self.route_tracker is not None:
-            await self.route_tracker.async_finalize(
-                end_latitude=end_state.get("latitude"),
-                end_longitude=end_state.get("longitude"),
-                end_timestamp=end_state.get("end_time"),
+            fresh_gps_state = await self._wait_for_fresh_trip_end_gps(
+                end_state.get("gps_updated_at")
             )
 
-        await self._finalize_trip(end_state)
+            end_state = await self._validate_trip_end_gps(
+                end_state,
+                fresh_gps_state,
+            )
 
-        self.trip_pause_time = None
-        self.trip_end_time = None
-        self.current_trip = None
+            self.current_trip.finish(
+                odometer=end_state.get("odometer"),
+                soc=end_state.get("soc"),
+                latitude=end_state.get("latitude"),
+                longitude=end_state.get("longitude"),
+                address=end_state.get("address"),
+                end_time=end_state.get("end_time"),
+            )
+
+            if self.route_tracker is not None:
+                await self.route_tracker.async_finalize(
+                    end_latitude=end_state.get("latitude"),
+                    end_longitude=end_state.get("longitude"),
+                    end_timestamp=end_state.get("end_time"),
+                )
+
+            await self._finalize_trip(end_state)
+
+            self.trip_pause_time = None
+            self.trip_end_time = None
+            self.current_trip = None
+        finally:
+            # _state_changed() updates last_ignition before awaiting start_trip.
+            # If ON arrived during this archive, start_trip() could not start
+            # normally because current_trip still referred to the old trip.
+            self._smart_trip_finalizing = False
+            had_deferred_start = self._trip_start_deferred
+            self._trip_start_deferred = False
+            if self.current_trip is None and (
+                had_deferred_start or self.last_ignition
+            ):
+                latest_ignition = str(
+                    self._read_vehicle_state().get("ignition") or ""
+                ).strip().lower()
+                if latest_ignition in ("on", "true", "1", "running"):
+                    _LOGGER.info(
+                        "Starting new trip after Smart Trip finalization; "
+                        "ignition still ON (deferred=%s)",
+                        had_deferred_start,
+                    )
+                    await self.start_trip()
+                elif had_deferred_start:
+                    _LOGGER.info(
+                        "Deferred trip start cancelled: ignition no longer ON"
+                    )
 
