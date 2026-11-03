@@ -64,11 +64,13 @@ from .charge import Charge
 from .external_energy_meter import read_energy_kwh, charging_energy_kwh
 from .live_dynamic_pricing import read_price_per_kwh, price_meter_boundaries
 from .utils import optional_float
+from .route_quality import numeric as gps_numeric
 from .trip_start_position import (
     coordinates as valid_gps_coordinates,
     parking_snapshot,
     parking_anchor,
     refresh_parking_snapshot,
+    stabilize_parking_snapshot,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
@@ -2821,6 +2823,36 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             snap.get("odometer"),
         )
 
+    def _stabilize_parked_position(
+        self, stable_state: dict[str, Any], *,
+        route_point: dict[str, Any] | None = None,
+        expected_end: datetime | None = None,
+    ) -> None:
+        """Save stabilized end odometer and corroborated vehicle/route GPS."""
+        if self.last_ignition:
+            return
+        parking = self._last_parking_position
+        if not isinstance(parking, dict):
+            return
+        off_time = self._normalized_datetime(parking.get('ignition_off_at'))
+        if off_time is None or (
+            expected_end is not None
+            and abs((expected_end - off_time).total_seconds()) > 90
+        ):
+            return
+        updated = stabilize_parking_snapshot(
+            parking, stable_state, dt_util.now(), route_point=route_point
+        )
+        if updated is None:
+            return
+        self._last_parking_position = updated
+        self._schedule_parking_position_save(updated)
+        _LOGGER.info(
+            "Stabilized parking anchor: source=%s odometer=%s gps=%s",
+            updated.get('source'), updated.get('odometer'),
+            updated.get('gps_updated_at'),
+        )
+
     def _refresh_parked_position(
         self, state: dict[str, Any]
     ) -> None:
@@ -3227,6 +3259,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 timeout=TRIP_END_ODOMETER_TIMEOUT,
             )
             end_time = dt_util.now()
+            # Smart Trip keeps a snapshot from the real OFF edge. Reconcile
+            # odometer lag and an accurate pre-OFF route point without waiting
+            # for the 180s timeout or touching active trips.
+            parking_route_point = (
+                self.route_tracker.get_last_point()
+                if self.route_tracker is not None else None
+            )
+            self._stabilize_parked_position(
+                state, route_point=parking_route_point,
+                expected_end=end_time,
+            )
             address = await self._get_address(state)
 
             # The trip may have been changed while awaiting FordPass data.
@@ -4371,15 +4414,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             else None
         )
 
-        route_valid = (
-            route_latitude is not None
-            and route_longitude is not None
-        )
-        vehicle_valid = (
-            vehicle_latitude is not None
-            and vehicle_longitude is not None
-        )
-
         route_time = dt_util.parse_datetime(str(route_timestamp or ""))
         vehicle_time = dt_util.parse_datetime(str(vehicle_timestamp or ""))
 
@@ -4387,6 +4421,37 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             route_time = route_time.replace(tzinfo=dt_util.UTC)
         if vehicle_time is not None and vehicle_time.tzinfo is None:
             vehicle_time = vehicle_time.replace(tzinfo=dt_util.UTC)
+
+        route_valid = (
+            route_latitude is not None
+            and route_longitude is not None
+        )
+        # A delayed/unreliable phone point is not a valid Trip end. This is
+        # particularly important when the vehicle has just entered a garage:
+        # a recent but 100m-accuracy fix must not override vehicle GPS.
+        stop_at = self._normalized_datetime(end_state.get('end_time'))
+        if route_valid and stop_at is not None:
+            if route_time is None:
+                route_valid = False
+            else:
+                route_age = (stop_at - route_time).total_seconds()
+                if route_age < -5 or route_age > TRIP_END_ROUTE_MAX_AGE_SECONDS:
+                    route_valid = False
+        if route_valid and isinstance(route_point, dict) and 'gps_accuracy' in route_point:
+            accuracy = gps_numeric(route_point.get('gps_accuracy'))
+            if accuracy is None or accuracy <= 0 or accuracy > 35:
+                route_valid = False
+        if not route_valid and route_latitude is not None:
+            _LOGGER.debug(
+                "Ignoring stale/low-accuracy phone Trip-end GPS: %s "
+                "accuracy=%s", route_timestamp,
+                route_point.get('gps_accuracy') if isinstance(route_point, dict) else None,
+            )
+        vehicle_valid = (
+            vehicle_latitude is not None
+            and vehicle_longitude is not None
+        )
+
 
         distance: float | None = None
         if route_valid and vehicle_valid:
@@ -4582,6 +4647,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             end_state = await self._validate_trip_end_gps(
                 end_state,
                 fresh_gps_state,
+            )
+
+            # The final vehicle fix often arrives after ignition OFF. Only
+            # update the matching OFF snapshot, never phone GPS collected
+            # after the driver has left the vehicle.
+            self._stabilize_parked_position(
+                fresh_gps_state or {},
+                expected_end=self._normalized_datetime(end_state.get('end_time')),
             )
 
             self.current_trip.finish(

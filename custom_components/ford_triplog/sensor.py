@@ -70,6 +70,7 @@ SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
+from .route_quality import display_geometry, geometry_coordinates, matched_geometry_valid, has_quality
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
 from .vehicle_context import (
@@ -3267,7 +3268,9 @@ class FordTriplogLastRouteSensor(SensorEntity):
         start_time = valid_points[0].get("timestamp")
         end_time = valid_points[-1].get("timestamp")
 
-        display_coordinates = coordinates
+        raw_geometry = display_geometry(valid_points)
+        selected_geometry = raw_geometry or {"type": "LineString", "coordinates": []}
+        display_coordinates = geometry_coordinates(selected_geometry)
         geometry_source = "raw"
         osrm_distance_km = None
         osrm_confidence = None
@@ -3275,80 +3278,44 @@ class FordTriplogLastRouteSensor(SensorEntity):
         osrm_unmatched_tracepoints = None
 
         matched_route = route.get("matched_route")
-        if isinstance(matched_route, dict):
-            matched_geometry = matched_route.get("geometry")
-            matched_coordinates = (
-                matched_geometry.get("coordinates")
-                if isinstance(matched_geometry, dict)
-                and matched_geometry.get("type") == "LineString"
-                else None
-            )
+        if matched_geometry_valid(matched_route):
+            selected_geometry = matched_route["geometry"]
+            display_coordinates = geometry_coordinates(selected_geometry)
+            geometry_source = "osrm"
+            try:
+                osrm_distance_km = round(float(matched_route.get("distance_m")) / 1000, 3)
+            except (TypeError, ValueError):
+                osrm_distance_km = None
+            osrm_confidence = matched_route.get("confidence")
+            osrm_matched_tracepoints = matched_route.get("matched_tracepoints")
+            osrm_unmatched_tracepoints = matched_route.get("unmatched_tracepoints")
 
-            if isinstance(matched_coordinates, list) and len(matched_coordinates) >= 2:
-                valid_matched_coordinates: list[list[float]] = []
-
-                for coordinate in matched_coordinates:
-                    if (
-                        not isinstance(coordinate, (list, tuple))
-                        or len(coordinate) < 2
-                    ):
-                        continue
-
-                    try:
-                        longitude = float(coordinate[0])
-                        latitude = float(coordinate[1])
-                    except (TypeError, ValueError):
-                        continue
-
-                    valid_matched_coordinates.append(
-                        [longitude, latitude]
-                    )
-
-                if len(valid_matched_coordinates) >= 2:
-                    display_coordinates = valid_matched_coordinates
-                    geometry_source = "osrm"
-
-                    try:
-                        osrm_distance_km = round(
-                            float(matched_route.get("distance_m")) / 1000.0,
-                            3,
-                        )
-                    except (TypeError, ValueError):
-                        osrm_distance_km = None
-
-                    osrm_confidence = matched_route.get("confidence")
-                    osrm_matched_tracepoints = matched_route.get(
-                        "matched_tracepoints"
-                    )
-                    osrm_unmatched_tracepoints = matched_route.get(
-                        "unmatched_tracepoints"
-                    )
-
+        # If the GPS receiver was blind (car park/tunnel), show no invented
+        # connection. Preserve original raw points for export/diagnostics.
         geojson = {
             "type": "Feature",
             "properties": {
                 "trip_id": trip_id,
                 "source_type": source_type,
                 "geometry_source": geometry_source,
+                "gps_quality_filtered": has_quality(valid_points) and geometry_source == "raw",
             },
-            "geometry": {
-                "type": "LineString",
-                "coordinates": display_coordinates,
-            },
+            "geometry": selected_geometry,
         }
 
         self._route = route
         self._attr_native_value = trip_id or len(display_coordinates)
 
-        start_longitude, start_latitude = display_coordinates[0]
-        end_longitude, end_latitude = display_coordinates[-1]
+        position_coordinates = display_coordinates or coordinates
+        start_longitude, start_latitude = position_coordinates[0]
+        end_longitude, end_latitude = position_coordinates[-1]
         center_latitude = (
-            sum(coord[1] for coord in display_coordinates)
-            / len(display_coordinates)
+            sum(coord[1] for coord in position_coordinates)
+            / len(position_coordinates)
         )
         center_longitude = (
-            sum(coord[0] for coord in display_coordinates)
-            / len(display_coordinates)
+            sum(coord[0] for coord in position_coordinates)
+            / len(position_coordinates)
         )
 
         self._attributes = {

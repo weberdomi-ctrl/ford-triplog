@@ -19,6 +19,7 @@ from __future__ import annotations
 from typing import Any
 
 from .route_storage import FordTriplogRouteStorage
+from .route_quality import display_geometry, geometry_coordinates, matched_geometry_valid, has_quality
 
 
 def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
@@ -46,38 +47,9 @@ def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
 
 
 def _matched_coordinates(route: dict[str, Any]) -> list[list[float]]:
-    """Return valid OSRM matched coordinates."""
-
-    matched_route = route.get("matched_route")
-    if not isinstance(matched_route, dict):
-        return []
-
-    geometry = matched_route.get("geometry")
-    if not isinstance(geometry, dict) or geometry.get("type") != "LineString":
-        return []
-
-    raw_coordinates = geometry.get("coordinates")
-    if not isinstance(raw_coordinates, list):
-        return []
-
-    coordinates: list[list[float]] = []
-
-    for coordinate in raw_coordinates:
-        if (
-            not isinstance(coordinate, (list, tuple))
-            or len(coordinate) < 2
-        ):
-            continue
-
-        try:
-            longitude = float(coordinate[0])
-            latitude = float(coordinate[1])
-        except (TypeError, ValueError):
-            continue
-
-        coordinates.append([longitude, latitude])
-
-    return coordinates
+    """Return OSRM coordinates only if confidence and geometry are sound."""
+    matched = route.get('matched_route')
+    return geometry_coordinates(matched.get('geometry')) if matched_geometry_valid(matched) else []
 
 
 def _route_feature(
@@ -88,16 +60,17 @@ def _route_feature(
     """Build one map-ready GeoJSON feature for a stored route."""
 
     raw_coordinates = _raw_coordinates(route)
-    matched_coordinates = _matched_coordinates(route)
-
-    if len(matched_coordinates) >= 2:
-        coordinates = matched_coordinates
-        geometry_source = "osrm"
-    elif len(raw_coordinates) >= 2:
-        coordinates = raw_coordinates
-        geometry_source = "raw"
+    matched_route = route.get('matched_route')
+    filtered_geometry = display_geometry(route.get('points') or [])
+    if matched_geometry_valid(matched_route):
+        geometry = matched_route['geometry']
+        geometry_source = 'osrm'
+    elif filtered_geometry is not None:
+        geometry = filtered_geometry
+        geometry_source = 'raw'
     else:
-        return None
+        return None  # No credible line: preserve raw data without drawing one.
+    coordinates = geometry_coordinates(geometry)
 
     matched_route = route.get("matched_route")
     matched_route = (
@@ -113,6 +86,7 @@ def _route_feature(
         "geometry_source": geometry_source,
         "raw_point_count": len(raw_coordinates),
         "point_count": len(coordinates),
+        "gps_quality_filtered": has_quality(route.get('points') or []) and geometry_source == 'raw',
     }
 
     if geometry_source == "osrm":
@@ -145,10 +119,7 @@ def _route_feature(
     return {
         "type": "Feature",
         "properties": properties,
-        "geometry": {
-            "type": "LineString",
-            "coordinates": coordinates,
-        },
+        "geometry": geometry,
     }
 
 

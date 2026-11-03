@@ -25,6 +25,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .osrm_client import FordTriplogOSRMClient, FordTriplogOSRMError
 from .route_storage import FordTriplogRouteStorage, SIGNAL_LAST_ROUTE_UPDATED
+from .route_matching import verified_osrm_match, RouteMatchRejected
+from .route_quality import matched_geometry_valid, geometry_coordinates
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -149,7 +151,16 @@ class FordTriplogRouteRebuilder:
             )
 
             try:
-                match_result = await client.async_match(points)
+                matched_route = await verified_osrm_match(
+                    client, points, url=self.osrm_url, radius=self.radius_meters,
+                )
+            except RouteMatchRejected as err:
+                result.routes_failed += 1
+                _LOGGER.warning(
+                    "OSRM route maintenance rejected trip %s: %s; "
+                    "stored route remains unchanged", trip_id, err,
+                )
+                continue
             except FordTriplogOSRMError as err:
                 result.routes_failed += 1
                 _LOGGER.warning(
@@ -168,37 +179,6 @@ class FordTriplogRouteRebuilder:
                 )
                 continue
 
-            plausible, reason = self._match_plausibility(
-                points,
-                match_result.distance_m,
-                match_result.unmatched_tracepoints,
-            )
-            if not plausible:
-                result.routes_failed += 1
-                _LOGGER.warning(
-                    "OSRM route maintenance rejected trip %s: reason=%s "
-                    "raw_points=%s matched_points=%s unmatched=%s "
-                    "distance=%.1fm; stored route remains unchanged",
-                    trip_id,
-                    reason,
-                    len(points),
-                    len(match_result.geometry.get("coordinates", [])),
-                    match_result.unmatched_tracepoints,
-                    match_result.distance_m,
-                )
-                continue
-
-            matched_route = {
-                "provider": "osrm",
-                "url": self.osrm_url,
-                "radius_m": self.radius_meters,
-                "distance_m": match_result.distance_m,
-                "duration_s": match_result.duration_s,
-                "confidence": match_result.confidence,
-                "matched_tracepoints": match_result.matched_tracepoints,
-                "unmatched_tracepoints": match_result.unmatched_tracepoints,
-                "geometry": match_result.geometry,
-            }
 
             try:
                 await self.route_storage.async_save_route(
@@ -233,9 +213,9 @@ class FordTriplogRouteRebuilder:
                 "matched_points=%s distance=%.1fm confidence=%s",
                 trip_id,
                 len(points),
-                len(match_result.geometry.get("coordinates", [])),
-                match_result.distance_m,
-                match_result.confidence,
+                len(geometry_coordinates(matched_route['geometry'])),
+                matched_route['distance_m'],
+                matched_route['confidence'],
             )
 
         # Avoid dispatching one Last Route refresh for every historical route.
@@ -264,20 +244,7 @@ class FordTriplogRouteRebuilder:
     def _has_usable_osrm_match(route: dict[str, Any]) -> bool:
         """Return True when a stored route already has usable OSRM geometry."""
 
-        matched_route = route.get("matched_route")
-        if not isinstance(matched_route, dict):
-            return False
-
-        if matched_route.get("provider") != "osrm":
-            return False
-
-        geometry = matched_route.get("geometry")
-        return (
-            isinstance(geometry, dict)
-            and geometry.get("type") == "LineString"
-            and isinstance(geometry.get("coordinates"), list)
-            and len(geometry["coordinates"]) >= 2
-        )
+        return matched_geometry_valid(route.get('matched_route'))
 
     @staticmethod
     def _match_plausibility(
