@@ -294,6 +294,12 @@ class FordTriplogStorage:
             return None
         return await self.database.load_charge(charge_id)
 
+    async def save_last_parking_position(self, data: dict[str, Any]) -> bool:
+        return await self.database.save_last_parking_position(data)
+
+    async def load_last_parking_position(self) -> dict[str, Any] | None:
+        return await self.database.load_last_parking_position()
+
     async def save_current_trip(self, data: dict[str, Any]) -> bool:
         """Save current trip to SQLite."""
         return await self.database.save_current_trip(self._add_metadata(data))

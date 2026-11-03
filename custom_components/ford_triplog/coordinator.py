@@ -64,6 +64,12 @@ from .charge import Charge
 from .external_energy_meter import read_energy_kwh, charging_energy_kwh
 from .live_dynamic_pricing import read_price_per_kwh, price_meter_boundaries
 from .utils import optional_float
+from .trip_start_position import (
+    coordinates as valid_gps_coordinates,
+    parking_snapshot,
+    parking_anchor,
+    refresh_parking_snapshot,
+)
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
 from .pending_charging_site_storage import PendingChargingSiteStorage
@@ -116,15 +122,20 @@ CHARGE_START_SOC_TYPE_POLL_SECONDS = 5
 TRIP_END_GPS_MAX_DISTANCE_METERS = 250
 TRIP_END_ROUTE_MAX_AGE_SECONDS = 20
 
-# A vehicle tracker may still expose its last known position when a new
-# trip begins after a connectivity gap. Treat such a start point as
-# provisional and allow the first fresh Route Tracker point to correct it.
+# A vehicle tracker can legitimately expose a GPS fix older than 60 seconds
+# while a driver enters, buckles up or configures navigation. A single fresh
+# auxiliary route point is NOT proof of the ignition-ON parking location.
+# Persist an ignition-OFF parking anchor and only correct a stale start if two
+# independent fresh sources agree before the car can plausibly have moved.
 TRIP_START_GPS_STALE_SECONDS = 60
 TRIP_START_GPS_CORRECTION_WINDOW_SECONDS = 60
 TRIP_START_GPS_CORRECTION_DISTANCE_METERS = 250
 TRIP_START_GPS_FRESH_TOLERANCE_SECONDS = 5
 TRIP_START_GPS_MAX_PLAUSIBLE_SPEED_MPS = 60.0
 TRIP_START_GPS_PLAUSIBILITY_BUFFER_METERS = 250
+TRIP_START_CORROBORATION_SECONDS = 2.0
+TRIP_START_CORROBORATION_RADIUS_METERS = 40.0
+TRIP_START_ZONE_MAX_GPS_AGE_SECONDS = 12 * 3600
 
 MAX_LINK_TIME_SECONDS = 1800
 MAX_LINK_DISTANCE_METERS = 300
@@ -366,6 +377,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # is finalized. If the auxiliary Route Tracker later proves to be
         # detached from the vehicle, the original start can be restored.
         self._trip_start_gps_original: dict[str, Any] | None = None
+        # Release 13: persisted GPS from the last actual ignition-OFF edge.
+        self._last_parking_position: dict[str, Any] | None = None
+        self._parking_write_task: asyncio.Task | None = None
+        self._trip_start_position_locked = False
+        self._trip_start_odometer: float | None = None
        
 
     @staticmethod
@@ -545,6 +561,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         await self.user_place_storage.async_setup()
         await self.pending_charging_site_storage.async_setup()
         await self._async_setup_charging_site_lookup()
+
+        self._last_parking_position = await self.storage.load_last_parking_position()
+        if self._last_parking_position is not None:
+            _LOGGER.debug(
+                "Loaded last ignition-OFF parking GPS: timestamp=%s source=%s",
+                self._last_parking_position.get("ignition_off_at"),
+                self._last_parking_position.get("source"),
+            )
 
         data = await self.storage.load_current_trip()
         if data:
@@ -1189,6 +1213,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # Unknown/unavailable source states are not transitions.
         trip_started = ignition is True and not self.last_ignition
         trip_stopped = ignition is False and self.last_ignition
+
+        # Capture the ignition-OFF position BEFORE any awaited charge/trip
+        # handlers. Use the event timestamp, not the later Smart Trip timeout.
+        if trip_stopped:
+            self._capture_ignition_off_parking_position(
+                self.vehicle_state, at=event.time_fired
+            )
+        elif (
+            event_entity_id == self.config.get("tracker")
+            and ignition is False
+            and not trip_started
+        ):
+            self._refresh_parked_position(self.vehicle_state)
+
         charge_started = charging is True and not self.last_charging
         charge_stopped = charging is False and self.last_charging
         plug_disconnected = bool(
@@ -2746,12 +2784,102 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         return parsed
 
+    def _schedule_parking_position_save(
+        self, snapshot: dict[str, Any]
+    ) -> None:
+        """Write parking fixes in order without blocking ignition events."""
+        earlier = self._parking_write_task
+
+        async def _save() -> None:
+            if earlier is not None:
+                try:
+                    await earlier
+                except Exception:
+                    _LOGGER.exception("Previous parking GPS save failed")
+            await self.storage.save_last_parking_position(snapshot)
+
+        self._parking_write_task = self.hass.async_create_task(_save())
+
+    def _capture_ignition_off_parking_position(
+        self, state: dict[str, Any], *, at: datetime | None = None
+    ) -> None:
+        """Keep the last valid vehicle GPS at the ignition-OFF instant."""
+        snap = parking_snapshot(state, at or dt_util.now())
+        if snap is None:
+            _LOGGER.debug(
+                "Ignition OFF parking snapshot unavailable or GPS too old; "
+                "retaining previous valid position"
+            )
+            return
+        self._last_parking_position = snap
+        # Do not block the ignition transition while SQLite is writing: an
+        # immediate ON edge must not be lost waiting for the previous OFF.
+        self._schedule_parking_position_save(snap)
+        _LOGGER.info(
+            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s",
+            (dt_util.now() - self._normalized_datetime(snap["gps_updated_at"])).total_seconds(),
+            snap.get("odometer"),
+        )
+
+    def _refresh_parked_position(
+        self, state: dict[str, Any]
+    ) -> None:
+        """Accept a fresh near-identical vehicle fix while ignition is OFF."""
+        refreshed = refresh_parking_snapshot(
+            self._last_parking_position, state, dt_util.now()
+        )
+        if refreshed is None:
+            return
+        self._last_parking_position = refreshed
+        self._schedule_parking_position_save(refreshed)
+        _LOGGER.debug("Refreshed parked vehicle GPS while ignition OFF")
+
+    def _start_within_known_zone(self, state: dict[str, Any]) -> str | None:
+        """Recognize an ignition-ON position within a configured HA zone."""
+        coords = valid_gps_coordinates(state)
+        gps_time = self._normalized_datetime(state.get("gps_updated_at"))
+        if coords is None or gps_time is None:
+            return None
+        gps_age = (dt_util.now() - gps_time).total_seconds()
+        if gps_age < -60 or gps_age > TRIP_START_ZONE_MAX_GPS_AGE_SECONDS:
+            return None
+        for zone in self.hass.states.async_all("zone"):
+            zone_coords = valid_gps_coordinates(dict(zone.attributes))
+            zone_radius = optional_float(zone.attributes.get("radius"))
+            if zone_coords is None or zone_radius is None or zone_radius <= 0:
+                continue
+            if self._distance_meters(*coords, *zone_coords) <= zone_radius:
+                return zone.entity_id
+        return None
+
+    def _select_trip_start_gps(
+        self, state: dict[str, Any]
+    ) -> tuple[dict[str, Any], bool, str]:
+        """Prefer a corroborated last-OFF anchor, without guessing movement."""
+        chosen = dict(state)
+        anchor, reason = parking_anchor(
+            state, self._last_parking_position, dt_util.now()
+        )
+        if anchor is not None:
+            chosen["latitude"] = anchor["latitude"]
+            chosen["longitude"] = anchor["longitude"]
+            chosen["gps_updated_at"] = anchor.get("gps_updated_at")
+            return chosen, True, reason
+
+        zone_id = self._start_within_known_zone(state)
+        if zone_id is not None:
+            return chosen, True, f"known_zone:{zone_id}"
+
+        return chosen, False, reason
+
     def _trip_start_gps_is_stale(
         self,
         trip: Trip,
         state: dict[str, Any],
+        *,
+        protected: bool = False,
     ) -> bool:
-        """Mark a valid but old vehicle GPS start as provisional."""
+        """Never allow an auxiliary route fix to displace a parked origin."""
 
         latitude = optional_float(state.get("latitude"))
         longitude = optional_float(state.get("longitude"))
@@ -2760,6 +2888,20 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         self._trip_start_gps_provisional = None
         self._trip_start_gps_original = None
+        if latitude is not None and longitude is not None:
+            self._trip_start_gps_original = {
+                "trip_id": trip.trip_id,
+                "latitude": latitude, "longitude": longitude,
+                "start_time": trip.start_time,
+                "gps_updated_at": state.get("gps_updated_at"),
+            }
+
+        if protected:
+            _LOGGER.debug(
+                "Trip start GPS protected by parking/zone anchor: trip=%s",
+                trip.trip_id,
+            )
+            return False
 
         if (
             latitude is None
@@ -2901,6 +3043,43 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             return "reject"
 
+        # A route point that arrives after ignition ON can already be far
+        # along the road. Do not turn that first moving point into the trip
+        # origin merely because the vehicle GPS was 61 seconds old. Allow a
+        # large correction only when an independent, fresh vehicle GPS fix
+        # corroborates it practically at ignition ON and the odometer has
+        # not increased. Keep the route for distance tracking in either case.
+        vehicle_state = self._read_vehicle_state()
+        vehicle_coords = valid_gps_coordinates(vehicle_state)
+        vehicle_at = self._normalized_datetime(vehicle_state.get("gps_updated_at"))
+        current_odo = optional_float(vehicle_state.get("odometer"))
+        odo_unchanged = (
+            self._trip_start_odometer is not None
+            and current_odo is not None
+            and abs(current_odo - self._trip_start_odometer) < 0.1
+        )
+        vehicle_fresh_at_start = (
+            vehicle_at is not None
+            and -TRIP_START_GPS_FRESH_TOLERANCE_SECONDS
+            <= (vehicle_at - start_time).total_seconds()
+            <= TRIP_START_CORROBORATION_SECONDS
+        )
+        corroborated = (
+            delta_seconds <= TRIP_START_CORROBORATION_SECONDS
+            and odo_unchanged and vehicle_fresh_at_start
+            and vehicle_coords is not None
+            and self._distance_meters(*vehicle_coords, latitude, longitude)
+            <= TRIP_START_CORROBORATION_RADIUS_METERS
+        )
+        if not corroborated:
+            self._trip_start_gps_provisional = None
+            _LOGGER.info(
+                "Retaining original trip start GPS for %s: route point %.0fm "
+                "away at +%.1fs (moving/uncorroborated GPS cannot replace origin)",
+                trip_id, distance, delta_seconds,
+            )
+            return False
+
         trip.start_latitude = latitude
         trip.start_longitude = longitude
         trip.start_address = await self._get_address(
@@ -2968,6 +3147,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 return
 
         state = self._read_vehicle_state()
+        self._trip_start_odometer = optional_float(state.get("odometer"))
+        state, protected_start, origin_reason = self._select_trip_start_gps(state)
+        self._trip_start_position_locked = protected_start
+        _LOGGER.info(
+            "Trip origin selected: source=%s protected=%s gps=%s",
+            origin_reason, protected_start, state.get("gps_updated_at"),
+        )
         addr = await self._get_address(state)
 
         self.current_trip = Trip(
@@ -2984,6 +3170,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         provisional_start = self._trip_start_gps_is_stale(
             self.current_trip,
             state,
+            protected=protected_start,
         )
 
         if self.route_tracker is not None and self.current_trip.trip_id:
@@ -2991,10 +3178,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.current_trip.trip_id,
                 start_latitude=state.get("latitude"),
                 start_longitude=state.get("longitude"),
-                start_timestamp=(
-                    state.get("gps_updated_at")
-                    or self.current_trip.start_time
-                ),
+                # This point represents our *inferred* origin at ignition
+                # ON, not a historical route sample at the parked GPS time.
+                start_timestamp=self.current_trip.start_time,
                 provisional_start=provisional_start,
             )
 
