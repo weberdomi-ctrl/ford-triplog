@@ -2900,7 +2900,14 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         zone_id = self._start_within_known_zone(state)
         if zone_id is not None:
-            return chosen, True, f"known_zone:{zone_id}"
+            # Zone membership confirms the *area*, never the exact GPS fix.
+            # Do not lock an arbitrary 60s-old vehicle point as the precise
+            # origin merely because it falls inside Home or Work.
+            _LOGGER.debug(
+                "Trip start in %s but parking anchor unavailable: %s",
+                zone_id, reason,
+            )
+            return chosen, False, f"known_zone_unverified:{zone_id}:{reason}"
 
         return chosen, False, reason
 

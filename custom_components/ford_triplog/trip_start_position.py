@@ -187,22 +187,47 @@ def stabilize_parking_snapshot(
             changed = True
 
     # Only the VEHICLE tracker is trusted to correct parking after OFF.
-    # A fresh fix can legitimately be hundreds of metres from a 60s-old
-    # ignition-OFF snapshot; neither the old coordinate nor old odometer is
-    # authoritative for the final parked location.
+    # FordConnect can deliver a newer coordinate AND an advanced odometer while
+    # still exposing the exact same (up to 60s stale) GPS timestamp.  In that
+    # case the timestamp alone must not freeze a several-kilometre-old OFF
+    # snapshot.  The odometer delta can corroborate the position change.
     vehicle_coord = coordinates(stable_state)
     vehicle_gps_at = parsed_at(stable_state.get('gps_updated_at'))
     previous_at = parsed_at(result.get('gps_updated_at'))
+    vehicle_distance = (distance_meters(off_coord, vehicle_coord)
+                        if off_coord is not None and vehicle_coord is not None
+                        else None)
+    odo_progress_km = (stable_odo - old_odo
+                       if stable_odo is not None and old_odo is not None
+                       else None)
+    odo_corroborated = (
+        vehicle_distance is not None
+        and odo_progress_km is not None and odo_progress_km >= 1.0
+        # Direct displacement must fit the odometer advance, with some
+        # margin for GPS error. Never equate any odometer change with consent
+        # to accept an unbounded GPS jump.
+        and vehicle_distance <= (odo_progress_km * 1000 + 750)
+        and vehicle_distance <= 10000
+        and vehicle_gps_at is not None
+        and previous_at is not None
+        and vehicle_gps_at >= previous_at
+        and (at - vehicle_gps_at).total_seconds() <= 120
+    )
+    newer_fix = previous_at is None or (
+        vehicle_gps_at is not None and vehicle_gps_at > previous_at
+    )
     if (vehicle_coord is not None and vehicle_gps_at is not None
-            and off_at.timestamp() - 20 <= vehicle_gps_at.timestamp()
+            and off_at.timestamp() - 120 <= vehicle_gps_at.timestamp()
             and vehicle_gps_at <= at
             and (at - vehicle_gps_at).total_seconds() <= 180
-            and (previous_at is None or vehicle_gps_at > previous_at)
-            and (off_coord is None or
-                 distance_meters(off_coord, vehicle_coord) <= 2000)):
+            and (newer_fix or odo_corroborated)
+            and (vehicle_distance is None or vehicle_distance <= 2000
+                 or odo_corroborated)):
         result['latitude'], result['longitude'] = vehicle_coord
         result['gps_updated_at'] = vehicle_gps_at.isoformat()
-        result['source'] = 'vehicle_tracker_stable_parked_fix'
+        result['source'] = ('vehicle_tracker_odometer_confirmed_parked_fix'
+                            if odo_corroborated and not newer_fix
+                            else 'vehicle_tracker_stable_parked_fix')
         changed = True
 
     return result if changed else None
