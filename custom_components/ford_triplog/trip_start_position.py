@@ -16,6 +16,17 @@ PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS = 24 * 3600
 PARK_REUSE_RADIUS_METERS = 125.0
 PARK_REFRESH_RADIUS_METERS = 75.0
 PARK_ODOMETER_TOLERANCE_KM = 1.0
+# FordConnect is polled via REST. HA last_updated is an observation time, not
+# reliable evidence that Ford sampled a *new* GPS fix at that instant.
+PARK_REFRESH_MAX_AFTER_OFF_SECONDS = 10 * 60
+TRUSTED_PARK_SOURCES = frozenset({
+    'parked_route_fix_at_ignition_off',
+    'vehicle_tracker_odometer_confirmed_parked_fix',
+})
+ZONE_ANCHOR_MAX_RADIUS_METERS = 150.0
+CHARGE_START_MAX_AGE_SECONDS = 3 * 3600
+CHARGE_SITE_MAX_MATCH_METERS = 30.0
+CHARGE_SITE_MAX_VEHICLE_DISTANCE_METERS = 180.0
 
 
 def _number(value: Any) -> float | None:
@@ -120,9 +131,14 @@ def refresh_parking_snapshot(
         return None
     previous_gps = parsed_at(parking.get('gps_updated_at'))
     updated_gps = parsed_at(new.get('gps_updated_at'))
+    off_time = parsed_at(parking.get('ignition_off_at'))
+    if off_time is None or not (0 <= (at - off_time).total_seconds() <= PARK_REFRESH_MAX_AFTER_OFF_SECONDS):
+        return None
     if previous_gps is None or updated_gps is None or updated_gps <= previous_gps:
         return None
-    if distance_meters(coordinates(parking), coordinates(new)) > PARK_REFRESH_RADIUS_METERS:
+    shift_m = distance_meters(coordinates(parking), coordinates(new))
+    # Do not turn each identical 60s REST response into a 'fresh' GPS fix.
+    if shift_m < 5.0 or shift_m > PARK_REFRESH_RADIUS_METERS:
         return None
     last_odo, current_odo = _number(parking.get('odometer')), _number(new.get('odometer'))
     if last_odo is not None and current_odo is not None and abs(last_odo - current_odo) > PARK_ODOMETER_TOLERANCE_KM:
@@ -231,3 +247,69 @@ def stabilize_parking_snapshot(
         changed = True
 
     return result if changed else None
+
+
+def parked_zone_origin(
+    state: dict[str, Any], parking: dict[str, Any] | None,
+    center: tuple[float, float], radius: float, at: datetime,
+) -> dict[str, Any] | None:
+    """Use a user-configured Home/Work center only for a consistent parked car.
+
+    The zone is an independent, user-set location. Both the *current* vehicle
+    reading and the preceding OFF position must agree that this is the same
+    parking area, with no odometer movement. Merely being in a zone is not
+    enough to move a start to the center.
+    """
+    coord = coordinates(state)
+    parked = coordinates(parking)
+    off_at = parsed_at(parking.get('ignition_off_at')) if isinstance(parking, dict) else None
+    if coord is None or parked is None or off_at is None:
+        return None
+    if not (0 <= (at - off_at).total_seconds() <= 36 * 3600):
+        return None
+    if not (0 < radius <= ZONE_ANCHOR_MAX_RADIUS_METERS):
+        return None
+    tolerance = min(165.0, radius + 25.0)
+    if distance_meters(coord, center) > tolerance or distance_meters(parked, center) > tolerance:
+        return None
+    odo_a = _number(state.get('odometer'))
+    odo_b = _number(parking.get('odometer'))
+    if odo_a is None or odo_b is None or abs(odo_a - odo_b) > PARK_ODOMETER_TOLERANCE_KM:
+        return None
+    return {
+        'latitude': center[0], 'longitude': center[1],
+        'gps_updated_at': state.get('gps_updated_at'),
+        'source': 'configured_zone_center',
+    }
+
+
+def verified_charging_origin(
+    state: dict[str, Any], charge: dict[str, Any] | None, at: datetime,
+) -> dict[str, Any] | None:
+    """Use a physically detected charger to locate a recently parked car.
+
+    A named charging site with a <=30m detection match is independent support
+    for the parking location, unlike identical consecutive Ford REST polls.
+    """
+    if not isinstance(charge, dict) or not charge.get('charging_site_id'):
+        return None
+    matched = _number(charge.get('charging_site_distance_m'))
+    started = parsed_at(charge.get('detected_start_time') or charge.get('start_time'))
+    if matched is None or matched < 0 or matched > CHARGE_SITE_MAX_MATCH_METERS or started is None:
+        return None
+    if not (0 <= (at - started).total_seconds() <= CHARGE_START_MAX_AGE_SECONDS):
+        return None
+    charge_coord = coordinates({
+        'latitude': charge.get('start_latitude'),
+        'longitude': charge.get('start_longitude'),
+    })
+    vehicle_coord = coordinates(state)
+    if charge_coord is None or vehicle_coord is None:
+        return None
+    if distance_meters(charge_coord, vehicle_coord) > CHARGE_SITE_MAX_VEHICLE_DISTANCE_METERS:
+        return None
+    return {
+        'latitude': charge_coord[0], 'longitude': charge_coord[1],
+        'gps_updated_at': state.get('gps_updated_at'),
+        'source': 'verified_charging_site',
+    }

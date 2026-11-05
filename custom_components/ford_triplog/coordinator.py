@@ -71,6 +71,9 @@ from .trip_start_position import (
     parking_anchor,
     refresh_parking_snapshot,
     stabilize_parking_snapshot,
+    parked_zone_origin,
+    verified_charging_origin,
+    TRUSTED_PARK_SOURCES,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
@@ -2848,9 +2851,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._last_parking_position = updated
         self._schedule_parking_position_save(updated)
         _LOGGER.info(
-            "Stabilized parking anchor: source=%s odometer=%s gps=%s",
+            "Stabilized parking anchor: source=%s odometer=%s gps=%s "
+            "position=%s,%s",
             updated.get('source'), updated.get('odometer'),
             updated.get('gps_updated_at'),
+            updated.get('latitude'), updated.get('longitude'),
         )
 
     def _refresh_parked_position(
@@ -2864,7 +2869,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return
         self._last_parking_position = refreshed
         self._schedule_parking_position_save(refreshed)
-        _LOGGER.debug("Refreshed parked vehicle GPS while ignition OFF")
+        _LOGGER.debug(
+            "Refreshed parked vehicle GPS near ignition OFF: "
+            "position=%s,%s odometer=%s gps=%s",
+            refreshed.get('latitude'), refreshed.get('longitude'),
+            refreshed.get('odometer'), refreshed.get('gps_updated_at'),
+        )
 
     def _start_within_known_zone(self, state: dict[str, Any]) -> str | None:
         """Recognize an ignition-ON position within a configured HA zone."""
@@ -2887,24 +2897,78 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _select_trip_start_gps(
         self, state: dict[str, Any]
     ) -> tuple[dict[str, Any], bool, str]:
-        """Prefer a corroborated last-OFF anchor, without guessing movement."""
+        """Select an independently supported start, not the newest REST poll.
+
+        FordConnect Query may deliver its ignition edge 1-2 minutes after the
+        actual event. A new HA tracker timestamp or a 0m comparison with a
+        cached parked coordinate is NOT an independent location confirmation.
+        """
         chosen = dict(state)
+        now = dt_util.now()
+
+        # The configured center of Home/Work is useful only if both the
+        # previous OFF snapshot and live state corroborate the zone and their
+        # odometers match. Never snap a passing trip to a zone merely because
+        # its GPS reading falls inside the radius.
+        for zone_id in ("zone.home", "zone.work"):
+            zone = self.hass.states.get(zone_id)
+            if zone is None:
+                continue
+            center = valid_gps_coordinates(dict(zone.attributes))
+            radius = optional_float(zone.attributes.get("radius"))
+            if center is None or radius is None:
+                continue
+            zone_fix = parked_zone_origin(
+                state, self._last_parking_position, center, radius, now
+            )
+            if zone_fix is not None:
+                chosen.update(zone_fix)
+                return chosen, True, f"zone_center_verified:{zone_id}"
+
+        # After DC charging, a charger recognized within 30m gives a real
+        # physical anchor. It is safer than a delayed vehicle GPS, or a
+        # phone point captured after the vehicle has already departed.
+        charge = self.current_charge
+        if charge is not None:
+            charger_fix = verified_charging_origin(
+                state,
+                {
+                    "charging_site_id": charge.charging_site_id,
+                    "charging_site_distance_m": charge.charging_site_distance_m,
+                    "start_latitude": charge.start_latitude,
+                    "start_longitude": charge.start_longitude,
+                    "detected_start_time": charge.detected_start_time,
+                    "start_time": charge.start_time,
+                },
+                now,
+            )
+            if charger_fix is not None:
+                chosen.update(charger_fix)
+                return chosen, True, "verified_recent_charging_site"
+
         anchor, reason = parking_anchor(
-            state, self._last_parking_position, dt_util.now()
+            state, self._last_parking_position, now
         )
         if anchor is not None:
-            chosen["latitude"] = anchor["latitude"]
-            chosen["longitude"] = anchor["longitude"]
-            chosen["gps_updated_at"] = anchor.get("gps_updated_at")
-            return chosen, True, reason
+            source = str(anchor.get('source') or '')
+            if source in TRUSTED_PARK_SOURCES:
+                chosen["latitude"] = anchor["latitude"]
+                chosen["longitude"] = anchor["longitude"]
+                chosen["gps_updated_at"] = anchor.get("gps_updated_at")
+                return chosen, True, f"trusted_parking:{source}:{reason}"
+            # Matching a cached poll is not confirmation: leave origin
+            # provisional and do not let this anchor freeze the coordinate.
+            _LOGGER.info(
+                "Parking GPS not independently verified at ignition ON: "
+                "source=%s comparison=%s; using unprotected vehicle reading",
+                source, reason,
+            )
+            reason = f"unverified_parking:{source}:{reason}"
 
         zone_id = self._start_within_known_zone(state)
         if zone_id is not None:
-            # Zone membership confirms the *area*, never the exact GPS fix.
-            # Do not lock an arbitrary 60s-old vehicle point as the precise
-            # origin merely because it falls inside Home or Work.
             _LOGGER.debug(
-                "Trip start in %s but parking anchor unavailable: %s",
+                "Trip starts in %s without an independently verified origin: %s",
                 zone_id, reason,
             )
             return chosen, False, f"known_zone_unverified:{zone_id}:{reason}"
@@ -2951,7 +3015,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             return False
 
         age_seconds = (start_time - gps_time).total_seconds()
-        if age_seconds <= TRIP_START_GPS_STALE_SECONDS:
+        # A fresh HA last_updated timestamp can still describe an old Ford
+        # backend GPS sample. Treat all *unprotected* vehicle origins as
+        # provisional so the existing narrowly corroborated route correction
+        # can examine them. Never infer freshness from REST polling alone.
+        if age_seconds < -TRIP_START_GPS_FRESH_TOLERANCE_SECONDS:
             return False
 
         self._trip_start_gps_provisional = {
@@ -2964,7 +3032,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._trip_start_gps_original = dict(self._trip_start_gps_provisional)
 
         _LOGGER.info(
-            "Trip start GPS is %.0fs old; marking start provisional for %ss",
+            "Trip start vehicle GPS is unverified (HA age %.0fs); marking "
+            "start provisional for %ss",
             age_seconds,
             TRIP_START_GPS_CORRECTION_WINDOW_SECONDS,
         )
@@ -3187,11 +3256,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         state = self._read_vehicle_state()
         self._trip_start_odometer = optional_float(state.get("odometer"))
+        raw_start_coord = valid_gps_coordinates(state)
         state, protected_start, origin_reason = self._select_trip_start_gps(state)
         self._trip_start_position_locked = protected_start
         _LOGGER.info(
-            "Trip origin selected: source=%s protected=%s gps=%s",
+            "Trip origin selected: source=%s protected=%s gps=%s "
+            "selected=%s raw_vehicle=%s parking_source=%s",
             origin_reason, protected_start, state.get("gps_updated_at"),
+            valid_gps_coordinates(state), raw_start_coord,
+            (self._last_parking_position or {}).get('source'),
         )
         addr = await self._get_address(state)
 
