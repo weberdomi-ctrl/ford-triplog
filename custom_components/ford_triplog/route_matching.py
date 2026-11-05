@@ -13,7 +13,7 @@ MAX_OSRM_ENDPOINT_TIME_GAP_S = 90.0
 from .route_quality import (
     MAX_OSRM_SEGMENTS, confidence_valid, distance_m, has_quality,
     osrm_segments, segment_length_m, _time, matched_geometry_valid,
-    geometry_coordinates,
+    geometry_coordinates, display_geometry, _valid_coordinate,
 )
 
 
@@ -39,38 +39,36 @@ def validate_osrm_result(points: list[dict[str, Any]], result: Any) -> None:
         raise RouteMatchRejected('excessive_detour_relative_to_gps')
 
 
-def validate_osrm_coverage(
-    points: list[dict[str, Any]],
-    segment: list[dict[str, Any]],
-    coordinates: list[list[float]],
-) -> None:
-    """Reject a good *partial* OSRM match masquerading as an entire Trip.
+def validate_osrm_input(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Preflight *before* any OSRM network request.
 
-    The first/last original points are the stored vehicle/zone Trip bounds.
-    The first/last quality-filtered points and OSRM geometry must represent
-    those same ends, within conservative spatial/temporal tolerances.
+    A quality-filtered section must cover both authoritative vehicle Trip
+    endpoints spatially and temporally. Incomplete GPS is never sent to OSRM.
     """
+    if not isinstance(points, list) or len(points) < 2:
+        raise RouteMatchRejected('incomplete_missing_raw_endpoints')
     try:
-        geometry_start = {'latitude': float(coordinates[0][1]),
-                          'longitude': float(coordinates[0][0])}
-        geometry_end = {'latitude': float(coordinates[-1][1]),
-                        'longitude': float(coordinates[-1][0])}
-        start_gap = max(distance_m(points[0], segment[0]),
-                        distance_m(points[0], geometry_start))
-        end_gap = max(distance_m(points[-1], segment[-1]),
-                      distance_m(points[-1], geometry_end))
-    except (ValueError, TypeError, IndexError, KeyError, OverflowError) as err:
+        segments = osrm_segments(points)
+    except (ValueError, TypeError, KeyError, OverflowError) as err:
+        raise RouteMatchRejected('invalid_route_points') from err
+    if not segments:
+        raise RouteMatchRejected('incomplete_no_usable_gps_segment')
+    if len(segments) > MAX_OSRM_SEGMENTS:
+        raise RouteMatchRejected('incomplete_too_many_gps_gaps')
+    if len(segments) != 1:
+        raise RouteMatchRejected(f'incomplete_gps_gaps_{len(segments)}_segments')
+    segment = segments[0]
+    try:
+        start_gap = distance_m(points[0], segment[0])
+        end_gap = distance_m(points[-1], segment[-1])
+    except (ValueError, TypeError, KeyError, OverflowError) as err:
         raise RouteMatchRejected('invalid_route_endpoints') from err
-
     if not isfinite(start_gap) or not isfinite(end_gap):
         raise RouteMatchRejected('invalid_route_endpoint_distance')
     if start_gap > MAX_OSRM_ENDPOINT_GAP_M or end_gap > MAX_OSRM_ENDPOINT_GAP_M:
         raise RouteMatchRejected(
             f'incomplete_endpoint_coverage_start_{start_gap:.0f}m_end_{end_gap:.0f}m'
         )
-
-    # Spatial proximity alone is insufficient for short or looping trips:
-    # a middle section can return near the start/end while missing minutes.
     start_at, segment_start_at = _time(points[0]), _time(segment[0])
     end_at, segment_end_at = _time(points[-1]), _time(segment[-1])
     if start_at is not None and segment_start_at is not None:
@@ -81,6 +79,69 @@ def validate_osrm_coverage(
         gap_s = (end_at - segment_end_at).total_seconds()
         if gap_s < -5 or gap_s > MAX_OSRM_ENDPOINT_TIME_GAP_S:
             raise RouteMatchRejected(f'incomplete_end_time_{gap_s:.0f}s')
+    return segment
+
+
+def validate_osrm_coverage(
+    points: list[dict[str, Any]],
+    segment: list[dict[str, Any]],
+    coordinates: list[list[float]],
+) -> None:
+    """Verify the OSRM geometry also covers the actual recorded endpoints."""
+    validate_osrm_input(points)
+    try:
+        geometry_start = {'latitude': float(coordinates[0][1]),
+                          'longitude': float(coordinates[0][0])}
+        geometry_end = {'latitude': float(coordinates[-1][1]),
+                        'longitude': float(coordinates[-1][0])}
+        start_gap = distance_m(points[0], geometry_start)
+        end_gap = distance_m(points[-1], geometry_end)
+    except (ValueError, TypeError, IndexError, KeyError, OverflowError) as err:
+        raise RouteMatchRejected('invalid_route_endpoints') from err
+    if not isfinite(start_gap) or not isfinite(end_gap):
+        raise RouteMatchRejected('invalid_route_endpoint_distance')
+    if start_gap > MAX_OSRM_ENDPOINT_GAP_M or end_gap > MAX_OSRM_ENDPOINT_GAP_M:
+        raise RouteMatchRejected(
+            f'incomplete_geometry_coverage_start_{start_gap:.0f}m_end_{end_gap:.0f}m'
+        )
+
+
+def direct_endpoint_geometry(points: list[dict[str, Any]]) -> dict[str, Any] | None:
+    """Honest straight-line display from stored Trip boundaries, not a road."""
+    if not isinstance(points, list) or len(points) < 2:
+        return None
+    first, last = points[0], points[-1]
+    if not (isinstance(first, dict) and isinstance(last, dict)
+            and _valid_coordinate(first) and _valid_coordinate(last)):
+        return None
+    return {'type': 'LineString', 'coordinates': [
+        [float(first['longitude']), float(first['latitude'])],
+        [float(last['longitude']), float(last['latitude'])],
+    ]}
+
+
+def choose_display_geometry(
+    route: dict[str, Any],
+) -> tuple[dict[str, Any] | None, str, str | None, str | None]:
+    """One shared decision for the latest-route sensor and Journey maps.
+
+    Complete verified OSRM => road geometry. If quality GPS lacks full coverage
+    => direct start/end line (explicitly not a driven path). Otherwise, retain
+    the normal quality-filtered raw geometry, e.g. on an OSRM server failure.
+    """
+    usable, status, reason = evaluate_stored_osrm_match(route)
+    matched = route.get('matched_route')
+    if usable and isinstance(matched, dict):
+        return matched['geometry'], 'osrm', status, reason
+    points = route.get('points')
+    points = points if isinstance(points, list) else []
+    try:
+        validate_osrm_input(points)
+    except RouteMatchRejected as err:
+        straight = direct_endpoint_geometry(points)
+        if straight is not None:
+            return straight, 'direct', 'incomplete', str(err)
+    return display_geometry(points), 'raw', status, reason
 
 
 def evaluate_stored_osrm_match(
@@ -122,18 +183,12 @@ async def verified_osrm_match(client: Any, points: list[dict[str, Any]],
                               *, url: str, radius: float) -> dict[str, Any]:
     """Match only credible, contiguous sections, never bridges over outages.
 
-    One unreliable segment rejects the complete OSRM overlay, allowing the
-    caller's filtered-raw display fallback. Raw trip storage is untouched.
+    The preflight rejects incomplete traces without contacting OSRM. The
+    map can then show a labelled endpoint line. Raw storage is untouched.
     """
-    segments = osrm_segments(points)
-    if not segments:
-        raise RouteMatchRejected('no_usable_gps_segment')
-    if len(segments) > MAX_OSRM_SEGMENTS:
-        raise RouteMatchRejected('too_many_gps_gaps')
-    # Several disjoint traces never establish a *complete* drive.  Do not
-    # present MultiLineString fragments as a verified full journey.
-    if len(segments) != 1:
-        raise RouteMatchRejected(f'incomplete_gps_gaps_{len(segments)}_segments')
+    # The preflight rejects missing or poor-quality GPS *before* async_match.
+    # No HTTP call is made for a partial track, even if its middle is good.
+    segments = [validate_osrm_input(points)]
 
     geometries = []
     matched = unmatched = 0

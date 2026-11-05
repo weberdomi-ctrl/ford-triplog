@@ -1,0 +1,18 @@
+Ford Triplog 2.7.0 Beta 5 – Release 14 (27014)
+
+Fix: GPS quality-aware routes and stabilized parking anchors.
+- Record Companion App GPS speed (m/s), gps_accuracy (m), course (degrees).
+- Save unchanged raw points alongside the new optional attributes.
+- Exclude poor (including zero accuracy) or stationary-drift GPS positions from OSRM input.
+- Break map geometry across GPS outages instead of drawing fabricated connecting roads.
+- Reject OSRM confidence < 0.20 and implausible detours; use filtered GPS geometry.
+- Apply same acceptance rules for live routing, route history, rebuild services and exports.
+- Reject stale (>20s) or inaccurate (>35m) phone positions when selecting Trip end.
+- Reconcile ignition-OFF parking odometer against stable post-OFF value.
+- Accept a fresh vehicle-only parking GPS fix after OFF without moving the anchor to
+  a later mobile phone location. Pre-OFF phone fix is accepted only when recent,
+  close, accurate and nearly stationary.
+- Preserve previous JSON and SQLite data schema compatibility. No data rewrite.
+
+13 standalone regression checks passed, including Nov 3 Pixel 9 GPS export replay.
+No production Home Assistant run or live OSRM server test performed.

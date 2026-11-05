@@ -70,8 +70,8 @@ SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
-from .route_quality import display_geometry, geometry_coordinates, has_quality
-from .route_matching import evaluate_stored_osrm_match
+from .route_quality import geometry_coordinates, has_quality
+from .route_matching import choose_display_geometry
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
 from .vehicle_context import (
@@ -3269,21 +3269,18 @@ class FordTriplogLastRouteSensor(SensorEntity):
         start_time = valid_points[0].get("timestamp")
         end_time = valid_points[-1].get("timestamp")
 
-        raw_geometry = display_geometry(valid_points)
-        selected_geometry = raw_geometry or {"type": "LineString", "coordinates": []}
+        selected_geometry, geometry_source, match_status, match_reason = (
+            choose_display_geometry(route)
+        )
+        selected_geometry = selected_geometry or {"type": "LineString", "coordinates": []}
         display_coordinates = geometry_coordinates(selected_geometry)
-        geometry_source = "raw"
         osrm_distance_km = None
         osrm_confidence = None
         osrm_matched_tracepoints = None
         osrm_unmatched_tracepoints = None
 
-        matched_route = route.get("matched_route")
-        osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
-        if osrm_usable:
-            selected_geometry = matched_route["geometry"]
-            display_coordinates = geometry_coordinates(selected_geometry)
-            geometry_source = "osrm"
+        if geometry_source == "osrm":
+            matched_route = route.get("matched_route") or {}
             try:
                 osrm_distance_km = round(float(matched_route.get("distance_m")) / 1000, 3)
             except (TypeError, ValueError):
@@ -3292,8 +3289,8 @@ class FordTriplogLastRouteSensor(SensorEntity):
             osrm_matched_tracepoints = matched_route.get("matched_tracepoints")
             osrm_unmatched_tracepoints = matched_route.get("unmatched_tracepoints")
 
-        # If the GPS receiver was blind (car park/tunnel), show no invented
-        # connection. Preserve original raw points for export/diagnostics.
+        # Missing quality GPS is represented by a labelled *direct* endpoint
+        # line, never by a fabricated road. All raw GPS points remain stored.
         geojson = {
             "type": "Feature",
             "properties": {
@@ -3301,6 +3298,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "source_type": source_type,
                 "geometry_source": geometry_source,
                 "gps_quality_filtered": has_quality(valid_points) and geometry_source == "raw",
+                "direct_line": geometry_source == "direct",
                 "osrm_match_status": match_status,
                 "osrm_match_reason": match_reason,
                 "route_incomplete": match_status == "incomplete",
@@ -3327,6 +3325,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "trip_id": trip_id or None,
             "source_type": source_type,
             "geometry_source": geometry_source,
+            "direct_line": geometry_source == "direct",
             "osrm_match_status": match_status,
             "osrm_match_reason": match_reason,
             "route_incomplete": match_status == "incomplete",

@@ -10,7 +10,8 @@ Purpose:
 - Build one GeoJSON FeatureCollection from multiple stored Trip routes.
 - Preserve Journey Trip ID order.
 - Prefer OSRM matched geometry.
-- Fall back to raw GPS points when no valid OSRM geometry exists.
+- Show a direct labelled start/end line when full quality GPS is unavailable.
+- Otherwise retain the quality-filtered raw route when OSRM cannot match it.
 - Keep this logic independent from Home Assistant entities/UI.
 """
 
@@ -19,8 +20,8 @@ from __future__ import annotations
 from typing import Any
 
 from .route_storage import FordTriplogRouteStorage
-from .route_quality import display_geometry, geometry_coordinates, has_quality
-from .route_matching import evaluate_stored_osrm_match
+from .route_quality import geometry_coordinates, has_quality
+from .route_matching import evaluate_stored_osrm_match, choose_display_geometry
 
 
 def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
@@ -63,16 +64,9 @@ def _route_feature(
 
     raw_coordinates = _raw_coordinates(route)
     matched_route = route.get('matched_route')
-    filtered_geometry = display_geometry(route.get('points') or [])
-    osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
-    if osrm_usable:
-        geometry = matched_route['geometry']
-        geometry_source = 'osrm'
-    elif filtered_geometry is not None:
-        geometry = filtered_geometry
-        geometry_source = 'raw'
-    else:
-        return None  # No credible line: preserve raw data without drawing one.
+    geometry, geometry_source, match_status, match_reason = choose_display_geometry(route)
+    if geometry is None:
+        return None  # No valid endpoint/trace: preserve raw data only.
     coordinates = geometry_coordinates(geometry)
 
     matched_route = route.get("matched_route")
@@ -90,6 +84,7 @@ def _route_feature(
         "raw_point_count": len(raw_coordinates),
         "point_count": len(coordinates),
         "gps_quality_filtered": has_quality(route.get('points') or []) and geometry_source == 'raw',
+        "direct_line": geometry_source == 'direct',
         "osrm_match_status": match_status,
         "osrm_match_reason": match_reason,
         "route_incomplete": match_status == "incomplete",
@@ -158,6 +153,7 @@ async def async_build_route_feature_collection(
     missing_trip_ids: list[str] = []
     osrm_route_count = 0
     raw_route_count = 0
+    direct_route_count = 0
 
     for sequence, trip_id in enumerate(normalized_trip_ids, start=1):
         route = route_by_trip_id.get(trip_id)
@@ -174,7 +170,9 @@ async def async_build_route_feature_collection(
         if feature["properties"]["geometry_source"] == "osrm":
             osrm_route_count += 1
         else:
-            raw_route_count += 1
+            raw_route_count += 1  # Non-OSRM route count retained for existing consumers.
+            if feature["properties"]["geometry_source"] == "direct":
+                direct_route_count += 1
 
         features.append(feature)
 
@@ -188,6 +186,7 @@ async def async_build_route_feature_collection(
             "route_count": len(features),
             "osrm_route_count": osrm_route_count,
             "raw_route_count": raw_route_count,
+            "direct_route_count": direct_route_count,
             "missing_route_count": len(missing_trip_ids),
             "missing_trip_ids": missing_trip_ids,
         },

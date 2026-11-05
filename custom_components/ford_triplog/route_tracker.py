@@ -519,11 +519,16 @@ class FordTriplogRouteTracker:
                         }
                     ) else "rejected"
                 )
-                _LOGGER.warning(
-                    "OSRM route rejected for trip %s: %s; filtered raw "
-                    "GPS fallback will be displayed (raw data unchanged)",
-                    trip_id, err,
-                )
+                if osrm_match_status == "incomplete":
+                    _LOGGER.info(
+                        "OSRM skipped for trip %s: %s; map shows a direct "
+                        "start-to-end line (raw GPS retained)", trip_id, err,
+                    )
+                else:
+                    _LOGGER.warning(
+                        "OSRM route rejected for trip %s: %s; displaying "
+                        "available GPS (raw data unchanged)", trip_id, err,
+                    )
 
             except FordTriplogOSRMError as err:
                 osrm_match_status = "error"
