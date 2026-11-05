@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 from typing import Any
 
 from .route_history import _raw_coordinates, _matched_coordinates
-from .route_quality import matched_geometry_valid
+from .route_matching import evaluate_stored_osrm_match
 
 GPX_NS = "http://www.topografix.com/GPX/1/1"
 ET.register_namespace("", GPX_NS)
@@ -37,9 +37,10 @@ def route_geojson(routes: list[dict[str, Any]], *, geometry: str = "raw") -> dic
         if not coords:
             continue
         matched = route.get('matched_route')
+        osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
         route_geometry = (
             matched['geometry']
-            if source == 'osrm' and matched_geometry_valid(matched)
+            if source == 'osrm' and osrm_usable
             else {"type": "LineString", "coordinates": coords}
         )
         features.append({
@@ -50,6 +51,8 @@ def route_geojson(routes: list[dict[str, Any]], *, geometry: str = "raw") -> dic
                 "sequence": sequence,
                 "geometry_source": source,
                 "point_count": len(coords),
+                "osrm_match_status": match_status,
+                "osrm_match_reason": match_reason,
             },
         })
     return {"type": "FeatureCollection", "features": features}
@@ -77,7 +80,7 @@ def route_gpx(routes: list[dict[str, Any]], *, geometry: str = "raw") -> str:
         track = ET.SubElement(root, f"{{{GPX_NS}}}trk")
         ET.SubElement(track, f"{{{GPX_NS}}}name").text = str(route.get("trip_id") or "Trip")
         matched = route.get('matched_route')
-        if source == 'osrm' and matched_geometry_valid(matched) and matched['geometry']['type'] == 'MultiLineString':
+        if source == 'osrm' and evaluate_stored_osrm_match(route)[0] and matched['geometry']['type'] == 'MultiLineString':
             segments = matched['geometry']['coordinates']
         else:
             segments = [coords]

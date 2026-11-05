@@ -25,8 +25,8 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 
 from .osrm_client import FordTriplogOSRMClient, FordTriplogOSRMError
 from .route_storage import FordTriplogRouteStorage, SIGNAL_LAST_ROUTE_UPDATED
-from .route_matching import verified_osrm_match, RouteMatchRejected
-from .route_quality import matched_geometry_valid, geometry_coordinates
+from .route_matching import verified_osrm_match, RouteMatchRejected, evaluate_stored_osrm_match
+from .route_quality import geometry_coordinates
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -192,6 +192,7 @@ class FordTriplogRouteRebuilder:
                         else None
                     ),
                     matched_route=matched_route,
+                    osrm_match_status="complete",
                     notify=False,
                 )
             except Exception:
@@ -244,7 +245,8 @@ class FordTriplogRouteRebuilder:
     def _has_usable_osrm_match(route: dict[str, Any]) -> bool:
         """Return True when a stored route already has usable OSRM geometry."""
 
-        return matched_geometry_valid(route.get('matched_route'))
+        usable, _, _ = evaluate_stored_osrm_match(route)
+        return usable
 
     @staticmethod
     def _match_plausibility(

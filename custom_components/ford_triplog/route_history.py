@@ -19,7 +19,8 @@ from __future__ import annotations
 from typing import Any
 
 from .route_storage import FordTriplogRouteStorage
-from .route_quality import display_geometry, geometry_coordinates, matched_geometry_valid, has_quality
+from .route_quality import display_geometry, geometry_coordinates, has_quality
+from .route_matching import evaluate_stored_osrm_match
 
 
 def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
@@ -49,7 +50,8 @@ def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
 def _matched_coordinates(route: dict[str, Any]) -> list[list[float]]:
     """Return OSRM coordinates only if confidence and geometry are sound."""
     matched = route.get('matched_route')
-    return geometry_coordinates(matched.get('geometry')) if matched_geometry_valid(matched) else []
+    usable, _, _ = evaluate_stored_osrm_match(route)
+    return geometry_coordinates(matched.get('geometry')) if usable else []
 
 
 def _route_feature(
@@ -62,7 +64,8 @@ def _route_feature(
     raw_coordinates = _raw_coordinates(route)
     matched_route = route.get('matched_route')
     filtered_geometry = display_geometry(route.get('points') or [])
-    if matched_geometry_valid(matched_route):
+    osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
+    if osrm_usable:
         geometry = matched_route['geometry']
         geometry_source = 'osrm'
     elif filtered_geometry is not None:
@@ -87,6 +90,9 @@ def _route_feature(
         "raw_point_count": len(raw_coordinates),
         "point_count": len(coordinates),
         "gps_quality_filtered": has_quality(route.get('points') or []) and geometry_source == 'raw',
+        "osrm_match_status": match_status,
+        "osrm_match_reason": match_reason,
+        "route_incomplete": match_status == "incomplete",
     }
 
     if geometry_source == "osrm":

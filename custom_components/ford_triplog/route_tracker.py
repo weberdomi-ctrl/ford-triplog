@@ -481,6 +481,8 @@ class FordTriplogRouteTracker:
         # authoritative Trip end point has been appended. Raw points always
         # remain the primary stored source and therefore the safe fallback.
         matched_route: dict[str, Any] | None = None
+        osrm_match_status = "not_attempted"
+        osrm_match_reason: str | None = None
 
         if (
             self.osrm_enabled
@@ -498,6 +500,7 @@ class FordTriplogRouteTracker:
                     osrm_client, points, url=self.osrm_url,
                     radius=self.osrm_match_radius,
                 )
+                osrm_match_status = "complete"
                 _LOGGER.info(
                     "OSRM matched route for trip %s: raw_points=%s "
                     "matched_points=%s segments=%s distance=%.1fm confidence=%.3f",
@@ -507,6 +510,15 @@ class FordTriplogRouteTracker:
                     matched_route['distance_m'], matched_route['confidence'],
                 )
             except RouteMatchRejected as err:
+                osrm_match_reason = str(err)
+                osrm_match_status = (
+                    "incomplete" if (
+                        osrm_match_reason.startswith("incomplete_")
+                        or osrm_match_reason in {
+                            "no_usable_gps_segment", "too_many_gps_gaps"
+                        }
+                    ) else "rejected"
+                )
                 _LOGGER.warning(
                     "OSRM route rejected for trip %s: %s; filtered raw "
                     "GPS fallback will be displayed (raw data unchanged)",
@@ -514,6 +526,8 @@ class FordTriplogRouteTracker:
                 )
 
             except FordTriplogOSRMError as err:
+                osrm_match_status = "error"
+                osrm_match_reason = str(err)
                 _LOGGER.warning(
                     "OSRM matching failed for trip %s: %s; "
                     "raw route will be used",
@@ -521,11 +535,23 @@ class FordTriplogRouteTracker:
                     err,
                 )
             except Exception:
+                osrm_match_status = "error"
+                osrm_match_reason = "unexpected_osrm_error"
                 _LOGGER.exception(
                     "Unexpected OSRM matching error for trip %s; "
                     "raw route will be used",
                     trip_id,
                 )
+
+        if osrm_match_status == "not_attempted":
+            if self._source_rejected_trip_id == trip_id:
+                osrm_match_status = "unavailable"
+                osrm_match_reason = "auxiliary_gps_source_rejected"
+            elif not self.osrm_enabled or not self.osrm_url:
+                osrm_match_reason = "osrm_disabled"
+            else:
+                osrm_match_status = "unavailable"
+                osrm_match_reason = "insufficient_gps_points"
 
         # Persist completed state before clearing in-memory recovery data.
         async with self._persist_lock:
@@ -536,6 +562,8 @@ class FordTriplogRouteTracker:
                 status="completed",
                 created_at=created_at,
                 matched_route=matched_route,
+                osrm_match_status=osrm_match_status,
+                osrm_match_reason=osrm_match_reason,
             )
 
         self._cancel_debounce()

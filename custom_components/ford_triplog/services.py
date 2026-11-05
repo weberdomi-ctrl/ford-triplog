@@ -1089,6 +1089,7 @@ async def _async_rebuild_last_route(
         status=str(route.get("status") or "completed"),
         created_at=route.get("created_at"),
         matched_route=matched_route,
+        osrm_match_status="complete",
     )
 
     _LOGGER.info(

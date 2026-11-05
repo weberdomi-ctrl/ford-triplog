@@ -70,7 +70,8 @@ SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
 from .route_storage import FordTriplogRouteStorage
 from .route_history import async_build_route_feature_collection
-from .route_quality import display_geometry, geometry_coordinates, matched_geometry_valid, has_quality
+from .route_quality import display_geometry, geometry_coordinates, has_quality
+from .route_matching import evaluate_stored_osrm_match
 from .journey import build_pause_id
 from .charging_site_lookup import haversine_distance_m
 from .vehicle_context import (
@@ -3278,7 +3279,8 @@ class FordTriplogLastRouteSensor(SensorEntity):
         osrm_unmatched_tracepoints = None
 
         matched_route = route.get("matched_route")
-        if matched_geometry_valid(matched_route):
+        osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
+        if osrm_usable:
             selected_geometry = matched_route["geometry"]
             display_coordinates = geometry_coordinates(selected_geometry)
             geometry_source = "osrm"
@@ -3299,6 +3301,9 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "source_type": source_type,
                 "geometry_source": geometry_source,
                 "gps_quality_filtered": has_quality(valid_points) and geometry_source == "raw",
+                "osrm_match_status": match_status,
+                "osrm_match_reason": match_reason,
+                "route_incomplete": match_status == "incomplete",
             },
             "geometry": selected_geometry,
         }
@@ -3322,6 +3327,9 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "trip_id": trip_id or None,
             "source_type": source_type,
             "geometry_source": geometry_source,
+            "osrm_match_status": match_status,
+            "osrm_match_reason": match_reason,
+            "route_incomplete": match_status == "incomplete",
             "point_count": len(display_coordinates),
             "raw_point_count": len(coordinates),
             "start_time": start_time,

@@ -1,0 +1,5 @@
+Ford Triplog 2.7.0 Beta 5 Release 18 (Build 27018)
+
+R18: OSRM full-route completeness validation. A high-confidence middle section is no longer presented as a complete trip: start/end must be within 90 m of the OSRM geometry and usable source GPS endpoints, and within 90 seconds of the recorded trip bounds (where timestamps exist). Disconnected GPS segments are not treated as a full match. Incomplete matches are rejected with explicit persisted osrm_match_status/osrm_match_reason and quality-filtered raw route fallback. Original raw points remain unchanged. R17 delayed-REST start-anchor logic retained.
+
+No DB migration. Back up SQLite first. Existing trips and old OSRM geometry remain in the database; stored incomplete OSRM matches are also filtered at display/export time without changing the archive.
