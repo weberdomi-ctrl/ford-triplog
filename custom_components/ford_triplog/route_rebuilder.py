@@ -192,7 +192,8 @@ class FordTriplogRouteRebuilder:
                         else None
                     ),
                     matched_route=matched_route,
-                    osrm_match_status="complete",
+                    osrm_match_status=matched_route.get("coverage_status", "complete"),
+                    osrm_match_reason=matched_route.get("coverage_reason"),
                     notify=False,
                 )
             except Exception:

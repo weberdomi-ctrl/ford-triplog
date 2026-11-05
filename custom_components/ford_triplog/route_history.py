@@ -10,7 +10,7 @@ Purpose:
 - Build one GeoJSON FeatureCollection from multiple stored Trip routes.
 - Preserve Journey Trip ID order.
 - Prefer OSRM matched geometry.
-- Show a direct labelled start/end line when full quality GPS is unavailable.
+- Preserve separate observed GPS segments when full route coverage is unavailable.
 - Otherwise retain the quality-filtered raw route when OSRM cannot match it.
 - Keep this logic independent from Home Assistant entities/UI.
 """
@@ -87,7 +87,7 @@ def _route_feature(
         "direct_line": geometry_source == 'direct',
         "osrm_match_status": match_status,
         "osrm_match_reason": match_reason,
-        "route_incomplete": match_status == "incomplete",
+        "route_incomplete": match_status in ("incomplete", "partial"),
     }
 
     if geometry_source == "osrm":
@@ -103,13 +103,15 @@ def _route_feature(
             }
         )
 
-        try:
-            properties["osrm_distance_km"] = round(
-                float(matched_route.get("distance_m")) / 1000.0,
-                3,
-            )
-        except (TypeError, ValueError):
-            pass
+        # Partial matches report OSRM section distance only, not entire Trip.
+        if match_status == "complete":
+            try:
+                properties["osrm_distance_km"] = round(
+                    float(matched_route.get("distance_m")) / 1000.0,
+                    3,
+                )
+            except (TypeError, ValueError):
+                pass
 
     properties = {
         key: value
@@ -174,7 +176,23 @@ async def async_build_route_feature_collection(
             if feature["properties"]["geometry_source"] == "direct":
                 direct_route_count += 1
 
-        features.append(feature)
+        # Older history/Leaflet consumers accept LineString features more
+        # consistently than a single MultiLineString. Do not connect parts.
+        geometry = feature.get("geometry", {})
+        if geometry.get("type") == "MultiLineString":
+            parts = [part for part in geometry.get("coordinates", [])
+                     if isinstance(part, list) and len(part) >= 2]
+            for part_number, part in enumerate(parts, start=1):
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": part},
+                    "properties": {**feature["properties"],
+                                   "segment_index": part_number,
+                                   "segment_count": len(parts),
+                                   "point_count": len(part)},
+                })
+        else:
+            features.append(feature)
 
     return {
         "type": "FeatureCollection",
@@ -183,7 +201,8 @@ async def async_build_route_feature_collection(
             "journey_id": journey_id,
             "date": journey_date,
             "requested_trip_count": len(normalized_trip_ids),
-            "route_count": len(features),
+            "route_count": len(normalized_trip_ids) - len(missing_trip_ids),
+            "feature_count": len(features),
             "osrm_route_count": osrm_route_count,
             "raw_route_count": raw_route_count,
             "direct_route_count": direct_route_count,

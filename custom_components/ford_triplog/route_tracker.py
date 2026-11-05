@@ -500,7 +500,8 @@ class FordTriplogRouteTracker:
                     osrm_client, points, url=self.osrm_url,
                     radius=self.osrm_match_radius,
                 )
-                osrm_match_status = "complete"
+                osrm_match_status = matched_route.get("coverage_status", "complete")
+                osrm_match_reason = matched_route.get("coverage_reason")
                 _LOGGER.info(
                     "OSRM matched route for trip %s: raw_points=%s "
                     "matched_points=%s segments=%s distance=%.1fm confidence=%.3f",
@@ -521,8 +522,8 @@ class FordTriplogRouteTracker:
                 )
                 if osrm_match_status == "incomplete":
                     _LOGGER.info(
-                        "OSRM skipped for trip %s: %s; map shows a direct "
-                        "start-to-end line (raw GPS retained)", trip_id, err,
+                        "OSRM skipped for trip %s: %s; map shows only "
+                        "observed GPS sections (raw GPS retained)", trip_id, err,
                     )
                 else:
                     _LOGGER.warning(

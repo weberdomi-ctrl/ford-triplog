@@ -3281,16 +3281,17 @@ class FordTriplogLastRouteSensor(SensorEntity):
 
         if geometry_source == "osrm":
             matched_route = route.get("matched_route") or {}
-            try:
-                osrm_distance_km = round(float(matched_route.get("distance_m")) / 1000, 3)
-            except (TypeError, ValueError):
-                osrm_distance_km = None
+            if match_status == "complete":
+                try:
+                    osrm_distance_km = round(float(matched_route.get("distance_m")) / 1000, 3)
+                except (TypeError, ValueError):
+                    osrm_distance_km = None
             osrm_confidence = matched_route.get("confidence")
             osrm_matched_tracepoints = matched_route.get("matched_tracepoints")
             osrm_unmatched_tracepoints = matched_route.get("unmatched_tracepoints")
 
-        # Missing quality GPS is represented by a labelled *direct* endpoint
-        # line, never by a fabricated road. All raw GPS points remain stored.
+        # Missing GPS sections remain disconnected; never draw artificial
+        # direct endpoint lines. The original GPS points remain stored.
         geojson = {
             "type": "Feature",
             "properties": {
@@ -3301,7 +3302,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
                 "direct_line": geometry_source == "direct",
                 "osrm_match_status": match_status,
                 "osrm_match_reason": match_reason,
-                "route_incomplete": match_status == "incomplete",
+                "route_incomplete": match_status in ("incomplete", "partial"),
             },
             "geometry": selected_geometry,
         }
@@ -3328,7 +3329,7 @@ class FordTriplogLastRouteSensor(SensorEntity):
             "direct_line": geometry_source == "direct",
             "osrm_match_status": match_status,
             "osrm_match_reason": match_reason,
-            "route_incomplete": match_status == "incomplete",
+            "route_incomplete": match_status in ("incomplete", "partial"),
             "point_count": len(display_coordinates),
             "raw_point_count": len(coordinates),
             "start_time": start_time,
@@ -3492,17 +3493,14 @@ class FordTriplogRouteHistorySensor(SensorEntity):
 
         coordinates: list[list[float]] = []
         for feature in collection.get("features", []):
-            geometry = feature.get("geometry", {})
-            if geometry.get("type") != "LineString":
-                continue
-            for coordinate in geometry.get("coordinates", []):
-                if isinstance(coordinate, list) and len(coordinate) >= 2:
-                    coordinates.append(coordinate)
+            coordinates.extend(geometry_coordinates(feature.get("geometry")))
 
         attrs = {
             "date": selected_date,
             "trip_ids": trip_ids,
             "route_count": properties.get("route_count", 0),
+            "feature_count": properties.get("feature_count", 0),
+            "direct_route_count": properties.get("direct_route_count", 0),
             "osrm_route_count": properties.get("osrm_route_count", 0),
             "raw_route_count": properties.get("raw_route_count", 0),
             "missing_route_count": properties.get("missing_route_count", 0),

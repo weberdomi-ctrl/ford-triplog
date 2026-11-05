@@ -1089,7 +1089,8 @@ async def _async_rebuild_last_route(
         status=str(route.get("status") or "completed"),
         created_at=route.get("created_at"),
         matched_route=matched_route,
-        osrm_match_status="complete",
+        osrm_match_status=matched_route.get("coverage_status", "complete"),
+        osrm_match_reason=matched_route.get("coverage_reason"),
     )
 
     _LOGGER.info(

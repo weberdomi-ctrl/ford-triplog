@@ -1,0 +1,25 @@
+Ford Triplog 2.7.0 Beta 5 - Release 20 (Build 27020)
+
+Basis: vollstaendiger R19 Quellstand / Build 27019.
+
+Fix: R19 zeichnete bei unvollstaendiger GPS-Abdeckung bewusst nur direkte
+Start-/Ziel-Linien. R20 verwendet stattdessen die vorhandenen, gefilterten
+GPS-Strecken. Luecken bleiben als getrennte Strecken sichtbar, keine
+erfundenen Fahrverbindungen.
+
+Neu: Validierte OSRM-Teilstrecken koennen trotz GPS-Luecken als 'partial'
+gespeichert/angezeigt werden. Nicht gematchte Abschnitte fallen nur auf
+qualitaetsgefilterte GPS-Segmente zurueck. Keine OSRM-Distanz einer
+Teilstrecke als gesamte Trip-Distanz ausgeben.
+
+History: MultiLineString wird in separate LineString-Features aufgeteilt
+(kompatibel mit alten Leaflet-Ansichten). route_count bleibt die Anzahl
+Fahrten; feature_count gibt die Anzahl Segmente an.
+
+SQLite-Schema und gespeicherte Rohdaten bleiben unveraendert. Bereits
+archivierte R19-GPS-Routen werden unmittelbar besser angezeigt; vorhandene
+OSRM-Daten mit alten unvollstaendigen Statuswerten bleiben weiterhin
+aus Sicherheitsgruenden abgelehnt, bis sie neu gematcht werden.
+
+Hinweis: Home Assistant Neustart nach Aktualisierung. Vorher Backup der
+SQLite-Datenbank /config/.storage/ford_triplog/ford_triplog.db anlegen.

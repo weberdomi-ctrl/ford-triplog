@@ -1,28 +1,31 @@
-"""Shared, conservative OSRM acceptance for live trips and maintenance."""
+"""Conservative OSRM route matching with gap-safe partial display (R20).
+
+A good matched road *section* may be shown even when the original GPS trace
+is incomplete. It must never be presented as a complete journey or stitched
+across an unobserved GPS gap. Original recorded GPS points are unchanged.
+"""
 from __future__ import annotations
 
-from typing import Any
 from math import isfinite
+from typing import Any
 
-# Only a near-complete, continuous journey is a valid OSRM *full-route* overlay.
-# Larger missing sections remain visible only through the quality-filtered raw
-# fallback; no invented road links are drawn across GPS outages.
+from .route_quality import (
+    MAX_OSRM_SEGMENTS, MIN_OSRM_SEGMENT_DISTANCE_M,
+    MIN_OSRM_SEGMENT_POINTS, clean_segments, confidence_valid, distance_m,
+    geometry_coordinates, matched_geometry_valid, segment_length_m, _time,
+    display_geometry,
+)
+
 MAX_OSRM_ENDPOINT_GAP_M = 90.0
 MAX_OSRM_ENDPOINT_TIME_GAP_S = 90.0
 
-from .route_quality import (
-    MAX_OSRM_SEGMENTS, confidence_valid, distance_m, has_quality,
-    osrm_segments, segment_length_m, _time, matched_geometry_valid,
-    geometry_coordinates, display_geometry, _valid_coordinate,
-)
-
 
 class RouteMatchRejected(ValueError):
-    """The candidate would invent an unreliable road geometry."""
+    """An OSRM candidate was not credible enough to display."""
 
 
 def validate_osrm_result(points: list[dict[str, Any]], result: Any) -> None:
-    """Check segment confidence, unmatched points and plausible distance."""
+    """Validate a match only against its own contiguous input segment."""
     if not confidence_valid(result.confidence):
         raise RouteMatchRejected(f'low_confidence_{result.confidence}')
     distance = float(result.distance_m)
@@ -33,36 +36,45 @@ def validate_osrm_result(points: list[dict[str, Any]], result: Any) -> None:
     direct = distance_m(points[0], points[-1])
     if direct > 100 and (distance < direct * 0.95 or distance > direct * 8.0):
         raise RouteMatchRejected('implausible_endpoint_distance')
-    # With good-speed samples, OSRM must not add implausible loops.
     raw_length = segment_length_m(points)
     if raw_length > 100 and distance > raw_length * 1.8 + 250:
         raise RouteMatchRejected('excessive_detour_relative_to_gps')
 
 
-def validate_osrm_input(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Preflight *before* any OSRM network request.
+def validate_segment_geometry(
+    section: list[dict[str, Any]], coordinates: list[list[float]],
+) -> None:
+    """OSRM must actually snap to this observed section, not a distant road."""
+    try:
+        first = {'latitude': float(coordinates[0][1]),
+                 'longitude': float(coordinates[0][0])}
+        last = {'latitude': float(coordinates[-1][1]),
+                'longitude': float(coordinates[-1][0])}
+        gaps = (distance_m(section[0], first), distance_m(section[-1], last))
+    except (ValueError, TypeError, IndexError, KeyError, OverflowError) as err:
+        raise RouteMatchRejected('invalid_segment_endpoints') from err
+    if any(not isfinite(gap) or gap > MAX_OSRM_ENDPOINT_GAP_M for gap in gaps):
+        raise RouteMatchRejected('osrm_segment_endpoint_mismatch')
 
-    A quality-filtered section must cover both authoritative vehicle Trip
-    endpoints spatially and temporally. Incomplete GPS is never sent to OSRM.
-    """
-    if not isinstance(points, list) or len(points) < 2:
-        raise RouteMatchRejected('incomplete_missing_raw_endpoints')
+
+def validate_osrm_coverage(
+    points: list[dict[str, Any]],
+    segment: list[dict[str, Any]],
+    coordinates: list[list[float]],
+) -> None:
+    """Mark a match *complete* only if the trip bounds are actually covered."""
     try:
-        segments = osrm_segments(points)
-    except (ValueError, TypeError, KeyError, OverflowError) as err:
-        raise RouteMatchRejected('invalid_route_points') from err
-    if not segments:
-        raise RouteMatchRejected('incomplete_no_usable_gps_segment')
-    if len(segments) > MAX_OSRM_SEGMENTS:
-        raise RouteMatchRejected('incomplete_too_many_gps_gaps')
-    if len(segments) != 1:
-        raise RouteMatchRejected(f'incomplete_gps_gaps_{len(segments)}_segments')
-    segment = segments[0]
-    try:
-        start_gap = distance_m(points[0], segment[0])
-        end_gap = distance_m(points[-1], segment[-1])
-    except (ValueError, TypeError, KeyError, OverflowError) as err:
+        geometry_start = {'latitude': float(coordinates[0][1]),
+                          'longitude': float(coordinates[0][0])}
+        geometry_end = {'latitude': float(coordinates[-1][1]),
+                        'longitude': float(coordinates[-1][0])}
+        start_gap = max(distance_m(points[0], segment[0]),
+                        distance_m(points[0], geometry_start))
+        end_gap = max(distance_m(points[-1], segment[-1]),
+                      distance_m(points[-1], geometry_end))
+    except (ValueError, TypeError, IndexError, KeyError, OverflowError) as err:
         raise RouteMatchRejected('invalid_route_endpoints') from err
+
     if not isfinite(start_gap) or not isfinite(end_gap):
         raise RouteMatchRejected('invalid_route_endpoint_distance')
     if start_gap > MAX_OSRM_ENDPOINT_GAP_M or end_gap > MAX_OSRM_ENDPOINT_GAP_M:
@@ -79,55 +91,16 @@ def validate_osrm_input(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
         gap_s = (end_at - segment_end_at).total_seconds()
         if gap_s < -5 or gap_s > MAX_OSRM_ENDPOINT_TIME_GAP_S:
             raise RouteMatchRejected(f'incomplete_end_time_{gap_s:.0f}s')
-    return segment
 
-
-def validate_osrm_coverage(
-    points: list[dict[str, Any]],
-    segment: list[dict[str, Any]],
-    coordinates: list[list[float]],
-) -> None:
-    """Verify the OSRM geometry also covers the actual recorded endpoints."""
-    validate_osrm_input(points)
-    try:
-        geometry_start = {'latitude': float(coordinates[0][1]),
-                          'longitude': float(coordinates[0][0])}
-        geometry_end = {'latitude': float(coordinates[-1][1]),
-                        'longitude': float(coordinates[-1][0])}
-        start_gap = distance_m(points[0], geometry_start)
-        end_gap = distance_m(points[-1], geometry_end)
-    except (ValueError, TypeError, IndexError, KeyError, OverflowError) as err:
-        raise RouteMatchRejected('invalid_route_endpoints') from err
-    if not isfinite(start_gap) or not isfinite(end_gap):
-        raise RouteMatchRejected('invalid_route_endpoint_distance')
-    if start_gap > MAX_OSRM_ENDPOINT_GAP_M or end_gap > MAX_OSRM_ENDPOINT_GAP_M:
-        raise RouteMatchRejected(
-            f'incomplete_geometry_coverage_start_{start_gap:.0f}m_end_{end_gap:.0f}m'
-        )
-
-
-def direct_endpoint_geometry(points: list[dict[str, Any]]) -> dict[str, Any] | None:
-    """Honest straight-line display from stored Trip boundaries, not a road."""
-    if not isinstance(points, list) or len(points) < 2:
-        return None
-    first, last = points[0], points[-1]
-    if not (isinstance(first, dict) and isinstance(last, dict)
-            and _valid_coordinate(first) and _valid_coordinate(last)):
-        return None
-    return {'type': 'LineString', 'coordinates': [
-        [float(first['longitude']), float(first['latitude'])],
-        [float(last['longitude']), float(last['latitude'])],
-    ]}
 
 
 def choose_display_geometry(
     route: dict[str, Any],
 ) -> tuple[dict[str, Any] | None, str, str | None, str | None]:
-    """One shared decision for the latest-route sensor and Journey maps.
+    """Prefer verified OSRM sections; otherwise show observed GPS sections only.
 
-    Complete verified OSRM => road geometry. If quality GPS lacks full coverage
-    => direct start/end line (explicitly not a driven path). Otherwise, retain
-    the normal quality-filtered raw geometry, e.g. on an OSRM server failure.
+    Never replace an incomplete GPS trace with the direct endpoint chord.
+    Any absent GPS sections stay absent; archived raw points are untouched.
     """
     usable, status, reason = evaluate_stored_osrm_match(route)
     matched = route.get('matched_route')
@@ -135,22 +108,17 @@ def choose_display_geometry(
         return matched['geometry'], 'osrm', status, reason
     points = route.get('points')
     points = points if isinstance(points, list) else []
-    try:
-        validate_osrm_input(points)
-    except RouteMatchRejected as err:
-        straight = direct_endpoint_geometry(points)
-        if straight is not None:
-            return straight, 'direct', 'incomplete', str(err)
-    return display_geometry(points), 'raw', status, reason
+    geometry = display_geometry(points)
+    return geometry, 'raw', status, reason
 
 
 def evaluate_stored_osrm_match(
     route: dict[str, Any],
 ) -> tuple[bool, str | None, str | None]:
-    """Recheck R17/legacy matches when displaying, without modifying SQLite.
+    """Accept only proven full matches or explicitly marked R20 partials.
 
-    Returns (usable, status, reason). This prevents already-cached partial
-    OSRM results from continuing to replace the raw display after R18.
+    Legacy incomplete matches remain rejected until manually rebuilt. This
+    is display-only and does not modify old SQLite records.
     """
     status = route.get('osrm_match_status')
     reason = route.get('osrm_match_reason')
@@ -162,64 +130,146 @@ def evaluate_stored_osrm_match(
     points = route.get('points')
     if not isinstance(points, list) or len(points) < 2:
         return False, 'incomplete', 'incomplete_missing_raw_endpoints'
+    if status in ('incomplete', 'rejected', 'error'):
+        return False, status, reason
+
+    coverage = matched.get('coverage_status')
+    geom = matched.get('geometry', {})
+    coords = geom.get('coordinates')
+    if coverage == 'partial':
+        sources = matched.get('geometry_segment_sources')
+        pieces = (coords if geom.get('type') == 'MultiLineString'
+                  else [coords] if geom.get('type') == 'LineString' else [])
+        valid_pieces = (
+            isinstance(sources, list) and len(sources) == len(pieces)
+            and all(source in ('osrm', 'raw') for source in sources)
+            and 'osrm' in sources and matched.get('matched_segments', 0) >= 1
+            and all(isinstance(piece, list) and len(piece) >= 2
+                    for piece in pieces)
+        )
+        if not valid_pieces or status not in (None, 'partial', 'complete'):
+            return False, 'rejected', 'invalid_cached_partial_osrm'
+        return True, 'partial', matched.get('coverage_reason') or reason
+
+    # Old full-route records must still pass R18's coverage checks.
+    if coverage not in (None, 'complete'):
+        return False, 'rejected', 'invalid_cached_coverage_status'
+    if geom.get('type') != 'LineString' or not isinstance(coords, list):
+        return False, 'incomplete', 'incomplete_disconnected_geometry'
     try:
-        segments = osrm_segments(points)
-        if len(segments) != 1:
+        segments = clean_segments(points)
+        eligible = [s for s in segments if len(s) >= MIN_OSRM_SEGMENT_POINTS
+                    and segment_length_m(s) >= MIN_OSRM_SEGMENT_DISTANCE_M]
+        if len(segments) != 1 or len(eligible) != 1:
             return False, 'incomplete', f'incomplete_gps_gaps_{len(segments)}_segments'
-        coords = matched.get('geometry', {}).get('coordinates', [])
-        if not isinstance(coords, list) or matched['geometry'].get('type') != 'LineString':
-            return False, 'incomplete', 'incomplete_disconnected_geometry'
-        validate_osrm_coverage(points, segments[0], coords)
+        validate_osrm_coverage(points, eligible[0], coords)
     except RouteMatchRejected as err:
         return False, 'incomplete', str(err)
     except (ValueError, TypeError, IndexError, KeyError, OverflowError):
         return False, 'rejected', 'invalid_cached_route_points'
-    if status in ('incomplete', 'rejected', 'error'):
-        return False, status, reason
     return True, status or 'complete', reason
 
 
 async def verified_osrm_match(client: Any, points: list[dict[str, Any]],
                               *, url: str, radius: float) -> dict[str, Any]:
-    """Match only credible, contiguous sections, never bridges over outages.
+    """Match credible contiguous sections; preserve breaks, never connect gaps.
 
-    The preflight rejects incomplete traces without contacting OSRM. The
-    map can then show a labelled endpoint line. Raw storage is untouched.
+    Incomplete endpoints or GPS gaps yield an explicitly PARTIAL route. Failed
+    individual sections fall back to their already-filtered raw geometry.
+    When every OSRM section fails, callers retain their regular raw fallback.
     """
-    # The preflight rejects missing or poor-quality GPS *before* async_match.
-    # No HTTP call is made for a partial track, even if its middle is good.
-    segments = [validate_osrm_input(points)]
+    sections = clean_segments(points)
+    if not sections:
+        raise RouteMatchRejected('no_usable_gps_segment')
+    if len(sections) > MAX_OSRM_SEGMENTS:
+        raise RouteMatchRejected('too_many_gps_gaps')
 
-    geometries = []
+    geometries: list[list[list[float]]] = []
+    sources: list[str] = []
     matched = unmatched = 0
-    total_distance = total_duration = 0.0
-    weighted_confidence = 0.0
-    total_weight = 0
-    for segment in segments:
-        result = await client.async_match(segment)
-        validate_osrm_result(segment, result)
-        geometry = result.geometry
-        if not isinstance(geometry, dict) or geometry.get('type') != 'LineString' or len(geometry.get('coordinates', [])) < 2:
-            raise RouteMatchRejected('invalid_osrm_geometry')
-        validate_osrm_coverage(points, segment, geometry['coordinates'])
-        geometries.append(geometry['coordinates'])
-        total_distance += float(result.distance_m)
-        total_duration += float(result.duration_s)
-        matched += result.matched_tracepoints
-        unmatched += result.unmatched_tracepoints
-        weighted_confidence += float(result.confidence) * len(segment)
-        total_weight += len(segment)
+    distance = duration = weighted_confidence = 0.0
+    confidence_weight = matched_segment_count = 0
+    eligible_count = 0
+    skipped_reasons: list[str] = []
+    complete_coverage = False
+    coverage_reason: str | None = None
+
+    for section in sections:
+        eligible = (len(section) >= MIN_OSRM_SEGMENT_POINTS
+                    and segment_length_m(section) >= MIN_OSRM_SEGMENT_DISTANCE_M)
+        if not eligible:
+            if len(section) >= 2:
+                geometries.append([[float(p['longitude']), float(p['latitude'])]
+                                   for p in section])
+                sources.append('raw')
+            continue
+        eligible_count += 1
+        try:
+            result = await client.async_match(section)
+            validate_osrm_result(section, result)
+            geometry = result.geometry
+            if (not isinstance(geometry, dict)
+                    or geometry.get('type') != 'LineString'
+                    or not isinstance(geometry.get('coordinates'), list)
+                    or len(geometry['coordinates']) < 2):
+                raise RouteMatchRejected('invalid_osrm_geometry')
+            coords = geometry['coordinates']
+            validate_segment_geometry(section, coords)
+            # Treat a single eligible source segment as complete only after
+            # checking BOTH authoritative trip endpoints and timestamps.
+            if len(sections) == 1:
+                try:
+                    validate_osrm_coverage(points, section, coords)
+                    complete_coverage = True
+                except RouteMatchRejected as err:
+                    coverage_reason = str(err)
+            geometries.append(coords)
+            sources.append('osrm')
+            distance += float(result.distance_m)
+            duration += float(result.duration_s)
+            matched += result.matched_tracepoints
+            unmatched += result.unmatched_tracepoints
+            weighted_confidence += float(result.confidence) * len(section)
+            confidence_weight += len(section)
+            matched_segment_count += 1
+        except Exception as err:
+            # Individual OSRM failures must not erase other valid sections.
+            # Do not catch system cancellation/termination (BaseException).
+            skipped_reasons.append(str(err))
+            complete_coverage = False
+            if len(section) >= 2:
+                geometries.append([[float(p['longitude']), float(p['latitude'])]
+                                   for p in section])
+                sources.append('raw')
+
+    if not matched_segment_count:
+        if not eligible_count:
+            raise RouteMatchRejected('no_usable_gps_segment')
+        raise RouteMatchRejected('no_credible_osrm_segment')
+
+    if not complete_coverage or len(sources) != 1 or sources[0] != 'osrm':
+        status = 'partial'
+        if coverage_reason is None:
+            coverage_reason = (f'incomplete_gps_gaps_{len(sections)}_segments'
+                               if len(sections) != 1 else
+                               'incomplete_osrm_sections')
+    else:
+        status = 'complete'
+        coverage_reason = None
 
     geometry = ({'type': 'LineString', 'coordinates': geometries[0]}
                 if len(geometries) == 1 else
                 {'type': 'MultiLineString', 'coordinates': geometries})
     return {
         'provider': 'osrm', 'url': url, 'radius_m': radius,
-        'distance_m': total_distance, 'duration_s': total_duration,
-        'confidence': weighted_confidence / total_weight,
+        'distance_m': distance, 'duration_s': duration,
+        'confidence': weighted_confidence / confidence_weight,
         'matched_tracepoints': matched, 'unmatched_tracepoints': unmatched,
-        'quality_filtered': has_quality(points),
-        'matched_segments': len(segments),
-        'matched_input_points': total_weight,
+        'quality_filtered': True, 'matched_segments': matched_segment_count,
+        'matched_input_points': confidence_weight,
         'geometry': geometry,
+        'geometry_segment_sources': sources,
+        'coverage_status': status,
+        'coverage_reason': coverage_reason,
+        'failed_osrm_segments': len(skipped_reasons),
     }
