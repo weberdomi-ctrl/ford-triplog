@@ -216,6 +216,8 @@ class FordTriplogRouteStorage:
         status: str = "completed",
         created_at: str | None = None,
         matched_route: dict[str, Any] | None = None,
+        osrm_match_status: str | None = None,
+        osrm_match_reason: str | None = None,
         notify: bool = True,
     ) -> None:
         """Atomically save one route file."""
@@ -229,6 +231,8 @@ class FordTriplogRouteStorage:
             "updated_at": dt_util.now().isoformat(),
             "points": points,
             "matched_route": matched_route,
+            "osrm_match_status": osrm_match_status,
+            "osrm_match_reason": osrm_match_reason,
         }
 
         payload = {

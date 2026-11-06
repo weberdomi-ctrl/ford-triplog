@@ -1,0 +1,5 @@
+Ford Triplog 2.7.0 Beta 5 Release 17 (Build 27017)
+
+R17: REST polling-safe start selection. Uses a consistent Home/Work center when previous ignition-OFF location and odometer agree; uses an independently recognized nearby charging site for recent charging starts; refuses to treat matching cached Ford GPS samples as proof; bounds post-OFF position refresh to 10 minutes; logs raw and selected coordinates for field review. R16 fixes retained.
+
+No DB migration. Back up SQLite first. Existing trips unchanged.

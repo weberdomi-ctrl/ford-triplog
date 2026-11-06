@@ -1,0 +1,30 @@
+Ford Triplog 2.7.0-beta.5-r21
+Build 27021
+
+GPS-Parkposition / Route Tracker (Beta-Test)
+
+- Ein gueltiger gespeicherter Park-GPS-Punkt (Zuendung AUS) ist der feste
+  Startpunkt der naechsten Fahrt. Der erste bewegte FordPass-REST-Wert und
+  der erste Route-Tracker-Punkt ueberschreiben ihn nicht mehr.
+- Home/Work-Zonen werden zur Erkennung der Zone verwendet; ihr Mittelpunkt
+  ersetzt die reale Parkposition nicht mehr.
+- Eine um bis zu ca. zwei Minuten verzoegert gemeldete Zuendung EIN kann
+  bereits eine bewegte REST-Position liefern. Ein kurzer, durch den Kilometer-
+  stand plausibel bestaetigter Ortswechsel verwirft die Parkposition nicht.
+- Nach dem bestehenden Smart-Trip-Timeout und dem FordPass-GPS-Wartefenster
+  wird die Parkposition fuer die naechste Fahrt stabilisiert: neuer plausibler
+  Fahrzeug-GPS-Punkt bevorzugt, sonst der letzte gueltige Tracker-Punkt
+  direkt vor der registrierten Zuendung AUS.
+- Spaetere Telefon-/Tracker-Bewegungen nach Zuendung AUS sind kein Park-GPS.
+  Die abgeschlossene Route wird durch die Parkposition-Pruefung nicht geaendert.
+- Bestaetigung und Auswahl werden weiterhin im Debug-Log protokolliert.
+
+Tests:
+  python -m unittest discover -s test -p test_trip_start_position_r21.py -v
+  python -m py_compile custom_components/ford_triplog/coordinator.py
+  python -m py_compile custom_components/ford_triplog/trip_start_position.py
+
+Branch: 2.7.0_Beta.5 (Basis: r20)
+Preview: fix/beta5-r21-park-gps
+manifest.json / const.py: 2.7.0-beta.5-r21
+Hinweis: GitHub-PR vor Installation selbst pruefen und zusammenfuehren.

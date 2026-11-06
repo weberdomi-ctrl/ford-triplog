@@ -1,0 +1,11 @@
+Ford Triplog 2.7.0 Beta 5 – Release 15 (27015)
+
+Hotfix for Release 14 - Smart Trip finalization failure.
+- Fix UnboundLocalError in _validate_trip_end_gps() by parsing and timezone-normalizing route_time / vehicle_time before the route timestamp freshness check.
+- Restores finalization of a Smart Trip after its 180-second pause, including the route, trip archive, and last-trip statistics.
+- Keeps all Release 14 route quality filtering, OSRM confidence checks and stabilized parking position logic unchanged.
+- Existing paused Smart Trip recovery metadata remains compatible. On restart, the original paused trip can be finalized if the recovery data is intact.
+- No database migration or reprocessing of GPS data.
+
+Regression checks: timestamp paths (fresh, stale, absent, naive), invalid GPS accuracy, fallback, paused-trip recovery; all Python files compiled; JSON validated; zip integrity verified.
+Production Home Assistant behavior not independently tested.

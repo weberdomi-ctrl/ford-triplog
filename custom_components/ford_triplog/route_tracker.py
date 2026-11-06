@@ -36,9 +36,11 @@ from .const import (
     CONF_OSRM_ENABLED,
     CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
+    CONF_OSRM_MIN_TRIP_DISTANCE_KM,
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
     ROUTE_SOURCE_HA_DEVICE_TRACKER,
@@ -48,6 +50,9 @@ from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
 )
+from .route_quality import normalize_tracker_attributes, geometry_coordinates
+from .route_matching import verified_osrm_match, RouteMatchRejected
+from .osrm_policy import skip_osrm_for_short_trip
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -112,6 +117,12 @@ class FordTriplogRouteTracker:
             config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
+            )
+        )
+        self.osrm_min_trip_distance_km = float(
+            config.get(
+                CONF_OSRM_MIN_TRIP_DISTANCE_KM,
+                DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
             )
         )
 
@@ -451,6 +462,7 @@ class FordTriplogRouteTracker:
         end_latitude: Any = None,
         end_longitude: Any = None,
         end_timestamp: Any = None,
+        trip_distance_km: Any = None,
     ) -> None:
         """Append authoritative Trip end GPS and complete the route."""
 
@@ -479,11 +491,17 @@ class FordTriplogRouteTracker:
         # authoritative Trip end point has been appended. Raw points always
         # remain the primary stored source and therefore the safe fallback.
         matched_route: dict[str, Any] | None = None
+        osrm_match_status = "not_attempted"
+        osrm_match_reason: str | None = None
+        short_trip = skip_osrm_for_short_trip(
+            trip_distance_km, self.osrm_min_trip_distance_km
+        )
 
         if (
             self.osrm_enabled
             and self.osrm_url
             and len(points) >= 2
+            and not short_trip
             and self._source_rejected_trip_id != trip_id
         ):
             try:
@@ -492,41 +510,44 @@ class FordTriplogRouteTracker:
                     self.osrm_url,
                     radius_meters=self.osrm_match_radius,
                 )
-                match_result = await osrm_client.async_match(points)
-
-                if self._osrm_match_is_plausible(
-                    points,
-                    match_result.distance_m,
-                    match_result.unmatched_tracepoints,
-                ):
-                    matched_route = {
-                        "provider": "osrm",
-                        "url": self.osrm_url,
-                        "radius_m": self.osrm_match_radius,
-                        "distance_m": match_result.distance_m,
-                        "duration_s": match_result.duration_s,
-                        "confidence": match_result.confidence,
-                        "matched_tracepoints": match_result.matched_tracepoints,
-                        "unmatched_tracepoints": match_result.unmatched_tracepoints,
-                        "geometry": match_result.geometry,
-                    }
+                matched_route = await verified_osrm_match(
+                    osrm_client, points, url=self.osrm_url,
+                    radius=self.osrm_match_radius,
+                )
+                osrm_match_status = matched_route.get("coverage_status", "complete")
+                osrm_match_reason = matched_route.get("coverage_reason")
+                _LOGGER.info(
+                    "OSRM matched route for trip %s: raw_points=%s "
+                    "matched_points=%s segments=%s distance=%.1fm confidence=%.3f",
+                    trip_id, len(points),
+                    len(geometry_coordinates(matched_route['geometry'])),
+                    matched_route['matched_segments'],
+                    matched_route['distance_m'], matched_route['confidence'],
+                )
+            except RouteMatchRejected as err:
+                osrm_match_reason = str(err)
+                osrm_match_status = (
+                    "incomplete" if (
+                        osrm_match_reason.startswith("incomplete_")
+                        or osrm_match_reason in {
+                            "no_usable_gps_segment", "too_many_gps_gaps"
+                        }
+                    ) else "rejected"
+                )
+                if osrm_match_status == "incomplete":
                     _LOGGER.info(
-                        "OSRM matched route for trip %s: raw_points=%s "
-                        "matched_points=%s distance=%.1fm confidence=%s",
-                        trip_id,
-                        len(points),
-                        len(match_result.geometry.get("coordinates", [])),
-                        match_result.distance_m,
-                        match_result.confidence,
+                        "OSRM skipped for trip %s: %s; map shows only "
+                        "observed GPS sections (raw GPS retained)", trip_id, err,
                     )
                 else:
                     _LOGGER.warning(
-                        "OSRM result rejected as implausible for trip %s; "
-                        "raw route will be used",
-                        trip_id,
+                        "OSRM route rejected for trip %s: %s; displaying "
+                        "available GPS (raw data unchanged)", trip_id, err,
                     )
 
             except FordTriplogOSRMError as err:
+                osrm_match_status = "error"
+                osrm_match_reason = str(err)
                 _LOGGER.warning(
                     "OSRM matching failed for trip %s: %s; "
                     "raw route will be used",
@@ -534,11 +555,32 @@ class FordTriplogRouteTracker:
                     err,
                 )
             except Exception:
+                osrm_match_status = "error"
+                osrm_match_reason = "unexpected_osrm_error"
                 _LOGGER.exception(
                     "Unexpected OSRM matching error for trip %s; "
                     "raw route will be used",
                     trip_id,
                 )
+
+        if osrm_match_status == "not_attempted":
+            if self._source_rejected_trip_id == trip_id:
+                osrm_match_status = "unavailable"
+                osrm_match_reason = "auxiliary_gps_source_rejected"
+            elif not self.osrm_enabled or not self.osrm_url:
+                osrm_match_reason = "osrm_disabled"
+            elif short_trip:
+                osrm_match_status = "skipped"
+                osrm_match_reason = "trip_below_osrm_minimum_distance"
+                _LOGGER.info(
+                    "OSRM skipped for short trip %s: distance=%.1fkm, "
+                    "configured_minimum=%.1fkm; raw GPS preserved",
+                    trip_id, float(trip_distance_km),
+                    self.osrm_min_trip_distance_km,
+                )
+            else:
+                osrm_match_status = "unavailable"
+                osrm_match_reason = "insufficient_gps_points"
 
         # Persist completed state before clearing in-memory recovery data.
         async with self._persist_lock:
@@ -549,6 +591,8 @@ class FordTriplogRouteTracker:
                 status="completed",
                 created_at=created_at,
                 matched_route=matched_route,
+                osrm_match_status=osrm_match_status,
+                osrm_match_reason=osrm_match_reason,
             )
 
         self._cancel_debounce()
@@ -735,7 +779,7 @@ class FordTriplogRouteTracker:
         if coordinates is None:
             return
 
-        latitude, longitude, timestamp = coordinates
+        latitude, longitude, timestamp, extras = coordinates
         coordinate_key = (latitude, longitude)
 
         if coordinate_key == self._last_coordinate:
@@ -745,6 +789,7 @@ class FordTriplogRouteTracker:
             "timestamp": timestamp,
             "latitude": latitude,
             "longitude": longitude,
+            **extras,
         }
 
         if self._provisional_start_trip_id == self.active_trip_id:
@@ -863,7 +908,7 @@ class FordTriplogRouteTracker:
     def _read_coordinates(
         self,
         changed_state: State | None = None,
-    ) -> tuple[float, float, str] | None:
+    ) -> tuple[float, float, str, dict[str, float]] | None:
         """Return normalized coordinates from the configured source."""
 
         if self.source_type == ROUTE_SOURCE_HA_DEVICE_TRACKER:
@@ -895,6 +940,7 @@ class FordTriplogRouteTracker:
                 latitude,
                 longitude,
                 state.last_updated.isoformat(),
+                normalize_tracker_attributes(state.attributes),
             )
 
         if self.source_type == ROUTE_SOURCE_HA_GEOCODED:
@@ -927,6 +973,7 @@ class FordTriplogRouteTracker:
                 latitude,
                 longitude,
                 state.last_updated.isoformat(),
+                {},
             )
 
         latitude_state = (
@@ -969,4 +1016,4 @@ class FordTriplogRouteTracker:
             longitude_state.last_updated,
         ).isoformat()
 
-        return latitude, longitude, timestamp
+        return latitude, longitude, timestamp, {}

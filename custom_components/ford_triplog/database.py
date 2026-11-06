@@ -938,6 +938,16 @@ class FordTriplogDatabase:
 
                     db.execute(
                         """
+                        CREATE TABLE IF NOT EXISTS last_parking_position (
+                            vehicle_id INTEGER PRIMARY KEY,
+                            data TEXT NOT NULL,
+                            FOREIGN KEY (vehicle_id) REFERENCES vehicles(vehicle_id)
+                        )
+                        """
+                    )
+
+                    db.execute(
+                        """
                         CREATE TABLE IF NOT EXISTS current_trip (
                             vehicle_id INTEGER NOT NULL DEFAULT 1,
                             trip_id TEXT NOT NULL,
@@ -2907,6 +2917,39 @@ class FordTriplogDatabase:
                 "Unable to read charge from SQLite: %s",
                 normalized_id,
             )
+            return None
+
+    async def save_last_parking_position(self, data: dict[str, Any]) -> bool:
+        """Persist the ignition-OFF reference independently for each vehicle."""
+        def _write() -> None:
+            with sqlite3.connect(self.db_path) as db:
+                db.execute(
+                    "INSERT OR REPLACE INTO last_parking_position (vehicle_id, data) VALUES (?, ?)",
+                    (self.vehicle_id, json.dumps(data, ensure_ascii=False)),
+                )
+                db.commit()
+
+        try:
+            await self.hass.async_add_executor_job(_write)
+            return True
+        except Exception:
+            _LOGGER.exception("Unable to save last parking position to SQLite")
+            return False
+
+    async def load_last_parking_position(self) -> dict[str, Any] | None:
+        """Load the last ignition-OFF GPS snapshot for this vehicle."""
+        def _read() -> dict[str, Any] | None:
+            with sqlite3.connect(self.db_path) as db:
+                row = db.execute(
+                    "SELECT data FROM last_parking_position WHERE vehicle_id = ?",
+                    (self.vehicle_id,),
+                ).fetchone()
+                return json.loads(row[0]) if row is not None else None
+
+        try:
+            return await self.hass.async_add_executor_job(_read)
+        except Exception:
+            _LOGGER.exception("Unable to load last parking position from SQLite")
             return None
 
     async def save_current_trip(

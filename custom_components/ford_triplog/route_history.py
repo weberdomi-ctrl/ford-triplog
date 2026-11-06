@@ -10,7 +10,8 @@ Purpose:
 - Build one GeoJSON FeatureCollection from multiple stored Trip routes.
 - Preserve Journey Trip ID order.
 - Prefer OSRM matched geometry.
-- Fall back to raw GPS points when no valid OSRM geometry exists.
+- Preserve separate observed GPS segments when full route coverage is unavailable.
+- Otherwise retain the quality-filtered raw route when OSRM cannot match it.
 - Keep this logic independent from Home Assistant entities/UI.
 """
 
@@ -19,6 +20,8 @@ from __future__ import annotations
 from typing import Any
 
 from .route_storage import FordTriplogRouteStorage
+from .route_quality import geometry_coordinates, has_quality
+from .route_matching import evaluate_stored_osrm_match, choose_display_geometry
 
 
 def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
@@ -46,38 +49,10 @@ def _raw_coordinates(route: dict[str, Any]) -> list[list[float]]:
 
 
 def _matched_coordinates(route: dict[str, Any]) -> list[list[float]]:
-    """Return valid OSRM matched coordinates."""
-
-    matched_route = route.get("matched_route")
-    if not isinstance(matched_route, dict):
-        return []
-
-    geometry = matched_route.get("geometry")
-    if not isinstance(geometry, dict) or geometry.get("type") != "LineString":
-        return []
-
-    raw_coordinates = geometry.get("coordinates")
-    if not isinstance(raw_coordinates, list):
-        return []
-
-    coordinates: list[list[float]] = []
-
-    for coordinate in raw_coordinates:
-        if (
-            not isinstance(coordinate, (list, tuple))
-            or len(coordinate) < 2
-        ):
-            continue
-
-        try:
-            longitude = float(coordinate[0])
-            latitude = float(coordinate[1])
-        except (TypeError, ValueError):
-            continue
-
-        coordinates.append([longitude, latitude])
-
-    return coordinates
+    """Return OSRM coordinates only if confidence and geometry are sound."""
+    matched = route.get('matched_route')
+    usable, _, _ = evaluate_stored_osrm_match(route)
+    return geometry_coordinates(matched.get('geometry')) if usable else []
 
 
 def _route_feature(
@@ -88,16 +63,11 @@ def _route_feature(
     """Build one map-ready GeoJSON feature for a stored route."""
 
     raw_coordinates = _raw_coordinates(route)
-    matched_coordinates = _matched_coordinates(route)
-
-    if len(matched_coordinates) >= 2:
-        coordinates = matched_coordinates
-        geometry_source = "osrm"
-    elif len(raw_coordinates) >= 2:
-        coordinates = raw_coordinates
-        geometry_source = "raw"
-    else:
-        return None
+    matched_route = route.get('matched_route')
+    geometry, geometry_source, match_status, match_reason = choose_display_geometry(route)
+    if geometry is None:
+        return None  # No valid endpoint/trace: preserve raw data only.
+    coordinates = geometry_coordinates(geometry)
 
     matched_route = route.get("matched_route")
     matched_route = (
@@ -113,6 +83,11 @@ def _route_feature(
         "geometry_source": geometry_source,
         "raw_point_count": len(raw_coordinates),
         "point_count": len(coordinates),
+        "gps_quality_filtered": has_quality(route.get('points') or []) and geometry_source == 'raw',
+        "direct_line": geometry_source == 'direct',
+        "osrm_match_status": match_status,
+        "osrm_match_reason": match_reason,
+        "route_incomplete": match_status in ("incomplete", "partial"),
     }
 
     if geometry_source == "osrm":
@@ -128,13 +103,15 @@ def _route_feature(
             }
         )
 
-        try:
-            properties["osrm_distance_km"] = round(
-                float(matched_route.get("distance_m")) / 1000.0,
-                3,
-            )
-        except (TypeError, ValueError):
-            pass
+        # Partial matches report OSRM section distance only, not entire Trip.
+        if match_status == "complete":
+            try:
+                properties["osrm_distance_km"] = round(
+                    float(matched_route.get("distance_m")) / 1000.0,
+                    3,
+                )
+            except (TypeError, ValueError):
+                pass
 
     properties = {
         key: value
@@ -145,10 +122,7 @@ def _route_feature(
     return {
         "type": "Feature",
         "properties": properties,
-        "geometry": {
-            "type": "LineString",
-            "coordinates": coordinates,
-        },
+        "geometry": geometry,
     }
 
 
@@ -181,6 +155,7 @@ async def async_build_route_feature_collection(
     missing_trip_ids: list[str] = []
     osrm_route_count = 0
     raw_route_count = 0
+    direct_route_count = 0
 
     for sequence, trip_id in enumerate(normalized_trip_ids, start=1):
         route = route_by_trip_id.get(trip_id)
@@ -197,9 +172,27 @@ async def async_build_route_feature_collection(
         if feature["properties"]["geometry_source"] == "osrm":
             osrm_route_count += 1
         else:
-            raw_route_count += 1
+            raw_route_count += 1  # Non-OSRM route count retained for existing consumers.
+            if feature["properties"]["geometry_source"] == "direct":
+                direct_route_count += 1
 
-        features.append(feature)
+        # Older history/Leaflet consumers accept LineString features more
+        # consistently than a single MultiLineString. Do not connect parts.
+        geometry = feature.get("geometry", {})
+        if geometry.get("type") == "MultiLineString":
+            parts = [part for part in geometry.get("coordinates", [])
+                     if isinstance(part, list) and len(part) >= 2]
+            for part_number, part in enumerate(parts, start=1):
+                features.append({
+                    "type": "Feature",
+                    "geometry": {"type": "LineString", "coordinates": part},
+                    "properties": {**feature["properties"],
+                                   "segment_index": part_number,
+                                   "segment_count": len(parts),
+                                   "point_count": len(part)},
+                })
+        else:
+            features.append(feature)
 
     return {
         "type": "FeatureCollection",
@@ -208,9 +201,11 @@ async def async_build_route_feature_collection(
             "journey_id": journey_id,
             "date": journey_date,
             "requested_trip_count": len(normalized_trip_ids),
-            "route_count": len(features),
+            "route_count": len(normalized_trip_ids) - len(missing_trip_ids),
+            "feature_count": len(features),
             "osrm_route_count": osrm_route_count,
             "raw_route_count": raw_route_count,
+            "direct_route_count": direct_route_count,
             "missing_route_count": len(missing_trip_ids),
             "missing_trip_ids": missing_trip_ids,
         },

@@ -1,0 +1,8 @@
+Ford Triplog 2.7.0 Beta 5 Release 19 (Build 27019)
+
+- Skip OSRM requests when high-quality GPS does not cover both Trip endpoints.
+- Show a direct start-to-end line instead of incomplete raw road segments.
+- Mark the geometry_source as direct and direct_line=true; never mislabel the straight line as a driven route.
+- Apply the same map display behavior when reading existing archived routes.
+- Keep complete OSRM route matching and the original recorded GPS data intact.
+- No database schema change.

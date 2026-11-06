@@ -8,6 +8,7 @@ from xml.etree import ElementTree as ET
 from typing import Any
 
 from .route_history import _raw_coordinates, _matched_coordinates
+from .route_matching import evaluate_stored_osrm_match
 
 GPX_NS = "http://www.topografix.com/GPX/1/1"
 ET.register_namespace("", GPX_NS)
@@ -35,14 +36,23 @@ def route_geojson(routes: list[dict[str, Any]], *, geometry: str = "raw") -> dic
         coords, source = _valid_coordinates(route, geometry)
         if not coords:
             continue
+        matched = route.get('matched_route')
+        osrm_usable, match_status, match_reason = evaluate_stored_osrm_match(route)
+        route_geometry = (
+            matched['geometry']
+            if source == 'osrm' and osrm_usable
+            else {"type": "LineString", "coordinates": coords}
+        )
         features.append({
             "type": "Feature",
-            "geometry": {"type": "LineString", "coordinates": coords},
+            "geometry": route_geometry,
             "properties": {
                 "trip_id": str(route.get("trip_id") or ""),
                 "sequence": sequence,
                 "geometry_source": source,
                 "point_count": len(coords),
+                "osrm_match_status": match_status,
+                "osrm_match_reason": match_reason,
             },
         })
     return {"type": "FeatureCollection", "features": features}
@@ -69,15 +79,23 @@ def route_gpx(routes: list[dict[str, Any]], *, geometry: str = "raw") -> str:
             continue
         track = ET.SubElement(root, f"{{{GPX_NS}}}trk")
         ET.SubElement(track, f"{{{GPX_NS}}}name").text = str(route.get("trip_id") or "Trip")
-        seg = ET.SubElement(track, f"{{{GPX_NS}}}trkseg")
-        raw_points = route.get("points") if isinstance(route.get("points"), list) else []
-        for index, (lon, lat) in enumerate(coords):
-            point = ET.SubElement(seg, f"{{{GPX_NS}}}trkpt", lat=str(lat), lon=str(lon))
-            if source == "raw" and index < len(raw_points) and isinstance(raw_points[index], dict):
-                item = raw_points[index]
-                timestamp = _iso_time(item.get("timestamp") or item.get("time"))
-                if timestamp:
-                    ET.SubElement(point, f"{{{GPX_NS}}}time").text = timestamp
+        matched = route.get('matched_route')
+        if source == 'osrm' and evaluate_stored_osrm_match(route)[0] and matched['geometry']['type'] == 'MultiLineString':
+            segments = matched['geometry']['coordinates']
+        else:
+            segments = [coords]
+        raw_points = route.get('points') if isinstance(route.get('points'), list) else []
+        for segment_coords in segments:
+            if len(segment_coords) < 2:
+                continue
+            seg = ET.SubElement(track, f"{{{GPX_NS}}}trkseg")
+            for index, (lon, lat) in enumerate(segment_coords):
+                point = ET.SubElement(seg, f"{{{GPX_NS}}}trkpt", lat=str(lat), lon=str(lon))
+                if source == 'raw' and index < len(raw_points) and isinstance(raw_points[index], dict):
+                    item = raw_points[index]
+                    timestamp = _iso_time(item.get('timestamp') or item.get('time'))
+                    if timestamp:
+                        ET.SubElement(point, f"{{{GPX_NS}}}time").text = timestamp
     return '<?xml version="1.0" encoding="utf-8"?>\n' + ET.tostring(root, encoding="unicode")
 
 

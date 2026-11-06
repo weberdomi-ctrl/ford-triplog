@@ -51,6 +51,8 @@ from .journey import build_pause_id
 from .const import SIGNAL_LAST_JOURNEY_UPDATED
 from .charge_manager import FordTriplogChargeManager
 from .route_storage import FordTriplogRouteStorage
+from .route_matching import verified_osrm_match, RouteMatchRejected
+from .route_quality import geometry_coordinates
 from .osrm_client import (
     FordTriplogOSRMClient,
     FordTriplogOSRMError,
@@ -1065,23 +1067,18 @@ async def _async_rebuild_last_route(
     )
 
     try:
-        result = await client.async_match(points)
+        matched_route = await verified_osrm_match(
+            client, points, url=osrm_url, radius=radius,
+        )
+    except RouteMatchRejected as error:
+        raise ServiceValidationError(
+            f"OSRM route rejected: {error}"
+        ) from error
     except FordTriplogOSRMError as error:
         raise ServiceValidationError(
             f"OSRM route rebuild failed: {error}"
         ) from error
 
-    matched_route = {
-        "provider": "osrm",
-        "url": osrm_url,
-        "radius_m": radius,
-        "distance_m": result.distance_m,
-        "duration_s": result.duration_s,
-        "confidence": result.confidence,
-        "matched_tracepoints": result.matched_tracepoints,
-        "unmatched_tracepoints": result.unmatched_tracepoints,
-        "geometry": result.geometry,
-    }
 
     # Preserve all original route metadata and raw points. Only replace/add
     # the optional matched_route block.
@@ -1092,6 +1089,8 @@ async def _async_rebuild_last_route(
         status=str(route.get("status") or "completed"),
         created_at=route.get("created_at"),
         matched_route=matched_route,
+        osrm_match_status=matched_route.get("coverage_status", "complete"),
+        osrm_match_reason=matched_route.get("coverage_reason"),
     )
 
     _LOGGER.info(
@@ -1099,22 +1098,20 @@ async def _async_rebuild_last_route(
         "matched_points=%s distance=%.1fm confidence=%s",
         route.get("trip_id"),
         len(points),
-        len(result.geometry.get("coordinates", [])),
-        result.distance_m,
-        result.confidence,
+        len(geometry_coordinates(matched_route['geometry'])),
+        matched_route['distance_m'],
+        matched_route['confidence'],
     )
 
     return {
         "rebuilt": True,
         "trip_id": route.get("trip_id"),
         "raw_point_count": len(points),
-        "matched_point_count": len(
-            result.geometry.get("coordinates", [])
-        ),
-        "distance_km": round(result.distance_m / 1000.0, 3),
-        "confidence": result.confidence,
-        "matched_tracepoints": result.matched_tracepoints,
-        "unmatched_tracepoints": result.unmatched_tracepoints,
+        "matched_point_count": len(geometry_coordinates(matched_route['geometry'])),
+        "distance_km": round(matched_route['distance_m'] / 1000.0, 3),
+        "confidence": matched_route['confidence'],
+        "matched_tracepoints": matched_route['matched_tracepoints'],
+        "unmatched_tracepoints": matched_route['unmatched_tracepoints'],
         "radius_m": radius,
     }
 

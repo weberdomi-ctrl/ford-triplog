@@ -1,0 +1,15 @@
+Ford Triplog 2.7.0 Beta 5 – Release 13 (27013)
+
+Fix: Trip departure location shifted by stale vehicle GPS correction
+
+- Persist the last plausible GPS location immediately at ignition OFF in SQLite, independently per vehicle.
+- Restore this parking reference after Home Assistant restart.
+- Use the parked location as the next trip origin only if the current position, age and odometer corroborate it.
+- Protect starts in known Home Assistant zones (including zone.home) against later GPS corrections.
+- Allow newer vehicle GPS while still parked to refine the parking reference (e.g. preconditioning).
+- Do not let a single later route point overwrite a trip start; only permit large corrections when both vehicle and route sources independently corroborate them immediately at ignition ON.
+- Mark the initial route point with the actual trip start timestamp, not a possibly old parked GPS timestamp.
+- Preserve Smart Trip resume/finalization protections from Release 12.
+
+Testing: 10 isolated regression tests, SQLite multi-vehicle persistence/restart, JSON/YAML and Python syntax checks.
+Home Assistant end-to-end road test remains pending. Previously shifted historical trip origins are unchanged.
