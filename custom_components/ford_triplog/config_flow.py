@@ -8877,8 +8877,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
             schema[vol.Optional("country", default=v("country"))] = selector.TextSelector()
         schema[vol.Optional("odometer_km", default=v("odometer_km"))] = selector.TextSelector()
         if self._expense_group == "toll" or v("valid_from") or v("valid_to"):
-            schema[vol.Optional("valid_from", default=v("valid_from"))] = selector.DateSelector()
-            schema[vol.Optional("valid_to", default=v("valid_to"))] = selector.DateSelector()
+            for field in ("valid_from", "valid_to"):
+                date_default = v(field).strip()
+                key = (
+                    vol.Optional(field, default=date_default)
+                    if date_default else vol.Optional(field)
+                )
+                schema[key] = selector.DateSelector()
         if (not self._expense_recognition_status) or v("notes"):
             schema[vol.Optional("notes", default=v("notes"))] = selector.TextSelector()
         if not getattr(self, "_pending_expense_document", None):
