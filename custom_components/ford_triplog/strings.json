@@ -1411,20 +1411,23 @@
       },
       "expense_edit": {
         "title": "Edit cost",
+        "description": "Choose the cost to edit (newest first).",
         "data": {
-          "expense_id": "Edit cost"
+          "expense_id": "Select entry"
         }
       },
       "expense_delete": {
         "title": "Delete cost",
+        "description": "Choose the cost to delete (newest first).",
         "data": {
-          "expense_id": "Delete cost"
+          "expense_id": "Select entry"
         }
       },
       "expense_form": {
         "title": "Enter cost",
         "description": "Review detected details before saving. {vehicle_check}",
         "data": {
+          "receipt_vehicle_status": "Receipt vehicle check",
           "category": "Category *",
           "description": "Description",
           "amount": "Amount *",
