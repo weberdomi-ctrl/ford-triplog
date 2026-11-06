@@ -1,0 +1,22 @@
+name: Expense receipt import and PDF/OCR tests
+on:
+  pull_request:
+    paths:
+      - 'custom_components/ford_triplog/config_flow.py'
+      - 'custom_components/ford_triplog/expense_receipt_parser.py'
+      - 'test/test_expense_receipt_r1.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  expense-receipt:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Syntax check
+        run: python -m py_compile custom_components/ford_triplog/config_flow.py custom_components/ford_triplog/expense_receipt_parser.py
+      - name: Run parser tests
+        run: python -m unittest discover -s test -p 'test_expense_receipt_r1.py' -v
