@@ -18,8 +18,8 @@ from typing import Final
 DOMAIN: Final = "ford_triplog"
 NAME: Final = "Ford Triplog"
 GENERATOR: Final = "Ford Triplog"
-VERSION: Final = "2.7.0-beta.5-r21"
-BUILD: Final = "27021"
+VERSION: Final = "2.7.0-beta.5-r22"
+BUILD: Final = "27022"
 
 # Test-only energy meter, fed by the TEST Dynamic simulation service.
 SIGNAL_DYNAMIC_TEST_ENERGY_UPDATED: Final = "ford_triplog_dynamic_test_energy_updated"
@@ -112,10 +112,12 @@ ROUTE_SOURCE_HA_DEVICE_TRACKER: Final = "ha_device_tracker"
 CONF_OSRM_ENABLED: Final = "osrm_enabled"
 CONF_OSRM_URL: Final = "osrm_url"
 CONF_OSRM_MATCH_RADIUS: Final = "osrm_match_radius"
+CONF_OSRM_MIN_TRIP_DISTANCE_KM: Final = "osrm_min_trip_distance_km"
 
 DEFAULT_OSRM_ENABLED: Final = False
 DEFAULT_OSRM_URL: Final = ""
 DEFAULT_OSRM_MATCH_RADIUS: Final = 15
+DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM: Final = 3.0
 
 
 CONF_SMART_TRIP: Final = "smart_trip"

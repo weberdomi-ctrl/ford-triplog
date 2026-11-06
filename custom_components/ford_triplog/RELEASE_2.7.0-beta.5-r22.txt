@@ -1,0 +1,11 @@
+Ford Triplog Beta 5 / Release 22 (Build 27022)
+
+- OSRM configuration: Minimum trip distance (km), default 3.0 km.
+- 0 km disables the limit; configurable 0-100 km in 0.5 km steps.
+- Automatic map matching is skipped for shorter trips: raw GPS is retained.
+- The decision uses the completed Trip odometer distance, not GPS distance.
+- Unknown/invalid mileage retains existing OSRM matching behaviour.
+- Release 21 parking GPS start selection and reconciliation remain unchanged.
+- Regression tests and CI workflow included.
+
+manifest.json = const.py VERSION = 2.7.0-beta.5-r22; build 27022.

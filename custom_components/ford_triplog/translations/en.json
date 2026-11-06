@@ -702,12 +702,14 @@
         "data": {
           "osrm_enabled": "Enable OSRM",
           "osrm_url": "OSRM service URL",
-          "osrm_match_radius": "Matching radius"
+          "osrm_match_radius": "Matching radius",
+          "osrm_min_trip_distance_km": "Minimum trip distance for OSRM"
         },
         "data_description": {
           "osrm_enabled": "Enables optional local route smoothing via OSRM.",
           "osrm_url": "For example http://192.168.1.20:5005",
-          "osrm_match_radius": "Search radius per GPS point. Recommended and default: 15 m."
+          "osrm_match_radius": "Search radius per GPS point. Recommended and default: 15 m.",
+          "osrm_min_trip_distance_km": "Trips shorter than this distance skip OSRM matching and keep the original GPS trace. Default: 3 km; 0 km disables this limit."
         }
       },
       "osrm_connection_result": {

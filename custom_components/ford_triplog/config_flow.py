@@ -128,9 +128,11 @@ from .const import (
     CONF_OSRM_ENABLED,
     CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
+    CONF_OSRM_MIN_TRIP_DISTANCE_KM,
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
     CONF_JOURNEY_HOME_ZONE,
     CONF_JOURNEY_HOME_TIMEOUT,
     CONF_JOURNEY_MAX_GAP_HOURS,
@@ -6506,6 +6508,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     DEFAULT_OSRM_MATCH_RADIUS,
                 )
             )
+            minimum_distance = float(
+                user_input.get(
+                    CONF_OSRM_MIN_TRIP_DISTANCE_KM,
+                    DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
+                )
+            )
 
             if enabled:
                 try:
@@ -6530,6 +6538,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             CONF_OSRM_ENABLED: True,
                             CONF_OSRM_URL: client.base_url,
                             CONF_OSRM_MATCH_RADIUS: radius,
+                            CONF_OSRM_MIN_TRIP_DISTANCE_KM: minimum_distance,
                         }
                     )
                     self.hass.config_entries.async_update_entry(
@@ -6557,6 +6566,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         CONF_OSRM_ENABLED: False,
                         CONF_OSRM_URL: url,
                         CONF_OSRM_MATCH_RADIUS: radius,
+                        CONF_OSRM_MIN_TRIP_DISTANCE_KM: minimum_distance,
                     }
                 )
                 self.hass.config_entries.async_update_entry(
@@ -6590,6 +6600,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 DEFAULT_OSRM_MATCH_RADIUS,
             )
         )
+        current_minimum_distance = float(
+            context_config.get(
+                CONF_OSRM_MIN_TRIP_DISTANCE_KM,
+                DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
+            )
+        )
 
         return self.async_show_form(
             step_id="osrm_settings",
@@ -6616,6 +6632,18 @@ class FordTriplogOptionsFlow(OptionsFlow):
                             max=100,
                             step=1,
                             unit_of_measurement="m",
+                            mode=selector.NumberSelectorMode.BOX,
+                        )
+                    ),
+                    vol.Required(
+                        CONF_OSRM_MIN_TRIP_DISTANCE_KM,
+                        default=current_minimum_distance,
+                    ): selector.NumberSelector(
+                        selector.NumberSelectorConfig(
+                            min=0,
+                            max=100,
+                            step=0.5,
+                            unit_of_measurement="km",
                             mode=selector.NumberSelectorMode.BOX,
                         )
                     ),
