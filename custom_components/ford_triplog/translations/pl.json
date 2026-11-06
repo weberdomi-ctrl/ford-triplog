@@ -1406,20 +1406,19 @@
         "title": "Edytuj koszt",
         "description": "Wybierz koszt do edycji (najnowsze najpierw).",
         "data": {
-          "expense_id": "Wybierz wpis"
+          "expense_selection": "Wybierz wpis"
         }
       },
       "expense_delete": {
         "title": "Usuń koszt",
         "description": "Wybierz koszt do usunięcia (najnowsze najpierw).",
         "data": {
-          "expense_id": "Wybierz wpis"
+          "expense_selection": "Wybierz wpis"
         }
       },
       "expense_form": {
         "title": "Wprowadź koszt",
         "data": {
-          "receipt_vehicle_status": "Weryfikacja pojazdu z faktury",
           "category": "Kategoria *",
           "description": "Opis",
           "amount": "Kwota *",

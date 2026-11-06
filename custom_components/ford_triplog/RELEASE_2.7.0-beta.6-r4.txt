@@ -1,0 +1,33 @@
+Ford Triplog 2.7.0 Beta 6 / Release 4 (Build 27026)
+=====================================================
+
+Basis: Beta 6 / R3 (27025), Entwicklungsbranch 2.7.0_Beta.6
+
+Kostenbeleg / Fahrzeugabgleich
+------------------------------
+- Die Kontrollschild-Prüfung steht weiterhin gut sichtbar oberhalb der
+  Kostenfelder, aber nur noch einmal im Beschreibungstext.
+- Die redundante Radio-Auswahl "Fahrzeugabgleich (Beleg)" entfällt.
+- Bei abweichendem Kontrollschild bleibt die ausdrückliche
+  Bestätigungs-Checkbox vor dem Speichern zwingend.
+- Ist auf einem importierten Beleg kein Kontrollschild erkennbar, erscheint
+  ein ausdrücklicher Hinweis zur manuellen Fahrzeugzuordnung.
+
+Kosten bearbeiten / löschen
+---------------------------
+- Der Auswahl-Formularschlüssel wurde von `expense_id` in
+  `expense_selection` umbenannt; er wird nur für die Dialogauswahl
+  genutzt, nicht in der Datenbank gespeichert.
+- Der Feldtitel "Eintrag auswählen" wird durch den neuen Schlüssel
+  eindeutig zugeordnet. Damit soll der doppelte Text
+  "Kosten bearbeiten" in der HA-Auswahl verschwinden.
+- Sortierung, übersetzte Kategorien, Beträge, Datum und Werkstatt
+  bleiben wie in R3.
+
+Sicherheit / Tests
+------------------
+- Neue Regressionstests zur Konsistenz von Quellcode und Übersetzungen.
+- Bestehender Dialog-Testworkflow für R3/R4 aktualisiert.
+- Keine Änderungen am OCR-Parser, an den Rechnungswerten,
+  an der Speicherung oder am SQLite-Schema.
+- Formulardarstellung nach Installation in Home Assistant prüfen.

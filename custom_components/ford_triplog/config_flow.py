@@ -82,7 +82,7 @@ from .expense_receipt_parser import (
     extract_expense_fields,
     compare_receipt_registration,
 )
-from .expense_dialog import expense_sort_key, format_expense_choice, vehicle_check_label
+from .expense_dialog import expense_sort_key, format_expense_choice
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -8655,7 +8655,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; self._expense_receipt_plate = ""; self._expense_receipt_model = ""; return await self.async_step_expense_form()
+            self._selected_expense_id=int(user_input["expense_selection"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; self._expense_receipt_plate = ""; self._expense_receipt_model = ""; return await self.async_step_expense_form()
         items = sorted(items, key=expense_sort_key, reverse=True)
         opts = [
             selector.SelectOptionDict(
@@ -8666,12 +8666,12 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
             for x in items
         ]
-        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_selection"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+            await store.async_delete(int(user_input["expense_selection"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
         items = sorted(items, key=expense_sort_key, reverse=True)
         opts = [
             selector.SelectOptionDict(
@@ -8682,7 +8682,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             )
             for x in items
         ]
-        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_selection"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def _async_expense_receipt_items(self):
         store=await self._async_expense_storage()
         expenses=await store.async_load(self._expense_group)
@@ -8770,7 +8770,6 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 data = dict(user_input)
                 data.pop("receipt_file", None)
                 data.pop("confirm_receipt_vehicle", None)
-                data.pop("receipt_vehicle_status", None)  # display only; never persist
                 data["expense_group"] = self._expense_group
                 if eid is not None:
                     data["expense_id"] = eid
@@ -8831,28 +8830,9 @@ class FordTriplogOptionsFlow(OptionsFlow):
         category_default = v("category")
         if category_default not in {x[0] for x in labels["en"][self._expense_group]}:
             category_default = opts[0]["value"]
-        # HA OptionsFlow descriptions are often hidden behind the help UI.
-        # Show the receipt vehicle check in a native one-choice selector instead.
+        # HA shows the receipt check in the visible form description.
+        # Only a genuine mismatch needs an extra confirmation field.
         schema = {}
-        if self._expense_recognition_status:
-            check_label = vehicle_check_label(
-                vehicle_check,
-                receipt_plate,
-                selected_plate,
-                self._expense_receipt_model,
-                lang,
-            )
-            schema[vol.Optional("receipt_vehicle_status", default="shown")] = (
-                selector.SelectSelector(
-                    selector.SelectSelectorConfig(
-                        options=[
-                            selector.SelectOptionDict(
-                                value="shown", label=check_label
-                            )
-                        ]
-                    )
-                )
-            )
         if vehicle_check == "mismatch":
             schema[vol.Optional(
                 "confirm_receipt_vehicle",
@@ -8917,7 +8897,11 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 f"for the selected vehicle. Please verify the assignment."
             )
         else:
-            check_text = ""
+            check_text = (
+                "Kein Kontrollschild auf dem Beleg erkannt. Bitte Fahrzeugzuordnung prüfen."
+                if is_german else
+                "No registration plate found on receipt. Please verify the selected vehicle."
+            ) if self._expense_recognition_status else ""
         if receipt_plate and self._expense_receipt_model:
             check_text += (
                 f" | Beleg-Fahrzeug: {self._expense_receipt_model}"
