@@ -1,0 +1,53 @@
+name: Publish Beta 5 Release 22 pre-release (one-time)
+on:
+  push:
+    branches:
+      - publish/beta5-r22-prerelease-20261106
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout publication instructions
+        uses: actions/checkout@v4
+      - name: Checkout exact Beta 5 Release 22 source
+        uses: actions/checkout@v4
+        with:
+          ref: d958374d55df39dd5d54d2aa0970a45075e446eb
+          path: release_source
+      - name: Verify release metadata and run regressions
+        shell: bash
+        run: |
+          cd release_source
+          python3 - <<'PY'
+          import json, pathlib, re
+          root = pathlib.Path("custom_components/ford_triplog")
+          version = "2.7.0-beta.5-r22"
+          assert json.loads((root / "manifest.json").read_text())["version"] == version
+          const = (root / "const.py").read_text()
+          assert re.search(r'^VERSION: Final = "2\.7\.0-beta\.5-r22"$', const, re.M)
+          assert re.search(r'^BUILD: Final = "27022"$', const, re.M)
+          print("Verified manifest, const, build and release tag.")
+          PY
+          python3 -m py_compile custom_components/ford_triplog/config_flow.py custom_components/ford_triplog/coordinator.py custom_components/ford_triplog/route_tracker.py custom_components/ford_triplog/osrm_policy.py
+          python3 -m unittest discover -s test -p 'test_trip_start_position_r21.py' -v
+          python3 -m unittest discover -s test -p 'test_osrm_min_distance_r22.py' -v
+      - name: Publish GitHub pre-release from exact source commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: 2.7.0-beta.5-r22
+          TARGET_SHA: d958374d55df39dd5d54d2aa0970a45075e446eb
+        shell: bash
+        run: |
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release already exists; refusing to overwrite."
+            exit 1
+          fi
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --target "$TARGET_SHA" \
+            --title "Ford Triplog 2.7.0 Beta 5 – Release 22" \
+            --notes-file "BETA5_R22_RELEASE_NOTES.md" \
+            --prerelease
