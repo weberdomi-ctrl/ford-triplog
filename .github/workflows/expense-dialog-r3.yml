@@ -1,0 +1,40 @@
+name: Beta 6 R3 expense dialog tests
+
+on:
+  pull_request:
+    paths:
+      - 'custom_components/ford_triplog/config_flow.py'
+      - 'custom_components/ford_triplog/expense_dialog.py'
+      - 'custom_components/ford_triplog/strings.json'
+      - 'custom_components/ford_triplog/translations/*.json'
+      - 'test/test_expense_dialog_r3.py'
+      - '.github/workflows/expense-dialog-r3.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  expense-dialog-r3:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate code and translations
+        run: |
+          python -m py_compile custom_components/ford_triplog/config_flow.py custom_components/ford_triplog/expense_dialog.py custom_components/ford_triplog/expense_receipt_parser.py
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          root = Path("custom_components/ford_triplog")
+          for filename in ["strings.json", "translations/de.json", "translations/en.json", "translations/pl.json"]:
+              data = json.loads((root / filename).read_text(encoding="utf-8"))
+              assert data["options"]["step"]["expense_form"]["data"]["receipt_vehicle_status"]
+          PY
+      - name: Run existing R1/R2 and R3 regression tests
+        run: |
+          python -m unittest discover -s test -p 'test_expense_receipt_r1.py' -v
+          python -m unittest discover -s test -p 'test_expense_receipt_r2.py' -v
+          python -m unittest discover -s test -p 'test_expense_dialog_r3.py' -v

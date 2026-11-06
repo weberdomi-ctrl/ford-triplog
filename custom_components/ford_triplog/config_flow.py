@@ -82,6 +82,7 @@ from .expense_receipt_parser import (
     extract_expense_fields,
     compare_receipt_registration,
 )
+from .expense_dialog import expense_sort_key, format_expense_choice, vehicle_check_label
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -8655,14 +8656,32 @@ class FordTriplogOptionsFlow(OptionsFlow):
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
             self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; self._expense_receipt_plate = ""; self._expense_receipt_model = ""; return await self.async_step_expense_form()
-        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        items = sorted(items, key=expense_sort_key, reverse=True)
+        opts = [
+            selector.SelectOptionDict(
+                value=str(x["expense_id"]),
+                label=format_expense_choice(
+                    x, self._expense_group, self.hass.config.language or "en"
+                ),
+            )
+            for x in items
+        ]
         return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
             await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
-        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
+        items = sorted(items, key=expense_sort_key, reverse=True)
+        opts = [
+            selector.SelectOptionDict(
+                value=str(x["expense_id"]),
+                label=format_expense_choice(
+                    x, self._expense_group, self.hass.config.language or "en"
+                ),
+            )
+            for x in items
+        ]
         return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def _async_expense_receipt_items(self):
         store=await self._async_expense_storage()
@@ -8751,6 +8770,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 data = dict(user_input)
                 data.pop("receipt_file", None)
                 data.pop("confirm_receipt_vehicle", None)
+                data.pop("receipt_vehicle_status", None)  # display only; never persist
                 data["expense_group"] = self._expense_group
                 if eid is not None:
                     data["expense_id"] = eid
@@ -8811,26 +8831,67 @@ class FordTriplogOptionsFlow(OptionsFlow):
         category_default = v("category")
         if category_default not in {x[0] for x in labels["en"][self._expense_group]}:
             category_default = opts[0]["value"]
-        schema = {
-            vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
-            vol.Optional("description", default=v("description")): selector.TextSelector(),
-            vol.Required("amount", default=v("amount", "" if getattr(self, "_pending_expense_document", None) else "0")): selector.TextSelector(),
-            vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
-            vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
-            vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
-            vol.Optional("provider", default=v("provider")): selector.TextSelector(),
-            vol.Optional("country", default=v("country")): selector.TextSelector(),
-            vol.Optional("odometer_km", default=v("odometer_km")): selector.TextSelector(),
-            vol.Optional("valid_from", default=v("valid_from")): selector.TextSelector(),
-            vol.Optional("valid_to", default=v("valid_to")): selector.TextSelector(),
-            vol.Optional("notes", default=v("notes")): selector.TextSelector(),
-            **({} if getattr(self, "_pending_expense_document", None) else {vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"))}),
-        }
+        # HA OptionsFlow descriptions are often hidden behind the help UI.
+        # Show the receipt vehicle check in a native one-choice selector instead.
+        schema = {}
+        if self._expense_recognition_status:
+            check_label = vehicle_check_label(
+                vehicle_check,
+                receipt_plate,
+                selected_plate,
+                self._expense_receipt_model,
+                lang,
+            )
+            schema[vol.Optional("receipt_vehicle_status", default="shown")] = (
+                selector.SelectSelector(
+                    selector.SelectSelectorConfig(
+                        options=[
+                            selector.SelectOptionDict(
+                                value="shown", label=check_label
+                            )
+                        ]
+                    )
+                )
+            )
         if vehicle_check == "mismatch":
             schema[vol.Optional(
                 "confirm_receipt_vehicle",
                 default=bool(form_values.get("confirm_receipt_vehicle", False)),
             )] = selector.BooleanSelector()
+
+        schema.update({
+            vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
+            vol.Optional("description", default=v("description")): selector.TextSelector(),
+            vol.Required("amount", default=v("amount", "" if getattr(self, "_pending_expense_document", None) else "0")): selector.TextSelector(),
+            vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
+        })
+        date_value = v("expense_date").strip()
+        if date_value:
+            schema[vol.Optional("expense_date", default=date_value)] = selector.DateSelector()
+        else:
+            schema[vol.Optional("expense_date")] = selector.DateSelector()
+        if not date_value:
+            schema[vol.Optional("expense_year", default=v("expense_year"))] = selector.TextSelector()
+        schema[vol.Optional("provider", default=v("provider"))] = selector.TextSelector()
+        if (not self._expense_recognition_status) or v("country"):
+            schema[vol.Optional("country", default=v("country"))] = selector.TextSelector()
+        schema[vol.Optional("odometer_km", default=v("odometer_km"))] = selector.TextSelector()
+        if self._expense_group == "toll" or v("valid_from") or v("valid_to"):
+            for field in ("valid_from", "valid_to"):
+                date_default = v(field).strip()
+                key = (
+                    vol.Optional(field, default=date_default)
+                    if date_default else vol.Optional(field)
+                )
+                schema[key] = selector.DateSelector()
+        if (not self._expense_recognition_status) or v("notes"):
+            schema[vol.Optional("notes", default=v("notes"))] = selector.TextSelector()
+        if not getattr(self, "_pending_expense_document", None):
+            schema[vol.Optional("receipt_file")] = selector.FileSelector(
+                selector.FileSelectorConfig(
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                )
+            )
         is_german = lang == "de"
         if vehicle_check == "match":
             check_text = (
