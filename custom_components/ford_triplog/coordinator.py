@@ -71,9 +71,7 @@ from .trip_start_position import (
     parking_anchor,
     refresh_parking_snapshot,
     stabilize_parking_snapshot,
-    parked_zone_origin,
     verified_charging_origin,
-    TRUSTED_PARK_SOURCES,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
@@ -2897,37 +2895,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _select_trip_start_gps(
         self, state: dict[str, Any]
     ) -> tuple[dict[str, Any], bool, str]:
-        """Select an independently supported start, not the newest REST poll.
+        """Use the saved parking GPS as the immutable start of a new Trip.
 
-        FordConnect Query may deliver its ignition edge 1-2 minutes after the
-        actual event. A new HA tracker timestamp or a 0m comparison with a
-        cached parked coordinate is NOT an independent location confirmation.
+        FordPass REST can report an ignition edge up to two minutes late. The
+        live vehicle coordinate may already be on the road, while a zone center
+        is not the car's real parked position. Use a validated OFF snapshot
+        first; never replace it with a later route or REST reading.
         """
         chosen = dict(state)
         now = dt_util.now()
 
-        # The configured center of Home/Work is useful only if both the
-        # previous OFF snapshot and live state corroborate the zone and their
-        # odometers match. Never snap a passing trip to a zone merely because
-        # its GPS reading falls inside the radius.
-        for zone_id in ("zone.home", "zone.work"):
-            zone = self.hass.states.get(zone_id)
-            if zone is None:
-                continue
-            center = valid_gps_coordinates(dict(zone.attributes))
-            radius = optional_float(zone.attributes.get("radius"))
-            if center is None or radius is None:
-                continue
-            zone_fix = parked_zone_origin(
-                state, self._last_parking_position, center, radius, now
-            )
-            if zone_fix is not None:
-                chosen.update(zone_fix)
-                return chosen, True, f"zone_center_verified:{zone_id}"
+        anchor, reason = parking_anchor(
+            state, self._last_parking_position, now
+        )
+        if anchor is not None:
+            source = str(anchor.get("source") or "parking_snapshot")
+            chosen["latitude"] = anchor["latitude"]
+            chosen["longitude"] = anchor["longitude"]
+            chosen["gps_updated_at"] = anchor.get("gps_updated_at")
+            # Even the initial ignition-OFF snapshot is a better origin than
+            # the moving/late REST position once position and odometer agree.
+            return chosen, True, f"parking_gps:{source}:{reason}"
 
-        # After DC charging, a charger recognized within 30m gives a real
-        # physical anchor. It is safer than a delayed vehicle GPS, or a
-        # phone point captured after the vehicle has already departed.
+        # A recently verified charging location is the fallback if there is
+        # no usable parked fix. It never overrides a valid parking snapshot.
         charge = self.current_charge
         if charge is not None:
             charger_fix = verified_charging_origin(
@@ -2944,36 +2935,18 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             )
             if charger_fix is not None:
                 chosen.update(charger_fix)
-                return chosen, True, "verified_recent_charging_site"
+                return chosen, True, "fallback_verified_charging_site"
 
-        anchor, reason = parking_anchor(
-            state, self._last_parking_position, now
-        )
-        if anchor is not None:
-            source = str(anchor.get('source') or '')
-            if source in TRUSTED_PARK_SOURCES:
-                chosen["latitude"] = anchor["latitude"]
-                chosen["longitude"] = anchor["longitude"]
-                chosen["gps_updated_at"] = anchor.get("gps_updated_at")
-                return chosen, True, f"trusted_parking:{source}:{reason}"
-            # Matching a cached poll is not confirmation: leave origin
-            # provisional and do not let this anchor freeze the coordinate.
-            _LOGGER.info(
-                "Parking GPS not independently verified at ignition ON: "
-                "source=%s comparison=%s; using unprotected vehicle reading",
-                source, reason,
-            )
-            reason = f"unverified_parking:{source}:{reason}"
-
+        # Home/Work is a classification, never an artificial GPS start point.
         zone_id = self._start_within_known_zone(state)
         if zone_id is not None:
             _LOGGER.debug(
-                "Trip starts in %s without an independently verified origin: %s",
+                "Trip starts in %s without a usable saved parking GPS: %s",
                 zone_id, reason,
             )
-            return chosen, False, f"known_zone_unverified:{zone_id}:{reason}"
+            return chosen, False, f"fallback_vehicle_in_zone:{zone_id}:{reason}"
 
-        return chosen, False, reason
+        return chosen, False, f"fallback_vehicle:{reason}"
 
     def _trip_start_gps_is_stale(
         self,
@@ -4729,12 +4702,26 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 fresh_gps_state,
             )
 
-            # The final vehicle fix often arrives after ignition OFF. Only
-            # update the matching OFF snapshot, never phone GPS collected
-            # after the driver has left the vehicle.
+            # After the existing Smart Trip timeout and FordPass GPS wait,
+            # reconcile the saved parking fix for the NEXT trip. A fresh,
+            # plausible vehicle position wins; if REST is still stale, a
+            # validated last Route Tracker point may be used as a fallback.
+            # No post-OFF phone movement is accepted by the parking helper.
+            parked_route_point = (
+                self.route_tracker.get_last_point()
+                if self.route_tracker is not None else None
+            )
             self._stabilize_parked_position(
                 fresh_gps_state or {},
-                expected_end=self._normalized_datetime(end_state.get('end_time')),
+                route_point=parked_route_point,
+                expected_end=self._normalized_datetime(end_state.get("end_time")),
+            )
+            _LOGGER.info(
+                "Park GPS checked after Smart Trip timeout: "
+                "new_vehicle_gps=%s route_point=%s saved_source=%s",
+                bool(fresh_gps_state),
+                bool(parked_route_point),
+                (self._last_parking_position or {}).get("source"),
             )
 
             self.current_trip.finish(
