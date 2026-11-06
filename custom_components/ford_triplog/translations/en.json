@@ -1425,6 +1425,7 @@
       },
       "expense_form": {
         "title": "Enter cost",
+        "description": "Review detected details before saving. {vehicle_check}",
         "data": {
           "category": "Category *",
           "description": "Description",
@@ -1438,7 +1439,8 @@
           "valid_to": "Valid to (optional)",
           "notes": "Notes",
           "receipt_file": "Invoice / receipt",
-          "expense_year": "Year (if date is unknown)"
+          "expense_year": "Year (if date is unknown)",
+          "confirm_receipt_vehicle": "Assign to this vehicle despite mismatched registration"
         }
       },
       "costs_management": {
@@ -1542,6 +1544,7 @@
       }
     },
     "error": {
+      "expense_vehicle_mismatch_unconfirmed": "The receipt registration does not match the selected vehicle. Review the assignment and explicitly confirm it.",
       "invalid_charging_site_database": "The file is not a valid or compatible Ford Triplog charging location database.",
       "charging_site_download_failed": "The charging location database could not be downloaded from OpenStreetMap or processed. Check the Home Assistant log for more details.",
       "charging_site_download_in_progress": "A charging location database download is already in progress.",
