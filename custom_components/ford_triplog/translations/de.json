@@ -1379,7 +1379,6 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
-
           "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
@@ -1394,7 +1393,6 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
-
           "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
@@ -1409,7 +1407,6 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
-
           "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
@@ -1433,21 +1430,20 @@
         "title": "Kosten bearbeiten",
         "description": "Kosteneintrag auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Eintrag auswählen"
+          "expense_selection": "Eintrag auswählen"
         }
       },
       "expense_delete": {
         "title": "Kosten löschen",
         "description": "Kosteneintrag zum Löschen auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Eintrag auswählen"
+          "expense_selection": "Eintrag auswählen"
         }
       },
       "expense_form": {
         "title": "Kosten erfassen",
         "description": "Erkannte Angaben vor dem Speichern prüfen. {vehicle_check}",
         "data": {
-          "receipt_vehicle_status": "Fahrzeugabgleich (Beleg)",
           "category": "Kategorie *",
           "description": "Beschreibung",
           "amount": "Betrag *",
