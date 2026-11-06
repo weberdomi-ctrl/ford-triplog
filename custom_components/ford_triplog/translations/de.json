@@ -1431,20 +1431,23 @@
       },
       "expense_edit": {
         "title": "Kosten bearbeiten",
+        "description": "Kosteneintrag auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Kosten bearbeiten"
+          "expense_id": "Eintrag auswählen"
         }
       },
       "expense_delete": {
         "title": "Kosten löschen",
+        "description": "Kosteneintrag zum Löschen auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Kosten löschen"
+          "expense_id": "Eintrag auswählen"
         }
       },
       "expense_form": {
         "title": "Kosten erfassen",
         "description": "Erkannte Angaben vor dem Speichern prüfen. {vehicle_check}",
         "data": {
+          "receipt_vehicle_status": "Fahrzeugabgleich (Beleg)",
           "category": "Kategorie *",
           "description": "Beschreibung",
           "amount": "Betrag *",
