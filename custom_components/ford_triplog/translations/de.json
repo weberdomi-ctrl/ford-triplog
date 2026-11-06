@@ -735,12 +735,14 @@
         "data": {
           "osrm_enabled": "OSRM aktivieren",
           "osrm_url": "OSRM-Dienst-URL",
-          "osrm_match_radius": "Matching-Radius"
+          "osrm_match_radius": "Matching-Radius",
+          "osrm_min_trip_distance_km": "OSRM-Mindeststrecke"
         },
         "data_description": {
           "osrm_enabled": "Aktiviert die optionale lokale Routenglättung über OSRM.",
           "osrm_url": "Zum Beispiel http://192.168.1.20:5005",
-          "osrm_match_radius": "Suchradius pro GPS-Punkt. Empfohlen und Standard: 15 m."
+          "osrm_match_radius": "Suchradius pro GPS-Punkt. Empfohlen und Standard: 15 m.",
+          "osrm_min_trip_distance_km": "Kürzere Fahrten werden ohne OSRM-Matching gespeichert. Die ursprünglichen GPS-Punkte bleiben erhalten. Standard: 3 km. Bei 0 km ist das Limit deaktiviert."
         }
       },
       "osrm_connection_result": {

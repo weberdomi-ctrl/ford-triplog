@@ -36,9 +36,11 @@ from .const import (
     CONF_OSRM_ENABLED,
     CONF_OSRM_URL,
     CONF_OSRM_MATCH_RADIUS,
+    CONF_OSRM_MIN_TRIP_DISTANCE_KM,
     DEFAULT_OSRM_ENABLED,
     DEFAULT_OSRM_URL,
     DEFAULT_OSRM_MATCH_RADIUS,
+    DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
     ROUTE_SOURCE_ABRP,
     ROUTE_SOURCE_HA_GEOCODED,
     ROUTE_SOURCE_HA_DEVICE_TRACKER,
@@ -50,6 +52,7 @@ from .osrm_client import (
 )
 from .route_quality import normalize_tracker_attributes, geometry_coordinates
 from .route_matching import verified_osrm_match, RouteMatchRejected
+from .osrm_policy import skip_osrm_for_short_trip
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -114,6 +117,12 @@ class FordTriplogRouteTracker:
             config.get(
                 CONF_OSRM_MATCH_RADIUS,
                 DEFAULT_OSRM_MATCH_RADIUS,
+            )
+        )
+        self.osrm_min_trip_distance_km = float(
+            config.get(
+                CONF_OSRM_MIN_TRIP_DISTANCE_KM,
+                DEFAULT_OSRM_MIN_TRIP_DISTANCE_KM,
             )
         )
 
@@ -453,6 +462,7 @@ class FordTriplogRouteTracker:
         end_latitude: Any = None,
         end_longitude: Any = None,
         end_timestamp: Any = None,
+        trip_distance_km: Any = None,
     ) -> None:
         """Append authoritative Trip end GPS and complete the route."""
 
@@ -483,11 +493,15 @@ class FordTriplogRouteTracker:
         matched_route: dict[str, Any] | None = None
         osrm_match_status = "not_attempted"
         osrm_match_reason: str | None = None
+        short_trip = skip_osrm_for_short_trip(
+            trip_distance_km, self.osrm_min_trip_distance_km
+        )
 
         if (
             self.osrm_enabled
             and self.osrm_url
             and len(points) >= 2
+            and not short_trip
             and self._source_rejected_trip_id != trip_id
         ):
             try:
@@ -555,6 +569,15 @@ class FordTriplogRouteTracker:
                 osrm_match_reason = "auxiliary_gps_source_rejected"
             elif not self.osrm_enabled or not self.osrm_url:
                 osrm_match_reason = "osrm_disabled"
+            elif short_trip:
+                osrm_match_status = "skipped"
+                osrm_match_reason = "trip_below_osrm_minimum_distance"
+                _LOGGER.info(
+                    "OSRM skipped for short trip %s: distance=%.1fkm, "
+                    "configured_minimum=%.1fkm; raw GPS preserved",
+                    trip_id, float(trip_distance_km),
+                    self.osrm_min_trip_distance_km,
+                )
             else:
                 osrm_match_status = "unavailable"
                 osrm_match_reason = "insufficient_gps_points"
