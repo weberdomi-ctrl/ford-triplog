@@ -71,9 +71,7 @@ from .trip_start_position import (
     parking_anchor,
     refresh_parking_snapshot,
     stabilize_parking_snapshot,
-    parked_zone_origin,
     verified_charging_origin,
-    TRUSTED_PARK_SOURCES,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
 from .charging_location_resolver import ChargingLocationResolver
