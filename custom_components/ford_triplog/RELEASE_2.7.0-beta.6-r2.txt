@@ -1,0 +1,21 @@
+Ford Triplog 2.7.0 Beta 6 – Release 2 (Build 27024)
+
+Expense receipt recognition extension (based on Beta 6 R1):
+- Recognize vehicle odometer (km) from explicit Km-Stand/Kilometerstand lines.
+- Recognize explicit registration plate (Kontrollschild/Kennzeichen).
+- Compare receipt plate with the selected vehicle's stored registration in vehicle_details.
+  If plates differ, display a warning and require explicit confirmation before saving.
+  If no plate is stored, show an unverified warning; never infer from currency/country.
+- Detect merchant country from a country-prefixed postal address or explicit country
+  name in the sender header (not registration or currency).
+- Trim merchant address from the provider/company field.
+- Suggest a description and a category when distinctive invoice text is recognized;
+  category is constrained to the selected expense group.
+- Keep existing PDF-first, optional shared OCR service, and manual confirmation flow.
+- Keep the R1 amount/currency/date rules intact. No database changes.
+- Add unit tests with anonymized Swiss garage receipt, German workshop, plate
+  mismatch, country and category regression cases.
+
+Version: 2.7.0-beta.6-r2
+Build: 27024
+Development base: 2.7.0_Beta.6

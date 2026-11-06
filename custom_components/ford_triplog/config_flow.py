@@ -78,7 +78,10 @@ from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_da
 from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
 from .vehicle_tax import FordTriplogVehicleTaxStorage
 from .vehicle_expense import FordTriplogVehicleExpenseStorage
-from .expense_receipt_parser import extract_expense_fields
+from .expense_receipt_parser import (
+    extract_expense_fields,
+    compare_receipt_registration,
+)
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -918,6 +921,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._expense_group: str | None = None
         self._expense_prefill: dict[str, Any] = {}
         self._expense_recognition_status: str = ""
+        self._expense_receipt_plate: str = ""
+        self._expense_receipt_model: str = ""
         self._selected_insurance_id: int | None = None
         self._insurance_prefill: dict[str, Any] = {}
 
@@ -8598,7 +8603,13 @@ class FordTriplogOptionsFlow(OptionsFlow):
                         self._expense_recognition_status = "ocr_failed"
 
                 self._expense_prefill = await self.hass.async_add_executor_job(
-                    extract_expense_fields, text
+                    extract_expense_fields, text, self._expense_group
+                )
+                self._expense_receipt_plate = str(
+                    self._expense_prefill.pop("receipt_registration", "") or ""
+                )
+                self._expense_receipt_model = str(
+                    self._expense_prefill.pop("receipt_vehicle_model", "") or ""
                 )
                 _LOGGER.info(
                     "Expense document analysed: filename=%s extraction=%s fields=%s",
@@ -8633,6 +8644,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_expense_add(self,user_input=None):
         self._expense_prefill = {}
         self._expense_recognition_status = ""
+        self._expense_receipt_plate = ""
+        self._expense_receipt_model = ""
         self._selected_expense_id=None
         # A pending receipt belongs only to the current expense form session.
         self._pending_expense_document = None
@@ -8641,7 +8654,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; return await self.async_step_expense_form()
+            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; self._expense_receipt_plate = ""; self._expense_receipt_model = ""; return await self.async_step_expense_form()
         opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
         return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
@@ -8699,6 +8712,17 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = next((x for x in await store.async_load(self._expense_group) if int(x["expense_id"]) == eid), {})
 
         errors = {}
+        receipt_plate = self._expense_receipt_plate if eid is None else ""
+        selected_plate = ""
+        if receipt_plate:
+            try:
+                selected_details = await FordTriplogVehicleDocumentStorage(
+                    self.hass
+                ).async_get_details(self._ensure_vehicle_context_id()) or {}
+                selected_plate = str(selected_details.get("registration_number") or "")
+            except (OSError, ValueError, TypeError):
+                _LOGGER.exception("Unable to read selected vehicle registration")
+        vehicle_check = compare_receipt_registration(receipt_plate, selected_plate)
         form_values = dict(existing)
         if eid is None and self._expense_prefill:
             form_values.update(self._expense_prefill)
@@ -8707,6 +8731,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
             # intentionally not reused as defaults because HA FileSelector cannot do so.
             form_values.update({k: v for k, v in user_input.items() if k != "receipt_file"})
             try:
+                if vehicle_check == "mismatch" and not user_input.get(
+                    "confirm_receipt_vehicle", False
+                ):
+                    raise ValueError("expense_vehicle_mismatch_unconfirmed")
                 # Persist a newly selected receipt *before* validating the other
                 # fields. Home Assistant's upload token is temporary and cannot
                 # safely be submitted a second time after a validation error.
@@ -8722,6 +8750,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 data = dict(user_input)
                 data.pop("receipt_file", None)
+                data.pop("confirm_receipt_vehicle", None)
                 data["expense_group"] = self._expense_group
                 if eid is not None:
                     data["expense_id"] = eid
@@ -8738,6 +8767,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                 self._selected_expense_id = None
                 self._expense_prefill = {}
                 self._expense_recognition_status = ""
+                self._expense_receipt_plate = ""
+                self._expense_receipt_model = ""
                 return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
             except ValueError as err:
                 # Storage returns stable field-oriented validation codes in the exception.
@@ -8751,7 +8782,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "both_validity_dates_required": "valid_to", "invalid_validity_range": "valid_to",
                     "invalid_odometer": "odometer_km",
                 }
-                errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
+                if code == "expense_vehicle_mismatch_unconfirmed":
+                    errors["base"] = code
+                else:
+                    errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
             except (TypeError, HomeAssistantError, OSError):
                 errors["base"] = "expense_invalid"
 
@@ -8792,7 +8826,49 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("notes", default=v("notes")): selector.TextSelector(),
             **({} if getattr(self, "_pending_expense_document", None) else {vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"))}),
         }
-        return self.async_show_form(step_id="expense_form", data_schema=vol.Schema(schema), errors=errors)
+        if vehicle_check == "mismatch":
+            schema[vol.Optional(
+                "confirm_receipt_vehicle",
+                default=bool(form_values.get("confirm_receipt_vehicle", False)),
+            )] = selector.BooleanSelector()
+        is_german = lang == "de"
+        if vehicle_check == "match":
+            check_text = (
+                f"Beleg-Kontrollschild {receipt_plate} stimmt mit dem ausgewählten Fahrzeug überein."
+                if is_german else
+                f"Receipt plate {receipt_plate} matches the selected vehicle."
+            )
+        elif vehicle_check == "mismatch":
+            check_text = (
+                f"ACHTUNG: Beleg-Kontrollschild {receipt_plate} stimmt nicht mit "
+                f"dem Fahrzeug-Kontrollschild {selected_plate} überein. "
+                f"Zuordnung nur nach ausdrücklicher Bestätigung!"
+                if is_german else
+                f"WARNING: Receipt plate {receipt_plate} differs from the "
+                f"selected vehicle plate {selected_plate}. Explicit confirmation is required."
+            )
+        elif vehicle_check == "unverified":
+            check_text = (
+                f"Beleg-Kontrollschild {receipt_plate}: Beim ausgewählten Fahrzeug "
+                f"ist kein Kontrollschild hinterlegt. Bitte Zuordnung prüfen."
+                if is_german else
+                f"Receipt plate {receipt_plate}: No registration is stored "
+                f"for the selected vehicle. Please verify the assignment."
+            )
+        else:
+            check_text = ""
+        if receipt_plate and self._expense_receipt_model:
+            check_text += (
+                f" | Beleg-Fahrzeug: {self._expense_receipt_model}"
+                if is_german else
+                f" | Receipt vehicle: {self._expense_receipt_model}"
+            )
+        return self.async_show_form(
+            step_id="expense_form",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"vehicle_check": check_text},
+        )
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""

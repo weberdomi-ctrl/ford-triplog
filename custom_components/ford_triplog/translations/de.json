@@ -1443,6 +1443,7 @@
       },
       "expense_form": {
         "title": "Kosten erfassen",
+        "description": "Erkannte Angaben vor dem Speichern prüfen. {vehicle_check}",
         "data": {
           "category": "Kategorie *",
           "description": "Beschreibung",
@@ -1456,7 +1457,8 @@
           "valid_to": "Gültig bis (optional)",
           "notes": "Notiz",
           "receipt_file": "Rechnung / Beleg",
-          "expense_year": "Jahr (falls Datum unbekannt)"
+          "expense_year": "Jahr (falls Datum unbekannt)",
+          "confirm_receipt_vehicle": "Trotz abweichendem Kontrollschild diesem Fahrzeug zuordnen"
         }
       },
       "costs_management": {
@@ -1560,6 +1562,7 @@
       }
     },
     "error": {
+      "expense_vehicle_mismatch_unconfirmed": "Das Kontrollschild des Belegs stimmt nicht mit dem ausgewählten Fahrzeug überein. Prüfe die Zuordnung und bestätige sie ausdrücklich.",
       "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
       "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
       "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",
