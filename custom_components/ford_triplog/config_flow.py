@@ -78,6 +78,7 @@ from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_da
 from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
 from .vehicle_tax import FordTriplogVehicleTaxStorage
 from .vehicle_expense import FordTriplogVehicleExpenseStorage
+from .expense_receipt_parser import extract_expense_fields
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -915,6 +916,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._vehicle_expense_storage: FordTriplogVehicleExpenseStorage | None = None
         self._selected_expense_id: int | None = None
         self._expense_group: str | None = None
+        self._expense_prefill: dict[str, Any] = {}
+        self._expense_recognition_status: str = ""
         self._selected_insurance_id: int | None = None
         self._insurance_prefill: dict[str, Any] = {}
 
@@ -8521,8 +8524,115 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_other_cost_management(self, user_input=None):
         self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
     async def _async_expense_menu(self, step_id):
-        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_receipt_scan","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+
+    async def async_step_expense_receipt_scan(self, user_input=None):
+        """Read a cost invoice into editable suggestions; never save automatically."""
+        errors = {}
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["receipt_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
+                    document = await docs.async_import(
+                        uploaded_path, original_name=uploaded_path.name
+                    )
+
+                # Save the uploaded document only as a pending attachment.
+                # The user must still review and explicitly save the expense.
+                self._selected_expense_id = None
+                self._expense_prefill = {}
+                self._pending_expense_document = document
+                self._expense_recognition_status = "no_text"
+                text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+                if is_pdf:
+                    text = await self.hass.async_add_executor_job(
+                        extract_pdf_text, document["content"]
+                    )
+                    if text.strip():
+                        self._expense_recognition_status = "pdf_text"
+
+                if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    try:
+                        content = document["content"]
+                        name = str(document["original_filename"])
+                        media_type = str(document["media_type"])
+                        if is_pdf:
+                            # The external service can handle PDFs directly
+                            # when the optional local PDF renderer is missing.
+                            try:
+                                rendered = await self.hass.async_add_executor_job(
+                                    render_pdf_page_png, content, 0
+                                )
+                                if rendered:
+                                    content = rendered
+                                    name = f"{Path(name).stem}_page1.png"
+                                    media_type = "image/png"
+                            except (ImportError, RuntimeError):
+                                _LOGGER.debug(
+                                    "PDF renderer unavailable; sending original PDF to OCR"
+                                )
+
+                        ocr = await self._get_ocr_client().async_analyze(
+                            filename=name,
+                            media_type=media_type,
+                            content=content,
+                        )
+                        text = str(ocr.get("raw_text") or "")
+                        if text.strip():
+                            self._expense_recognition_status = "ocr"
+                    except (
+                        FordTriplogOCRAuthenticationError,
+                        FordTriplogOCRConnectionError,
+                        FordTriplogOCRResponseError,
+                        ImportError,
+                        RuntimeError,
+                        ValueError,
+                        TimeoutError,
+                    ):
+                        # OCR is optional, and recognition must never book
+                        # expenses or prevent the manual review form.
+                        _LOGGER.exception(
+                            "Expense receipt OCR unavailable; manual review continues"
+                        )
+                        self._expense_recognition_status = "ocr_failed"
+
+                self._expense_prefill = await self.hass.async_add_executor_job(
+                    extract_expense_fields, text
+                )
+                _LOGGER.info(
+                    "Expense document analysed: filename=%s extraction=%s fields=%s",
+                    document["original_filename"],
+                    self._expense_recognition_status,
+                    sorted(self._expense_prefill),
+                )
+                return await self.async_step_expense_form()
+            except ValueError as err:
+                if (
+                    str(err) == "File does not exist"
+                    and getattr(self, "_pending_expense_document", None)
+                ):
+                    return await self.async_step_expense_form()
+                _LOGGER.exception("Unable to import expense receipt")
+                errors["base"] = "vehicle_document_import_failed"
+            except (OSError, HomeAssistantError, TypeError):
+                _LOGGER.exception("Unable to import expense receipt")
+                errors["base"] = "vehicle_document_import_failed"
+
+        return self.async_show_form(
+            step_id="expense_receipt_scan",
+            data_schema=vol.Schema({
+                vol.Required("receipt_file"): selector.FileSelector(
+                    selector.FileSelectorConfig(
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                    )
+                )
+            }),
+            errors=errors,
+        )
     async def async_step_expense_add(self,user_input=None):
+        self._expense_prefill = {}
+        self._expense_recognition_status = ""
         self._selected_expense_id=None
         # A pending receipt belongs only to the current expense form session.
         self._pending_expense_document = None
@@ -8531,7 +8641,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; return await self.async_step_expense_form()
+            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; return await self.async_step_expense_form()
         opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
         return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
@@ -8590,6 +8700,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
         errors = {}
         form_values = dict(existing)
+        if eid is None and self._expense_prefill:
+            form_values.update(self._expense_prefill)
         if user_input is not None:
             # Keep the submitted values when validation fails. File upload objects are
             # intentionally not reused as defaults because HA FileSelector cannot do so.
@@ -8624,6 +8736,8 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     )
                     self._pending_expense_document = None
                 self._selected_expense_id = None
+                self._expense_prefill = {}
+                self._expense_recognition_status = ""
                 return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
             except ValueError as err:
                 # Storage returns stable field-oriented validation codes in the exception.
@@ -8666,7 +8780,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
         schema = {
             vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
             vol.Optional("description", default=v("description")): selector.TextSelector(),
-            vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
+            vol.Required("amount", default=v("amount", "" if getattr(self, "_pending_expense_document", None) else "0")): selector.TextSelector(),
             vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
             vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
             vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
@@ -8676,7 +8790,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
             vol.Optional("valid_from", default=v("valid_from")): selector.TextSelector(),
             vol.Optional("valid_to", default=v("valid_to")): selector.TextSelector(),
             vol.Optional("notes", default=v("notes")): selector.TextSelector(),
-            vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
+            **({} if getattr(self, "_pending_expense_document", None) else {vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"))}),
         }
         return self.async_show_form(step_id="expense_form", data_schema=vol.Schema(schema), errors=errors)
 

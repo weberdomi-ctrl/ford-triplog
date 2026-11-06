@@ -1361,6 +1361,8 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Add cost",
+
+          "expense_receipt_scan": "Read receipt (PDF/OCR)",
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
@@ -1374,6 +1376,8 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Add cost",
+
+          "expense_receipt_scan": "Read receipt (PDF/OCR)",
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
@@ -1387,6 +1391,8 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Add cost",
+
+          "expense_receipt_scan": "Read receipt (PDF/OCR)",
           "expense_edit": "Edit cost",
           "expense_delete": "Delete cost",
           "init": "Back",
@@ -1397,6 +1403,13 @@
       },
       "expense_add": {
         "title": "Add cost"
+      },
+      "expense_receipt_scan": {
+        "title": "Read expense receipt",
+        "description": "Digital PDFs are read directly. Scanned PDFs and images use the configured OCR service. Extracted values are only suggestions and must be reviewed in the next step.",
+        "data": {
+          "receipt_file": "Invoice / receipt PDF or image"
+        }
       },
       "expense_edit": {
         "title": "Edit cost",
