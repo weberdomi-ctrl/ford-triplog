@@ -16,6 +16,12 @@ PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS = 24 * 3600
 PARK_REUSE_RADIUS_METERS = 125.0
 PARK_REFRESH_RADIUS_METERS = 75.0
 PARK_ODOMETER_TOLERANCE_KM = 1.0
+# FordPass may report ignition ON up to two minutes after the vehicle moved.
+# Only a bounded displacement supported by odometer movement can use the saved
+# parking GPS when the live REST position is already along the route.
+PARK_DELAYED_ON_MAX_MOVEMENT_KM = 5.0
+PARK_DELAYED_ON_MAX_ELAPSED_SECONDS = 48 * 3600
+PARK_DELAYED_ON_GPS_BUFFER_METERS = 250.0
 # FordConnect is polled via REST. HA last_updated is an observation time, not
 # reliable evidence that Ford sampled a *new* GPS fix at that instant.
 PARK_REFRESH_MAX_AFTER_OFF_SECONDS = 10 * 60
@@ -102,22 +108,42 @@ def parking_anchor(
         return None, 'parking_too_old'
 
     old_odo, new_odo = _number(parking.get('odometer')), _number(state.get('odometer'))
-    if old_odo is not None and new_odo is not None:
-        if abs(new_odo - old_odo) > PARK_ODOMETER_TOLERANCE_KM:
-            return None, 'odometer_changed'
-    elif elapsed > PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS:
+    odo_delta = (
+        new_odo - old_odo
+        if old_odo is not None and new_odo is not None else None
+    )
+    if odo_delta is None and elapsed > PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS:
         return None, 'odometer_unavailable'
 
     live_coord = coordinates(state)
     if live_coord is None:
         if elapsed > PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS:
             return None, 'gps_missing_too_long'
+        if odo_delta is not None and abs(odo_delta) > PARK_ODOMETER_TOLERANCE_KM:
+            return None, 'odometer_changed_without_live_gps'
         return dict(parking), 'parking_fallback_no_live_gps'
 
     distance = distance_meters(live_coord, park_coord)
-    if distance > PARK_REUSE_RADIUS_METERS:
-        return None, f'position_mismatch_{distance:.0f}m'
-    return dict(parking), f'parking_confirmed_{distance:.0f}m'
+    if (distance <= PARK_REUSE_RADIUS_METERS
+            and (odo_delta is None or abs(odo_delta) <= PARK_ODOMETER_TOLERANCE_KM)):
+        return dict(parking), f'parking_confirmed_{distance:.0f}m'
+
+    # The delayed ignition-ON edge may already show the vehicle driving away.
+    # Preserve the actual parked coordinate, but only if the odometer confirms
+    # a short, physically plausible distance from the saved parking fix.
+    if (
+        odo_delta is not None
+        and 0 <= odo_delta <= PARK_DELAYED_ON_MAX_MOVEMENT_KM
+        and elapsed <= PARK_DELAYED_ON_MAX_ELAPSED_SECONDS
+        and distance <= (
+            odo_delta * 1000 + PARK_DELAYED_ON_GPS_BUFFER_METERS
+        )
+    ):
+        return dict(parking), f'parking_delayed_rest_{distance:.0f}m'
+
+    if odo_delta is not None and abs(odo_delta) > PARK_ODOMETER_TOLERANCE_KM:
+        return None, 'odometer_changed'
+    return None, f'position_mismatch_{distance:.0f}m'
 
 
 def refresh_parking_snapshot(
@@ -164,7 +190,7 @@ def stabilize_parking_snapshot(
     if not isinstance(parking, dict):
         return None
     off_at = parsed_at(parking.get('ignition_off_at'))
-    if off_at is None or not (-10 <= (at - off_at).total_seconds() <= 7 * 60):
+    if off_at is None or not (-10 <= (at - off_at).total_seconds() <= 15 * 60):
         return None
     result = dict(parking)
     changed = False
@@ -191,7 +217,13 @@ def stabilize_parking_snapshot(
         gap = (off_at - point_time).total_seconds() if point_time else 9999
         vehicle_age = ((off_at - original_gps_at).total_seconds()
                        if original_gps_at else 9999)
-        radius = 150 if vehicle_age <= 30 else 600
+        # A delayed REST fix may still refer to a point travelled up to
+        # two minutes before ignition OFF. Only an accurate, slow, recent
+        # route point is eligible for this expanded fallback distance.
+        radius = (
+            150 if vehicle_age <= 30
+            else min(4000.0, max(600.0, vehicle_age * 35.0))
+        )
         if (point_coord is not None and 0 <= gap <= 20
                 and accuracy is not None and 0 < accuracy <= 25
                 and speed is not None and 0 <= speed <= 5
