@@ -55,9 +55,9 @@ class ExpenseDialogR4Tests(unittest.TestCase):
     def test_version_matches_build(self):
         version = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))["version"]
         constants = (ROOT / "const.py").read_text(encoding="utf-8")
-        self.assertRegex(version, r"^2\\.7\\.0-beta\\.\\d+(?:-r\\d+)?$")
+        self.assertRegex(version, r"^2\.7\.0-beta\.\d+(?:-r\d+)?$")
         self.assertIn(f'VERSION: Final = "{version}"', constants)
-        self.assertRegex(constants, r'BUILD: Final = "270\\d+"')
+        self.assertRegex(constants, r'BUILD: Final = "270\d+"')
 
 
 if __name__ == "__main__":
