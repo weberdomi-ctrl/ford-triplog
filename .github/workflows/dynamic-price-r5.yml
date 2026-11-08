@@ -1,0 +1,32 @@
+name: Beta 6 R5 dynamic price unit and diagnostics tests
+
+on:
+  pull_request:
+    paths:
+      - 'custom_components/ford_triplog/live_dynamic_pricing.py'
+      - 'custom_components/ford_triplog/sensor.py'
+      - 'custom_components/ford_triplog/const.py'
+      - 'custom_components/ford_triplog/manifest.json'
+      - 'test/test_dynamic_price_r5.py'
+      - '.github/workflows/dynamic-price-r5.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  dynamic-price-r5:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate Python syntax
+        run: |
+          python -m py_compile custom_components/ford_triplog/live_dynamic_pricing.py
+          python -m py_compile custom_components/ford_triplog/sensor.py
+          python -m py_compile custom_components/ford_triplog/charge.py
+          python -m py_compile custom_components/ford_triplog/coordinator.py
+      - name: Test price units, interval costs and diagnostics
+        run: python -m unittest discover -s test -p 'test_dynamic_price_r5.py' -v
