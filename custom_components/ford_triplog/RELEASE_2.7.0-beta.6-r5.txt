@@ -1,0 +1,45 @@
+Ford Triplog 2.7.0 Beta 6 / Release 5 (Build 27027)
+=====================================================
+
+Basis: Beta 6 / R4 (27026), Branch: 2.7.0_Beta.6
+
+Dynamische Strompreise: Cent und Rappen
+---------------------------------------
+- Dynamische HA-Preissensoren mit "ct/kWh" werden bei EUR-Tarifen
+  automatisch in EUR/kWh umgerechnet (Preis durch 100).
+- Dynamische HA-Preissensoren mit "Rp/kWh" werden bei CHF-Tarifen
+  automatisch in CHF/kWh umgerechnet.
+- Zusätzlich: cts, cent(s), EURct, EUR-€-Symbol, CHFct und Rappen.
+- EUR/kWh, CHF/kWh sowie bestehende einheitenlose Sensoren bleiben
+  unverändert unterstützt.
+- Einheit/Währung müssen zusammenpassen (EUR/Rp oder CHF/ct werden
+  nicht stillschweigend verwendet); ungültige Preise bleiben abgelehnt.
+- Die Intervallberechnung arbeitet stets mit Basiswährungswerten, damit
+  Centpreise weder 100-fach zu teuer noch doppelt umgerechnet werden.
+
+Nachvollziehbare Preisberechnung
+--------------------------------
+Beim Sensor "Letzter Ladevorgang" werden folgende kompakte Attribute ergänzt:
+- dynamic_price_sensor: verwendeter HA-Preissensor
+- dynamic_price_status: not_configured / in_progress / applied / failed / not_applied
+- dynamic_meter_pricing_applied: tatsächliche Anwendung der
+  Preisintervallberechnung
+- dynamic_price_valid: Gültigkeit der erfassten Preisgrenzen
+- dynamic_price_failure_reason: Ursache bei ungültigen Preisgrenzen
+- dynamic_price_interval_count: berücksichtigte Intervalle
+- dynamic_meter_allocation_method: Methode der Energiezuordnung
+
+Die Ladehistorie erhält je Eintrag nur Status und Anzahl der Intervalle,
+um die Home-Assistant-Grenze für Attributgrössen nicht auszureizen.
+
+Kompatibilität
+--------------
+- cost_source bleibt für dynamische Heimladungen "home_tariff".
+- Bestehende Lade- und Kostendaten werden nicht verändert oder rückwirkend
+  neu berechnet; die neue Preisumrechnung greift für folgende Ladevorgänge.
+- Keine Änderung an Zündung, Fahrzeugenergie, Ladeverlustberechnung,
+  externen Energiezählern, OCR oder Storage-Schema.
+- Regressionstests für EUR-Cent, CHF-Rappen, Einheitenfehler, Tarifintervalle,
+  Diagnosefelder und Versionsnummer.
+
+Feedback zu GitHub-Issue #70: Tibber/evcc Praxistest mit ct/kWh.
