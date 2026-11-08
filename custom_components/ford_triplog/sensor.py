@@ -65,6 +65,7 @@ from .const import (
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .dynamic_test_energy_sensor import FordTriplogDynamicTestEnergySensor
+from .live_dynamic_pricing import dynamic_price_diagnostics
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
@@ -3053,6 +3054,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
             if currency:
                 currencies.add(currency)
 
+            price_diagnostics = dynamic_price_diagnostics(data)
             entry = {
                 "charge_id": data.get("charge_id"),
                 "start_time": data.get("start_time"),
@@ -3115,6 +3117,8 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "effective_price_per_kwh": data.get("effective_price_per_kwh"),
                 "cost_source": data.get("cost_source"),
                 "cost_verified": data.get("cost_verified"),
+                "dynamic_price_status": price_diagnostics["dynamic_price_status"],
+                "dynamic_price_interval_count": price_diagnostics["dynamic_price_interval_count"],
                 "receipt_filename": data.get("receipt_filename"),
                 "auto_memo": data.get("auto_memo"),
                 "receipts": receipts_by_charge.get(
@@ -6966,6 +6970,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             ),
             "cost_source": last_charge.get("cost_source"),
             "cost_verified": last_charge.get("cost_verified"),
+            **dynamic_price_diagnostics(last_charge),
             "receipt_filename": last_charge.get(
                 "receipt_filename"
             ),
