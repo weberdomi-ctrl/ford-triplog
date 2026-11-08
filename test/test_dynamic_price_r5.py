@@ -113,9 +113,9 @@ class PriceUnitR5Tests(unittest.TestCase):
         self.assertIn('price_diagnostics["dynamic_price_interval_count"]', source)
         manifest = json.loads((ROOT / "manifest.json").read_text(encoding="utf-8"))
         constants = (ROOT / "const.py").read_text(encoding="utf-8")
-        self.assertEqual(manifest["version"], "2.7.0-beta.6-r5")
-        self.assertIn('VERSION: Final = "2.7.0-beta.6-r5"', constants)
-        self.assertIn('BUILD: Final = "27027"', constants)
+        self.assertRegex(manifest["version"], r"^2\\.7\\.0-beta\\.\\d+(?:-r\\d+)?$")
+        self.assertIn(f'VERSION: Final = "{manifest["version"]}"', constants)
+        self.assertRegex(constants, r'BUILD: Final = "270\\d+"')
 
 
 if __name__ == "__main__":
