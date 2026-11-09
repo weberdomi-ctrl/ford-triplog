@@ -25,6 +25,13 @@ PARK_DELAYED_ON_GPS_BUFFER_METERS = 250.0
 # FordConnect is polled via REST. HA last_updated is an observation time, not
 # reliable evidence that Ford sampled a *new* GPS fix at that instant.
 PARK_REFRESH_MAX_AFTER_OFF_SECONDS = 10 * 60
+# A refreshed HA device_tracker timestamp is not proof of a fresh OEM GPS fix.
+# Permit a distant parked-route correction only with TWO independent, accurate,
+# near-stationary PRE-OFF phone fixes from this same recorded trip.
+PARK_ROUTE_CORROBORATION_MAX_GAP_SECONDS = 45
+PARK_ROUTE_CORROBORATION_MAX_DISTANCE_METERS = 80.0
+PARK_ROUTE_CORROBORATION_MAX_VEHICLE_MISMATCH_METERS = 10000.0
+PARK_ROUTE_CORROBORATION_MAX_SPEED_MPS = 2.0
 TRUSTED_PARK_SOURCES = frozenset({
     'parked_route_fix_at_ignition_off',
     'vehicle_tracker_odometer_confirmed_parked_fix',
@@ -174,12 +181,83 @@ def refresh_parking_snapshot(
     return new
 
 
+def corroborated_parked_route_fix(
+    route_point: dict[str, Any] | None,
+    route_points: list[dict[str, Any]] | None,
+    off_at: datetime,
+    off_coord: tuple[float, float] | None,
+    parked_odometer: float | None,
+    stable_odometer: float | None,
+) -> bool:
+    """Verify independent pre-OFF route fixes before overruling distant OEM GPS.
+
+    A tracker updated in Home Assistant can report a NEW last_updated while
+    still carrying the OLD vehicle coordinate. A single phone position is not
+    enough to override it by kilometres: require two consecutive high-quality
+    slow route fixes, both captured during the ending trip before ignition OFF,
+    and a stable post-OFF odometer. Post-OFF phone travel is never accepted.
+    """
+    if (
+        not isinstance(route_point, dict)
+        or not isinstance(route_points, list)
+        or len(route_points) < 2
+        or off_coord is None
+        or parked_odometer is None
+        or stable_odometer is None
+        or abs(stable_odometer - parked_odometer) > PARK_ODOMETER_TOLERANCE_KM
+    ):
+        return False
+
+    prior, latest = route_points[-2:]
+    if not isinstance(prior, dict) or not isinstance(latest, dict):
+        return False
+    latest_coord = coordinates(latest)
+    candidate_coord = coordinates(route_point)
+    prior_coord = coordinates(prior)
+    if latest_coord is None or prior_coord is None or candidate_coord is None:
+        return False
+    # Never promote an older or different point if the route progressed.
+    if distance_meters(candidate_coord, latest_coord) > 1.0:
+        return False
+    vehicle_mismatch = distance_meters(off_coord, latest_coord)
+    if not (PARK_REUSE_RADIUS_METERS < vehicle_mismatch
+            <= PARK_ROUTE_CORROBORATION_MAX_VEHICLE_MISMATCH_METERS):
+        return False
+
+    times = [parsed_at(point.get('timestamp')) for point in (prior, latest)]
+    if any(stamp is None for stamp in times):
+        return False
+    earlier, later = times
+    gaps = ((off_at - earlier).total_seconds(),
+            (off_at - later).total_seconds(),
+            (later - earlier).total_seconds())
+    if not (
+        0 <= gaps[1] <= 20
+        and 0 <= gaps[0] <= 60
+        and 1 <= gaps[2] <= PARK_ROUTE_CORROBORATION_MAX_GAP_SECONDS
+    ):
+        return False
+
+    if distance_meters(prior_coord, latest_coord) > PARK_ROUTE_CORROBORATION_MAX_DISTANCE_METERS:
+        return False
+    for point in (prior, latest):
+        accuracy = _number(point.get('gps_accuracy'))
+        speed = _number(point.get('speed'))
+        if not (
+            accuracy is not None and 0 < accuracy <= 25
+            and speed is not None and 0 <= speed <= PARK_ROUTE_CORROBORATION_MAX_SPEED_MPS
+        ):
+            return False
+    return True
+
+
 def stabilize_parking_snapshot(
     parking: dict[str, Any] | None,
     stable_state: dict[str, Any],
     at: datetime,
     *,
     route_point: dict[str, Any] | None = None,
+    route_points: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any] | None:
     """Reconcile the OFF anchor with the stable vehicle odometer/last GPS.
 
@@ -224,14 +302,28 @@ def stabilize_parking_snapshot(
             150 if vehicle_age <= 30
             else min(4000.0, max(600.0, vehicle_age * 35.0))
         )
+        corroborated = corroborated_parked_route_fix(
+            route_point, route_points, off_at, off_coord, old_odo, stable_odo
+        )
+        # HA tracker.last_updated can be fresh even when its vehicle position
+        # is 6 km old. Only a corroborated, stationary pre-OFF phone trace may
+        # overrule that apparent freshness and the normal 150 m radius.
+        normal_route_fix = (
+            point_coord is not None
+            and distance_meters(off_coord, point_coord) <= radius
+            and (original_gps_at is None or point_time > original_gps_at)
+        )
         if (point_coord is not None and 0 <= gap <= 20
                 and accuracy is not None and 0 < accuracy <= 25
                 and speed is not None and 0 <= speed <= 5
-                and distance_meters(off_coord, point_coord) <= radius
-                and (original_gps_at is None or point_time > original_gps_at)):
+                and (normal_route_fix or corroborated)):
             result['latitude'], result['longitude'] = point_coord
             result['gps_updated_at'] = point_time.isoformat()
-            result['source'] = 'parked_route_fix_at_ignition_off'
+            result['source'] = (
+                'parked_route_fix_corrob_pre_off'
+                if corroborated and not normal_route_fix
+                else 'parked_route_fix_at_ignition_off'
+            )
             changed = True
 
     # Only the VEHICLE tracker is trusted to correct parking after OFF.
@@ -264,13 +356,33 @@ def stabilize_parking_snapshot(
     newer_fix = previous_at is None or (
         vehicle_gps_at is not None and vehicle_gps_at > previous_at
     )
+    # Once an independent high-quality route trace corrected an obviously
+    # stale vehicle position, do not immediately overwrite it with the same
+    # stale OEM coordinate just because the HA entity timestamp moved on.
+    corrected_route_coord = coordinates(result)
+    vehicle_agrees_with_route = (
+        result.get('source') not in (
+            'parked_route_fix_at_ignition_off',
+            'parked_route_fix_corrob_pre_off',
+        )
+        or (
+            corrected_route_coord is not None
+            and vehicle_coord is not None
+            and distance_meters(corrected_route_coord, vehicle_coord)
+            <= PARK_REUSE_RADIUS_METERS
+        )
+    )
     if (vehicle_coord is not None and vehicle_gps_at is not None
+            and vehicle_agrees_with_route
             and off_at.timestamp() - 120 <= vehicle_gps_at.timestamp()
             and vehicle_gps_at <= at
             and (at - vehicle_gps_at).total_seconds() <= 180
             and (newer_fix or odo_corroborated)
-            and (vehicle_distance is None or vehicle_distance <= 2000
-                 or odo_corroborated)):
+            # A new HA last_updated with identical GPS coordinates is NOT
+            # independent evidence of a new OEM position.
+            and vehicle_distance is not None
+            and (vehicle_distance >= 5.0 or odo_corroborated)
+            and (vehicle_distance <= 2000 or odo_corroborated)):
         result['latitude'], result['longitude'] = vehicle_coord
         result['gps_updated_at'] = vehicle_gps_at.isoformat()
         result['source'] = ('vehicle_tracker_odometer_confirmed_parked_fix'

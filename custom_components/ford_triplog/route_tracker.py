@@ -717,6 +717,16 @@ class FordTriplogRouteTracker:
 
         return dict(self.points[-1])
 
+    def get_recent_points(self, limit: int = 8) -> list[dict[str, Any]]:
+        """Return a bounded copy of the final points of the current trip.
+
+        The parking validator uses the last two phone fixes to corroborate a
+        stationary parking location. Never fetch post-pause device location.
+        """
+        if limit <= 0:
+            return []
+        return [dict(point) for point in self.points[-min(limit, 8):]]
+
     @staticmethod
     def _coordinate_from_point(
         point: dict[str, Any],

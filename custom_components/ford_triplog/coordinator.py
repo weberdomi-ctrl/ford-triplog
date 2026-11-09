@@ -2819,14 +2819,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # immediate ON edge must not be lost waiting for the previous OFF.
         self._schedule_parking_position_save(snap)
         _LOGGER.info(
-            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s",
+            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s position=%s,%s",
             (dt_util.now() - self._normalized_datetime(snap["gps_updated_at"])).total_seconds(),
-            snap.get("odometer"),
+            snap.get("odometer"), snap.get("latitude"), snap.get("longitude"),
         )
 
     def _stabilize_parked_position(
         self, stable_state: dict[str, Any], *,
         route_point: dict[str, Any] | None = None,
+        route_points: list[dict[str, Any]] | None = None,
         expected_end: datetime | None = None,
     ) -> None:
         """Save stabilized end odometer and corroborated vehicle/route GPS."""
@@ -2842,7 +2843,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         ):
             return
         updated = stabilize_parking_snapshot(
-            parking, stable_state, dt_util.now(), route_point=route_point
+            parking, stable_state, dt_util.now(),
+            route_point=route_point, route_points=route_points,
         )
         if updated is None:
             return
@@ -3319,9 +3321,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.route_tracker.get_last_point()
                 if self.route_tracker is not None else None
             )
+            recent_route_points = (
+                self.route_tracker.get_recent_points()
+                if self.route_tracker is not None else []
+            )
             self._stabilize_parked_position(
                 state, route_point=parking_route_point,
-                expected_end=end_time,
+                route_points=recent_route_points, expected_end=end_time,
             )
             address = await self._get_address(state)
 
@@ -4711,9 +4717,13 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.route_tracker.get_last_point()
                 if self.route_tracker is not None else None
             )
+            recent_route_points = (
+                self.route_tracker.get_recent_points()
+                if self.route_tracker is not None else []
+            )
             self._stabilize_parked_position(
-                fresh_gps_state or {},
-                route_point=parked_route_point,
+                fresh_gps_state or {}, route_point=parked_route_point,
+                route_points=recent_route_points,
                 expected_end=self._normalized_datetime(end_state.get("end_time")),
             )
             _LOGGER.info(
