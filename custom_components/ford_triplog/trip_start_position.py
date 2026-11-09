@@ -11,6 +11,9 @@ from math import asin, cos, radians, sin, sqrt
 from typing import Any
 
 PARK_GPS_MAX_AGE_SECONDS = 30 * 60
+# Keep an old, *genuine OEM-dated* OFF fix only as an untrusted candidate
+# while two independent pre-OFF route fixes can corroborate the actual park.
+PARK_STALE_CANDIDATE_MAX_AGE_SECONDS = 24 * 3600
 PARK_REUSE_MAX_AGE_SECONDS = 30 * 24 * 3600
 PARK_REUSE_MISSING_GPS_MAX_AGE_SECONDS = 24 * 3600
 PARK_REUSE_RADIUS_METERS = 125.0
@@ -34,6 +37,7 @@ PARK_ROUTE_CORROBORATION_MAX_VEHICLE_MISMATCH_METERS = 10000.0
 PARK_ROUTE_CORROBORATION_MAX_SPEED_MPS = 2.0
 TRUSTED_PARK_SOURCES = frozenset({
     'parked_route_fix_at_ignition_off',
+    'parked_route_fix_corrob_pre_off',
     'vehicle_tracker_odometer_confirmed_parked_fix',
 })
 ZONE_ANCHOR_MAX_RADIUS_METERS = 150.0
@@ -82,21 +86,36 @@ def distance_meters(a: tuple[float, float], b: tuple[float, float]) -> float:
     return 2 * 6371000 * asin(min(1.0, sqrt(max(0.0, c))))
 
 
-def parking_snapshot(state: dict[str, Any], at: datetime) -> dict[str, Any] | None:
-    """Save the vehicle's last plausible GPS *at the ignition OFF edge*."""
+def parking_snapshot(
+    state: dict[str, Any], at: datetime, *, allow_stale: bool = False,
+) -> dict[str, Any] | None:
+    """Save OFF coordinates; old OEM fixes are UNTRUSTED until corroborated.
+
+    allow_stale is reserved for real GPS module timestamps, not HA
+    last_updated values. Otherwise we would lose the recorded route tail before
+    R1 can verify the true parking location.
+    """
     coord = coordinates(state)
     gps_at = parsed_at(state.get('gps_updated_at'))
     if coord is None or gps_at is None:
         return None
     age = (at - gps_at).total_seconds()
-    if age < -60 or age > PARK_GPS_MAX_AGE_SECONDS:
+    limit = (
+        PARK_STALE_CANDIDATE_MAX_AGE_SECONDS
+        if allow_stale else PARK_GPS_MAX_AGE_SECONDS
+    )
+    if age < -60 or age > limit:
         return None
+    unverified = age > PARK_GPS_MAX_AGE_SECONDS
     return {
         'latitude': coord[0], 'longitude': coord[1],
         'ignition_off_at': at.isoformat(),
         'gps_updated_at': gps_at.isoformat(),
         'odometer': _number(state.get('odometer')),
-        'source': 'vehicle_tracker_ignition_off',
+        'source': (
+            'vehicle_tracker_stale_ignition_off' if unverified
+            else 'vehicle_tracker_ignition_off'
+        ),
     }
 
 
@@ -107,6 +126,10 @@ def parking_anchor(
     park_coord = coordinates(parking)
     if park_coord is None or not isinstance(parking, dict):
         return None, 'missing_parking_snapshot'
+    # A five-hour-old Ford location does not become a confirmed parking
+    # origin just because the next REST poll repeats identical coordinates.
+    if parking.get('source') == 'vehicle_tracker_stale_ignition_off':
+        return None, 'stale_ignition_off_unconfirmed'
     parked_at = parsed_at(parking.get('ignition_off_at'))
     if parked_at is None:
         return None, 'missing_off_time'
@@ -309,7 +332,8 @@ def stabilize_parking_snapshot(
         # is 6 km old. Only a corroborated, stationary pre-OFF phone trace may
         # overrule that apparent freshness and the normal 150 m radius.
         normal_route_fix = (
-            point_coord is not None
+            parking.get('source') != 'vehicle_tracker_stale_ignition_off'
+            and point_coord is not None
             and distance_meters(off_coord, point_coord) <= radius
             and (original_gps_at is None or point_time > original_gps_at)
         )
