@@ -64,6 +64,7 @@ from .charge import Charge
 from .external_energy_meter import read_energy_kwh, charging_energy_kwh
 from .live_dynamic_pricing import read_price_per_kwh, price_meter_boundaries
 from .utils import optional_float
+from .fordpass_gps_timestamp import gps_sensor_entity_id, resolve_oem_gps_timestamp
 from .route_quality import numeric as gps_numeric
 from .trip_start_position import (
     coordinates as valid_gps_coordinates,
@@ -324,6 +325,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self._publish_delay_seconds = 0.25
         self._publish_handle: asyncio.TimerHandle | None = None
         self._pending_publish_data: dict[str, Any] | None = None
+
+        # Pair the configured FordPass tracker with its own GPS JSON sensor.
+        # Other tracker integrations keep their existing timestamp behavior.
+        self._fordpass_gps_sensor_entity = gps_sensor_entity_id(config.get(CONF_TRACKER))
 
         # Vehicle-source health monitoring. A full source outage is only
         # declared when every configured live vehicle entity is unavailable
@@ -614,6 +619,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.config.get("ignition"),
                 self.config.get("odometer"),
                 self.config.get("tracker"),
+                self._fordpass_gps_sensor_entity,
                 self.config.get("soc"),
                 self.config.get("charging"),
                 self.plug_entity,
@@ -1165,9 +1171,30 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         data["latitude"] = tracker.attributes.get("latitude") if tracker else None
         data["longitude"] = tracker.attributes.get("longitude") if tracker else None
-        data["gps_updated_at"] = (
-            tracker.last_updated.isoformat() if tracker else None
-        )
+
+        # HA last_updated is the observation time, not the OEM sampling time.
+        # Pair GPS JSON timestamps only with matching VIN tracker coordinates.
+        gps_timestamp = tracker.last_updated.isoformat() if tracker else None
+        gps_source = "ha_last_updated"
+        if tracker is not None and self._fordpass_gps_sensor_entity:
+            gps_sensor = self.hass.states.get(self._fordpass_gps_sensor_entity)
+            if gps_sensor is not None:
+                sensor_attrs = (
+                    dict(gps_sensor.attributes)
+                    if gps_sensor.state not in ("unavailable", "unknown")
+                    else {}
+                )
+                oem_time, gps_source = resolve_oem_gps_timestamp(
+                    data["latitude"], data["longitude"], sensor_attrs,
+                    dt_util.now(),
+                )
+                # If an existing sensor mismatches, do not fabricate fresh GPS
+                # using HA last_updated. A missing sensor remains compatible.
+                gps_timestamp = oem_time.isoformat() if oem_time else None
+            else:
+                gps_source = "ha_last_updated_sensor_absent"
+        data["gps_updated_at"] = gps_timestamp
+        data["gps_timestamp_source"] = gps_source
         return data
 
 
@@ -1175,7 +1202,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
     async def _state_changed(self, event: Event):
         event_entity_id = event.data.get("entity_id")
-        if event_entity_id == self.config.get("tracker"):
+        if event_entity_id in (
+            self.config.get("tracker"), self._fordpass_gps_sensor_entity
+        ):
             self._gps_update_event.set()
 
         self.vehicle_state = self._read_vehicle_state()
@@ -1224,7 +1253,9 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 self.vehicle_state, at=event.time_fired
             )
         elif (
-            event_entity_id == self.config.get("tracker")
+            event_entity_id in (
+                self.config.get("tracker"), self._fordpass_gps_sensor_entity
+            )
             and ignition is False
             and not trip_started
         ):
@@ -2807,7 +2838,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self, state: dict[str, Any], *, at: datetime | None = None
     ) -> None:
         """Keep the last valid vehicle GPS at the ignition-OFF instant."""
-        snap = parking_snapshot(state, at or dt_util.now())
+        snap = parking_snapshot(
+            state, at or dt_util.now(),
+            allow_stale=state.get("gps_timestamp_source") in (
+                "ford_gps_module", "ford_update_time",
+            ),
+        )
         if snap is None:
             _LOGGER.debug(
                 "Ignition OFF parking snapshot unavailable or GPS too old; "
@@ -2819,9 +2855,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # immediate ON edge must not be lost waiting for the previous OFF.
         self._schedule_parking_position_save(snap)
         _LOGGER.info(
-            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s position=%s,%s",
+            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s "
+            "position=%s,%s source=%s gps_time_source=%s",
             (dt_util.now() - self._normalized_datetime(snap["gps_updated_at"])).total_seconds(),
             snap.get("odometer"), snap.get("latitude"), snap.get("longitude"),
+            snap.get("source"), state.get("gps_timestamp_source"),
         )
 
     def _stabilize_parked_position(
@@ -4510,6 +4548,19 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             vehicle_latitude is not None
             and vehicle_longitude is not None
         )
+        # A published REST response does not prove Ford sampled a current
+        # location. A stale OEM sample must not overrule an accurate route fix.
+        if vehicle_valid and stop_at is not None:
+            vehicle_age = (
+                (stop_at - vehicle_time).total_seconds()
+                if vehicle_time is not None else float("inf")
+            )
+            if not (-60 <= vehicle_age <= 180):
+                vehicle_valid = False
+                _LOGGER.info(
+                    "Trip-end vehicle GPS is stale/unconfirmed: age=%.0fs",
+                    vehicle_age,
+                )
 
 
         distance: float | None = None
@@ -4722,7 +4773,8 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 if self.route_tracker is not None else []
             )
             self._stabilize_parked_position(
-                fresh_gps_state or {}, route_point=parked_route_point,
+                fresh_gps_state or self._read_vehicle_state(),
+                route_point=parked_route_point,
                 route_points=recent_route_points,
                 expected_end=self._normalized_datetime(end_state.get("end_time")),
             )
