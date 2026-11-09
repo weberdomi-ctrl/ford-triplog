@@ -5,6 +5,8 @@ on:
     paths:
       - 'custom_components/ford_triplog/coordinator.py'
       - 'custom_components/ford_triplog/trip_start_position.py'
+      - 'custom_components/ford_triplog/route_tracker.py'
+      - 'test/test_trip_start_position_beta7_r1.py'
       - 'test/test_trip_start_position_r21.py'
   workflow_dispatch:
 
@@ -20,6 +22,8 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check Python syntax
-        run: python -m py_compile custom_components/ford_triplog/coordinator.py custom_components/ford_triplog/trip_start_position.py
+        run: python -m py_compile custom_components/ford_triplog/coordinator.py custom_components/ford_triplog/trip_start_position.py custom_components/ford_triplog/route_tracker.py
       - name: Run parking GPS regression tests
-        run: python -m unittest discover -s test -p 'test_trip_start_position_r21.py' -v
+        run: |
+          python -m unittest discover -s test -p 'test_trip_start_position_r21.py' -v
+          python -m unittest discover -s test -p 'test_trip_start_position_beta7_r1.py' -v
