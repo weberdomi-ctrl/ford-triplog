@@ -378,8 +378,11 @@ def stabilize_parking_snapshot(
             and vehicle_gps_at <= at
             and (at - vehicle_gps_at).total_seconds() <= 180
             and (newer_fix or odo_corroborated)
-            and (vehicle_distance is None or vehicle_distance <= 2000
-                 or odo_corroborated)):
+            # A new HA last_updated with identical GPS coordinates is NOT
+            # independent evidence of a new OEM position.
+            and vehicle_distance is not None
+            and (vehicle_distance >= 5.0 or odo_corroborated)
+            and (vehicle_distance <= 2000 or odo_corroborated)):
         result['latitude'], result['longitude'] = vehicle_coord
         result['gps_updated_at'] = vehicle_gps_at.isoformat()
         result['source'] = ('vehicle_tracker_odometer_confirmed_parked_fix'
