@@ -176,6 +176,90 @@ def parking_anchor(
     return None, f'position_mismatch_{distance:.0f}m'
 
 
+def confirmed_post_off_oem_parking_fix(
+    parking: dict[str, Any] | None,
+    state: dict[str, Any],
+    at: datetime,
+    *,
+    route_point: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    """Promote a stale OFF candidate only with matching fresh Ford and route GPS.
+
+    FordPass may update its GPS JSON and device_tracker seconds *after* the
+    ignition-OFF event. A 36 km-old coordinate must not become a permanent
+    parking origin if the newly sampled Ford position and the recorded trip's
+    last accurate route point independently agree on the real endpoint.
+
+    This intentionally requires a genuine VIN-paired OEM timestamp, a
+    near-OFF recorded route point, and a stable vehicle odometer. A phone
+    location captured after ignition OFF or a newer HA last_updated alone is
+    insufficient, and verified parking anchors are never replaced here.
+    """
+    if (
+        not isinstance(parking, dict)
+        or parking.get('source') != 'vehicle_tracker_stale_ignition_off'
+        or not isinstance(state, dict)
+        or state.get('gps_timestamp_source') not in (
+            'ford_gps_module', 'ford_update_time',
+        )
+        or not isinstance(route_point, dict)
+    ):
+        return None
+
+    off_at = parsed_at(parking.get('ignition_off_at'))
+    oem_at = parsed_at(state.get('gps_updated_at'))
+    original_at = parsed_at(parking.get('gps_updated_at'))
+    route_at = parsed_at(route_point.get('timestamp'))
+    if None in (off_at, oem_at, original_at, route_at):
+        return None
+
+    # The OEM fix is allowed to be delivered late, but its *measurement* must
+    # belong to this ignition-OFF window, not to an earlier stop or a later trip.
+    if not (
+        0 <= (at - off_at).total_seconds() <= PARK_REFRESH_MAX_AFTER_OFF_SECONDS
+        and -120 <= (oem_at - off_at).total_seconds() <= 120
+        and oem_at > original_at
+        and 0 <= (at - oem_at).total_seconds() <= 180
+        and 0 <= (off_at - route_at).total_seconds() <= 20
+    ):
+        return None
+
+    vehicle_coord = coordinates(state)
+    route_coord = coordinates(route_point)
+    if vehicle_coord is None or route_coord is None:
+        return None
+    # The phone is not permitted to override the vehicle by kilometres:
+    # both sources must now confirm the same end location independently.
+    if distance_meters(vehicle_coord, route_coord) > PARK_REUSE_RADIUS_METERS:
+        return None
+
+    accuracy = _number(route_point.get('gps_accuracy'))
+    speed = _number(route_point.get('speed'))
+    if not (
+        accuracy is not None and 0 < accuracy <= 35
+        and speed is not None and 0 <= speed <= 5
+    ):
+        return None
+
+    old_odo = _number(parking.get('odometer'))
+    new_odo = _number(state.get('odometer'))
+    if (
+        old_odo is None or new_odo is None
+        or abs(new_odo - old_odo) > PARK_ODOMETER_TOLERANCE_KM
+    ):
+        return None
+
+    confirmed = dict(parking)
+    confirmed.update({
+        'latitude': vehicle_coord[0],
+        'longitude': vehicle_coord[1],
+        'gps_updated_at': oem_at.isoformat(),
+        'odometer': new_odo,
+        'source': 'vehicle_oem_route_confirmed_post_off',
+    })
+    return confirmed
+
+
 def refresh_parking_snapshot(
     parking: dict[str, Any] | None, state: dict[str, Any], at: datetime,
 ) -> dict[str, Any] | None:
