@@ -72,6 +72,7 @@ from .trip_start_position import (
     parking_anchor,
     refresh_parking_snapshot,
     stabilize_parking_snapshot,
+    confirmed_post_off_oem_parking_fix,
     verified_charging_origin,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
@@ -2884,6 +2885,15 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             parking, stable_state, dt_util.now(),
             route_point=route_point, route_points=route_points,
         )
+        # A VIN-paired OEM fix can arrive just after ignition OFF. Only
+        # promote an otherwise untrusted stale anchor when the recorded
+        # route endpoint independently confirms the fresh Ford position.
+        confirmed = confirmed_post_off_oem_parking_fix(
+            updated or parking, stable_state, dt_util.now(),
+            route_point=route_point,
+        )
+        if confirmed is not None:
+            updated = confirmed
         if updated is None:
             return
         self._last_parking_position = updated
@@ -2899,17 +2909,26 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
     def _refresh_parked_position(
         self, state: dict[str, Any]
     ) -> None:
-        """Accept a fresh near-identical vehicle fix while ignition is OFF."""
-        refreshed = refresh_parking_snapshot(
+        """Accept new post-OFF GPS only with strict route/OEM corroboration."""
+        route_point = (
+            self.route_tracker.get_last_point()
+            if self.route_tracker is not None else None
+        )
+        confirmed = confirmed_post_off_oem_parking_fix(
+            self._last_parking_position, state, dt_util.now(),
+            route_point=route_point,
+        )
+        refreshed = confirmed or refresh_parking_snapshot(
             self._last_parking_position, state, dt_util.now()
         )
         if refreshed is None:
             return
         self._last_parking_position = refreshed
         self._schedule_parking_position_save(refreshed)
-        _LOGGER.debug(
-            "Refreshed parked vehicle GPS near ignition OFF: "
-            "position=%s,%s odometer=%s gps=%s",
+        _LOGGER.info(
+            "Post-OFF vehicle parking GPS saved: source=%s "
+            "position=%s,%s odometer=%s oem_gps=%s",
+            refreshed.get('source'),
             refreshed.get('latitude'), refreshed.get('longitude'),
             refreshed.get('odometer'), refreshed.get('gps_updated_at'),
         )
