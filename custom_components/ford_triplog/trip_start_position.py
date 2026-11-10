@@ -128,7 +128,10 @@ def parking_anchor(
         return None, 'missing_parking_snapshot'
     # A five-hour-old Ford location does not become a confirmed parking
     # origin just because the next REST poll repeats identical coordinates.
-    if parking.get('source') == 'vehicle_tracker_stale_ignition_off':
+    if parking.get('source') in (
+        'vehicle_tracker_stale_ignition_off',
+        'vehicle_tracker_pending_ignition_off',
+    ):
         return None, 'stale_ignition_off_unconfirmed'
     parked_at = parsed_at(parking.get('ignition_off_at'))
     if parked_at is None:
@@ -176,6 +179,68 @@ def parking_anchor(
     return None, f'position_mismatch_{distance:.0f}m'
 
 
+def pending_ignition_off_parking_snapshot(
+    state: dict[str, Any], at: datetime,
+) -> dict[str, Any] | None:
+    """Preserve the OFF edge even when tracker and Ford GPS disagree.
+
+    A VIN-matched GPS sensor may refresh before its device_tracker (or vice
+    versa), leaving gps_updated_at=None at precisely the ignition-OFF edge.
+    This candidate is never eligible as the next Trip start without separate
+    corroboration by the genuine OEM sample and recorded pre-OFF phone GPS.
+    """
+    coord = coordinates(state)
+    odo = _number(state.get('odometer'))
+    if coord is None and odo is None:
+        return None
+    gps_at = (
+        parsed_at(state.get('gps_updated_at'))
+        if state.get('gps_timestamp_source') in (
+            'ford_gps_module', 'ford_update_time',
+        ) else None
+    )
+    return {
+        'latitude': coord[0] if coord else None,
+        'longitude': coord[1] if coord else None,
+        'ignition_off_at': at.isoformat(),
+        'gps_updated_at': gps_at.isoformat() if gps_at else None,
+        'odometer': odo,
+        'source': 'vehicle_tracker_pending_ignition_off',
+    }
+
+
+def latest_pre_off_route_point(
+    points: list[dict[str, Any]] | None,
+    off_at: datetime | None,
+) -> dict[str, Any] | None:
+    """Select a genuine route fix at or shortly before ignition OFF.
+
+    The last tracked point can be recorded a few seconds AFTER the ignition
+    edge (while the Companion App keeps updating). Never use such a point to
+    corroborate an earlier parking location.
+    """
+    if not isinstance(points, list) or not isinstance(off_at, datetime):
+        return None
+    best: dict[str, Any] | None = None
+    best_time: datetime | None = None
+    for point in points:
+        if not isinstance(point, dict) or coordinates(point) is None:
+            continue
+        point_time = parsed_at(point.get('timestamp'))
+        accuracy = _number(point.get('gps_accuracy'))
+        speed = _number(point.get('speed'))
+        if (
+            point_time is None
+            or not 0 <= (off_at - point_time).total_seconds() <= 20
+            or accuracy is None or not 0 < accuracy <= 35
+            or speed is None or not 0 <= speed <= 5
+        ):
+            continue
+        if best_time is None or point_time > best_time:
+            best, best_time = point, point_time
+    return dict(best) if best is not None else None
+
+
 def confirmed_post_off_oem_parking_fix(
     parking: dict[str, Any] | None,
     state: dict[str, Any],
@@ -197,7 +262,10 @@ def confirmed_post_off_oem_parking_fix(
     """
     if (
         not isinstance(parking, dict)
-        or parking.get('source') != 'vehicle_tracker_stale_ignition_off'
+        or parking.get('source') not in (
+            'vehicle_tracker_stale_ignition_off',
+            'vehicle_tracker_pending_ignition_off',
+        )
         or not isinstance(state, dict)
         or state.get('gps_timestamp_source') not in (
             'ford_gps_module', 'ford_update_time',
@@ -210,7 +278,7 @@ def confirmed_post_off_oem_parking_fix(
     oem_at = parsed_at(state.get('gps_updated_at'))
     original_at = parsed_at(parking.get('gps_updated_at'))
     route_at = parsed_at(route_point.get('timestamp'))
-    if None in (off_at, oem_at, original_at, route_at):
+    if None in (off_at, oem_at, route_at):
         return None
 
     # The OEM fix is allowed to be delivered late, but its *measurement* must
@@ -218,8 +286,13 @@ def confirmed_post_off_oem_parking_fix(
     if not (
         0 <= (at - off_at).total_seconds() <= PARK_REFRESH_MAX_AFTER_OFF_SECONDS
         and -120 <= (oem_at - off_at).total_seconds() <= 120
-        and oem_at > original_at
-        and 0 <= (at - oem_at).total_seconds() <= 180
+        and (original_at is None or oem_at > original_at)
+        # Ford may deliver an OFF-time sample several minutes after the edge.
+        # Sampling near OFF + a matching independent route fix are the proof,
+        # not the age of the Home Assistant update that delivered the sample.
+        and -60 <= (at - oem_at).total_seconds() <= (
+            PARK_REFRESH_MAX_AFTER_OFF_SECONDS + 120
+        )
         and 0 <= (off_at - route_at).total_seconds() <= 20
     ):
         return None
@@ -416,7 +489,10 @@ def stabilize_parking_snapshot(
         # is 6 km old. Only a corroborated, stationary pre-OFF phone trace may
         # overrule that apparent freshness and the normal 150 m radius.
         normal_route_fix = (
-            parking.get('source') != 'vehicle_tracker_stale_ignition_off'
+            parking.get('source') not in (
+                'vehicle_tracker_stale_ignition_off',
+                'vehicle_tracker_pending_ignition_off',
+            )
             and point_coord is not None
             and distance_meters(off_coord, point_coord) <= radius
             and (original_gps_at is None or point_time > original_gps_at)
@@ -481,6 +557,7 @@ def stabilize_parking_snapshot(
         )
     )
     if (vehicle_coord is not None and vehicle_gps_at is not None
+            and parking.get('source') != 'vehicle_tracker_pending_ignition_off'
             and vehicle_agrees_with_route
             and off_at.timestamp() - 120 <= vehicle_gps_at.timestamp()
             and vehicle_gps_at <= at
