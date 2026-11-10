@@ -10,6 +10,7 @@ on:
       - 'test/test_trip_start_position_beta7_r1.py'
       - 'test/test_fordpass_gps_timestamp_beta7_r2.py'
       - 'test/test_post_off_oem_parking_beta7_r3.py'
+      - 'test/test_missing_off_parking_beta7_r4.py'
       - 'test/test_trip_start_position_r21.py'
   workflow_dispatch:
 
@@ -32,3 +33,4 @@ jobs:
           python -m unittest discover -s test -p 'test_trip_start_position_beta7_r1.py' -v
           python -m unittest discover -s test -p 'test_fordpass_gps_timestamp_beta7_r2.py' -v
           python -m unittest discover -s test -p 'test_post_off_oem_parking_beta7_r3.py' -v
+          python -m unittest discover -s test -p 'test_missing_off_parking_beta7_r4.py' -v
