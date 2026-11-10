@@ -339,6 +339,10 @@ def refresh_parking_snapshot(
     """Accept a newer vehicle fix while still OFF, only near the parked anchor."""
     if not isinstance(parking, dict):
         return None
+    # A pending OFF candidate must never become a trusted snapshot via the
+    # ordinary proximity-only refresh path; it needs OEM + route proof.
+    if parking.get('source') == 'vehicle_tracker_pending_ignition_off':
+        return None
     new = parking_snapshot(state, at)
     if new is None or coordinates(parking) is None:
         return None
