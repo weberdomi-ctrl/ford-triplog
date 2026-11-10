@@ -73,6 +73,8 @@ from .trip_start_position import (
     refresh_parking_snapshot,
     stabilize_parking_snapshot,
     confirmed_post_off_oem_parking_fix,
+    pending_ignition_off_parking_snapshot,
+    latest_pre_off_route_point,
     verified_charging_origin,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
@@ -2846,19 +2848,32 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             ),
         )
         if snap is None:
-            _LOGGER.debug(
-                "Ignition OFF parking snapshot unavailable or GPS too old; "
-                "retaining previous valid position"
-            )
-            return
+            # A valid FordPass tracker and its VIN-matched GPS sensor can be
+            # briefly out of sync at the ignition-OFF edge. Keep an explicitly
+            # untrusted OFF candidate so late OEM + pre-OFF route evidence can
+            # still correct this Trip's park. Never reuse it as a Trip origin.
+            if self._fordpass_gps_sensor_entity and self.current_trip is not None:
+                snap = pending_ignition_off_parking_snapshot(
+                    state, at or dt_util.now()
+                )
+            if snap is None:
+                _LOGGER.warning(
+                    "Ignition OFF parking snapshot missing: no matching "
+                    "vehicle GPS/time and no usable pending candidate"
+                )
+                return
         self._last_parking_position = snap
         # Do not block the ignition transition while SQLite is writing: an
         # immediate ON edge must not be lost waiting for the previous OFF.
         self._schedule_parking_position_save(snap)
+        gps_at = self._normalized_datetime(snap.get("gps_updated_at"))
         _LOGGER.info(
-            "Ignition OFF parking GPS captured: gps_age=%.0fs odometer=%s "
+            "Ignition OFF parking GPS captured: gps_age=%s odometer=%s "
             "position=%s,%s source=%s gps_time_source=%s",
-            (dt_util.now() - self._normalized_datetime(snap["gps_updated_at"])).total_seconds(),
+            (
+                f"{(dt_util.now() - gps_at).total_seconds():.0f}s"
+                if gps_at is not None else "unknown"
+            ),
             snap.get("odometer"), snap.get("latitude"), snap.get("longitude"),
             snap.get("source"), state.get("gps_timestamp_source"),
         )
@@ -2888,9 +2903,11 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # A VIN-paired OEM fix can arrive just after ignition OFF. Only
         # promote an otherwise untrusted stale anchor when the recorded
         # route endpoint independently confirms the fresh Ford position.
+        off_at = self._normalized_datetime(parking.get("ignition_off_at"))
+        pre_off_point = latest_pre_off_route_point(route_points, off_at)
         confirmed = confirmed_post_off_oem_parking_fix(
             updated or parking, stable_state, dt_util.now(),
-            route_point=route_point,
+            route_point=pre_off_point,
         )
         if confirmed is not None:
             updated = confirmed
@@ -2910,13 +2927,17 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         self, state: dict[str, Any]
     ) -> None:
         """Accept new post-OFF GPS only with strict route/OEM corroboration."""
-        route_point = (
-            self.route_tracker.get_last_point()
-            if self.route_tracker is not None else None
+        parking = self._last_parking_position
+        off_at = self._normalized_datetime(
+            parking.get("ignition_off_at")
+        ) if isinstance(parking, dict) else None
+        recent_points = (
+            self.route_tracker.get_recent_points()
+            if self.route_tracker is not None else []
         )
+        pre_off_point = latest_pre_off_route_point(recent_points, off_at)
         confirmed = confirmed_post_off_oem_parking_fix(
-            self._last_parking_position, state, dt_util.now(),
-            route_point=route_point,
+            parking, state, dt_util.now(), route_point=pre_off_point,
         )
         refreshed = confirmed or refresh_parking_snapshot(
             self._last_parking_position, state, dt_util.now()
