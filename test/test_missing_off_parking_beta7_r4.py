@@ -170,6 +170,19 @@ class MissingOffParkingR4Tests(unittest.TestCase):
                 stabilized["source"], "vehicle_tracker_pending_ignition_off"
             )
 
+    def test_pending_cannot_be_promoted_by_proximity_only_refresh(self):
+        anchor = pending(
+            lat=WORK[0], lon=WORK[1],
+            source="ford_gps_module",
+            gps_at=(OFF - timedelta(hours=26)).isoformat(),
+        )
+        refreshed = parking.refresh_parking_snapshot(
+            anchor,
+            current_vehicle(lat=WORK[0] + 0.00007, lon=WORK[1]),
+            OFF + timedelta(seconds=5),
+        )
+        self.assertIsNone(refreshed)
+
     def test_pending_helper_does_not_generate_empty_record(self):
         self.assertIsNone(pending(lat=None, lon=None, odo=None))
 
