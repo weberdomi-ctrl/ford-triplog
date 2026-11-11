@@ -59,7 +59,7 @@ module = ast.Module(
                        body=methods, decorator_list=[])],
     type_ignores=[],
 )
-exec(compile(module, "<coordinator R7 methods>", "exec"), namespace)
+exec(compile(ast.fix_missing_locations(module), "<coordinator R7 methods>", "exec"), namespace)
 MethodsUnderTest = namespace["MethodsUnderTest"]
 
 
