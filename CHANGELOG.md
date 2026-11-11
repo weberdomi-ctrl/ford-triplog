@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.7.0-beta.7-r7 (development candidate, build 27035)
+
+### Fixed
+- Keep the physical EV unplug timestamp as the charging-session end for Ford vehicles with a plug-status sensor. The earlier COMPLETED event marks the end of energy transfer only.
+- Preserve `completion_time` separately for transfer diagnostics and keep the non-plug-aware charging lifecycle unchanged.
+- Prevent an early completion timestamp from causing Ford Last Charge correlation to reject an otherwise matching dataset (observed on November 10, 2026: transfer completed at 04:20, unplug at 06:38).
+- Add an automated regression replay of the FordPass unplug and Last Charge data.
+
+### Notes
+- Existing archived charging sessions are not rewritten automatically.
+- Actual Home Assistant charging/unplug events still require field validation before publishing this release.
+
+
 ## 2.7.0-beta.7-r6 (pre-release candidate, build 27034)
 
 ### Fixed
