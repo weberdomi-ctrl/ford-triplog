@@ -26,6 +26,9 @@ from .vehicle_context import (
 )
 
 
+from .vehicle_context import is_shared_entities_owner
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -39,9 +42,8 @@ async def async_setup_entry(
     except (TypeError, ValueError):
         vehicle_id = 1
 
-    # One shared Ford Triplog device/dashboard entity set is owned by vehicle 1.
-    # Additional ConfigEntries only provide vehicle runtimes/data sources.
-    if vehicle_id != 1:
+    # Only one loaded ConfigEntry owns the shared device/dashboard entities.
+    if not is_shared_entities_owner(hass, entry.entry_id):
         return
 
     route_storage = VehicleRuntimeProxy(
