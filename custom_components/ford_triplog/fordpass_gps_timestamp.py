@@ -92,3 +92,40 @@ def resolve_oem_gps_timestamp(
         ):
             return sampled, source
     return None, "oem_timestamp_unavailable"
+
+
+def read_independent_oem_gps_position(
+    sensor_attributes: dict[str, Any] | None,
+    now: datetime,
+) -> dict[str, Any] | None:
+    """Read a VIN-specific GPS JSON fix without using the device_tracker.
+
+    Only use this result as *candidate evidence* for an ignition-OFF parking
+    anchor. The usual tracker/GPS pairing requirement still applies to normal
+    vehicle state and trip endpoints. Parking validation must independently
+    corroborate this position with a recorded, accurate pre-OFF phone fix and
+    the stable vehicle odometer before it becomes trusted.
+    """
+    if not isinstance(sensor_attributes, dict):
+        return None
+    value = sensor_attributes.get("value")
+    location = value.get("location") if isinstance(value, dict) else None
+    if not isinstance(location, dict):
+        return None
+    pos = _coordinates(location.get("lat"), location.get("lon"))
+    if pos is None:
+        return None
+
+    sampled_at, source = resolve_oem_gps_timestamp(
+        pos[0], pos[1], sensor_attributes, now,
+    )
+    if sampled_at is None or source not in (
+        "ford_gps_module", "ford_update_time",
+    ):
+        return None
+    return {
+        "latitude": pos[0],
+        "longitude": pos[1],
+        "gps_updated_at": sampled_at.isoformat(),
+        "gps_timestamp_source": source,
+    }
