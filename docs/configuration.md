@@ -166,6 +166,18 @@ physical vehicle.
 
 ---
 
+## Internal vehicle IDs and shared entities (Beta 7 R6)
+
+The SQLite `vehicle_id` is a stable database key, **not** an ordering number or the number of configured vehicles. A fresh single-vehicle installation may legitimately assign its first real vehicle ID **2**, for example after the initial placeholder ID 1 has been removed.
+
+Starting with **2.7.0-beta.7-r6**, the sensor, binary-sensor and select platforms no longer assume that `vehicle_id=1` owns the shared dashboard entity set. Exactly one loaded Ford Triplog ConfigEntry owns that set, and runtime proxies continue to display data for the vehicle chosen in the shared selector.
+
+Loading another vehicle does not create duplicate public entities. When the ConfigEntry owning the shared entity set is permanently removed, a remaining vehicle ConfigEntry is reloaded so the shared UI can be restored. Normal options reloads keep the vehicle data and do not renumber the IDs.
+
+**Do not edit SQLite vehicle IDs, remove placeholder records manually or delete `ford_triplog.db` to repair missing sensors.** See [Troubleshooting](troubleshooting.md) for the supported update procedure.
+
+---
+
 # Vehicle Selector
 
 Ford Triplog exposes one shared **Vehicle** selector.

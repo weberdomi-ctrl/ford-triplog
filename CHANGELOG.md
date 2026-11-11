@@ -1,5 +1,22 @@
 # Changelog
 
+## 2.7.0-beta.7-r6 (pre-release candidate, build 27034)
+
+### Fixed
+- Fix issue #96: a fresh single-vehicle setup may assign the first real vehicle ID 2, leaving the shared sensor, binary sensor and select platforms empty because they required ID 1. The loaded ConfigEntry now owns the shared entity set independently of SQLite vehicle ID, with stable ownership and re-homing after permanent owner removal.
+- Clear stale insurance, road-tax and financing TCO unit labels when no current contract is available. Active contract units already follow stored currencies such as `EUR/month` or `CHF/month`; existing values are not converted.
+
+### Included from Beta 7 R1–R5
+- Safely verify the ignition-OFF parking anchor using genuine FordPass OEM GPS timestamps, accurate pre-OFF route evidence and stable odometer values.
+- Preserve untrusted pending parking snapshots when GPS JSON and device_tracker update out of order; R5 can corroborate VIN-specific GPS JSON independently instead of waiting for the tracker.
+- Keep unverified, stale and post-OFF phone positions from being mistaken for the next trip's parking start.
+
+### Compatibility and testing
+- No SQLite schema migration, vehicle-ID renumbering, or retroactive trip history changes.
+- R6 tests and GitHub Actions checks passed. Field tests on the affected fresh-install setup and on multi-vehicle owner removal are still required.
+- See [Beta 7 R6 release notes](BETA7_R6_RELEASE_NOTES.md).
+
+
 ## 2.7.0-beta.3 (pre-release)
 
 ### Fixed

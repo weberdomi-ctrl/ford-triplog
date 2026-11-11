@@ -11,6 +11,18 @@ charging session, as well as lifetime statistics.
 
 ------------------------------------------------------------------------
 
+## Shared dashboard entities in multi-vehicle installations (Beta 7 R6)
+
+Ford Triplog creates one shared group of sensor, binary-sensor and select entities, even when more than one vehicle is configured. Their readings follow the active vehicle selected by the shared vehicle selector. Their entity IDs are not duplicated for every vehicle.
+
+The shared entity group is owned by one loaded ConfigEntry; its internal SQLite `vehicle_id` does **not** have to be 1. In particular, a fresh installation with a single real vehicle assigned ID 2 should still create the shared sensors.
+
+If trips or charges are recorded but **all** the shared entities are absent, check the installed build and follow the [missing-entities troubleshooting instructions](troubleshooting.md). Never renumber SQLite vehicle records manually.
+
+Monthly insurance, road-tax and financing TCO sensors use the currency stored with the active contract (for example `CHF/month` or `EUR/month`). When no active contract exists, the numeric value and unit are unavailable. The integration does not automatically convert currencies.
+
+---
+
 # Overview
 
 Ford Triplog sensors include the following main categories:

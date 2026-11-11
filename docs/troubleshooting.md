@@ -17,6 +17,28 @@ Before troubleshooting a specific problem, verify the following:
 
 ---
 
+# Trips or Charges Are Recorded, but No Ford Triplog Entities Appear
+
+**Affected versions:** 2.6.1 and early 2.7 betas (see [issue #96](https://github.com/weberdomi-ctrl/ford-triplog/issues/96)).
+
+**Symptom:** A new installation with one vehicle records trips and charging sessions, and export works, but the shared Ford Triplog sensor, binary-sensor and select entities are missing.
+
+**Cause:** A new vehicle may get SQLite `vehicle_id=2` while the earlier code created the shared public entity set only for `vehicle_id=1`.
+
+**Resolution:** Install **2.7.0-beta.7-r6 (build 27034)** or a later version containing the fix, then restart Home Assistant. Verify that the shared entity group appears. The new code assigns the shared entity group to one loaded ConfigEntry independently of the vehicle ID.
+
+Do **not** delete `/config/.storage/ford_triplog/`, recreate the SQLite database, change `vehicle_id` fields or rename entity unique IDs to work around this problem. Your trip and charge history should remain untouched.
+
+If the problem remains after installing the updated build, check the Home Assistant integration log and the device/entity registry, and report the Home Assistant version, Ford Triplog build, number of Ford Triplog ConfigEntries and sanitized error messages in issue #96. Remove VINs, addresses and GPS coordinates before sharing logs.
+
+## Currency label still shows CHF when the contract uses EUR
+
+In Beta 7, insurance, road-tax and financing TCO units follow the **currency saved with the active contract**. Changing Home Assistant's default currency does not retroactively convert stored costs. R6 also clears the previous unit when the selected vehicle has no active contract.
+
+Check the stored contract currency first. If the sensor attribute says `EUR` but Home Assistant still displays `CHF/month` after a restart, report the affected entity and a sanitized state/attribute example; do not alter the stored monetary amount.
+
+---
+
 # No Trips Are Recorded
 
 ## Symptoms

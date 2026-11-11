@@ -1,3 +1,13 @@
+# Ford Triplog 2.7.0-beta.7-r6 — Pre-release candidate (Build 27034)
+
+This Beta 7 candidate resolves [issue #96](https://github.com/weberdomi-ctrl/ford-triplog/issues/96): fresh single-vehicle installations no longer lose all shared sensors, binary sensors and selects when the first vehicle receives a SQLite `vehicle_id` other than 1. It includes the Beta 7 R1–R5 parking GPS fixes, and resets stale TCO units when there is no active contract for the selected vehicle.
+
+**Not a stable release.** The first-owner handover and the affected reporter's installation still require field verification. There is no database migration or automatic rewrite of archived trips. Back up the Home Assistant configuration and `ford_triplog.db` before installing.
+
+**Full release notes and installation/testing instructions:** [BETA7_R6_RELEASE_NOTES.md](BETA7_R6_RELEASE_NOTES.md)
+
+---
+
 # Ford Triplog 2.7.0-beta.3 — Pre-release
 
 This beta corrects the currency preselection for newly entered vehicle costs.

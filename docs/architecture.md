@@ -72,6 +72,20 @@ duplicating the complete public sensor set for every vehicle.
 
 ---
 
+## Shared entity ownership (Beta 7 R6)
+
+The single public dashboard entity set is created by **one loaded Home Assistant ConfigEntry**, not by an assumed SQLite `vehicle_id=1`. This is important after a fresh install because the first real vehicle can receive ID 2 following the cleanup of an initial placeholder row.
+
+At platform setup the `vehicle_context.is_shared_entities_owner()` helper selects a loaded owner ConfigEntry and preserves the claim for the current runtime. The same selection is used by `sensor.py`, `binary_sensor.py` and `select.py`, preventing duplicate fixed unique IDs when additional vehicles load.
+
+Existing `VehicleRuntimeProxy` and `CoordinatorVehicleRuntimeProxy` components still resolve readings and listeners from the currently selected vehicle. Shared entity ownership determines **where entities are registered**, not which vehicle's data they show.
+
+During a normal ConfigEntry unload, owner state is released. An ordinary options reload can reclaim ownership. After **permanent deletion** of the owner vehicle ConfigEntry, a remaining loaded entry is reloaded to restore the shared entity set. This handover needs additional live multi-vehicle verification during the beta.
+
+No database migration is required. Persistent vehicle IDs and all associated records remain unchanged.
+
+---
+
 # Multi-Vehicle Runtime
 
 Each configured vehicle receives its own Home Assistant ConfigEntry and a
