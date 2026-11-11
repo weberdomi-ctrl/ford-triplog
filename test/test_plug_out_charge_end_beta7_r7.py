@@ -74,6 +74,7 @@ class FakeCharge:
         self.completion_soc = 80
         self.last_live_charging_soc = 80
         self.charging_type = "AC_BASIC"
+        self.charging_site_id = "test-site"
         self.charger_energy_output_kwh = 0.5
         self.end_time = None
         self.detected_end_time = None
