@@ -26,6 +26,9 @@ from .const import (
 from .vehicle_context import CoordinatorVehicleRuntimeProxy
 
 
+from .vehicle_context import is_shared_entities_owner
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -38,7 +41,7 @@ async def async_setup_entry(
         vehicle_id = int(data.get("vehicle_id") or 1)
     except (TypeError, ValueError):
         vehicle_id = 1
-    if vehicle_id != 1:
+    if not is_shared_entities_owner(hass, entry.entry_id):
         return
 
     coordinator = CoordinatorVehicleRuntimeProxy(hass, entry.entry_id)
