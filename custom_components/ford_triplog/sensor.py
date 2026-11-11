@@ -117,6 +117,9 @@ def _interval_seconds(start: Any, end: Any) -> int:
         end_dt = end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return max(0, int((end_dt - start_dt).total_seconds()))
 
+from .vehicle_context import is_shared_entities_owner
+
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -126,18 +129,16 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
 
-    # Ford Triplog exposes one shared dashboard/device entity set. Vehicle 1
-    # owns those entities; their data source follows the central vehicle
-    # context through runtime proxies. Additional vehicle ConfigEntries feed
-    # data into the same UI instead of creating duplicate entity IDs.
+    # Shared dashboard entity ownership is independent of database vehicle ID.
+    # Only the selected owner ConfigEntry creates fixed-unique-ID entities.
     try:
         vehicle_id = int(data.get("vehicle_id") or 1)
     except (TypeError, ValueError):
         vehicle_id = 1
-    if vehicle_id != 1:
+    if not is_shared_entities_owner(hass, entry.entry_id):
         _LOGGER.debug(
-            "Skipping shared Ford Triplog sensor entities for vehicle %s",
-            vehicle_id,
+            "Skipping shared Ford Triplog sensors for non-owner entry %s (vehicle %s)",
+            entry.entry_id, vehicle_id,
         )
         return
 
