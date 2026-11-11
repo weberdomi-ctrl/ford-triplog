@@ -133,7 +133,15 @@ class IndependentFordGpsParkingR5Tests(unittest.TestCase):
     def test_missing_or_invalid_sensor_timestamp_does_not_promote(self):
         for bad in (None, "", "2026-11-11T08:32:01Z", "2026-11-10T06:32:01Z"):
             with self.subTest(sampled_at=bad):
-                self.assertIsNone(self.call(coordinator(gps_attrs(sampled_at=bad))))
+                attrs = gps_attrs(sampled_at=bad)
+                attrs["updateTime"] = bad
+                self.assertIsNone(self.call(coordinator(attrs)))
+
+    def test_oem_update_time_is_an_explicit_fallback(self):
+        attrs = gps_attrs(sampled_at=None)
+        result = self.call(coordinator(attrs))
+        self.assertIsNotNone(result)
+        self.assertEqual(result["gps_updated_at"], "2026-11-11T06:31:58+00:00")
 
     def test_rejects_unverified_or_implausible_phone_fixes(self):
         for wrong in (
