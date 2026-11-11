@@ -55,6 +55,62 @@ def iter_vehicle_runtimes(hass: HomeAssistant) -> list[tuple[int, str, dict[str,
     return vehicles
 
 
+# Shared dashboard entities have one owner ConfigEntry, not necessarily
+# vehicle_id=1. Fresh installations may assign the only vehicle ID 2 after
+# creating and then cleaning up the legacy placeholder row.
+SHARED_ENTITIES_OWNER_KEY = "shared_entities_owner_entry_id"
+SHARED_ENTITIES_UNLOADED_KEY = "shared_entities_unloaded_owner_entry_id"
+
+
+def is_shared_entities_owner(hass: HomeAssistant, entry_id: str) -> bool:
+    """Claim a single shared UI owner among currently loaded vehicle runtimes.
+
+    Keep the first claim stable for this runtime, even if an older vehicle
+    ConfigEntry finishes loading later. Otherwise sensor/binary_sensor/select
+    could create duplicate fixed unique IDs. Prefer vehicle 1 only when it is
+    already loaded before the first claim.
+    """
+    data = _domain_data(hass)
+    owner = data.get(SHARED_ENTITIES_OWNER_KEY)
+    if isinstance(owner, str):
+        runtime = data.get(owner)
+        if isinstance(runtime, dict) and runtime.get("vehicle_id") is not None:
+            return owner == entry_id
+        data.pop(SHARED_ENTITIES_OWNER_KEY, None)
+
+    vehicles = iter_vehicle_runtimes(hass)
+    if not any(entry == entry_id for _, entry, _ in vehicles):
+        return False
+
+    owner = min(vehicles, key=lambda row: (
+        row[0] != 1, row[0], row[1],
+    ))[1]
+    data[SHARED_ENTITIES_OWNER_KEY] = owner
+    data.pop(SHARED_ENTITIES_UNLOADED_KEY, None)
+    return owner == entry_id
+
+
+def release_shared_entities_owner(hass: HomeAssistant, entry_id: str) -> bool:
+    """Release the shared UI when its ConfigEntry has fully unloaded."""
+    data = _domain_data(hass)
+    if data.get(SHARED_ENTITIES_OWNER_KEY) != entry_id:
+        return False
+    data.pop(SHARED_ENTITIES_OWNER_KEY, None)
+    data[SHARED_ENTITIES_UNLOADED_KEY] = entry_id
+    return True
+
+
+def consume_unloaded_shared_entities_owner(
+    hass: HomeAssistant, entry_id: str,
+) -> bool:
+    """Detect a permanent owner removal, not an ordinary options reload."""
+    data = _domain_data(hass)
+    if data.get(SHARED_ENTITIES_UNLOADED_KEY) != entry_id:
+        return False
+    data.pop(SHARED_ENTITIES_UNLOADED_KEY, None)
+    return True
+
+
 def get_vehicle_runtime(
     hass: HomeAssistant,
     vehicle_id: int,
