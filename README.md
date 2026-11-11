@@ -45,15 +45,19 @@ Your data always remains under your control.
 
 ------------------------------------------------------------------------
 
-## Version 2.7.0-beta.5 — Preview
+## Version 2.7.0-beta.7-r6 — Pre-release candidate
 
-This pre-release adds **dynamic Home Assistant electricity-price entities**, vehicle- and zone-specific charging tariffs, charging-cost persistence and route export improvements.
+**Beta 7 R6 (build 27034) is a test version, not a stable release.** It includes parking GPS safety fixes (R1–R5), resolves missing shared Home Assistant entities on fresh single-vehicle installations (issue #96), and improves TCO unit cleanup across vehicle switches. Earlier dynamic charging tariffs, route export and vehicle cost features remain available.
 
-Dynamic pricing has been tested with simulated prices; full validation with a live dynamic tariff remains pending. **Back up the local SQLite database before testing.**
+Shared dashboard entities are created **once per installation** by a loaded Ford Triplog ConfigEntry. The owner need not have SQLite `vehicle_id=1`; a fresh installation may legitimately start at ID 2. Vehicle IDs and stored data must not be manually renumbered.
 
-- [Dynamic charging tariff beta guide](docs/dynamic_charging_tariffs_2_7_beta.md)
+The public pre-release must be published on GitHub before this build becomes available through HACS. **Back up the local SQLite database before testing.** Parking GPS and real dynamic-price charging still need field validation.
+
+- [Beta 7 R6 pre-release notes](BETA7_R6_RELEASE_NOTES.md)
 - [Beta test guide](docs/beta_test_2_7.md)
-- [Pre-release notes](RELEASE_NOTES.md)
+- [Installation / upgrade instructions](docs/installation.md)
+- [Dynamic charging tariff beta guide](docs/dynamic_charging_tariffs_2_7_beta.md)
+- [Earlier release notes](RELEASE_NOTES.md)
 
 # Features
 
