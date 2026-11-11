@@ -48,6 +48,8 @@ methods = [n for n in COORD.body
            if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
            and n.name in names]
 sandbox = {
+    "Any": object,
+    "datetime": datetime,
     "dt_util": FakeDtUtil,
     "optional_float": lambda v: float(v) if v is not None else None,
     "timedelta": timedelta,
