@@ -82,6 +82,7 @@ from .vehicle_context import (
     vehicle_display_name,
     get_selected_vehicle_id,
     get_vehicle_runtime,
+    is_shared_entities_owner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -116,8 +117,6 @@ def _interval_seconds(start: Any, end: Any) -> int:
     if end_dt.tzinfo is None:
         end_dt = end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return max(0, int((end_dt - start_dt).total_seconds()))
-
-from .vehicle_context import is_shared_entities_owner
 
 
 async def async_setup_entry(
