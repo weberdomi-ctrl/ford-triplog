@@ -403,6 +403,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
         if vehicle_id is None:
             self._value, self._attrs = None, {}
+            self._attr_native_unit_of_measurement = None
             return
 
         store = FordTriplogVehicleInsuranceStorage(
@@ -413,6 +414,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
         if not active:
             self._value = None
+            self._attr_native_unit_of_measurement = None
             self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_policy"}
             return
 
@@ -426,7 +428,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_premium": round(annual, 2),
-            "currency": policy.get("currency") or "CHF",
+            "currency": _tco_currency(policy.get("currency")),
             "provider": policy.get("provider"),
             "policy_number": policy.get("policy_number"),
             "valid_from": policy.get("valid_from"),
@@ -526,6 +528,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
         if vehicle_id is None:
             self._value, self._attrs = None, {}
+            self._attr_native_unit_of_measurement = None
             return
         store = FordTriplogVehicleTaxStorage(
             self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
@@ -535,6 +538,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
         if not active:
             self._value = None
+            self._attr_native_unit_of_measurement = None
             self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_tax"}
             return
         tax = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("tax_id") or 0)))
@@ -547,7 +551,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_tax": round(annual, 2),
-            "currency": tax.get("currency") or "CHF",
+            "currency": _tco_currency(tax.get("currency")),
             "authority": tax.get("authority"),
             "valid_from": tax.get("valid_from"),
             "valid_to": tax.get("valid_to"),
@@ -629,7 +633,10 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
         from pathlib import Path
         from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
         vid=get_selected_vehicle_id(self.hass, fallback=1)
-        if vid is None: self._value=None; self._attrs={}; return
+        if vid is None:
+            self._value=None; self._attrs={}
+            self._attr_native_unit_of_measurement=None
+            return
         rows=await FordTriplogVehicleFinancingStorage(self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid).async_load()
         now=dt_util.now(); total=0.0; active=[]; currencies=set()
         for row in rows:
