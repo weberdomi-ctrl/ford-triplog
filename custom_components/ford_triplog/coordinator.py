@@ -4201,7 +4201,12 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                 longitude=state.get("longitude"),
                 address=address,
             )
-            if charge.completion_time is not None:
+            # With a physical plug-status sensor, COMPLETED marks the end
+            # of energy transfer, not the end of the charging session.
+            # Charge.finish() just captured the real unplug event. Keep that
+            # timestamp for session chronology and Ford Last Charge pairing.
+            # Non-plug-aware sources retain their established COMPLETED end.
+            if charge.completion_time is not None and not self.plug_entity:
                 charge.end_time = charge.completion_time
                 charge.detected_end_time = charge.completion_time
             if charge.completion_soc is not None:
