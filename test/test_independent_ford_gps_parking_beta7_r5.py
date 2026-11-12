@@ -146,7 +146,7 @@ class IndependentFordGpsParkingR5Tests(unittest.TestCase):
     def test_rejects_unverified_or_implausible_phone_fixes(self):
         for wrong in (
             phone(seconds=-1),
-            phone(seconds=21),
+            phone(seconds=61),  # R8 permits 21–60s only with strict module proof.
             phone(accuracy=70),
             phone(speed=7),
             phone(lat=47.2, lon=8.4),
@@ -185,10 +185,9 @@ class IndependentFordGpsParkingR5Tests(unittest.TestCase):
         self.assertIn("resolve_oem_gps_timestamp(\n", coordinator_source)
         self.assertIn("gps_sensor_entity_id(config.get(CONF_TRACKER))",
                       coordinator_source)
-        self.assertIn("latest_pre_off_route_point(recent_points, off_at)",
-                      coordinator_source)
-        self.assertIn("latest_pre_off_route_point(route_points, off_at)",
-                      coordinator_source)
+        self.assertGreaterEqual(coordinator_source.count(
+            "max_age_seconds=PARK_OEM_PHONE_MAX_AGE_SECONDS"
+        ), 2)
 
 
 if __name__ == "__main__":

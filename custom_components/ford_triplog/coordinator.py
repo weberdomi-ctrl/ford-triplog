@@ -79,6 +79,7 @@ from .trip_start_position import (
     confirmed_post_off_oem_parking_fix,
     pending_ignition_off_parking_snapshot,
     latest_pre_off_route_point,
+    PARK_OEM_PHONE_MAX_AGE_SECONDS,
     verified_charging_origin,
 )
 from .charging_costs import FordTriplogChargingCostCalculator
@@ -2899,6 +2900,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         """
         confirmed = confirmed_post_off_oem_parking_fix(
             parking, state, at, route_point=route_point,
+            allow_delayed_phone=True,
         )
         if confirmed is not None:
             return confirmed
@@ -2920,6 +2922,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         sensor_state["odometer"] = state.get("odometer")
         confirmed = confirmed_post_off_oem_parking_fix(
             parking, sensor_state, at, route_point=route_point,
+            allow_delayed_phone=True,
         )
         if confirmed is not None:
             confirmed["source"] = "ford_gps_sensor_route_confirmed_post_off"
@@ -2951,13 +2954,38 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         # promote an otherwise untrusted stale anchor when the recorded
         # route endpoint independently confirms the fresh Ford position.
         off_at = self._normalized_datetime(parking.get("ignition_off_at"))
-        pre_off_point = latest_pre_off_route_point(route_points, off_at)
+        pre_off_point = latest_pre_off_route_point(
+            route_points, off_at,
+            max_age_seconds=PARK_OEM_PHONE_MAX_AGE_SECONDS,
+        )
         confirmed = self._confirmed_post_off_parking_fix(
             updated or parking, stable_state,
             at=dt_util.now(), route_point=pre_off_point,
         )
         if confirmed is not None:
             updated = confirmed
+        elif parking.get("source") in (
+            "vehicle_tracker_stale_ignition_off",
+            "vehicle_tracker_pending_ignition_off",
+        ):
+            # A concise rejection breadcrumb is useful in the real HA runtime;
+            # it does not belong to the pure-function R5 coordinator replay.
+            route_at = self._normalized_datetime(
+                pre_off_point.get("timestamp")
+            ) if isinstance(pre_off_point, dict) else None
+            _LOGGER.debug(
+                "Post-OFF OEM parking not confirmed: phone_age=%s "
+                "phone_accuracy=%s phone_speed=%s state_source=%s "
+                "old_odometer=%s new_odometer=%s",
+                round((off_at - route_at).total_seconds(), 1)
+                if off_at is not None and route_at is not None else None,
+                pre_off_point.get("gps_accuracy")
+                if isinstance(pre_off_point, dict) else None,
+                pre_off_point.get("speed")
+                if isinstance(pre_off_point, dict) else None,
+                stable_state.get("gps_timestamp_source"),
+                parking.get("odometer"), stable_state.get("odometer"),
+            )
         if updated is None:
             return
         self._last_parking_position = updated
@@ -2982,7 +3010,10 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
             self.route_tracker.get_recent_points()
             if self.route_tracker is not None else []
         )
-        pre_off_point = latest_pre_off_route_point(recent_points, off_at)
+        pre_off_point = latest_pre_off_route_point(
+            recent_points, off_at,
+            max_age_seconds=PARK_OEM_PHONE_MAX_AGE_SECONDS,
+        )
         confirmed = self._confirmed_post_off_parking_fix(
             parking, state, at=dt_util.now(), route_point=pre_off_point,
         )

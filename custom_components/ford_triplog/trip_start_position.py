@@ -28,6 +28,14 @@ PARK_DELAYED_ON_GPS_BUFFER_METERS = 250.0
 # FordConnect is polled via REST. HA last_updated is an observation time, not
 # reliable evidence that Ford sampled a *new* GPS fix at that instant.
 PARK_REFRESH_MAX_AFTER_OFF_SECONDS = 10 * 60
+# R8: an independently timestamped Ford GPS-module fix at ignition OFF may
+# corroborate a delayed (but accurate, near-stationary) phone route fix.
+# Never relax the 20s limit for normal trip-end or route-only parking.
+PARK_OEM_PHONE_MAX_AGE_SECONDS = 60.0
+PARK_OEM_PHONE_MAX_DISTANCE_METERS = 100.0
+PARK_OEM_PHONE_MAX_SPEED_MPS = 2.0
+PARK_OEM_PHONE_MAX_ACCURACY_METERS = 25.0
+PARK_OEM_SAMPLE_MAX_OFF_DELTA_SECONDS = 15.0
 # A refreshed HA device_tracker timestamp is not proof of a fresh OEM GPS fix.
 # Permit a distant parked-route correction only with TWO independent, accurate,
 # near-stationary PRE-OFF phone fixes from this same recorded trip.
@@ -212,8 +220,10 @@ def pending_ignition_off_parking_snapshot(
 def latest_pre_off_route_point(
     points: list[dict[str, Any]] | None,
     off_at: datetime | None,
+    *,
+    max_age_seconds: float = 20.0,
 ) -> dict[str, Any] | None:
-    """Select a genuine route fix at or shortly before ignition OFF.
+    """Select a genuine pre-OFF route fix. Normal callers use 20 seconds.
 
     The last tracked point can be recorded a few seconds AFTER the ignition
     edge (while the Companion App keeps updating). Never use such a point to
@@ -229,11 +239,16 @@ def latest_pre_off_route_point(
         point_time = parsed_at(point.get('timestamp'))
         accuracy = _number(point.get('gps_accuracy'))
         speed = _number(point.get('speed'))
+        age = (off_at - point_time).total_seconds() if point_time else None
+        delayed = age is not None and age > 20
+        # Do not let a newer but still moving/low-quality fix mask an older
+        # stationary route point eligible for the strict OEM corroboration.
+        accuracy_limit = PARK_OEM_PHONE_MAX_ACCURACY_METERS if delayed else 35.0
+        speed_limit = PARK_OEM_PHONE_MAX_SPEED_MPS if delayed else 5.0
         if (
-            point_time is None
-            or not 0 <= (off_at - point_time).total_seconds() <= 20
-            or accuracy is None or not 0 < accuracy <= 35
-            or speed is None or not 0 <= speed <= 5
+            age is None or not 0 <= age <= max_age_seconds
+            or accuracy is None or not 0 < accuracy <= accuracy_limit
+            or speed is None or not 0 <= speed <= speed_limit
         ):
             continue
         if best_time is None or point_time > best_time:
@@ -247,6 +262,7 @@ def confirmed_post_off_oem_parking_fix(
     at: datetime,
     *,
     route_point: dict[str, Any] | None,
+    allow_delayed_phone: bool = False,
 ) -> dict[str, Any] | None:
     """Promote a stale OFF candidate only with matching fresh Ford and route GPS.
 
@@ -281,6 +297,12 @@ def confirmed_post_off_oem_parking_fix(
     if None in (off_at, oem_at, route_at):
         return None
 
+    phone_age = (off_at - route_at).total_seconds()
+    extended_phone = phone_age > 20.0
+    max_phone_age = (
+        PARK_OEM_PHONE_MAX_AGE_SECONDS if allow_delayed_phone else 20.0
+    )
+
     # The OEM fix is allowed to be delivered late, but its *measurement* must
     # belong to this ignition-OFF window, not to an earlier stop or a later trip.
     if not (
@@ -293,7 +315,17 @@ def confirmed_post_off_oem_parking_fix(
         and -60 <= (at - oem_at).total_seconds() <= (
             PARK_REFRESH_MAX_AFTER_OFF_SECONDS + 120
         )
-        and 0 <= (off_at - route_at).total_seconds() <= 20
+        and 0 <= phone_age <= max_phone_age
+    ):
+        return None
+    # An older phone fix can corroborate only an actual Ford GPS-MODULE
+    # measurement at the ignition edge. A Ford publication/updateTime or HA
+    # observation timestamp is not enough to extend the normal 20s window.
+    if extended_phone and not (
+        allow_delayed_phone
+        and state.get('gps_timestamp_source') == 'ford_gps_module'
+        and abs((oem_at - off_at).total_seconds())
+        <= PARK_OEM_SAMPLE_MAX_OFF_DELTA_SECONDS
     ):
         return None
 
@@ -303,14 +335,24 @@ def confirmed_post_off_oem_parking_fix(
         return None
     # The phone is not permitted to override the vehicle by kilometres:
     # both sources must now confirm the same end location independently.
-    if distance_meters(vehicle_coord, route_coord) > PARK_REUSE_RADIUS_METERS:
+    distance_limit = (
+        PARK_OEM_PHONE_MAX_DISTANCE_METERS
+        if extended_phone else PARK_REUSE_RADIUS_METERS
+    )
+    if distance_meters(vehicle_coord, route_coord) > distance_limit:
         return None
 
     accuracy = _number(route_point.get('gps_accuracy'))
     speed = _number(route_point.get('speed'))
+    accuracy_limit = (
+        PARK_OEM_PHONE_MAX_ACCURACY_METERS if extended_phone else 35.0
+    )
+    speed_limit = (
+        PARK_OEM_PHONE_MAX_SPEED_MPS if extended_phone else 5.0
+    )
     if not (
-        accuracy is not None and 0 < accuracy <= 35
-        and speed is not None and 0 <= speed <= 5
+        accuracy is not None and 0 < accuracy <= accuracy_limit
+        and speed is not None and 0 <= speed <= speed_limit
     ):
         return None
 
