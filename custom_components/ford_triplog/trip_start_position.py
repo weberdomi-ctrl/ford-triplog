@@ -239,11 +239,16 @@ def latest_pre_off_route_point(
         point_time = parsed_at(point.get('timestamp'))
         accuracy = _number(point.get('gps_accuracy'))
         speed = _number(point.get('speed'))
+        age = (off_at - point_time).total_seconds() if point_time else None
+        delayed = age is not None and age > 20
+        # Do not let a newer but still moving/low-quality fix mask an older
+        # stationary route point eligible for the strict OEM corroboration.
+        accuracy_limit = PARK_OEM_PHONE_MAX_ACCURACY_METERS if delayed else 35.0
+        speed_limit = PARK_OEM_PHONE_MAX_SPEED_MPS if delayed else 5.0
         if (
-            point_time is None
-            or not 0 <= (off_at - point_time).total_seconds() <= max_age_seconds
-            or accuracy is None or not 0 < accuracy <= 35
-            or speed is None or not 0 <= speed <= 5
+            age is None or not 0 <= age <= max_age_seconds
+            or accuracy is None or not 0 < accuracy <= accuracy_limit
+            or speed is None or not 0 <= speed <= speed_limit
         ):
             continue
         if best_time is None or point_time > best_time:
