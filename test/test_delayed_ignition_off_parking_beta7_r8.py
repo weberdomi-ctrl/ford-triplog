@@ -109,6 +109,14 @@ class R8DelayedParkingTests(unittest.TestCase):
         self.assertIsNone(parking.latest_pre_off_route_point([phone()], OFF))
         self.assertIsNone(confirm(allow_delayed_phone=False))
 
+    def test_delayed_phone_selection_skips_more_recent_moving_fix(self):
+        chosen = parking.latest_pre_off_route_point(
+            [phone(44, speed=0.4), phone(32, speed=4.0)],
+            OFF, max_age_seconds=parking.PARK_OEM_PHONE_MAX_AGE_SECONDS,
+        )
+        self.assertEqual(chosen["timestamp"], phone(44)["timestamp"])
+        self.assertIsNotNone(confirm(route=chosen))
+
     def test_extended_window_requires_true_module_timestamp(self):
         self.assertIsNone(confirm(ford(source="ford_update_time")))
         self.assertIsNone(confirm(ford(source="coordinates_mismatch")))
