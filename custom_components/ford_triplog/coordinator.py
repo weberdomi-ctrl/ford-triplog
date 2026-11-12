@@ -2926,27 +2926,6 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         if confirmed is not None:
             confirmed["source"] = "ford_gps_sensor_route_confirmed_post_off"
-        else:
-            # Record the evidence for a rejected correction; a new HA state
-            # timestamp alone must never promote an untrusted parking anchor.
-            off_at = self._normalized_datetime(parking.get("ignition_off_at"))
-            route_at = self._normalized_datetime(
-                route_point.get("timestamp")
-            ) if isinstance(route_point, dict) else None
-            _LOGGER.debug(
-                "Post-OFF OEM parking not confirmed: phone_age=%s "
-                "phone_accuracy=%s phone_speed=%s gps_source=%s "
-                "oem_sample=%s old_odometer=%s new_odometer=%s",
-                round((off_at - route_at).total_seconds(), 1)
-                if off_at is not None and route_at is not None else None,
-                route_point.get("gps_accuracy")
-                if isinstance(route_point, dict) else None,
-                route_point.get("speed")
-                if isinstance(route_point, dict) else None,
-                sensor_state.get("gps_timestamp_source"),
-                sensor_state.get("gps_updated_at"),
-                parking.get("odometer"), state.get("odometer"),
-            )
         return confirmed
 
     def _stabilize_parked_position(
@@ -2985,6 +2964,28 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
         )
         if confirmed is not None:
             updated = confirmed
+        elif parking.get("source") in (
+            "vehicle_tracker_stale_ignition_off",
+            "vehicle_tracker_pending_ignition_off",
+        ):
+            # A concise rejection breadcrumb is useful in the real HA runtime;
+            # it does not belong to the pure-function R5 coordinator replay.
+            route_at = self._normalized_datetime(
+                pre_off_point.get("timestamp")
+            ) if isinstance(pre_off_point, dict) else None
+            _LOGGER.debug(
+                "Post-OFF OEM parking not confirmed: phone_age=%s "
+                "phone_accuracy=%s phone_speed=%s state_source=%s "
+                "old_odometer=%s new_odometer=%s",
+                round((off_at - route_at).total_seconds(), 1)
+                if off_at is not None and route_at is not None else None,
+                pre_off_point.get("gps_accuracy")
+                if isinstance(pre_off_point, dict) else None,
+                pre_off_point.get("speed")
+                if isinstance(pre_off_point, dict) else None,
+                stable_state.get("gps_timestamp_source"),
+                parking.get("odometer"), stable_state.get("odometer"),
+            )
         if updated is None:
             return
         self._last_parking_position = updated
