@@ -17,7 +17,7 @@
 </p>
 
 <p align="center">
-  <a href="docs/installation.md"><img alt="Installation Guide" src="https://img.shields.io/badge/Installation-Guide-2ea44f?logo=homeassistant&logoColor=white"></a>
+  <a href="https://analytics.home-assistant.io/custom_integrations.json" title="Ford Triplog installations reported through optional Home Assistant Analytics"><img alt="Reported Ford Triplog installations" src="https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fanalytics.home-assistant.io%2Fcustom_integrations.json&amp;query=%24.ford_triplog.total&amp;label=Reported%20Installs&amp;color=41BDF5&amp;logo=homeassistant&amp;cacheSeconds=3600"></a>
   <a href="https://ko-fi.com/dompressor"><img alt="Buy me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-ff5e5b?logo=ko-fi&logoColor=white"></a>
 </p>
 
