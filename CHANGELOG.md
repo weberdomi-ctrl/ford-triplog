@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.7.0-beta.7-r8 (development candidate, build 27036)
+
+### Fixed
+- Recover an ignition-OFF parking anchor when FordPass GPS JSON has a genuine GPS-module fix at the actual stop but the device_tracker still exposes coordinates from an earlier location.
+- Allow a delayed phone route fix 21–60 seconds before OFF to corroborate the **independently timestamped OEM module position**, provided the phone fix is accurate, near-stationary and within 100 m, the OEM sample is within 15 seconds of OFF, and the odometer is stable.
+- Keep the original 20-second limit for ordinary route/parking checks. Never trust post-OFF phone movement, a publication-only Ford timestamp, or a fresh HA observation timestamp as a substitute.
+- Add diagnostic logging for rejected post-OFF OEM parking evidence and a Nov 12 Cham regression replay.
+
+### Notes
+- Existing parking snapshots are not rewritten retroactively.
+- This is an R8 test candidate, not a stable release. Automated CI and a real parked-start follow-up are required.
+- Includes the R7 charging unplug-end correction without modifying its behavior.
+
 ## 2.7.0-beta.7-r7 (development candidate, build 27035)
 
 ### Fixed
