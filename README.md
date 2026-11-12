@@ -17,6 +17,11 @@
 </p>
 
 <p align="center">
+  <a href="docs/installation.md"><img alt="Installation Guide" src="https://img.shields.io/badge/Installation-Guide-2ea44f?logo=homeassistant&logoColor=white"></a>
+  <a href="https://ko-fi.com/dompressor"><img alt="Buy me a Coffee" src="https://img.shields.io/badge/Buy%20Me%20a%20Coffee-Support-ff5e5b?logo=ko-fi&logoColor=white"></a>
+</p>
+
+<p align="center">
 
 **Automatic Trip Logging • Journey Management • GPS Route Tracking • Daily History • Charging History • Smart Statistics • Intelligent Charging Location Recognition**
 
