@@ -5,12 +5,22 @@ on:
     paths:
       - 'custom_components/ford_triplog/coordinator.py'
       - 'custom_components/ford_triplog/charge.py'
+      - 'custom_components/ford_triplog/charging_duration.py'
+      - 'custom_components/ford_triplog/sensor.py'
+      - 'custom_components/ford_triplog/history.py'
+      - 'custom_components/ford_triplog/journey_manager.py'
       - 'test/test_plug_out_charge_end_beta7_r7.py'
+      - 'test/test_charging_transfer_duration_beta7_r9.py'
   push:
     paths:
       - 'custom_components/ford_triplog/coordinator.py'
       - 'custom_components/ford_triplog/charge.py'
+      - 'custom_components/ford_triplog/charging_duration.py'
+      - 'custom_components/ford_triplog/sensor.py'
+      - 'custom_components/ford_triplog/history.py'
+      - 'custom_components/ford_triplog/journey_manager.py'
       - 'test/test_plug_out_charge_end_beta7_r7.py'
+      - 'test/test_charging_transfer_duration_beta7_r9.py'
   workflow_dispatch:
 
 permissions:
@@ -28,3 +38,5 @@ jobs:
         run: python -m py_compile custom_components/ford_triplog/coordinator.py custom_components/ford_triplog/charge.py
       - name: Run November 10 unplug regression tests
         run: python -m unittest discover -s test -p 'test_plug_out_charge_end_beta7_r7.py' -v
+      - name: Run overnight charging-duration regression tests
+        run: python -m unittest discover -s test -p 'test_charging_transfer_duration_beta7_r9.py' -v
