@@ -29,6 +29,7 @@ from .const import (
 )
 from .journey import FordTriplogJourney, JourneyItem
 from .journey_storage import FordTriplogJourneyStorage
+from .charging_duration import charging_duration_seconds
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -1782,7 +1783,7 @@ class FordTriplogJourneyManager:
             self._required_id(charge, "charge_id"),
             start_time=charge.get("start_time"),
             end_time=charge.get("end_time"),
-            duration_seconds=self._duration_seconds(charge),
+            duration_seconds=charging_duration_seconds(charge) or 0,
             energy_charged_kwh=self._float_value(
                 charge,
                 "energy_added_kwh",
