@@ -37,6 +37,11 @@ from .utils import (
     format_duration,
     format_datetime,
 )
+from .charging_duration import (
+    charging_end_time,
+    charging_duration_seconds,
+    plug_duration_seconds,
+)
 from .icons import (
     ICON_TRIP_COUNT,
     ICON_DISTANCE,
@@ -3041,10 +3046,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
         currencies: set[str] = set()
 
         for data in selected:
-            duration_seconds = self._duration_seconds(
-                data.get("start_time"),
-                data.get("end_time"),
-            )
+            duration_seconds = charging_duration_seconds(data)
             vehicle_energy = self._optional_float(data.get("energy_added_kwh"))
             billed_energy = self._optional_float(data.get("energy_billed_kwh"))
             cost_total = self._optional_float(data.get("cost_total"))
@@ -3065,7 +3067,9 @@ class FordTriplogChargingHistorySensor(SensorEntity):
             entry = {
                 "charge_id": data.get("charge_id"),
                 "start_time": data.get("start_time"),
-                "end_time": data.get("end_time"),
+                "end_time": charging_end_time(data),
+                "plug_out_time": data.get("end_time"),
+                "plug_duration_seconds": plug_duration_seconds(data),
                 "duration_seconds": duration_seconds,
                 "duration": (
                     format_duration(duration_seconds)
@@ -6821,26 +6825,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
 
     @staticmethod
     def _duration_seconds(last_charge: dict[str, Any]) -> int | None:
-        """Return stored or calculated charging duration."""
-
-        duration = last_charge.get("duration_seconds")
-        if duration is not None:
-            try:
-                return int(duration)
-            except (TypeError, ValueError):
-                pass
-
-        start = FordTriplogLastChargeSensor._parse_timestamp(
-            last_charge.get("start_time")
-        )
-        end = FordTriplogLastChargeSensor._parse_timestamp(
-            last_charge.get("end_time")
-        )
-
-        if not start or not end:
-            return None
-
-        return max(0, int((end - start).total_seconds()))
+        """Return actual energy-transfer time (exclude plugged-in idle time)."""
+        return charging_duration_seconds(last_charge)
 
     @staticmethod
     def _soc_added(last_charge: dict[str, Any]) -> float | None:
@@ -6873,7 +6859,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             return
 
         self._value = self._parse_timestamp(
-            last_charge.get("end_time")
+            charging_end_time(last_charge)
             or last_charge.get("start_time")
         )
 
@@ -6902,7 +6888,9 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
 
         attributes = {
             "start_time": last_charge.get("start_time"),
-            "end_time": last_charge.get("end_time"),
+            "end_time": charging_end_time(last_charge),
+            "plug_out_time": last_charge.get("end_time"),
+            "plug_duration_seconds": plug_duration_seconds(last_charge),
             "detected_start_time": last_charge.get("detected_start_time"),
             "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
@@ -7059,7 +7047,7 @@ class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
         last_charge,
     ):
         self._value = format_datetime(
-            last_charge.get("end_time")
+            charging_end_time(last_charge)
             if last_charge
             else None,
             self.translations["today"],
@@ -7161,19 +7149,8 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
             self._value = None
             return
 
-        start = last_charge.get("start_time")
-        end = last_charge.get("end_time")
+        self._value = charging_duration_seconds(last_charge)
 
-        if not start or not end:
-            self._value = None
-            return
-
-        start_dt = datetime.fromisoformat(start)
-        end_dt = datetime.fromisoformat(end)
-
-        self._value = int(
-            (end_dt - start_dt).total_seconds()
-        )
 class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     """Primary energy value of the last charging session."""
 
