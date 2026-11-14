@@ -1,3 +1,13 @@
+# Ford Triplog 2.7.0-beta.7-r9 — Pre-release candidate (Build 27037)
+
+This Beta 7 candidate includes the charging plug-session end fix from R7, stricter Ford GPS parking-anchor recovery from R8, and the charging-duration display fix from R9. The actual energy-transfer end is now distinguished from a later unplug: the last-charge duration, charging history, averages and Journey summaries show actual charging time, while the plug-out timestamp remains available separately.
+
+**Not a stable release.** Automated checks have passed and the observed overnight charging-time case was verified in Home Assistant. More field testing of delayed Ford GPS and resumed charging is recommended. Back up your Home Assistant configuration and Ford Triplog database before upgrading.
+
+**Full release notes and installation/testing instructions:** [BETA7_R9_RELEASE_NOTES.md](BETA7_R9_RELEASE_NOTES.md)
+
+---
+
 # Ford Triplog 2.7.0-beta.7-r6 — Pre-release candidate (Build 27034)
 
 This Beta 7 candidate resolves [issue #96](https://github.com/weberdomi-ctrl/ford-triplog/issues/96): fresh single-vehicle installations no longer lose all shared sensors, binary sensors and selects when the first vehicle receives a SQLite `vehicle_id` other than 1. It includes the Beta 7 R1–R5 parking GPS fixes, and resets stale TCO units when there is no active contract for the selected vehicle.
