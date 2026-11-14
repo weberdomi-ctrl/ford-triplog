@@ -1,0 +1,46 @@
+name: One-time correction of Beta 7 R9 pre-release tag
+
+on:
+  push:
+    branches:
+      - maintenance/repair-beta7-r9-tag-20261114
+    paths:
+      - .github/workflows/repair-beta7-r9-tag.yml
+
+permissions:
+  contents: write
+
+jobs:
+  repair-tag:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      EXPECTED_OLD_SHA: 302ef8900fcda3740136cbae4a08ce66673736b6
+      EXPECTED_BETA_SHA: 2ae319b8717d6fd97182a7e9ec8ffcf4860509fc
+      TAG: 2.7.0-beta.7-r9
+    steps:
+      - name: Verify exact published tag and Beta branch commits
+        shell: bash
+        run: |
+          set -euo pipefail
+          old_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')"
+          beta_sha="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/heads/2.7.0_Beta.7" --jq '.object.sha')"
+          echo "Current tag SHA: ${old_sha}"
+          echo "Beta branch SHA: ${beta_sha}"
+          if [[ "${old_sha}" != "${EXPECTED_OLD_SHA}" || "${beta_sha}" != "${EXPECTED_BETA_SHA}" ]]; then
+            echo "::error::Ref moved since approval; refusing to update the tag"
+            exit 1
+          fi
+      - name: Point existing pre-release tag at tested Beta commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh api -X PATCH "repos/${GITHUB_REPOSITORY}/git/refs/tags/${TAG}" \
+            -f sha="${EXPECTED_BETA_SHA}" -F force=true >/dev/null
+          actual="$(gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" --jq '.object.sha')"
+          echo "Updated tag SHA: ${actual}"
+          if [[ "${actual}" != "${EXPECTED_BETA_SHA}" ]]; then
+            echo "::error::The release tag does not point at the expected Beta commit"
+            exit 1
+          fi
+          echo "Release tag now points at the tested Beta 7 R9 commit"
