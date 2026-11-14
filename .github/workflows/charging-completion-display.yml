@@ -6,6 +6,7 @@ on:
       - 'custom_components/ford_triplog/charging_time.py'
       - 'custom_components/ford_triplog/sensor.py'
       - 'custom_components/ford_triplog/history.py'
+      - 'custom_components/ford_triplog/export.py'
       - 'test/test_charge_completion_display_beta7_r9.py'
       - '.github/workflows/charging-completion-display.yml'
   push:
@@ -13,6 +14,7 @@ on:
       - 'custom_components/ford_triplog/charging_time.py'
       - 'custom_components/ford_triplog/sensor.py'
       - 'custom_components/ford_triplog/history.py'
+      - 'custom_components/ford_triplog/export.py'
       - 'test/test_charge_completion_display_beta7_r9.py'
       - '.github/workflows/charging-completion-display.yml'
   workflow_dispatch:
@@ -29,7 +31,7 @@ jobs:
         with:
           python-version: '3.12'
       - name: Check Python syntax
-        run: python -m py_compile custom_components/ford_triplog/charging_time.py custom_components/ford_triplog/sensor.py custom_components/ford_triplog/history.py
+        run: python -m py_compile custom_components/ford_triplog/charging_time.py custom_components/ford_triplog/sensor.py custom_components/ford_triplog/history.py custom_components/ford_triplog/export.py
       - name: Run completion vs unplug regression tests
         run: python -m unittest discover -s test -p 'test_charge_completion_display_beta7_r9.py' -v
       - name: Preserve R7 unplug matching regression
