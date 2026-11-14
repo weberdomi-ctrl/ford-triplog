@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.7.0-beta.7-r9 (pre-release candidate, build 27037)
+
+### Fixed
+- Separate the time energy transfer actually finishes (`completion_time`) from the later physical EV unplug event. Retain the physical plug-session end in the archived record for Ford Last Charge correlation and journey chronology (R7).
+- Recover ignition-OFF parking anchors when the VIN-matched Ford GPS sensor has a valid near-OFF module timestamp but the phone route point was recorded 21–60 seconds before OFF. Keep strict OEM, phone accuracy, distance and odometer checks (R8).
+- Display the verified completion time, rather than plug-out time, as the last charging end. Show energy-transfer duration in the last-charge sensor, charging history, averages and Journey summaries (R9).
+- Expose `plug_out_time` and `plug_duration_seconds` separately for diagnostics. Older archived charges are calculated correctly at read time without a migration.
+
+### Testing and limitations
+- All development-branch CI checks passed; the overnight charging-duration fix was confirmed in Home Assistant (3 h 50 min 49 s active charging versus 16 h 14 min plugged in).
+- FordPass last-charge reconciliation remains dependent on matching Ford data. GPS edge cases, live external-meter/dynamic-price charging and occasional OSRM start-of-route artifacts still need separate validation.
+- **Pre-release only.** No SQLite schema migration or automatic rewriting of archived trip locations. See [Beta 7 R9 release notes](BETA7_R9_RELEASE_NOTES.md).
+
+
 ## 2.7.0-beta.7-r8 (development candidate, build 27036)
 
 ### Fixed
