@@ -19,6 +19,8 @@ from datetime import datetime
 from time import monotonic
 from typing import Any
 
+from .charging_time import charge_transfer_duration_seconds
+
 _LOGGER = logging.getLogger(__name__)
 
 # All sensor entities are updated almost simultaneously. Keep the compact
@@ -256,15 +258,9 @@ class FordTriplogHistory:
             if start_soc is not None and end_soc is not None:
                 total_soc_added += end_soc - start_soc
 
-            start_time = charge.get("start_time")
-            end_time = charge.get("end_time")
-
-            if start_time and end_time:
-                start_dt = datetime.fromisoformat(start_time)
-                end_dt = datetime.fromisoformat(end_time)
-                total_charge_duration += (
-                    end_dt - start_dt
-                ).total_seconds()
+            duration = charge_transfer_duration_seconds(charge)
+            if duration is not None:
+                total_charge_duration += duration
 
         for trip in trips:
             if not trip.get("include_in_statistics", True):

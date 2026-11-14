@@ -66,6 +66,11 @@ from .const import (
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .dynamic_test_energy_sensor import FordTriplogDynamicTestEnergySensor
 from .live_dynamic_pricing import dynamic_price_diagnostics
+from .charging_time import (
+    charge_transfer_end_time,
+    charge_transfer_duration_seconds,
+    charge_plug_disconnected_time,
+)
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
@@ -3041,10 +3046,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
         currencies: set[str] = set()
 
         for data in selected:
-            duration_seconds = self._duration_seconds(
-                data.get("start_time"),
-                data.get("end_time"),
-            )
+            duration_seconds = charge_transfer_duration_seconds(data)
             vehicle_energy = self._optional_float(data.get("energy_added_kwh"))
             billed_energy = self._optional_float(data.get("energy_billed_kwh"))
             cost_total = self._optional_float(data.get("cost_total"))
@@ -3065,7 +3067,9 @@ class FordTriplogChargingHistorySensor(SensorEntity):
             entry = {
                 "charge_id": data.get("charge_id"),
                 "start_time": data.get("start_time"),
-                "end_time": data.get("end_time"),
+                "end_time": charge_transfer_end_time(data),
+                "plug_disconnected_time": charge_plug_disconnected_time(data),
+                "completion_time": data.get("completion_time"),
                 "duration_seconds": duration_seconds,
                 "duration": (
                     format_duration(duration_seconds)
@@ -6823,6 +6827,11 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
     def _duration_seconds(last_charge: dict[str, Any]) -> int | None:
         """Return stored or calculated charging duration."""
 
+        # Correct existing archives without changing the physical session end.
+        transfer_duration = charge_transfer_duration_seconds(last_charge)
+        if transfer_duration is not None:
+            return transfer_duration
+
         duration = last_charge.get("duration_seconds")
         if duration is not None:
             try:
@@ -6873,7 +6882,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             return
 
         self._value = self._parse_timestamp(
-            last_charge.get("end_time")
+            charge_transfer_end_time(last_charge)
             or last_charge.get("start_time")
         )
 
@@ -6902,7 +6911,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
 
         attributes = {
             "start_time": last_charge.get("start_time"),
-            "end_time": last_charge.get("end_time"),
+            "end_time": charge_transfer_end_time(last_charge),
+            "plug_disconnected_time": charge_plug_disconnected_time(last_charge),
             "detected_start_time": last_charge.get("detected_start_time"),
             "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
@@ -7059,7 +7069,7 @@ class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
         last_charge,
     ):
         self._value = format_datetime(
-            last_charge.get("end_time")
+            charge_transfer_end_time(last_charge)
             if last_charge
             else None,
             self.translations["today"],
@@ -7161,19 +7171,7 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
             self._value = None
             return
 
-        start = last_charge.get("start_time")
-        end = last_charge.get("end_time")
-
-        if not start or not end:
-            self._value = None
-            return
-
-        start_dt = datetime.fromisoformat(start)
-        end_dt = datetime.fromisoformat(end)
-
-        self._value = int(
-            (end_dt - start_dt).total_seconds()
-        )
+        self._value = charge_transfer_duration_seconds(last_charge)
 class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     """Primary energy value of the last charging session."""
 

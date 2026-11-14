@@ -26,6 +26,11 @@ from homeassistant.util import dt as dt_util
 from .route_export import route_geojson, route_gpx
 from .const import DOMAIN
 from .storage import FordTriplogStorage
+from .charging_time import (
+    charge_transfer_end_time,
+    charge_transfer_duration_seconds,
+    charge_plug_disconnected_time,
+)
 from .user_charging_site_storage import UserChargingSiteStorage
 
 
@@ -136,6 +141,7 @@ CHARGE_EXPORT_FIELDS = (
     "charge_id",
     "start_time",
     "end_time",
+    "plug_disconnected_time",
     "detected_start_time",
     "detected_end_time",
     "duration_seconds",
@@ -419,14 +425,14 @@ def _charge_row(charge: Any) -> dict[str, Any]:
     return {
         "charge_id": _csv_value(data.get("charge_id")),
         "start_time": _csv_value(data.get("start_time")),
-        "end_time": _csv_value(data.get("end_time")),
+        "end_time": _csv_value(charge_transfer_end_time(data)),
+        "plug_disconnected_time": _csv_value(
+            charge_plug_disconnected_time(data)
+        ),
         "detected_start_time": _csv_value(data.get("detected_start_time")),
         "detected_end_time": _csv_value(data.get("detected_end_time")),
         "duration_seconds": _csv_value(
-            _duration_seconds(
-                data.get("start_time"),
-                data.get("end_time"),
-            )
+            charge_transfer_duration_seconds(data)
         ),
         "start_soc": _csv_value(data.get("start_soc")),
         "end_soc": _csv_value(data.get("end_soc")),
