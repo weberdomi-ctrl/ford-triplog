@@ -52,3 +52,14 @@ def charge_transfer_duration_seconds(charge: Mapping[str, Any]) -> int | None:
     if start is None or end is None or end < start:
         return None
     return int((end - start).total_seconds())
+
+def charge_plug_disconnected_time(charge: Mapping[str, Any]) -> str | None:
+    """Expose unplug separately only if a distinct COMPLETED time was proven."""
+    physical = charge.get("end_time")
+    transfer_end = charge_transfer_end_time(charge)
+    physical_dt = _parse_timestamp(physical)
+    transfer_dt = _parse_timestamp(transfer_end)
+    if physical_dt is not None and transfer_dt is not None:
+        if transfer_dt < physical_dt:
+            return physical
+    return None
