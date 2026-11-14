@@ -66,7 +66,11 @@ from .const import (
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .dynamic_test_energy_sensor import FordTriplogDynamicTestEnergySensor
 from .live_dynamic_pricing import dynamic_price_diagnostics
-from .charging_time import charge_transfer_end_time, charge_transfer_duration_seconds
+from .charging_time import (
+    charge_transfer_end_time,
+    charge_transfer_duration_seconds,
+    charge_plug_disconnected_time,
+)
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
@@ -3064,7 +3068,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "charge_id": data.get("charge_id"),
                 "start_time": data.get("start_time"),
                 "end_time": charge_transfer_end_time(data),
-                "plug_disconnected_time": data.get("end_time"),
+                "plug_disconnected_time": charge_plug_disconnected_time(data),
                 "completion_time": data.get("completion_time"),
                 "duration_seconds": duration_seconds,
                 "duration": (
@@ -6908,7 +6912,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         attributes = {
             "start_time": last_charge.get("start_time"),
             "end_time": charge_transfer_end_time(last_charge),
-            "plug_disconnected_time": last_charge.get("end_time"),
+            "plug_disconnected_time": charge_plug_disconnected_time(last_charge),
             "detected_start_time": last_charge.get("detected_start_time"),
             "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
