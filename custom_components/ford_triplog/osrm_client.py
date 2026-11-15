@@ -31,6 +31,9 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.util import dt as dt_util
 
+from .route_quality import confidence_valid
+from .osrm_geometry_guard import oversized_osrm_step_m
+
 _LOGGER = logging.getLogger(__name__)
 
 DEFAULT_OSRM_RADIUS_METERS = 15.0
@@ -188,6 +191,30 @@ class FordTriplogOSRMClient:
 
             result = await self._async_match_normalized(chunk_points)
 
+            # A long trace can produce one nearly impossible OSRM chunk and
+            # another excellent one. The weighted overall confidence must
+            # never hide the rejected chunk (observed on 2026-11-15).
+            if not confidence_valid(result.confidence):
+                _LOGGER.warning(
+                    "Rejecting OSRM chunk %s/%s: confidence=%s",
+                    chunk_number, len(chunks), result.confidence,
+                )
+                raise FordTriplogOSRMResponseError(
+                    f"OSRM chunk {chunk_number}/{len(chunks)} "
+                    f"low confidence: {result.confidence}"
+                )
+            if result.unmatched_tracepoints > max(1, len(chunk_points) // 5):
+                raise FordTriplogOSRMResponseError(
+                    f"OSRM chunk {chunk_number}/{len(chunks)} "
+                    "has too many unmatched GPS points"
+                )
+            step_m = oversized_osrm_step_m(result.geometry)
+            if step_m is not None:
+                raise FordTriplogOSRMResponseError(
+                    f"OSRM chunk {chunk_number}/{len(chunks)} "
+                    f"contains an unobserved {step_m:.0f} m geometry jump"
+                )
+
             chunk_coordinates = result.geometry.get("coordinates", [])
             if not isinstance(chunk_coordinates, list) or len(chunk_coordinates) < 2:
                 raise FordTriplogOSRMResponseError(
@@ -261,6 +288,25 @@ class FordTriplogOSRMClient:
                 "OSRM chunk merge returned no usable LineString geometry"
             )
 
+        # Even individually credible chunks can snap to different road
+        # locations at their overlap. Never draw a direct line between
+        # disconnected chunk geometries.
+        merged_geometry = {
+            "type": "LineString",
+            "coordinates": merged_coordinates,
+        }
+        step_m = oversized_osrm_step_m(merged_geometry)
+        if step_m is not None:
+            _LOGGER.warning(
+                "Rejecting merged OSRM trace: unobserved %.0f m "
+                "geometry jump between chunks",
+                step_m,
+            )
+            raise FordTriplogOSRMResponseError(
+                f"OSRM chunk merge contains an unobserved "
+                f"{step_m:.0f} m geometry jump"
+            )
+
         matched_count = sum(1 for value in matched_flags if value)
         unmatched_count = len(matched_flags) - matched_count
         confidence = (
@@ -285,10 +331,7 @@ class FordTriplogOSRMClient:
         )
 
         return FordTriplogOSRMMatchResult(
-            geometry={
-                "type": "LineString",
-                "coordinates": merged_coordinates,
-            },
+            geometry=merged_geometry,
             distance_m=distance_m,
             duration_s=duration_s,
             confidence=confidence,

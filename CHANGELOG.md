@@ -1,5 +1,19 @@
 # Changelog
 
+## 2.7.0-beta.7-r10 (development candidate, build 27038)
+
+### Fixed
+- Reject individually implausible OSRM map-matching chunks instead of allowing a high-quality chunk to mask a near-zero-confidence chunk in the weighted result. The November 15, 2026 return drive had chunk confidences 0.002879 and 0.983847 but was incorrectly marked complete with overall 0.329868.
+- Reject OSRM geometry with kilometre-scale straight-line jumps, including stitches between independently matched chunks.
+- Apply the same geometry safeguard when reading previously archived OSRM routes. Bad cached matches fall back to GPS-derived display segments without rewriting original GPS points or recorded vehicle distance.
+- Preserve disconnected raw GPS sections as separate LineStrings; do not interpolate roads across missing GPS observations.
+
+### Verification
+- Added automated field-replay and false-stitch regression tests, including a 4.37 km geometric jump and normally matched overlapping OSRM chunks.
+- The independent parking-GPS verification and Ford charging-session logic are unchanged.
+- Not yet a published pre-release. Validate in Home Assistant before publishing R10.
+
+
 ## 2.7.0-beta.7-r9 (pre-release candidate, build 27037)
 
 ### Fixed

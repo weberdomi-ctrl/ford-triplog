@@ -15,6 +15,7 @@ from .route_quality import (
     geometry_coordinates, matched_geometry_valid, segment_length_m, _time,
     display_geometry,
 )
+from .osrm_geometry_guard import oversized_osrm_step_m
 
 MAX_OSRM_ENDPOINT_GAP_M = 90.0
 MAX_OSRM_ENDPOINT_TIME_GAP_S = 90.0
@@ -28,6 +29,9 @@ def validate_osrm_result(points: list[dict[str, Any]], result: Any) -> None:
     """Validate a match only against its own contiguous input segment."""
     if not confidence_valid(result.confidence):
         raise RouteMatchRejected(f'low_confidence_{result.confidence}')
+    step_m = oversized_osrm_step_m(result.geometry)
+    if step_m is not None:
+        raise RouteMatchRejected(f'unobserved_osrm_geometry_jump_{step_m:.0f}m')
     distance = float(result.distance_m)
     if not isfinite(distance) or distance <= 0:
         raise RouteMatchRejected('non_positive_distance')
@@ -127,6 +131,11 @@ def evaluate_stored_osrm_match(
         return False, status, reason
     if not matched_geometry_valid(matched):
         return False, 'rejected', 'invalid_cached_osrm_geometry'
+    # Read-time protection also repairs the display of already archived bad
+    # matches without rewriting raw points or modifying the SQLite database.
+    step_m = oversized_osrm_step_m(matched.get('geometry'))
+    if step_m is not None:
+        return False, 'rejected', f'unobserved_osrm_geometry_jump_{step_m:.0f}m'
     points = route.get('points')
     if not isinstance(points, list) or len(points) < 2:
         return False, 'incomplete', 'incomplete_missing_raw_endpoints'
