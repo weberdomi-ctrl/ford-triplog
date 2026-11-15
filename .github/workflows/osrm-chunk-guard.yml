@@ -1,0 +1,32 @@
+name: OSRM chunk and geometry-gap regression
+
+on:
+  pull_request:
+    paths:
+      - 'custom_components/ford_triplog/osrm_client.py'
+      - 'custom_components/ford_triplog/osrm_geometry_guard.py'
+      - 'custom_components/ford_triplog/route_matching.py'
+      - 'test/test_osrm_chunk_guard_beta7_r10.py'
+  push:
+    paths:
+      - 'custom_components/ford_triplog/osrm_client.py'
+      - 'custom_components/ford_triplog/osrm_geometry_guard.py'
+      - 'custom_components/ford_triplog/route_matching.py'
+      - 'test/test_osrm_chunk_guard_beta7_r10.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  osrm-chunk-guard:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check route-matching Python syntax
+        run: python -m py_compile custom_components/ford_triplog/osrm_client.py custom_components/ford_triplog/osrm_geometry_guard.py custom_components/ford_triplog/route_matching.py
+      - name: Replay OSRM chunk and GPS gap regressions
+        run: python -m unittest discover -s test -p 'test_osrm_chunk_guard_beta7_r10.py' -v
