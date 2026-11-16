@@ -4562,7 +4562,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
             remaining = deadline - self.hass.loop.time()
             if remaining <= 0:
-                _LOGGER.warning(
+                _LOGGER.info(
                     "No fresh trip-end GPS received within %ss",
                     GPS_UPDATE_TIMEOUT,
                 )
@@ -4585,7 +4585,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
                     timeout=remaining,
                 )
             except asyncio.TimeoutError:
-                _LOGGER.warning(
+                _LOGGER.info(
                     "No fresh trip-end GPS received within %ss",
                     GPS_UPDATE_TIMEOUT,
                 )
@@ -4840,7 +4840,7 @@ class FordTriplogCoordinator(DataUpdateCoordinator):
 
         # Preserve the ignition-off snapshot as the final fallback rather
         # than deliberately clearing a location that may still be useful.
-        _LOGGER.warning(
+        _LOGGER.info(
             "Trip-end GPS selection: no newer valid vehicle or route GPS; "
             "keeping ignition-off snapshot"
         )
