@@ -1,5 +1,20 @@
 # Changelog
 
+## 2.7.0 (stable release candidate, build 27039)
+
+### Highlights
+- Dynamic per-vehicle and per-location charging tariffs, including ct/kWh and Rp/kWh, and optional external energy-meter accounting.
+- More reliable parking GPS, OSRM geometry checks, and raw-GPS fallbacks.
+- Charging pause/resume and physical unplug handling, with accurate energy-transfer duration.
+- Shared-entity ownership and usability improvements across Beta 7.
+- Downgrade expected delayed trip-end Ford GPS fallback messages to INFO.
+
+### Verification and scope
+- Live trip and charging behavior tested in Home Assistant; an external Tibber/evcc user reported matching charging figures.
+- Release-branch CI and final publication checks must complete before release tagging.
+- Remaining GPS quality refinements and EV-vs-ICE cost comparison are deferred to 2.8.
+- See [2.7.0 release notes](RELEASE_2.7.0.md).
+
 ## 2.7.0-beta.7-r10 (development candidate, build 27038)
 
 ### Fixed
