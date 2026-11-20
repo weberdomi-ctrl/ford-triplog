@@ -25,7 +25,7 @@ Before troubleshooting a specific problem, verify the following:
 
 **Cause:** A new vehicle may get SQLite `vehicle_id=2` while the earlier code created the shared public entity set only for `vehicle_id=1`.
 
-**Resolution:** Install **2.7.0-beta.7-r6 (build 27034)** or a later version containing the fix, then restart Home Assistant. Verify that the shared entity group appears. The new code assigns the shared entity group to one loaded ConfigEntry independently of the vehicle ID.
+**Resolution:** Install **2.7.0 (build 27039)** or a later version containing the fix, then restart Home Assistant. Verify that the shared entity group appears. The new code assigns the shared entity group to one loaded ConfigEntry independently of the vehicle ID.
 
 Do **not** delete `/config/.storage/ford_triplog/`, recreate the SQLite database, change `vehicle_id` fields or rename entity unique IDs to work around this problem. Your trip and charge history should remain untouched.
 
@@ -33,7 +33,7 @@ If the problem remains after installing the updated build, check the Home Assist
 
 ## Currency label still shows CHF when the contract uses EUR
 
-In Beta 7, insurance, road-tax and financing TCO units follow the **currency saved with the active contract**. Changing Home Assistant's default currency does not retroactively convert stored costs. R6 also clears the previous unit when the selected vehicle has no active contract.
+In 2.7.0, insurance, road-tax and financing TCO units follow the **currency saved with the active contract**. Changing Home Assistant's default currency does not retroactively convert stored costs. Version 2.7.0 also clears the previous unit when the selected vehicle has no active contract.
 
 Check the stored contract currency first. If the sensor attribute says `EUR` but Home Assistant still displays `CHF/month` after a restart, report the affected entity and a sanitized state/attribute example; do not alter the stored monetary amount.
 

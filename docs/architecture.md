@@ -3,7 +3,7 @@
 Ford Triplog is a local-first Home Assistant custom integration for automatic
 Trip, charging, Journey and route history.
 
-Ford Triplog remains Ford-focused. Version 2.6 uses the entity-based
+Ford Triplog remains Ford-focused. Version 2.7 uses the entity-based
 multi-vehicle architecture introduced in 2.5 and extends it with vehicle-scoped
 cost/TCO, document, warranty and configuration-recovery data. Ford Connect is the recommended source for Ford
 vehicles. Compatible FordPass entities and other Home Assistant vehicle data
@@ -72,7 +72,7 @@ duplicating the complete public sensor set for every vehicle.
 
 ---
 
-## Shared entity ownership (Beta 7 R6)
+## Shared entity ownership
 
 The single public dashboard entity set is created by **one loaded Home Assistant ConfigEntry**, not by an assumed SQLite `vehicle_id=1`. This is important after a fresh install because the first real vehicle can receive ID 2 following the cleanup of an initial placeholder row.
 
