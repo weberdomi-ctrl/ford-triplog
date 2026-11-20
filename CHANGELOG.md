@@ -1,5 +1,91 @@
 # Changelog
 
+## 2.7.0 (stable release candidate, build 27039)
+
+### Highlights
+- Dynamic per-vehicle and per-location charging tariffs, including ct/kWh and Rp/kWh, and optional external energy-meter accounting.
+- More reliable parking GPS, OSRM geometry checks, and raw-GPS fallbacks.
+- Charging pause/resume and physical unplug handling, with accurate energy-transfer duration.
+- Shared-entity ownership and usability improvements across Beta 7.
+- Downgrade expected delayed trip-end Ford GPS fallback messages to INFO.
+
+### Verification and scope
+- Live trip and charging behavior tested in Home Assistant; an external Tibber/evcc user reported matching charging figures.
+- Release-branch CI and final publication checks must complete before release tagging.
+- Remaining GPS quality refinements and EV-vs-ICE cost comparison are deferred to 2.8.
+- See [2.7.0 release notes](RELEASE_2.7.0.md).
+
+## 2.7.0-beta.7-r10 (development candidate, build 27038)
+
+### Fixed
+- Reject individually implausible OSRM map-matching chunks instead of allowing a high-quality chunk to mask a near-zero-confidence chunk in the weighted result. The November 15, 2026 return drive had chunk confidences 0.002879 and 0.983847 but was incorrectly marked complete with overall 0.329868.
+- Reject OSRM geometry with kilometre-scale straight-line jumps, including stitches between independently matched chunks.
+- Apply the same geometry safeguard when reading previously archived OSRM routes. Bad cached matches fall back to GPS-derived display segments without rewriting original GPS points or recorded vehicle distance.
+- Preserve disconnected raw GPS sections as separate LineStrings; do not interpolate roads across missing GPS observations.
+
+### Verification
+- Added automated field-replay and false-stitch regression tests, including a 4.37 km geometric jump and normally matched overlapping OSRM chunks.
+- The independent parking-GPS verification and Ford charging-session logic are unchanged.
+- Not yet a published pre-release. Validate in Home Assistant before publishing R10.
+
+
+## 2.7.0-beta.7-r9 (pre-release candidate, build 27037)
+
+### Fixed
+- Separate the time energy transfer actually finishes (`completion_time`) from the later physical EV unplug event. Retain the physical plug-session end in the archived record for Ford Last Charge correlation and journey chronology (R7).
+- Recover ignition-OFF parking anchors when the VIN-matched Ford GPS sensor has a valid near-OFF module timestamp but the phone route point was recorded 21–60 seconds before OFF. Keep strict OEM, phone accuracy, distance and odometer checks (R8).
+- Display the verified completion time, rather than plug-out time, as the last charging end. Show energy-transfer duration in the last-charge sensor, charging history, averages and Journey summaries (R9).
+- Expose `plug_out_time` and `plug_duration_seconds` separately for diagnostics. Older archived charges are calculated correctly at read time without a migration.
+
+### Testing and limitations
+- All development-branch CI checks passed; the overnight charging-duration fix was confirmed in Home Assistant (3 h 50 min 49 s active charging versus 16 h 14 min plugged in).
+- FordPass last-charge reconciliation remains dependent on matching Ford data. GPS edge cases, live external-meter/dynamic-price charging and occasional OSRM start-of-route artifacts still need separate validation.
+- **Pre-release only.** No SQLite schema migration or automatic rewriting of archived trip locations. See [Beta 7 R9 release notes](BETA7_R9_RELEASE_NOTES.md).
+
+
+## 2.7.0-beta.7-r8 (development candidate, build 27036)
+
+### Fixed
+- Recover an ignition-OFF parking anchor when FordPass GPS JSON has a genuine GPS-module fix at the actual stop but the device_tracker still exposes coordinates from an earlier location.
+- Allow a delayed phone route fix 21–60 seconds before OFF to corroborate the **independently timestamped OEM module position**, provided the phone fix is accurate, near-stationary and within 100 m, the OEM sample is within 15 seconds of OFF, and the odometer is stable.
+- Keep the original 20-second limit for ordinary route/parking checks. Never trust post-OFF phone movement, a publication-only Ford timestamp, or a fresh HA observation timestamp as a substitute.
+- Add diagnostic logging for rejected post-OFF OEM parking evidence and a Nov 12 Cham regression replay.
+
+### Notes
+- Existing parking snapshots are not rewritten retroactively.
+- This is an R8 test candidate, not a stable release. Automated CI and a real parked-start follow-up are required.
+- Includes the R7 charging unplug-end correction without modifying its behavior.
+
+## 2.7.0-beta.7-r7 (development candidate, build 27035)
+
+### Fixed
+- Keep the physical EV unplug timestamp as the charging-session end for Ford vehicles with a plug-status sensor. The earlier COMPLETED event marks the end of energy transfer only.
+- Preserve `completion_time` separately for transfer diagnostics and keep the non-plug-aware charging lifecycle unchanged.
+- Prevent an early completion timestamp from causing Ford Last Charge correlation to reject an otherwise matching dataset (observed on November 10, 2026: transfer completed at 04:20, unplug at 06:38).
+- Add an automated regression replay of the FordPass unplug and Last Charge data.
+
+### Notes
+- Existing archived charging sessions are not rewritten automatically.
+- Actual Home Assistant charging/unplug events still require field validation before publishing this release.
+
+
+## 2.7.0-beta.7-r6 (pre-release candidate, build 27034)
+
+### Fixed
+- Fix issue #96: a fresh single-vehicle setup may assign the first real vehicle ID 2, leaving the shared sensor, binary sensor and select platforms empty because they required ID 1. The loaded ConfigEntry now owns the shared entity set independently of SQLite vehicle ID, with stable ownership and re-homing after permanent owner removal.
+- Clear stale insurance, road-tax and financing TCO unit labels when no current contract is available. Active contract units already follow stored currencies such as `EUR/month` or `CHF/month`; existing values are not converted.
+
+### Included from Beta 7 R1–R5
+- Safely verify the ignition-OFF parking anchor using genuine FordPass OEM GPS timestamps, accurate pre-OFF route evidence and stable odometer values.
+- Preserve untrusted pending parking snapshots when GPS JSON and device_tracker update out of order; R5 can corroborate VIN-specific GPS JSON independently instead of waiting for the tracker.
+- Keep unverified, stale and post-OFF phone positions from being mistaken for the next trip's parking start.
+
+### Compatibility and testing
+- No SQLite schema migration, vehicle-ID renumbering, or retroactive trip history changes.
+- R6 tests and GitHub Actions checks passed. Field tests on the affected fresh-install setup and on multi-vehicle owner removal are still required.
+- See [Beta 7 R6 release notes](BETA7_R6_RELEASE_NOTES.md).
+
+
 ## 2.7.0-beta.3 (pre-release)
 
 ### Fixed

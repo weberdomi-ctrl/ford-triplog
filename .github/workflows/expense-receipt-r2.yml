@@ -1,0 +1,31 @@
+name: Beta 6 R2 vehicle expense receipt tests
+on:
+  pull_request:
+    paths:
+      - 'custom_components/ford_triplog/expense_receipt_parser.py'
+      - 'custom_components/ford_triplog/config_flow.py'
+      - 'test/test_expense_receipt_r2.py'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  expense-receipt-r2:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check Python and translation syntax
+        run: |
+          python -m py_compile custom_components/ford_triplog/expense_receipt_parser.py custom_components/ford_triplog/config_flow.py
+          python - <<'PY'
+          import json
+          for name in ("strings.json", "translations/de.json", "translations/en.json"):
+              with open("custom_components/ford_triplog/" + name) as f:
+                  json.load(f)
+          PY
+      - name: Run existing and new parser tests
+        run: |
+          python -m unittest discover -s test -p 'test_expense_receipt_r1.py' -v
+          python -m unittest discover -s test -p 'test_expense_receipt_r2.py' -v

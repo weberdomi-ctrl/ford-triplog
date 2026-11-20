@@ -23,7 +23,9 @@ from .vehicle_context import (
     get_selected_vehicle_id,
     set_selected_vehicle_id,
     vehicle_option_map,
+    is_shared_entities_owner,
 )
+
 
 
 async def async_setup_entry(
@@ -33,15 +35,8 @@ async def async_setup_entry(
 ) -> None:
     """Set up shared Ford Triplog selectors."""
 
-    data = hass.data[DOMAIN][entry.entry_id]
-    try:
-        vehicle_id = int(data.get("vehicle_id") or 1)
-    except (TypeError, ValueError):
-        vehicle_id = 1
-
-    # One shared Ford Triplog device/dashboard entity set is owned by vehicle 1.
-    # Additional ConfigEntries only provide vehicle runtimes/data sources.
-    if vehicle_id != 1:
+    # Only one loaded ConfigEntry owns the shared device/dashboard entities.
+    if not is_shared_entities_owner(hass, entry.entry_id):
         return
 
     route_storage = VehicleRuntimeProxy(

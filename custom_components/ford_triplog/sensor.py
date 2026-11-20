@@ -37,6 +37,11 @@ from .utils import (
     format_duration,
     format_datetime,
 )
+from .charging_duration import (
+    charging_end_time,
+    charging_duration_seconds,
+    plug_duration_seconds,
+)
 from .icons import (
     ICON_TRIP_COUNT,
     ICON_DISTANCE,
@@ -65,6 +70,7 @@ from .const import (
 )
 from .const import SIGNAL_CHARGE_DATA_UPDATED
 from .dynamic_test_energy_sensor import FordTriplogDynamicTestEnergySensor
+from .live_dynamic_pricing import dynamic_price_diagnostics
 
 SIGNAL_LAST_ROUTE_UPDATED = "ford_triplog_last_route_updated"
 from .journey_storage import FordTriplogJourneyStorage
@@ -81,6 +87,7 @@ from .vehicle_context import (
     vehicle_display_name,
     get_selected_vehicle_id,
     get_vehicle_runtime,
+    is_shared_entities_owner,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -116,6 +123,7 @@ def _interval_seconds(start: Any, end: Any) -> int:
         end_dt = end_dt.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE)
     return max(0, int((end_dt - start_dt).total_seconds()))
 
+
 async def async_setup_entry(
     hass: HomeAssistant,
     entry: ConfigEntry,
@@ -125,18 +133,16 @@ async def async_setup_entry(
 
     data = hass.data[DOMAIN][entry.entry_id]
 
-    # Ford Triplog exposes one shared dashboard/device entity set. Vehicle 1
-    # owns those entities; their data source follows the central vehicle
-    # context through runtime proxies. Additional vehicle ConfigEntries feed
-    # data into the same UI instead of creating duplicate entity IDs.
+    # Shared dashboard entity ownership is independent of database vehicle ID.
+    # Only the selected owner ConfigEntry creates fixed-unique-ID entities.
     try:
         vehicle_id = int(data.get("vehicle_id") or 1)
     except (TypeError, ValueError):
         vehicle_id = 1
-    if vehicle_id != 1:
+    if not is_shared_entities_owner(hass, entry.entry_id):
         _LOGGER.debug(
-            "Skipping shared Ford Triplog sensor entities for vehicle %s",
-            vehicle_id,
+            "Skipping shared Ford Triplog sensors for non-owner entry %s (vehicle %s)",
+            entry.entry_id, vehicle_id,
         )
         return
 
@@ -401,6 +407,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
         if vehicle_id is None:
             self._value, self._attrs = None, {}
+            self._attr_native_unit_of_measurement = None
             return
 
         store = FordTriplogVehicleInsuranceStorage(
@@ -411,6 +418,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
         if not active:
             self._value = None
+            self._attr_native_unit_of_measurement = None
             self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_policy"}
             return
 
@@ -424,7 +432,7 @@ class FordTriplogInsuranceTCOSensor(SensorEntity):
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_premium": round(annual, 2),
-            "currency": policy.get("currency") or "CHF",
+            "currency": _tco_currency(policy.get("currency")),
             "provider": policy.get("provider"),
             "policy_number": policy.get("policy_number"),
             "valid_from": policy.get("valid_from"),
@@ -524,6 +532,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         vehicle_id = get_selected_vehicle_id(self.hass, fallback=1)
         if vehicle_id is None:
             self._value, self._attrs = None, {}
+            self._attr_native_unit_of_measurement = None
             return
         store = FordTriplogVehicleTaxStorage(
             self.hass, Path(self.hass.config.path(".storage", STORAGE_DIR)), vehicle_id
@@ -533,6 +542,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         active = [r for r in rows if str(r.get("valid_from") or "") <= today <= str(r.get("valid_to") or "")]
         if not active:
             self._value = None
+            self._attr_native_unit_of_measurement = None
             self._attrs = {"vehicle_id": vehicle_id, "status": "no_active_tax"}
             return
         tax = max(active, key=lambda r: (str(r.get("valid_from") or ""), int(r.get("tax_id") or 0)))
@@ -545,7 +555,7 @@ class FordTriplogRoadTaxTCOSensor(SensorEntity):
         self._attrs = {
             "vehicle_id": vehicle_id,
             "annual_tax": round(annual, 2),
-            "currency": tax.get("currency") or "CHF",
+            "currency": _tco_currency(tax.get("currency")),
             "authority": tax.get("authority"),
             "valid_from": tax.get("valid_from"),
             "valid_to": tax.get("valid_to"),
@@ -627,7 +637,10 @@ class FordTriplogFinancingTCOSensor(SensorEntity):
         from pathlib import Path
         from .vehicle_financing import FordTriplogVehicleFinancingStorage, leasing_tco_for_month
         vid=get_selected_vehicle_id(self.hass, fallback=1)
-        if vid is None: self._value=None; self._attrs={}; return
+        if vid is None:
+            self._value=None; self._attrs={}
+            self._attr_native_unit_of_measurement=None
+            return
         rows=await FordTriplogVehicleFinancingStorage(self.hass, Path(self.hass.config.path('.storage', STORAGE_DIR)), vid).async_load()
         now=dt_util.now(); total=0.0; active=[]; currencies=set()
         for row in rows:
@@ -3033,10 +3046,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
         currencies: set[str] = set()
 
         for data in selected:
-            duration_seconds = self._duration_seconds(
-                data.get("start_time"),
-                data.get("end_time"),
-            )
+            duration_seconds = charging_duration_seconds(data)
             vehicle_energy = self._optional_float(data.get("energy_added_kwh"))
             billed_energy = self._optional_float(data.get("energy_billed_kwh"))
             cost_total = self._optional_float(data.get("cost_total"))
@@ -3053,10 +3063,13 @@ class FordTriplogChargingHistorySensor(SensorEntity):
             if currency:
                 currencies.add(currency)
 
+            price_diagnostics = dynamic_price_diagnostics(data)
             entry = {
                 "charge_id": data.get("charge_id"),
                 "start_time": data.get("start_time"),
-                "end_time": data.get("end_time"),
+                "end_time": charging_end_time(data),
+                "plug_out_time": data.get("end_time"),
+                "plug_duration_seconds": plug_duration_seconds(data),
                 "duration_seconds": duration_seconds,
                 "duration": (
                     format_duration(duration_seconds)
@@ -3115,6 +3128,8 @@ class FordTriplogChargingHistorySensor(SensorEntity):
                 "effective_price_per_kwh": data.get("effective_price_per_kwh"),
                 "cost_source": data.get("cost_source"),
                 "cost_verified": data.get("cost_verified"),
+                "dynamic_price_status": price_diagnostics["dynamic_price_status"],
+                "dynamic_price_interval_count": price_diagnostics["dynamic_price_interval_count"],
                 "receipt_filename": data.get("receipt_filename"),
                 "auto_memo": data.get("auto_memo"),
                 "receipts": receipts_by_charge.get(
@@ -6810,26 +6825,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
 
     @staticmethod
     def _duration_seconds(last_charge: dict[str, Any]) -> int | None:
-        """Return stored or calculated charging duration."""
-
-        duration = last_charge.get("duration_seconds")
-        if duration is not None:
-            try:
-                return int(duration)
-            except (TypeError, ValueError):
-                pass
-
-        start = FordTriplogLastChargeSensor._parse_timestamp(
-            last_charge.get("start_time")
-        )
-        end = FordTriplogLastChargeSensor._parse_timestamp(
-            last_charge.get("end_time")
-        )
-
-        if not start or not end:
-            return None
-
-        return max(0, int((end - start).total_seconds()))
+        """Return actual energy-transfer time (exclude plugged-in idle time)."""
+        return charging_duration_seconds(last_charge)
 
     @staticmethod
     def _soc_added(last_charge: dict[str, Any]) -> float | None:
@@ -6862,7 +6859,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             return
 
         self._value = self._parse_timestamp(
-            last_charge.get("end_time")
+            charging_end_time(last_charge)
             or last_charge.get("start_time")
         )
 
@@ -6891,7 +6888,9 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
 
         attributes = {
             "start_time": last_charge.get("start_time"),
-            "end_time": last_charge.get("end_time"),
+            "end_time": charging_end_time(last_charge),
+            "plug_out_time": last_charge.get("end_time"),
+            "plug_duration_seconds": plug_duration_seconds(last_charge),
             "detected_start_time": last_charge.get("detected_start_time"),
             "detected_end_time": last_charge.get("detected_end_time"),
             "duration_seconds": duration_seconds,
@@ -6966,6 +6965,7 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
             ),
             "cost_source": last_charge.get("cost_source"),
             "cost_verified": last_charge.get("cost_verified"),
+            **dynamic_price_diagnostics(last_charge),
             "receipt_filename": last_charge.get(
                 "receipt_filename"
             ),
@@ -7047,7 +7047,7 @@ class FordTriplogLastChargeEndTimeSensor(FordTriplogSensorBase):
         last_charge,
     ):
         self._value = format_datetime(
-            last_charge.get("end_time")
+            charging_end_time(last_charge)
             if last_charge
             else None,
             self.translations["today"],
@@ -7149,19 +7149,8 @@ class FordTriplogLastChargeDurationSensor(FordTriplogSensorBase):
             self._value = None
             return
 
-        start = last_charge.get("start_time")
-        end = last_charge.get("end_time")
+        self._value = charging_duration_seconds(last_charge)
 
-        if not start or not end:
-            self._value = None
-            return
-
-        start_dt = datetime.fromisoformat(start)
-        end_dt = datetime.fromisoformat(end)
-
-        self._value = int(
-            (end_dt - start_dt).total_seconds()
-        )
 class FordTriplogLastChargeEnergySensor(FordTriplogSensorBase):
     """Primary energy value of the last charging session."""
 

@@ -1,0 +1,19 @@
+Ford Triplog 2.7.0 Beta 6 / Release 1 (Build 27023)
+
+First Beta 6 development change, based on the final Beta 5 R22 source.
+
+New expense-receipt recognition for maintenance/repairs, tolls/vignettes and
+other vehicle costs:
+- New 'Read receipt (PDF/OCR)' action in each variable-expense menu.
+- Read embedded text in digital PDF files directly via existing pypdf support.
+- For scanned/image-only PDFs or images use the already configured optional
+  external OCR service, with an original-PDF fallback on systems without fitz.
+- Conservatively suggest amount (prefer explicit gross/payment total over
+  net/VAT), currency, invoice date and merchant.
+- Reuse the existing manual expense form; review, correct and save before any
+  database booking. Uploaded file remains a pending attachment until save.
+- No new dependencies or SQLite schema changes. Existing manual cost entry and
+  attached cost receipts continue to work as before.
+- Add isolated regression tests and CI workflow.
+
+Beta 6 / Release 1: 2.7.0-beta.6-r1; build 27023.

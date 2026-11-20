@@ -18,17 +18,77 @@ def _number(value):
 
 
 def read_price_per_kwh(state, currency):
-    """Read a non-negative price in the configured currency per kWh."""
+    """Read a price normalized to the configured currency per kWh.
+
+    EUR/kWh and CHF/kWh remain supported. German Tibber/evcc price sensors
+    may report euro cents (ct/kWh) or Swiss rappen (Rp/kWh); normalize those
+    units before recording price boundaries so the actual interval costs
+    always use the base currency. Reject mismatched currencies rather than
+    silently treating cents as euros or rappen as francs.
+    """
     if state is None or str(state.state).strip().lower() in (
         "", "unknown", "unavailable", "none", "null"
     ):
         return None
-    unit = str(state.attributes.get("unit_of_measurement") or "").strip().upper().replace(" ", "")
     currency = str(currency or "").strip().upper()
-    if unit and unit != f"{currency}/KWH":
+    if currency not in ("EUR", "CHF"):
+        return None
+    unit = (
+        str(state.attributes.get("unit_of_measurement") or "")
+        .strip()
+        .upper()
+        .replace(" ", "")
+        .replace("\u00a0", "")
+        .replace("\u202f", "")
+    )
+    whole = {"EUR": {"EUR/KWH", "€/KWH"}, "CHF": {"CHF/KWH"}}[currency]
+    subunit = {
+        "EUR": {"CT/KWH", "CTS/KWH", "CENT/KWH", "CENTS/KWH", "€CT/KWH", "EURCT/KWH"},
+        "CHF": {"RP/KWH", "RAPPEN/KWH", "CHFCT/KWH"},
+    }[currency]
+    # Preserve legacy unitless sensors; users must configure these in
+    # base currency units, as before R5.
+    if not unit or unit in whole:
+        divisor = Decimal(1)
+    elif unit in subunit:
+        divisor = Decimal(100)
+    else:
         return None
     value = _number(state.state)
-    return float(value) if value is not None else None
+    return float(value / divisor) if value is not None else None
+
+
+def dynamic_price_diagnostics(charge):
+    """Small, recorder-safe price calculation diagnostics for HA sensors.
+
+    Do not publish full price steps as HA attributes; long charging sessions
+    can exceed Home Assistant's 16 KiB recorder attribute limit.
+    """
+    sensor = charge.get("dynamic_price_sensor")
+    applied = bool(charge.get("dynamic_meter_pricing_applied", False))
+    finished = bool(charge.get("dynamic_price_finished", False))
+    valid = bool(charge.get("dynamic_price_valid", False))
+    failure = charge.get("dynamic_price_failure_reason")
+    if not sensor:
+        status = "not_configured"
+    elif applied:
+        status = "applied"
+    elif failure:
+        status = "failed"
+    elif finished:
+        status = "not_applied"
+    else:
+        status = "in_progress"
+    steps = charge.get("dynamic_price_steps") or []
+    return {
+        "dynamic_price_sensor": sensor,
+        "dynamic_price_status": status,
+        "dynamic_meter_pricing_applied": applied,
+        "dynamic_price_valid": valid,
+        "dynamic_price_failure_reason": failure,
+        "dynamic_price_interval_count": len(steps) if isinstance(steps, list) else 0,
+        "dynamic_meter_allocation_method": charge.get("dynamic_meter_allocation_method"),
+    }
 
 
 def price_meter_boundaries(samples, billed_energy_kwh):

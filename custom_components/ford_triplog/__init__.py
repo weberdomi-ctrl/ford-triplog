@@ -74,6 +74,9 @@ from .vehicle_context import (
     remove_vehicle_context_if_unloaded,
     get_selected_vehicle_id,
     set_selected_vehicle_id,
+    iter_vehicle_runtimes,
+    release_shared_entities_owner,
+    consume_unloaded_shared_entities_owner,
 )
 
 
@@ -636,6 +639,7 @@ async def async_unload_entry(
     )
 
     if unload_ok:
+        release_shared_entities_owner(hass, entry.entry_id)
         hass.data[DOMAIN].pop(
             entry.entry_id,
             None,
@@ -708,6 +712,21 @@ async def async_remove_entry(
 
     remove_vehicle_context_if_unloaded(hass, vehicle_id)
     notify_vehicle_list_updated(hass)
+
+    # Shared entities live on one ConfigEntry platform. When that entry is
+    # permanently removed, the remaining runtimes have already forwarded
+    # their platforms and skipped shared entity creation. Reload exactly one
+    # survivor to re-home those entities; do not do this on ordinary reloads.
+    if consume_unloaded_shared_entities_owner(hass, entry.entry_id):
+        survivors = iter_vehicle_runtimes(hass)
+        if survivors:
+            successor_id = survivors[0][1]
+            _LOGGER.info(
+                "Ford Triplog shared entity owner removed; reloading entry %s "
+                "to restore dashboard entities",
+                successor_id,
+            )
+            await hass.config_entries.async_reload(successor_id)
 
     if result.get("deleted"):
         _LOGGER.info(

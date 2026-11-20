@@ -23,7 +23,11 @@ from .const import (
     DOMAIN,
     VEHICLE_SOURCE_HEALTH_UNAVAILABLE,
 )
-from .vehicle_context import CoordinatorVehicleRuntimeProxy
+from .vehicle_context import (
+    CoordinatorVehicleRuntimeProxy,
+    is_shared_entities_owner,
+)
+
 
 
 async def async_setup_entry(
@@ -33,12 +37,7 @@ async def async_setup_entry(
 ) -> None:
     """Set up Ford Triplog binary sensors."""
 
-    data = hass.data[DOMAIN][entry.entry_id]
-    try:
-        vehicle_id = int(data.get("vehicle_id") or 1)
-    except (TypeError, ValueError):
-        vehicle_id = 1
-    if vehicle_id != 1:
+    if not is_shared_entities_owner(hass, entry.entry_id):
         return
 
     coordinator = CoordinatorVehicleRuntimeProxy(hass, entry.entry_id)

@@ -245,6 +245,26 @@ This can be used to migrate between compatible vehicle-data integrations while p
 
 ---
 
+# Installing a Pre-release (Beta 7 R6)
+
+Beta 7 R6 is **not a stable release**. It is available through HACS only **after** the GitHub pre-release `2.7.0-beta.7-r6` has been published.
+
+1. Back up your Home Assistant configuration and `/config/.storage/ford_triplog/ford_triplog.db`, as well as Ford Triplog receipts/documents.
+2. In HACS, open **Ford Triplog** and choose the **Re-download** / version selection option. Enable beta/pre-release versions where needed.
+3. Select **`2.7.0-beta.7-r6`** (build **27034**) and install.
+4. Restart Home Assistant and check that the correct version is loaded.
+5. Verify the Ford Triplog sensors, binary sensors and vehicle selector, and confirm existing trip/charge history remains accessible.
+
+For users installing manually, the versioned source files must match the published tag. Do not mix files from multiple beta builds.
+
+## Fresh single-vehicle installations
+
+An internal `vehicle_id` of **2 or higher** is valid even when only one vehicle is configured. Beta 7 R6 creates the shared entity set for the owner ConfigEntry regardless of that number. There is **no need to modify the SQLite database**, recreate the integration or delete history.
+
+The shared dashboard entities are created once; selecting another vehicle changes the displayed vehicle data without duplicating the entity IDs. See [Configuration](configuration.md) and [Troubleshooting](troubleshooting.md).
+
+---
+
 # Updating
 
 Updates are installed through HACS.

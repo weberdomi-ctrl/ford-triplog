@@ -1,0 +1,44 @@
+Ford Triplog 2.7.0 Beta 6 / Release 3 (Build 27025)
+=====================================================
+
+Basis: Beta 6 / R2 (27024), Entwicklungsbranch 2.7.0_Beta.6
+
+Kostenbeleg und Fahrzeugabgleich
+---------------------------------
+- Nach dem PDF/OCR-Import erscheint der Fahrzeugabgleich direkt im
+  Formular als sichtbare Statusauswahl (anstelle einer versteckten
+  Formularbeschreibung). Anzeige für Treffer, Abweichung, ungeprüfte
+  Zuordnung und nicht erkanntes Kennzeichen.
+- Bei abweichendem Kontrollschild bleibt die ausdrückliche
+  Bestätigung vor dem Speichern zwingend.
+- Die reine Anzeigeoption wird nicht als Kostendatensatz gespeichert.
+
+Kostenformular
+--------------
+- Datumsfelder verwenden den nativen Home-Assistant-Datumswähler.
+- Das alternative Jahresfeld entfällt, wenn ein konkretes Datum
+  vorhanden ist; es bleibt bei fehlendem Datum verfügbar.
+- Gültigkeitsdaten erscheinen bei Maut/Vignetten oder wenn bei einem
+  bestehenden Eintrag bereits entsprechende Werte hinterlegt sind.
+- Bei importierten Belegen werden leere optionale Felder wie Notiz
+  und Land nur bei Bedarf angezeigt; bereits erkannte Werte bleiben
+  sichtbar. In der späteren manuellen Bearbeitung sind sie verfügbar.
+- Keine Änderung der eigentlichen Betrags-, Speicher- oder OCR-Logik.
+
+Kosten bearbeiten / löschen
+---------------------------
+- Einheitliche Auswahllabels in allen Sprachen:
+  lokalisiertes Datum, Währung und Betrag, übersetzte Kategorie,
+  sowie vorhandener Anbieter/Werkstatt.
+- Neueste Einträge erscheinen zuerst; stabile Sortierung bei
+  gleichem Datum anhand der Eintrags-ID.
+- Doppelte Titel im Auswahldialog beseitigt:
+  das Feld heisst nun schlicht «Eintrag auswählen».
+
+Test und Sicherheit
+-------------------
+- Neue Regressionstests und GitHub Actions zur Syntaxprüfung,
+  Übersetzungsvalidierung und Auswahl-/Abgleichslogik.
+- Keine Datenbankmigration, keine automatische Kostenbuchung.
+- Praxisprüfung in Home Assistant insbesondere für
+  Datumswähler, Fahrzeugstatus und Bestätigungs-Checkbox empfohlen.

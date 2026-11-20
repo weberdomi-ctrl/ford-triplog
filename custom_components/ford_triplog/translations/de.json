@@ -1379,6 +1379,7 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
+          "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
@@ -1392,6 +1393,7 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
+          "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
@@ -1405,6 +1407,7 @@
         "description": "{vehicle_name}",
         "menu_options": {
           "expense_add": "Kosten hinzufügen",
+          "expense_receipt_scan": "Beleg einlesen (PDF/OCR)",
           "expense_edit": "Kosten bearbeiten",
           "expense_delete": "Kosten löschen",
           "init": "Zurück",
@@ -1416,20 +1419,30 @@
       "expense_add": {
         "title": "Kosten hinzufügen"
       },
+      "expense_receipt_scan": {
+        "title": "Kostenbeleg einlesen",
+        "description": "Digitale PDFs werden direkt ausgelesen. Für eingescannte PDFs und Bilder wird der konfigurierte OCR-Dienst verwendet. Erfasste Werte sind nur Vorschläge und müssen im nächsten Schritt bestätigt werden.",
+        "data": {
+          "receipt_file": "Rechnung / Beleg als PDF oder Bild"
+        }
+      },
       "expense_edit": {
         "title": "Kosten bearbeiten",
+        "description": "Kosteneintrag auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Kosten bearbeiten"
+          "expense_selection": "Eintrag auswählen"
         }
       },
       "expense_delete": {
         "title": "Kosten löschen",
+        "description": "Kosteneintrag zum Löschen auswählen (neueste zuerst).",
         "data": {
-          "expense_id": "Kosten löschen"
+          "expense_selection": "Eintrag auswählen"
         }
       },
       "expense_form": {
         "title": "Kosten erfassen",
+        "description": "Erkannte Angaben vor dem Speichern prüfen. {vehicle_check}",
         "data": {
           "category": "Kategorie *",
           "description": "Beschreibung",
@@ -1443,7 +1456,8 @@
           "valid_to": "Gültig bis (optional)",
           "notes": "Notiz",
           "receipt_file": "Rechnung / Beleg",
-          "expense_year": "Jahr (falls Datum unbekannt)"
+          "expense_year": "Jahr (falls Datum unbekannt)",
+          "confirm_receipt_vehicle": "Trotz abweichendem Kontrollschild diesem Fahrzeug zuordnen"
         }
       },
       "costs_management": {
@@ -1547,6 +1561,7 @@
       }
     },
     "error": {
+      "expense_vehicle_mismatch_unconfirmed": "Das Kontrollschild des Belegs stimmt nicht mit dem ausgewählten Fahrzeug überein. Prüfe die Zuordnung und bestätige sie ausdrücklich.",
       "invalid_charging_site_database": "Die Datei ist keine gültige oder kompatible Ford-Triplog-Ladeort-Datenbank.",
       "charging_site_download_failed": "Die Ladeort-Datenbank konnte nicht von OpenStreetMap heruntergeladen oder verarbeitet werden. Prüfe das Home-Assistant-Protokoll für weitere Details.",
       "charging_site_download_in_progress": "Es läuft bereits ein Download einer Ladeort-Datenbank.",

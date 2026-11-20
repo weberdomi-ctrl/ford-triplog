@@ -78,6 +78,11 @@ from .vehicle_warranty import FordTriplogVehicleWarrantyStorage, warranty_end_da
 from .vehicle_insurance import FordTriplogVehicleInsuranceStorage, extract_insurance_fields
 from .vehicle_tax import FordTriplogVehicleTaxStorage
 from .vehicle_expense import FordTriplogVehicleExpenseStorage
+from .expense_receipt_parser import (
+    extract_expense_fields,
+    compare_receipt_registration,
+)
+from .expense_dialog import expense_sort_key, format_expense_choice
 from .financing_document import (
     FordTriplogFinancingDocumentStorage,
     extract_financing_fields,
@@ -915,6 +920,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
         self._vehicle_expense_storage: FordTriplogVehicleExpenseStorage | None = None
         self._selected_expense_id: int | None = None
         self._expense_group: str | None = None
+        self._expense_prefill: dict[str, Any] = {}
+        self._expense_recognition_status: str = ""
+        self._expense_receipt_plate: str = ""
+        self._expense_receipt_model: str = ""
         self._selected_insurance_id: int | None = None
         self._insurance_prefill: dict[str, Any] = {}
 
@@ -8521,8 +8530,123 @@ class FordTriplogOptionsFlow(OptionsFlow):
     async def async_step_other_cost_management(self, user_input=None):
         self._expense_group="other"; return await self._async_expense_menu("other_cost_management")
     async def _async_expense_menu(self, step_id):
-        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+        return self.async_show_menu(step_id=step_id,menu_options=["expense_add","expense_receipt_scan","expense_edit","expense_delete","expense_receipt_view","expense_receipt_delete","costs_management"],description_placeholders={"vehicle_name":self._context_vehicle_name()})
+
+    async def async_step_expense_receipt_scan(self, user_input=None):
+        """Read a cost invoice into editable suggestions; never save automatically."""
+        errors = {}
+        if user_input is not None:
+            try:
+                with process_uploaded_file(self.hass, user_input["receipt_file"]) as uploaded_path:
+                    docs = FordTriplogVehicleDocumentStorage(self.hass)
+                    document = await docs.async_import(
+                        uploaded_path, original_name=uploaded_path.name
+                    )
+
+                # Save the uploaded document only as a pending attachment.
+                # The user must still review and explicitly save the expense.
+                self._selected_expense_id = None
+                self._expense_prefill = {}
+                self._pending_expense_document = document
+                self._expense_recognition_status = "no_text"
+                text = ""
+                is_pdf = str(document["media_type"]).lower() == "application/pdf"
+                if is_pdf:
+                    text = await self.hass.async_add_executor_job(
+                        extract_pdf_text, document["content"]
+                    )
+                    if text.strip():
+                        self._expense_recognition_status = "pdf_text"
+
+                if not text.strip() and bool(self._options.get(CONF_OCR_ENABLED, False)):
+                    try:
+                        content = document["content"]
+                        name = str(document["original_filename"])
+                        media_type = str(document["media_type"])
+                        if is_pdf:
+                            # The external service can handle PDFs directly
+                            # when the optional local PDF renderer is missing.
+                            try:
+                                rendered = await self.hass.async_add_executor_job(
+                                    render_pdf_page_png, content, 0
+                                )
+                                if rendered:
+                                    content = rendered
+                                    name = f"{Path(name).stem}_page1.png"
+                                    media_type = "image/png"
+                            except (ImportError, RuntimeError):
+                                _LOGGER.debug(
+                                    "PDF renderer unavailable; sending original PDF to OCR"
+                                )
+
+                        ocr = await self._get_ocr_client().async_analyze(
+                            filename=name,
+                            media_type=media_type,
+                            content=content,
+                        )
+                        text = str(ocr.get("raw_text") or "")
+                        if text.strip():
+                            self._expense_recognition_status = "ocr"
+                    except (
+                        FordTriplogOCRAuthenticationError,
+                        FordTriplogOCRConnectionError,
+                        FordTriplogOCRResponseError,
+                        ImportError,
+                        RuntimeError,
+                        ValueError,
+                        TimeoutError,
+                    ):
+                        # OCR is optional, and recognition must never book
+                        # expenses or prevent the manual review form.
+                        _LOGGER.exception(
+                            "Expense receipt OCR unavailable; manual review continues"
+                        )
+                        self._expense_recognition_status = "ocr_failed"
+
+                self._expense_prefill = await self.hass.async_add_executor_job(
+                    extract_expense_fields, text, self._expense_group
+                )
+                self._expense_receipt_plate = str(
+                    self._expense_prefill.pop("receipt_registration", "") or ""
+                )
+                self._expense_receipt_model = str(
+                    self._expense_prefill.pop("receipt_vehicle_model", "") or ""
+                )
+                _LOGGER.info(
+                    "Expense document analysed: filename=%s extraction=%s fields=%s",
+                    document["original_filename"],
+                    self._expense_recognition_status,
+                    sorted(self._expense_prefill),
+                )
+                return await self.async_step_expense_form()
+            except ValueError as err:
+                if (
+                    str(err) == "File does not exist"
+                    and getattr(self, "_pending_expense_document", None)
+                ):
+                    return await self.async_step_expense_form()
+                _LOGGER.exception("Unable to import expense receipt")
+                errors["base"] = "vehicle_document_import_failed"
+            except (OSError, HomeAssistantError, TypeError):
+                _LOGGER.exception("Unable to import expense receipt")
+                errors["base"] = "vehicle_document_import_failed"
+
+        return self.async_show_form(
+            step_id="expense_receipt_scan",
+            data_schema=vol.Schema({
+                vol.Required("receipt_file"): selector.FileSelector(
+                    selector.FileSelectorConfig(
+                        accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                    )
+                )
+            }),
+            errors=errors,
+        )
     async def async_step_expense_add(self,user_input=None):
+        self._expense_prefill = {}
+        self._expense_recognition_status = ""
+        self._expense_receipt_plate = ""
+        self._expense_receipt_model = ""
         self._selected_expense_id=None
         # A pending receipt belongs only to the current expense form session.
         self._pending_expense_document = None
@@ -8531,16 +8655,34 @@ class FordTriplogOptionsFlow(OptionsFlow):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            self._selected_expense_id=int(user_input["expense_id"]); self._pending_expense_document = None; return await self.async_step_expense_form()
-        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
-        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+            self._selected_expense_id=int(user_input["expense_selection"]); self._pending_expense_document = None; self._expense_prefill = {}; self._expense_recognition_status = ""; self._expense_receipt_plate = ""; self._expense_receipt_model = ""; return await self.async_step_expense_form()
+        items = sorted(items, key=expense_sort_key, reverse=True)
+        opts = [
+            selector.SelectOptionDict(
+                value=str(x["expense_id"]),
+                label=format_expense_choice(
+                    x, self._expense_group, self.hass.config.language or "en"
+                ),
+            )
+            for x in items
+        ]
+        return self.async_show_form(step_id="expense_edit",data_schema=vol.Schema({vol.Required("expense_selection"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def async_step_expense_delete(self,user_input=None):
         store=await self._async_expense_storage(); items=await store.async_load(self._expense_group)
         if not items:return self.async_abort(reason="no_expense_entries")
         if user_input is not None:
-            await store.async_delete(int(user_input["expense_id"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
-        opts=[selector.SelectOptionDict(value=str(x["expense_id"]),label=f"{x.get('expense_date') or x.get('expense_year') or x.get('valid_from') or '—'} · {x['category']} · {x['amount']:.2f} {x['currency']}") for x in items]
-        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_id"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
+            await store.async_delete(int(user_input["expense_selection"])); return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
+        items = sorted(items, key=expense_sort_key, reverse=True)
+        opts = [
+            selector.SelectOptionDict(
+                value=str(x["expense_id"]),
+                label=format_expense_choice(
+                    x, self._expense_group, self.hass.config.language or "en"
+                ),
+            )
+            for x in items
+        ]
+        return self.async_show_form(step_id="expense_delete",data_schema=vol.Schema({vol.Required("expense_selection"):selector.SelectSelector(selector.SelectSelectorConfig(options=opts))}))
     async def _async_expense_receipt_items(self):
         store=await self._async_expense_storage()
         expenses=await store.async_load(self._expense_group)
@@ -8589,12 +8731,29 @@ class FordTriplogOptionsFlow(OptionsFlow):
             existing = next((x for x in await store.async_load(self._expense_group) if int(x["expense_id"]) == eid), {})
 
         errors = {}
+        receipt_plate = self._expense_receipt_plate if eid is None else ""
+        selected_plate = ""
+        if receipt_plate:
+            try:
+                selected_details = await FordTriplogVehicleDocumentStorage(
+                    self.hass
+                ).async_get_details(self._ensure_vehicle_context_id()) or {}
+                selected_plate = str(selected_details.get("registration_number") or "")
+            except (OSError, ValueError, TypeError):
+                _LOGGER.exception("Unable to read selected vehicle registration")
+        vehicle_check = compare_receipt_registration(receipt_plate, selected_plate)
         form_values = dict(existing)
+        if eid is None and self._expense_prefill:
+            form_values.update(self._expense_prefill)
         if user_input is not None:
             # Keep the submitted values when validation fails. File upload objects are
             # intentionally not reused as defaults because HA FileSelector cannot do so.
             form_values.update({k: v for k, v in user_input.items() if k != "receipt_file"})
             try:
+                if vehicle_check == "mismatch" and not user_input.get(
+                    "confirm_receipt_vehicle", False
+                ):
+                    raise ValueError("expense_vehicle_mismatch_unconfirmed")
                 # Persist a newly selected receipt *before* validating the other
                 # fields. Home Assistant's upload token is temporary and cannot
                 # safely be submitted a second time after a validation error.
@@ -8610,6 +8769,7 @@ class FordTriplogOptionsFlow(OptionsFlow):
 
                 data = dict(user_input)
                 data.pop("receipt_file", None)
+                data.pop("confirm_receipt_vehicle", None)
                 data["expense_group"] = self._expense_group
                 if eid is not None:
                     data["expense_id"] = eid
@@ -8624,6 +8784,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     )
                     self._pending_expense_document = None
                 self._selected_expense_id = None
+                self._expense_prefill = {}
+                self._expense_recognition_status = ""
+                self._expense_receipt_plate = ""
+                self._expense_receipt_model = ""
                 return await self._async_expense_menu({"maintenance":"maintenance_management","toll":"toll_management","other":"other_cost_management"}[self._expense_group])
             except ValueError as err:
                 # Storage returns stable field-oriented validation codes in the exception.
@@ -8637,7 +8801,10 @@ class FordTriplogOptionsFlow(OptionsFlow):
                     "both_validity_dates_required": "valid_to", "invalid_validity_range": "valid_to",
                     "invalid_odometer": "odometer_km",
                 }
-                errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
+                if code == "expense_vehicle_mismatch_unconfirmed":
+                    errors["base"] = code
+                else:
+                    errors[field_map.get(code, "base")] = f"expense_{code}" if code in field_map else "expense_invalid"
             except (TypeError, HomeAssistantError, OSError):
                 errors["base"] = "expense_invalid"
 
@@ -8663,22 +8830,90 @@ class FordTriplogOptionsFlow(OptionsFlow):
         category_default = v("category")
         if category_default not in {x[0] for x in labels["en"][self._expense_group]}:
             category_default = opts[0]["value"]
-        schema = {
+        # HA shows the receipt check in the visible form description.
+        # Only a genuine mismatch needs an extra confirmation field.
+        schema = {}
+        if vehicle_check == "mismatch":
+            schema[vol.Optional(
+                "confirm_receipt_vehicle",
+                default=bool(form_values.get("confirm_receipt_vehicle", False)),
+            )] = selector.BooleanSelector()
+
+        schema.update({
             vol.Required("category", default=category_default): selector.SelectSelector(selector.SelectSelectorConfig(options=opts)),
             vol.Optional("description", default=v("description")): selector.TextSelector(),
-            vol.Required("amount", default=v("amount", "0")): selector.TextSelector(),
+            vol.Required("amount", default=v("amount", "" if getattr(self, "_pending_expense_document", None) else "0")): selector.TextSelector(),
             vol.Required("currency", default=v("currency", self._default_cost_currency())): selector.TextSelector(),
-            vol.Optional("expense_date", default=v("expense_date")): selector.TextSelector(),
-            vol.Optional("expense_year", default=v("expense_year")): selector.TextSelector(),
-            vol.Optional("provider", default=v("provider")): selector.TextSelector(),
-            vol.Optional("country", default=v("country")): selector.TextSelector(),
-            vol.Optional("odometer_km", default=v("odometer_km")): selector.TextSelector(),
-            vol.Optional("valid_from", default=v("valid_from")): selector.TextSelector(),
-            vol.Optional("valid_to", default=v("valid_to")): selector.TextSelector(),
-            vol.Optional("notes", default=v("notes")): selector.TextSelector(),
-            vol.Optional("receipt_file"): selector.FileSelector(selector.FileSelectorConfig(accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp")),
-        }
-        return self.async_show_form(step_id="expense_form", data_schema=vol.Schema(schema), errors=errors)
+        })
+        date_value = v("expense_date").strip()
+        if date_value:
+            schema[vol.Optional("expense_date", default=date_value)] = selector.DateSelector()
+        else:
+            schema[vol.Optional("expense_date")] = selector.DateSelector()
+        if not date_value:
+            schema[vol.Optional("expense_year", default=v("expense_year"))] = selector.TextSelector()
+        schema[vol.Optional("provider", default=v("provider"))] = selector.TextSelector()
+        if (not self._expense_recognition_status) or v("country"):
+            schema[vol.Optional("country", default=v("country"))] = selector.TextSelector()
+        schema[vol.Optional("odometer_km", default=v("odometer_km"))] = selector.TextSelector()
+        if self._expense_group == "toll" or v("valid_from") or v("valid_to"):
+            for field in ("valid_from", "valid_to"):
+                date_default = v(field).strip()
+                key = (
+                    vol.Optional(field, default=date_default)
+                    if date_default else vol.Optional(field)
+                )
+                schema[key] = selector.DateSelector()
+        if (not self._expense_recognition_status) or v("notes"):
+            schema[vol.Optional("notes", default=v("notes"))] = selector.TextSelector()
+        if not getattr(self, "_pending_expense_document", None):
+            schema[vol.Optional("receipt_file")] = selector.FileSelector(
+                selector.FileSelectorConfig(
+                    accept=".pdf,.jpg,.jpeg,.png,.webp,application/pdf,image/jpeg,image/png,image/webp"
+                )
+            )
+        is_german = lang == "de"
+        if vehicle_check == "match":
+            check_text = (
+                f"Beleg-Kontrollschild {receipt_plate} stimmt mit dem ausgewählten Fahrzeug überein."
+                if is_german else
+                f"Receipt plate {receipt_plate} matches the selected vehicle."
+            )
+        elif vehicle_check == "mismatch":
+            check_text = (
+                f"ACHTUNG: Beleg-Kontrollschild {receipt_plate} stimmt nicht mit "
+                f"dem Fahrzeug-Kontrollschild {selected_plate} überein. "
+                f"Zuordnung nur nach ausdrücklicher Bestätigung!"
+                if is_german else
+                f"WARNING: Receipt plate {receipt_plate} differs from the "
+                f"selected vehicle plate {selected_plate}. Explicit confirmation is required."
+            )
+        elif vehicle_check == "unverified":
+            check_text = (
+                f"Beleg-Kontrollschild {receipt_plate}: Beim ausgewählten Fahrzeug "
+                f"ist kein Kontrollschild hinterlegt. Bitte Zuordnung prüfen."
+                if is_german else
+                f"Receipt plate {receipt_plate}: No registration is stored "
+                f"for the selected vehicle. Please verify the assignment."
+            )
+        else:
+            check_text = (
+                "Kein Kontrollschild auf dem Beleg erkannt. Bitte Fahrzeugzuordnung prüfen."
+                if is_german else
+                "No registration plate found on receipt. Please verify the selected vehicle."
+            ) if self._expense_recognition_status else ""
+        if receipt_plate and self._expense_receipt_model:
+            check_text += (
+                f" | Beleg-Fahrzeug: {self._expense_receipt_model}"
+                if is_german else
+                f" | Receipt vehicle: {self._expense_receipt_model}"
+            )
+        return self.async_show_form(
+            step_id="expense_form",
+            data_schema=vol.Schema(schema),
+            errors=errors,
+            description_placeholders={"vehicle_check": check_text},
+        )
 
     async def async_step_vehicle_data_management(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Manage vehicle master data and vehicle documents."""
