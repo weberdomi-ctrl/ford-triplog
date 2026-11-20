@@ -11,7 +11,7 @@ charging session, as well as lifetime statistics.
 
 ------------------------------------------------------------------------
 
-## Shared dashboard entities in multi-vehicle installations (Beta 7 R6)
+## Shared dashboard entities in multi-vehicle installations
 
 Ford Triplog creates one shared group of sensor, binary-sensor and select entities, even when more than one vehicle is configured. Their readings follow the active vehicle selected by the shared vehicle selector. Their entity IDs are not duplicated for every vehicle.
 
