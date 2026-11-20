@@ -480,13 +480,13 @@ Version 2.6 builds on the multi-vehicle foundation from 2.5 and adds a local per
 
 ---
 
-# Version 2.7 – Beta 7 in Development
+# Version 2.7 – Stable Release (Build 27039)
 
 **Beta 6 complete:** Pre-release `2.7.0-beta.6-r5`, Build `27027`, published 2026-11-08. It includes vehicle-cost PDF/OCR import and improvements, dynamic charging-price subunit support (ct/kWh, Rp/kWh) and charging tariff diagnostics. Beta 6 is frozen; further changes start on branch `2.7.0_Beta.7`.
 
-**Beta 7 initial baseline:** `2.7.0-beta.7`, Build `27028` (development; not released).
+**Stable 2.7.0:** Build `27039`. Includes dynamic charging tariffs, route export, parking GPS and OSRM safeguards, charging-session lifecycle fixes, and the shared-entity ownership correction. See [release notes](RELEASE_2.7.0.md).
 
-## Beta 7 – Priority: Parking GPS Reliability
+## Beta 7 – Completed: Parking GPS Reliability
 
 Tracked in [Issue #91](https://github.com/weberdomi-ctrl/ford-triplog/issues/91).
 
@@ -496,11 +496,11 @@ Tracked in [Issue #91](https://github.com/weberdomi-ctrl/ford-triplog/issues/91)
 - Keep the verified parked position as an immutable next-trip origin where plausible; never replace it with the centre of Home/Work, stale REST data or post-parking phone movement.
 - Add unit/regression scenarios and validate on live out-and-back trips.
 
-## Beta 7 – Validation / Follow-ups
+## Post-2.7 – Validation / Follow-ups
 
-- Continue the Tibber/evcc dynamic-price live test from [Issue #70](https://github.com/weberdomi-ctrl/ford-triplog/issues/70), checking `dynamic_price_status`, interval count and metered energy across price changes and paused charges.
+- External Tibber/evcc tester reported matching charging results in [Issue #70](https://github.com/weberdomi-ctrl/ford-triplog/issues/70); continue optional diagnostics checks for `dynamic_price_status`, interval count and metered energy across price changes and paused charges.
 - Retain the existing vehicle charging-energy priority until an actual error is demonstrated. Do not reinterpret calculated charging losses without considering Ford status versus SOC-based estimates.
-- Consider further 2.7 route export, metadata and TCO/reporting refinements after GPS reliability work.
+- Consider further route, metadata and TCO/reporting refinements in 2.8.
 - EV-versus-ICE cost comparisons remain a separate optional feature request (Issue #75), not part of the initial GPS fix.
 
 
@@ -549,5 +549,5 @@ Additional future development areas include:
 | 2.4 | Released | Charging reliability, recuperation/monthly statistics, user-defined places, Journey rebuild reliability and vehicle-source health |
 | 2.5 | Released | Multi-vehicle storage/runtime, vehicle selector, plug-aware Ford charging and Route Tracker source guard |
 | 2.6 | Released | Vehicle costs/TCO, documents/warranty, route-map metadata and configuration recovery |
-| 2.7 Beta 6 | Pre-release | Vehicle-cost OCR, dynamic tariffs incl. ct/kWh / Rp/kWh, charging diagnostics |\n| 2.7 Beta 7 | In development | Park-GPS next-start protection and dynamic tariff real-world validation |
+| 2.7 | Stable | Dynamic tariffs incl. ct/kWh / Rp/kWh, external charging meters, route export, protected parking GPS, OSRM safeguards and charging reliability |
 | 3.x | Research | Manufacturer-neutral Triplog core and vehicle adapters |
