@@ -1,6 +1,6 @@
 # Configuration
 
-Ford Triplog 2.6 is configured through Home Assistant ConfigEntries.
+Ford Triplog 2.7.0 is configured through Home Assistant ConfigEntries.
 
 Each configured vehicle has its own Ford Triplog ConfigEntry and its own vehicle
 data sources. The integration keeps the recorded history separated by a stable
@@ -166,11 +166,11 @@ physical vehicle.
 
 ---
 
-## Internal vehicle IDs and shared entities (Beta 7 R6)
+## Internal vehicle IDs and shared entities
 
 The SQLite `vehicle_id` is a stable database key, **not** an ordering number or the number of configured vehicles. A fresh single-vehicle installation may legitimately assign its first real vehicle ID **2**, for example after the initial placeholder ID 1 has been removed.
 
-Starting with **2.7.0-beta.7-r6**, the sensor, binary-sensor and select platforms no longer assume that `vehicle_id=1` owns the shared dashboard entity set. Exactly one loaded Ford Triplog ConfigEntry owns that set, and runtime proxies continue to display data for the vehicle chosen in the shared selector.
+Starting with **2.7.0** (introduced during Beta 7), the sensor, binary-sensor and select platforms no longer assume that `vehicle_id=1` owns the shared dashboard entity set. Exactly one loaded Ford Triplog ConfigEntry owns that set, and runtime proxies continue to display data for the vehicle chosen in the shared selector.
 
 Loading another vehicle does not create duplicate public entities. When the ConfigEntry owning the shared entity set is permanently removed, a remaining vehicle ConfigEntry is reloaded so the shared UI can be restored. Normal options reloads keep the vehicle data and do not renumber the IDs.
 
@@ -839,6 +839,8 @@ For the most reliable results:
 
 ---
 
-## Ford Triplog 2.7.0-beta.1 — Dynamic tariff preview
+## Ford Triplog 2.7.0 — Dynamic charging tariffs
 
-The 2.7 beta extends the fixed home charging tariffs described above with dynamic Home Assistant electricity-price entities and vehicle-/zone-specific charging tariffs. See the [dynamic charging tariff beta guide](dynamic_charging_tariffs_2_7_beta.md) for setup, test status and limitations. These additions are **pre-release** features; the 2.6 instructions remain applicable to the stable release.
+Version 2.7.0 supports dynamic Home Assistant electricity-price entities alongside fixed home charging tariffs, with separate vehicle- and zone-specific tariff settings. Supported price units include `EUR/kWh`, `CHF/kWh`, `ct/kWh`, and `Rp/kWh`. Suitable external energy-meter data can supply the billable kWh independently of the vehicle-reported charging energy.
+
+For setup details and diagnostic attributes, see the [dynamic charging tariff guide](dynamic_charging_tariffs_2_7_beta.md), which was originally written for beta testing. The stable release notes document the final scope and limitations: [2.7.0 release notes](../RELEASE_2.7.0.md).
