@@ -16,7 +16,7 @@ Ford Triplog 2.7.0 brings dynamic charging tariffs, route export, and reliabilit
 - Multiple real-world Home Assistant trips confirmed protected parking starts, successful route storage, and plausible route geometry.
 - An overnight AC session with interrupted charging and later unplug was retained as one session and finalized after disconnect.
 - An external evcc user reported that charging results from Ford Triplog and evcc matched after installing the ct/kWh support. This is user feedback; complete interval diagnostics have not been independently verified.
-- Automated regression coverage includes OSRM geometry, parking GPS, shared entity ownership, and unplug/charging-duration behavior. Release-branch CI must pass before tagging.
+- Automated regression coverage includes OSRM geometry, parking GPS, shared entity ownership, and unplug/charging-duration behavior. All 12 release-branch checks passed, including HACS validation, Hassfest and regression workflows.
 
 ## Known limitations
 
