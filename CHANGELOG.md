@@ -1,6 +1,6 @@
 # Changelog
 
-## 2.7.0 (stable release candidate, build 27039)
+## 2.7.0 (stable, build 27039)
 
 ### Highlights
 - Dynamic per-vehicle and per-location charging tariffs, including ct/kWh and Rp/kWh, and optional external energy-meter accounting.
@@ -11,7 +11,7 @@
 
 ### Verification and scope
 - Live trip and charging behavior tested in Home Assistant; an external Tibber/evcc user reported matching charging figures.
-- Release-branch CI and final publication checks must complete before release tagging.
+- All 12 release-branch CI workflows passed; GitHub tag and release publication are tracked separately.
 - Remaining GPS quality refinements and EV-vs-ICE cost comparison are deferred to 2.8.
 - See [2.7.0 release notes](RELEASE_2.7.0.md).
 
