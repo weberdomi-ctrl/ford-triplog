@@ -245,21 +245,22 @@ This can be used to migrate between compatible vehicle-data integrations while p
 
 ---
 
-# Installing a Pre-release (Beta 7 R6)
+# Installing or Upgrading to Stable 2.7.0
 
-Beta 7 R6 is **not a stable release**. It is available through HACS only **after** the GitHub pre-release `2.7.0-beta.7-r6` has been published.
+Version `2.7.0` (build `27039`) is the stable release candidate. It becomes available through HACS once the corresponding GitHub tag and release are published.
 
-1. Back up your Home Assistant configuration and `/config/.storage/ford_triplog/ford_triplog.db`, as well as Ford Triplog receipts/documents.
-2. In HACS, open **Ford Triplog** and choose the **Re-download** / version selection option. Enable beta/pre-release versions where needed.
-3. Select **`2.7.0-beta.7-r6`** (build **27034**) and install.
-4. Restart Home Assistant and check that the correct version is loaded.
-5. Verify the Ford Triplog sensors, binary sensors and vehicle selector, and confirm existing trip/charge history remains accessible.
+1. Back up the Home Assistant configuration, `/config/.storage/ford_triplog/ford_triplog.db`, and any stored receipts/documents.
+2. In HACS, open **Ford Triplog**, then use the normal update or **Re-download** / version selection option.
+3. Select **`2.7.0`** (build **27039**) after the stable release is available. You do not need to enable pre-release versions.
+4. Restart Home Assistant. Check the loaded integration version and confirm the entities and historical trips/charges.
+5. Verify existing tariff settings and charging-energy meter entities after upgrading.
 
-For users installing manually, the versioned source files must match the published tag. Do not mix files from multiple beta builds.
+For a manual installation, use files from the same published `2.7.0` tag; do not mix stable and beta source files.
+
 
 ## Fresh single-vehicle installations
 
-An internal `vehicle_id` of **2 or higher** is valid even when only one vehicle is configured. Beta 7 R6 creates the shared entity set for the owner ConfigEntry regardless of that number. There is **no need to modify the SQLite database**, recreate the integration or delete history.
+An internal `vehicle_id` of **2 or higher** is valid even when only one vehicle is configured. Ford Triplog 2.7.0 creates the shared entity set for the owner ConfigEntry regardless of that number. There is **no need to modify the SQLite database**, recreate the integration or delete history.
 
 The shared dashboard entities are created once; selecting another vehicle changes the displayed vehicle data without duplicating the entity IDs. See [Configuration](configuration.md) and [Troubleshooting](troubleshooting.md).
 
