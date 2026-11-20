@@ -50,18 +50,18 @@ Your data always remains under your control.
 
 ------------------------------------------------------------------------
 
-## Version 2.7.0-beta.7-r6 — Pre-release candidate
+## Version 2.7.0 — Stable (Build 27039)
 
-**Beta 7 R6 (build 27034) is a test version, not a stable release.** It includes parking GPS safety fixes (R1–R5), resolves missing shared Home Assistant entities on fresh single-vehicle installations (issue #96), and improves TCO unit cleanup across vehicle switches. Earlier dynamic charging tariffs, route export and vehicle cost features remain available.
+Ford Triplog 2.7.0 includes dynamic charging tariffs, route export, stronger parking GPS protection, improved OSRM matching, corrected charging pause/unplug timing, and reliable shared Home Assistant entities on fresh single-vehicle installations.
 
-Shared dashboard entities are created **once per installation** by a loaded Ford Triplog ConfigEntry. The owner need not have SQLite `vehicle_id=1`; a fresh installation may legitimately start at ID 2. Vehicle IDs and stored data must not be manually renumbered.
+Shared dashboard entities are created **once per installation** by a loaded Ford Triplog ConfigEntry. The owner need not have SQLite `vehicle_id=1`; a fresh installation may legitimately start at ID 2. Do not renumber stored vehicle IDs.
 
-The public pre-release must be published on GitHub before this build becomes available through HACS. **Back up the local SQLite database before testing.** Parking GPS and real dynamic-price charging still need field validation.
+Use the stable `2.7.0` GitHub release in HACS once published, and back up your Home Assistant configuration and Ford Triplog SQLite database before upgrading.
 
-- [Beta 7 R6 pre-release notes](BETA7_R6_RELEASE_NOTES.md)
-- [Beta test guide](docs/beta_test_2_7.md)
+- [Stable 2.7.0 release notes](RELEASE_2.7.0.md)
 - [Installation / upgrade instructions](docs/installation.md)
-- [Dynamic charging tariff beta guide](docs/dynamic_charging_tariffs_2_7_beta.md)
+- [Configuration](docs/configuration.md)
+- [Dynamic charging tariff reference (original beta guide)](docs/dynamic_charging_tariffs_2_7_beta.md)
 - [Earlier release notes](RELEASE_NOTES.md)
 
 # Features
@@ -642,13 +642,13 @@ Simply copy the example configuration into Home Assistant and adjust the entity 
 - Route map focus defaults to the route start
 - Recuperation display-name cleanup
 
-## Version 2.7 — Beta testing
+## Version 2.7 — Stable
 
-- Dynamic electricity tariffs through Home Assistant price entities
+- Dynamic electricity tariffs through Home Assistant price entities, including ct/kWh and Rp/kWh
 - Per-vehicle and Home Assistant zone-based charging tariffs
-- Persisted calculated charging costs
+- External metered energy and persisted charging costs
 - Route export improvements
-- Further validation of real-world dynamic charging and upgrade paths pending
+- Protected parking GPS, OSRM safeguards and charging/unplug reliability
 
 ## 3.x – Research
 
