@@ -119,6 +119,10 @@ class FordTriplogLogbook extends HTMLElement {
       summary { cursor: pointer; }
       dl { display: grid; grid-template-columns: auto 1fr; gap: .4rem .75rem; }
       dd { margin: 0; overflow-wrap: anywhere; }
+      .journey-fields { grid-template-columns: repeat(auto-fit, minmax(min(100%, 13rem), 1fr)); }
+      .journey-fields dt { color: var(--secondary-text-color); }
+      .journey-stages { padding-inline-start: 1.35rem; }
+      .journey-stages li { margin-block: .3rem; overflow-wrap: anywhere; }
       .route-card { display: block; padding: 1rem; margin-top: .75rem; }
       .route-card[hidden] { display: none; }
       .route-header { display: flex; align-items: center; justify-content: space-between;
@@ -233,6 +237,7 @@ class FordTriplogLogbook extends HTMLElement {
     card.className = "entry-card";
     card.append(element("h2", this.t("Journey", "Journey")));
     const fields = element("dl");
+    fields.className = "journey-fields";
     const number = new Intl.NumberFormat(this.lang, { maximumFractionDigits: 2 });
     const measure = (value, unit) => value == null ? null : `${number.format(value)} ${unit}`;
     for (const [label, value] of [
@@ -247,9 +252,38 @@ class FordTriplogLogbook extends HTMLElement {
       [this.t("Energy used", "Fahrenergie"), measure(journey.energy_used_kwh, "kWh")],
       [this.t("Energy added", "Ladeenergie"), measure(journey.energy_charged_kwh, "kWh")],
     ]) {
-      if (value != null && value !== "") fields.append(element("dt", label), element("dd", value));
+      if (value == null || value === "") continue;
+      const field = element("div");
+      field.append(element("dt", label), element("dd", value));
+      fields.append(field);
     }
     card.append(fields);
+    const stages = element("ol");
+    stages.className = "journey-stages";
+    const labels = {
+      start: this.t("Start", "Start"),
+      trip: this.t("Drive", "Fahrt"),
+      pause: this.t("Stop", "Zwischenhalt"),
+      charge: this.t("Charge", "Laden"),
+      end: this.t("Destination", "Ziel"),
+    };
+    for (const stage of [
+      { type: "start", time: journey.start_time, location: journey.start_location },
+      ...(journey.stages ?? []),
+      { type: "end", time: journey.end_time, location: journey.end_location },
+    ]) {
+      if (!labels[stage.type]) continue;
+      const parts = [
+        stage.time ? this.clock(stage.time) : null, labels[stage.type],
+        stage.title, stage.location,
+        stage.duration_seconds == null ? null : this.duration(stage.duration_seconds),
+      ];
+      stages.append(element("li", parts.filter(Boolean).join(" · ")));
+    }
+    card.append(stages);
+    if (journey.has_trips) {
+      card.append(this.button(this.t("Show journey on map", "Journey auf Karte anzeigen"), () => this.showRoute(journey, true)));
+    }
     return card;
   }
 
@@ -387,18 +421,19 @@ class FordTriplogLogbook extends HTMLElement {
     this.routeRow = row;
     this.clearMap();
     this.routeCard.hidden = false;
-    const label = this.t("Route", "Route");
+    const label = row.journey_id ? "Journey · " + this.t("Route", "Route") : this.t("Route", "Route");
     const status = element("p", this.t("Loading route…", "Route wird geladen…"));
-    this.routeCard.replaceChildren(this.routeHeader(`${label} · ${this.clock(row.start_time)}`), status);
+    this.routeCard.replaceChildren(this.routeHeader(`${label}${row.start_time ? ` · ${this.clock(row.start_time)}` : ""}`), status);
     if (scroll) this.routeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
 
     try {
       const route = await this._hass.callWS({
-        type: "ford_triplog/logbook/route", entry_id: this.vehicle.value, trip_id: row.trip_id,
+        type: "ford_triplog/logbook/route", entry_id: this.vehicle.value,
+        ...(row.journey_id ? { journey_id: row.journey_id } : { trip_id: row.trip_id }),
       });
       if (this.routeRequest !== request) return;
       if (!route.features.length) {
-        status.textContent = this.t("No route recorded for this drive.", "Für diese Fahrt ist keine Route gespeichert.");
+        status.textContent = this.t("No route recorded.", "Keine Route gespeichert.");
         return;
       }
       const [styleReady, library] = await Promise.all([this.mapStyleReady, loadMapLibrary()]);

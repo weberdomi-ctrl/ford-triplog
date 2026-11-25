@@ -114,6 +114,7 @@ async def async_logbook(hass, connection, msg):
             )
 
         for journey in await runtime["journey_storage"].get_all_journeys():
+            summary = None
             if str(journey.date) == selected_date.isoformat():
                 summary = {
                     key: getattr(journey, key)
@@ -132,8 +133,21 @@ async def async_logbook(hass, connection, msg):
                     item = journey.items[index] if journey.items else None
                     location = getattr(item, f"{endpoint}_location", None)
                     summary[f"{endpoint}_location"] = location or address
+                summary["journey_id"] = journey.journey_id
+                summary["has_trips"] = bool(journey.trip_ids)
+                summary["stages"] = []
                 journeys.append(summary)
-            for current, following in zip(journey.items, journey.items[1:]):
+            for index, current in enumerate(journey.items):
+                if summary is not None:
+                    timestamp = _timestamp(current.start_time)
+                    summary["stages"].append({
+                        "type": current.item_type,
+                        "time": timestamp.isoformat() if timestamp else None,
+                        "location": current.start_location if current.item_type == "charge" else current.end_location,
+                    })
+                if index + 1 == len(journey.items):
+                    continue
+                following = journey.items[index + 1]
                 start = _timestamp(current.end_time)
                 end = _timestamp(following.start_time)
                 if not start or not end or end <= start:
@@ -143,12 +157,19 @@ async def async_logbook(hass, connection, msg):
                     continue
                 pause_id = build_pause_id(current.item_id, following.item_id)
                 override = journey.pause_overrides.get(pause_id, {})
+                location = current.end_location or following.start_location
+                if summary is not None:
+                    summary["stages"].append({
+                        "type": "pause", "time": start.isoformat(),
+                        "location": override.get("location") or location,
+                        "title": override.get("title"), "duration_seconds": duration,
+                    })
                 add_row(
                     "pause", current.end_time,
                     journey_id=journey.journey_id,
                     pause_id=pause_id,
                     duration_seconds=duration,
-                    detected_location=current.end_location or following.start_location,
+                    detected_location=location,
                     details=override,
                 )
 
@@ -165,17 +186,29 @@ async def async_logbook(hass, connection, msg):
 @websocket_api.websocket_command({
     vol.Required("type"): "ford_triplog/logbook/route",
     vol.Required("entry_id"): str,
-    vol.Required("trip_id"): vol.All(str, vol.Length(min=1)),
+    vol.Exclusive("trip_id", "route_target"): vol.All(str, vol.Length(min=1)),
+    vol.Exclusive("journey_id", "route_target"): vol.All(str, vol.Length(min=1)),
 })
 @websocket_api.async_response
 async def async_logbook_route(hass, connection, msg):
-    """Return stored route segments for one trip on the selected vehicle."""
+    """Return stored route segments for a trip or journey on this vehicle."""
     entry_id = msg["entry_id"]
     if entry_id not in _vehicles(hass):
         connection.send_error(msg["id"], "not_found", "Vehicle is unavailable")
         return
-    storage = hass.data[DOMAIN][entry_id]["route_storage"]
-    route = await async_build_route_feature_collection(storage, [msg["trip_id"]])
+    runtime = hass.data[DOMAIN][entry_id]
+    if "journey_id" in msg:
+        journey = await runtime["journey_storage"].load_journey_by_id(msg["journey_id"])
+        if journey is None:
+            connection.send_error(msg["id"], "not_found", "Journey is unavailable")
+            return
+        trip_ids = journey.trip_ids
+    elif "trip_id" in msg:
+        trip_ids = [msg["trip_id"]]
+    else:
+        connection.send_error(msg["id"], "invalid_format", "Select a trip or journey")
+        return
+    route = await async_build_route_feature_collection(runtime["route_storage"], trip_ids)
     connection.send_result(msg["id"], route)
 
 
