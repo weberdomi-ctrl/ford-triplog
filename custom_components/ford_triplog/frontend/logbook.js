@@ -1,3 +1,5 @@
+import { featureGroup, map as createMap, polyline, tileLayer } from "./map/leaflet.js";
+
 const elementName = "ford-triplog-logbook";
 
 function element(tag, text) {
@@ -34,6 +36,12 @@ class FordTriplogLogbook extends HTMLElement {
 
   connectedCallback() {
     if (this._hass && !this.main) this.start();
+    else if (this.routeRow) void this.showRoute(this.routeRow);
+  }
+
+  disconnectedCallback() {
+    this.routeRequest = null;
+    this.clearMap();
   }
 
   start() {
@@ -73,7 +81,8 @@ class FordTriplogLogbook extends HTMLElement {
       dd { margin: 0; overflow-wrap: anywhere; }
       .route-card { display: block; padding: 1rem; margin-top: .75rem; }
       .route-card[hidden] { display: none; }
-      ha-map { display: block; height: clamp(18rem, 50vh, 32rem); border-radius: 12px; overflow: hidden; }
+      .route-map { height: clamp(18rem, 50vh, 32rem); border-radius: 12px;
+        overflow: hidden; background: var(--secondary-background-color); }
     `;
     this.main = element("main");
     const header = element("header");
@@ -108,7 +117,14 @@ class FordTriplogLogbook extends HTMLElement {
     this.routeCard.className = "route-card";
     this.routeCard.hidden = true;
     this.main.append(header, filterCard, this.status, this.error, this.rows, this.routeCard);
-    root.append(style, this.main);
+    const mapStyle = element("link");
+    mapStyle.rel = "stylesheet";
+    mapStyle.href = new URL("./map/leaflet.css", import.meta.url).href;
+    this.mapStyleReady = new Promise((resolve) => {
+      mapStyle.addEventListener("load", () => resolve(true), { once: true });
+      mapStyle.addEventListener("error", () => resolve(false), { once: true });
+    });
+    root.append(style, mapStyle, this.main);
     this.load();
   }
 
@@ -130,6 +146,9 @@ class FordTriplogLogbook extends HTMLElement {
     this.error.textContent = "";
     this.rows.replaceChildren();
     this.routeRequest = null;
+    this.routeRow = null;
+    this.clearMap();
+    this.routeCard.replaceChildren();
     this.routeCard.hidden = true;
     const query = { type: "ford_triplog/logbook" };
     if (this.vehicle.value) query.entry_id = this.vehicle.value;
@@ -240,9 +259,18 @@ class FordTriplogLogbook extends HTMLElement {
     return details;
   }
 
+  clearMap() {
+    this.mapResize?.disconnect();
+    this.routeMap?.remove();
+    this.mapResize = null;
+    this.routeMap = null;
+  }
+
   async showRoute(row, scroll = false) {
     const request = Symbol();
     this.routeRequest = request;
+    this.routeRow = row;
+    this.clearMap();
     this.routeCard.hidden = false;
     const label = this.t("Route", "Route");
     const status = element("p", this.t("Loading route…", "Route wird geladen…"));
@@ -258,25 +286,35 @@ class FordTriplogLogbook extends HTMLElement {
         status.textContent = this.t("No route recorded for this drive.", "Für diese Fahrt ist keine Route gespeichert.");
         return;
       }
-      if (!customElements.get("ha-map")) {
-        const helpers = await window.loadCardHelpers();
-        helpers.createCardElement({ type: "map", entities: [] });
-        await Promise.race([
-          customElements.whenDefined("ha-map"),
-          new Promise((_, reject) => setTimeout(() => reject(new Error(this.t("Map could not be loaded.", "Karte konnte nicht geladen werden."))), 5000)),
-        ]);
-      }
+      const styleReady = await this.mapStyleReady;
       if (this.routeRequest !== request) return;
-      const map = element("ha-map");
-      map.hass = this._hass;
-      map.autoFit = true;
-      map.paths = route.features.map(({ geometry }) => ({
-        color: "#ff304f",
-        points: geometry.coordinates.map(([lng, lat]) => ({ point: [lat, lng], timestamp: new Date(row.start_time) })),
-      }));
-      status.replaceWith(map);
+      if (!styleReady) throw new Error(this.t("Map stylesheet could not be loaded.", "Kartenstil konnte nicht geladen werden."));
+
+      const container = element("div");
+      container.className = "route-map";
+      container.setAttribute("aria-label", label);
+      this.routeCard.append(container);
+      const map = createMap(container, { maxZoom: 19 });
+      this.routeMap = map;
+      tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      }).addTo(map);
+      const lines = featureGroup(route.features.map(({ geometry, properties }) =>
+        polyline(geometry.coordinates.map(([lng, lat]) => [lat, lng]), {
+          color: "#ff304f", weight: 4, dashArray: properties?.direct_line ? "6 6" : undefined,
+        }),
+      )).addTo(map);
+      map.fitBounds(lines.getBounds(), { padding: [20, 20], maxZoom: 17 });
+      this.mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+      this.mapResize.observe(container);
+      status.remove();
     } catch (error) {
-      if (this.routeRequest === request) status.textContent = error.message ?? String(error);
+      if (this.routeRequest === request) {
+        this.clearMap();
+        this.routeCard.querySelector(".route-map")?.remove();
+        status.textContent = error.message ?? String(error);
+      }
     }
   }
 

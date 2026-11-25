@@ -241,7 +241,8 @@ async def async_register_logbook(hass: HomeAssistant) -> None:
         if not domain_data.get(_API_REGISTERED):
             script = Path(__file__).parent / "frontend" / "logbook.js"
             await hass.http.async_register_static_paths([
-                StaticPathConfig(_SCRIPT_PATH, str(script), cache_headers=False)
+                StaticPathConfig(_SCRIPT_PATH, str(script), cache_headers=False),
+                StaticPathConfig("/ford_triplog/map", str(script.parent / "map"), cache_headers=True),
             ])
             websocket_api.async_register_command(hass, async_logbook)
             websocket_api.async_register_command(hass, async_logbook_route)
