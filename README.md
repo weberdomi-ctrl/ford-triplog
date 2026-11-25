@@ -573,9 +573,8 @@ average kWh/100 km values.
 
 Home Assistant administrators can open **Triplog** in the sidebar, select a
 vehicle and date, and review drives, charging sessions and stops in time order.
-Edit a charging session's location, note or total cost, or add a completed
-charging session with billed energy. The charge is stored in the normal
-Triplog archive used by history and statistics.
+Open **Costs and receipts** on an archived charging session to update its total
+cost, attach a PDF or image, or download an existing receipt.
 
 Stops appear between consecutive items in an archived journey. Select a stop
 to enter its title, category, location, note or cost.

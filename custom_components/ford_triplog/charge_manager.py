@@ -12,7 +12,6 @@ Release: 2.2.0 - Invalid charge deletion Build 08a
 from __future__ import annotations
 
 import logging
-from asyncio import Lock
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -77,7 +76,6 @@ class FordTriplogChargeManager:
             self.config,
         )
         self.journey_rebuilder = None
-        self._manual_archive_lock = Lock()
 
     async def async_setup(self) -> None:
         """Initialize storage and recalculate archived charging costs."""
@@ -723,19 +721,6 @@ class FordTriplogChargeManager:
             charge=charge,
             updated=True,
         )
-
-    async def async_archive_manual_charge(self, charge: Charge) -> bool:
-        """Archive a manual charge once, even if the client retries."""
-        async with self._manual_archive_lock:
-            archived = await self.async_get_charge(charge.charge_id)
-            if archived is None:
-                if not await self.storage.save_charge(charge.to_dict()):
-                    return False
-            else:
-                charge = archived
-            await self._async_refresh_dependents(charge)
-            async_dispatcher_send(self.hass, SIGNAL_CHARGE_DATA_UPDATED)
-        return True
 
     async def async_update_charge(
         self,

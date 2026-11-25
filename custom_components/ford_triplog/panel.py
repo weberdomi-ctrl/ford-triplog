@@ -7,11 +7,12 @@ from pathlib import Path
 
 import voluptuous as vol
 from homeassistant.components import frontend, panel_custom, websocket_api
+from homeassistant.components.file_upload import process_uploaded_file
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
+from homeassistant.exceptions import HomeAssistantError
 from homeassistant.util import dt as dt_util
 
-from .charge import Charge
 from .const import BUILD, DOMAIN
 from .journey import build_pause_id
 
@@ -28,13 +29,13 @@ def _vehicles(hass):
     }
 
 
-def _timestamp(value, *, local=False):
+def _timestamp(value):
     try:
         parsed = dt_util.parse_datetime(value or "")
     except (TypeError, ValueError):
         return None
     if parsed is not None and parsed.tzinfo is None:
-        return parsed.replace(tzinfo=dt_util.DEFAULT_TIME_ZONE if local else dt_util.UTC)
+        return parsed.replace(tzinfo=dt_util.UTC)
     return parsed
 
 
@@ -72,10 +73,19 @@ async def async_logbook(hass, connection, msg):
         for trip in await runtime["history"].get_all_trips():
             add_row("trip", trip.get("start_time"), distance_km=trip.get("distance_km"))
 
+        receipts_by_charge = {}
+        for receipt in await runtime["receipt_storage"].async_list():
+            if receipt.get("target_type") == "charge" and receipt.get("target_id") and receipt.get("receipt_id"):
+                receipts_by_charge.setdefault(receipt["target_id"], []).append({
+                    "id": receipt["receipt_id"],
+                    "name": receipt.get("original_filename") or receipt.get("filename") or receipt["receipt_id"],
+                })
+
         for charge in await runtime["charge_manager"].async_get_charges():
             add_row(
                 "charge", charge.start_time,
                 charge_id=charge.charge_id,
+                receipts=receipts_by_charge.get(charge.charge_id, []),
                 location=charge.manual_location,
                 detected_location=charge.charging_site_name,
                 note=charge.notes,
@@ -115,61 +125,33 @@ async def async_logbook(hass, connection, msg):
 
 @websocket_api.require_admin
 @websocket_api.websocket_command({
-    vol.Required("type"): "ford_triplog/logbook/add_charge",
+    vol.Required("type"): "ford_triplog/logbook/attach_receipt",
     vol.Required("entry_id"): str,
-    vol.Required("charge_id"): vol.Match(r"manual_[a-f0-9]{32}$"),
-    vol.Required("start_time"): str,
-    vol.Required("end_time"): str,
-    vol.Required("energy_kwh"): vol.Coerce(float),
-    vol.Optional("location", default=""): vol.All(str, vol.Length(max=200)),
-    vol.Optional("note", default=""): vol.All(str, vol.Length(max=2000)),
-    vol.Optional("cost_total"): vol.Coerce(float),
-    vol.Optional("currency"): vol.Match(r"[A-Z]{3}$"),
+    vol.Required("charge_id"): str,
+    vol.Required("file_id"): str,
 })
 @websocket_api.async_response
-async def async_add_charge(hass, connection, msg):
-    """Archive a manually entered charging session."""
+async def async_attach_receipt(hass, connection, msg):
+    """Attach an uploaded receipt to an archived charging session."""
     entry_id = msg["entry_id"]
+    charge_id = msg["charge_id"]
     if entry_id not in _vehicles(hass):
         connection.send_error(msg["id"], "not_found", "Vehicle is unavailable")
         return
-
-    start = _timestamp(msg["start_time"], local=True)
-    end = _timestamp(msg["end_time"], local=True)
-    energy = msg["energy_kwh"]
-    cost = msg.get("cost_total")
-    currency = msg.get("currency")
-    if (
-        not start or not end or dt_util.as_utc(end) <= dt_util.as_utc(start)
-        or end > dt_util.utcnow()
-        or not isfinite(energy) or energy <= 0
-        or (cost is not None and (not isfinite(cost) or cost < 0 or currency is None))
-    ):
-        connection.send_error(msg["id"], "invalid_format", "Check times, energy and cost")
+    runtime = hass.data[DOMAIN][entry_id]
+    try:
+        with process_uploaded_file(hass, msg["file_id"]) as uploaded_path:
+            if await runtime["charge_manager"].async_get_charge(charge_id) is None:
+                connection.send_error(msg["id"], "not_found", "Charging session is unavailable")
+                return
+            await runtime["receipt_storage"].async_import(
+                uploaded_path, target_type="charge", target_id=charge_id,
+                original_name=uploaded_path.name,
+            )
+    except (HomeAssistantError, OSError, ValueError) as error:
+        connection.send_error(msg["id"], "receipt_import_failed", str(error))
         return
-
-    manager = hass.data[DOMAIN][entry_id]["charge_manager"]
-    charge = Charge()
-    charge.charge_id = msg["charge_id"]
-    charge.created = dt_util.utcnow().isoformat()
-    charge.start_time = start.isoformat()
-    charge.end_time = end.isoformat()
-    charge.data_source = "manual"
-    charge.energy_billed_kwh = energy
-    charge.energy_billed_source = "manual"
-    charge.manual_location = msg["location"].strip() or None
-    charge.notes = msg["note"].strip() or None
-    if cost is not None:
-        charge.cost_total = cost
-        charge.currency = currency
-        charge.cost_source = "manual"
-        charge.cost_verified = True
-        charge.finalize_costs()
-
-    if not await manager.async_archive_manual_charge(charge):
-        connection.send_error(msg["id"], "archive_failed", "Charging session could not be saved")
-        return
-    connection.send_result(msg["id"], {"charge_id": charge.charge_id})
+    connection.send_result(msg["id"])
 
 
 @websocket_api.require_admin
@@ -177,9 +159,7 @@ async def async_add_charge(hass, connection, msg):
     vol.Required("type"): "ford_triplog/logbook/edit_charge",
     vol.Required("entry_id"): str,
     vol.Required("charge_id"): vol.All(str, vol.Length(min=1)),
-    vol.Required("location"): vol.All(str, vol.Length(max=200)),
-    vol.Required("note"): vol.All(str, vol.Length(max=2000)),
-    vol.Optional("cost_total"): vol.Any(None, vol.Coerce(float)),
+    vol.Required("cost_total"): vol.Any(None, vol.Coerce(float)),
     vol.Optional("currency"): vol.Any(None, vol.Match(r"[A-Z]{3}$")),
 })
 @websocket_api.async_response
@@ -195,23 +175,20 @@ async def async_edit_charge(hass, connection, msg):
         connection.send_error(msg["id"], "not_found", "Charging session is unavailable")
         return
 
-    charge.manual_location = msg["location"].strip() or None
-    charge.notes = msg["note"].strip() or None
-    if "cost_total" in msg:
-        cost = msg["cost_total"]
-        currency = msg.get("currency")
-        if cost is not None and (not isfinite(cost) or cost < 0 or not currency):
-            connection.send_error(msg["id"], "invalid_format", "Check the total and currency")
-            return
-        charge.begin_manual_cost_edit()
-        # A manual total supersedes the component breakdown.
-        charge.energy_cost = charge.session_fee = charge.time_fee = None
-        charge.blocking_fee = charge.parking_fee = charge.other_cost = None
-        charge.cost_total = cost
-        charge.currency = currency if cost is not None else None
-        charge.cost_source = "manual" if cost is not None else "none"
-        charge.cost_verified = cost is not None
-        charge.finalize_costs()
+    cost = msg["cost_total"]
+    currency = msg.get("currency")
+    if cost is not None and (not isfinite(cost) or cost < 0 or not currency):
+        connection.send_error(msg["id"], "invalid_format", "Check the total and currency")
+        return
+    charge.begin_manual_cost_edit()
+    # A manual total supersedes the component breakdown.
+    charge.energy_cost = charge.session_fee = charge.time_fee = None
+    charge.blocking_fee = charge.parking_fee = charge.other_cost = None
+    charge.cost_total = cost
+    charge.currency = currency if cost is not None else None
+    charge.cost_source = "manual" if cost is not None else "none"
+    charge.cost_verified = cost is not None
+    charge.finalize_costs()
 
     result = await manager.async_update_charge(charge)
     if not result.updated:
@@ -232,7 +209,7 @@ async def async_register_logbook(hass: HomeAssistant) -> None:
                 StaticPathConfig(_SCRIPT_PATH, str(script), cache_headers=False)
             ])
             websocket_api.async_register_command(hass, async_logbook)
-            websocket_api.async_register_command(hass, async_add_charge)
+            websocket_api.async_register_command(hass, async_attach_receipt)
             websocket_api.async_register_command(hass, async_edit_charge)
             domain_data[_API_REGISTERED] = True
         if not domain_data.get("_logbook_panel_registered"):
