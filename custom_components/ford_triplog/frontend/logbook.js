@@ -1,4 +1,30 @@
-import { featureGroup, map as createMap, polyline, tileLayer } from "./map/leaflet.js";
+const MAPLIBRE_ASSETS = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.12.0/dist";
+const BASEMAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
+
+let mapLibrary;
+function loadMapLibrary() {
+  if (!mapLibrary) {
+    mapLibrary = new Promise((resolve, reject) => {
+      const script = document.createElement("script");
+      script.src = `${MAPLIBRE_ASSETS}/maplibre-gl.js`;
+      script.integrity = "sha384-7+0QVD3+GoeOjaW35yTmpj0FR1K45ugw4ZUY0qEFomHSmAude6e9nB6/Xy5aPnzQ";
+      script.crossOrigin = "anonymous";
+      script.onload = () => {
+        if (window.maplibregl?.Map) resolve(window.maplibregl);
+        else reject(new Error("MapLibre is unavailable"));
+      };
+      script.onerror = () => {
+        script.remove();
+        reject(new Error("MapLibre could not be loaded"));
+      };
+      document.head.append(script);
+    }).catch((error) => {
+      mapLibrary = null;
+      throw error;
+    });
+  }
+  return mapLibrary;
+}
 
 const elementName = "ford-triplog-logbook";
 
@@ -119,7 +145,9 @@ class FordTriplogLogbook extends HTMLElement {
     this.main.append(header, filterCard, this.status, this.error, this.rows, this.routeCard);
     const mapStyle = element("link");
     mapStyle.rel = "stylesheet";
-    mapStyle.href = new URL("./map/leaflet.css", import.meta.url).href;
+    mapStyle.href = `${MAPLIBRE_ASSETS}/maplibre-gl.css`;
+    mapStyle.integrity = "sha384-mnM9NG1099tBMNxdDQNDKIxYcn/fmqQXFJvbT5l1MsrWvzfxBEffceBsw75/cW2R";
+    mapStyle.crossOrigin = "anonymous";
     this.mapStyleReady = new Promise((resolve) => {
       mapStyle.addEventListener("load", () => resolve(true), { once: true });
       mapStyle.addEventListener("error", () => resolve(false), { once: true });
@@ -286,7 +314,7 @@ class FordTriplogLogbook extends HTMLElement {
         status.textContent = this.t("No route recorded for this drive.", "Für diese Fahrt ist keine Route gespeichert.");
         return;
       }
-      const styleReady = await this.mapStyleReady;
+      const [styleReady, library] = await Promise.all([this.mapStyleReady, loadMapLibrary()]);
       if (this.routeRequest !== request) return;
       if (!styleReady) throw new Error(this.t("Map stylesheet could not be loaded.", "Kartenstil konnte nicht geladen werden."));
 
@@ -294,21 +322,42 @@ class FordTriplogLogbook extends HTMLElement {
       container.className = "route-map";
       container.setAttribute("aria-label", label);
       this.routeCard.append(container);
-      const map = createMap(container, { maxZoom: 19 });
+      const bounds = new library.LngLatBounds();
+      for (const feature of route.features) {
+        for (const coordinate of feature.geometry.coordinates) bounds.extend(coordinate);
+      }
+      const map = new library.Map({
+        container, style: BASEMAP_STYLE, bounds,
+        fitBoundsOptions: { padding: 20, maxZoom: 17 },
+        maxZoom: 19, scrollZoom: false,
+      });
       this.routeMap = map;
-      tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
-        maxZoom: 19,
-        attribution: '© <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
-      }).addTo(map);
-      const lines = featureGroup(route.features.map(({ geometry, properties }) =>
-        polyline(geometry.coordinates.map(([lng, lat]) => [lat, lng]), {
-          color: "#ff304f", weight: 4, dashArray: properties?.direct_line ? "6 6" : undefined,
-        }),
-      )).addTo(map);
-      map.fitBounds(lines.getBounds(), { padding: [20, 20], maxZoom: 17 });
-      this.mapResize = new ResizeObserver(() => map.invalidateSize({ pan: false }));
+      map.addControl(new library.NavigationControl({ showCompass: false }), "top-left");
+      map.on("style.load", () => {
+        if (this.routeRequest !== request) return;
+        map.addSource("triplog-route", { type: "geojson", data: route });
+        for (const direct of [false, true]) {
+          map.addLayer({
+            id: direct ? "triplog-route-direct" : "triplog-route-recorded",
+            type: "line",
+            source: "triplog-route",
+            filter: ["==", ["coalesce", ["get", "direct_line"], false], direct],
+            layout: { "line-cap": "round", "line-join": "round" },
+            paint: {
+              "line-color": "#ff304f", "line-width": 4,
+              ...(direct ? { "line-dasharray": [2, 2] } : {}),
+            },
+          });
+        }
+        status.remove();
+      });
+      map.on("error", () => {
+        if (this.routeRequest === request && status.isConnected) {
+          status.textContent = this.t("Basemap could not be loaded.", "Grundkarte konnte nicht geladen werden.");
+        }
+      });
+      this.mapResize = new ResizeObserver(() => map.resize());
       this.mapResize.observe(container);
-      status.remove();
     } catch (error) {
       if (this.routeRequest === request) {
         this.clearMap();
