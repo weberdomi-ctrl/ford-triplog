@@ -1,5 +1,10 @@
 const MAPLIBRE_ASSETS = "https://cdn.jsdelivr.net/npm/maplibre-gl@5.12.0/dist";
-const BASEMAP_STYLE = "https://tiles.openfreemap.org/styles/dark";
+const BASEMAP_STYLES = {
+  dark: "https://tiles.openfreemap.org/styles/dark",
+  light: "https://tiles.openfreemap.org/styles/liberty",
+};
+const SWISS_IMAGERY = "https://wmts.geo.admin.ch/1.0.0/ch.swisstopo.swissimage/default/current/3857/{z}/{x}/{y}.jpeg";
+const MAP_MODE_KEY = "ford-triplog-map-mode";
 
 let mapLibrary;
 function loadMapLibrary() {
@@ -51,7 +56,9 @@ function field(form, name, label, type, value = "") {
 
 class FordTriplogLogbook extends HTMLElement {
   set hass(value) {
+    const wasDark = this._hass?.themes?.darkMode;
     this._hass = value;
+    if (this.mapMode === "auto" && wasDark !== value?.themes?.darkMode) this.updateBasemap();
     if (this.isConnected && !this.main) this.start();
   }
 
@@ -72,6 +79,13 @@ class FordTriplogLogbook extends HTMLElement {
 
   start() {
     this.lang = this._hass.language?.startsWith("de") ? "de" : "en";
+    this.mapMode = "auto";
+    try {
+      const saved = localStorage.getItem(MAP_MODE_KEY);
+      if (["auto", "light", "dark", "swiss-imagery"].includes(saved)) this.mapMode = saved;
+    } catch {
+      // Storage may be disabled in embedded browsers.
+    }
     const root = this.attachShadow({ mode: "open" });
     const style = element("style");
     style.textContent = `
@@ -107,6 +121,10 @@ class FordTriplogLogbook extends HTMLElement {
       dd { margin: 0; overflow-wrap: anywhere; }
       .route-card { display: block; padding: 1rem; margin-top: .75rem; }
       .route-card[hidden] { display: none; }
+      .route-header { display: flex; align-items: center; justify-content: space-between;
+        flex-wrap: wrap; gap: .5rem; margin-bottom: .65rem; }
+      .route-header h2 { margin: 0; }
+      .route-header label { display: flex; align-items: center; gap: .5rem; }
       .route-map { height: clamp(18rem, 50vh, 32rem); border-radius: 12px;
         overflow: hidden; background: var(--secondary-background-color); }
     `;
@@ -294,6 +312,45 @@ class FordTriplogLogbook extends HTMLElement {
     this.routeMap = null;
   }
 
+  basemapStyle() {
+    if (this.mapMode === "dark" || this.mapMode === "light") return BASEMAP_STYLES[this.mapMode];
+    return BASEMAP_STYLES[this._hass?.themes?.darkMode ? "dark" : "light"];
+  }
+
+  updateBasemap() {
+    this.routeMap?.setStyle(this.basemapStyle(), { diff: false });
+  }
+
+  routeHeader(title) {
+    const header = element("div");
+    header.className = "route-header";
+    const label = element("label", this.t("Map", "Karte"));
+    const select = element("select");
+    for (const [value, name] of [
+      ["auto", this.t("Automatic", "Automatisch")],
+      ["light", this.t("Light", "Hell")],
+      ["dark", this.t("Dark", "Dunkel")],
+      ["swiss-imagery", this.t("Aerial imagery (Switzerland)", "Luftbild Schweiz")],
+    ]) {
+      const option = element("option", name);
+      option.value = value;
+      select.append(option);
+    }
+    select.value = this.mapMode;
+    select.addEventListener("change", () => {
+      this.mapMode = select.value;
+      try {
+        localStorage.setItem(MAP_MODE_KEY, this.mapMode);
+      } catch {
+        // The selection remains active for this panel session.
+      }
+      this.updateBasemap();
+    });
+    label.append(select);
+    header.append(element("h2", title), label);
+    return header;
+  }
+
   async showRoute(row, scroll = false) {
     const request = Symbol();
     this.routeRequest = request;
@@ -302,7 +359,7 @@ class FordTriplogLogbook extends HTMLElement {
     this.routeCard.hidden = false;
     const label = this.t("Route", "Route");
     const status = element("p", this.t("Loading route…", "Route wird geladen…"));
-    this.routeCard.replaceChildren(element("h2", `${label} · ${this.clock(row.start_time)}`), status);
+    this.routeCard.replaceChildren(this.routeHeader(`${label} · ${this.clock(row.start_time)}`), status);
     if (scroll) this.routeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
 
     try {
@@ -327,7 +384,7 @@ class FordTriplogLogbook extends HTMLElement {
         for (const coordinate of feature.geometry.coordinates) bounds.extend(coordinate);
       }
       const map = new library.Map({
-        container, style: BASEMAP_STYLE, bounds,
+        container, style: this.basemapStyle(), bounds,
         fitBoundsOptions: { padding: 20, maxZoom: 17 },
         maxZoom: 19, scrollZoom: false,
       });
@@ -335,6 +392,15 @@ class FordTriplogLogbook extends HTMLElement {
       map.addControl(new library.NavigationControl({ showCompass: false }), "top-left");
       map.on("style.load", () => {
         if (this.routeRequest !== request) return;
+        if (this.mapMode === "swiss-imagery") {
+          map.addSource("triplog-imagery", {
+            type: "raster", tiles: [SWISS_IMAGERY], tileSize: 256, minzoom: 8, maxzoom: 19,
+            bounds: [5.95, 45.8, 10.5, 47.82],
+            attribution: '<a href="https://www.swisstopo.admin.ch/">© swisstopo</a>',
+          });
+          const firstLabel = map.getStyle().layers.find((layer) => layer.type === "symbol");
+          map.addLayer({ id: "triplog-imagery", type: "raster", source: "triplog-imagery" }, firstLabel?.id);
+        }
         map.addSource("triplog-route", { type: "geojson", data: route });
         for (const direct of [false, true]) {
           map.addLayer({
