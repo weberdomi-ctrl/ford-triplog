@@ -1,51 +1,677 @@
-# Paste into an empty dashboard using the Lovelace raw configuration editor.
-# Replace the statistics sensor IDs below with those from your installation.
-title: Triplog Statistics
+# Paste into a new dashboard using the Lovelace raw configuration editor.
+# Replace each replace_with_triplog_* entity ID with the matching entity in your installation.
+# The card labels are German. All cards are built in to Home Assistant.
+title: Triplog Statistik
 views:
-  - title: Statistics
+  - type: sections
+    title: Triplog Statistik
     path: statistics
     icon: mdi:chart-box-outline
-    cards:
-      - type: markdown
-        title: Driving
-        content: |-
-          {% set driving = 'sensor.replace_with_triplog_driving_monthly_statistics' %}
-          {% set current = state_attr(driving, 'month') %}
-          {% if not current %}
-          Select your Triplog Driving Monthly Statistics sensor in this card.
-          {% else %}
-          **{{ current }}** · {{ state_attr(driving, 'trip_count_month') }} drives · {{ state_attr(driving, 'distance_month_km') }} km
+    sections:
+      - type: grid
+        cards:
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
 
-          | Month | Drives | Distance | Battery energy | Consumption |
-          | --- | ---: | ---: | ---: | ---: |
-          {% for month, item in (state_attr(driving, 'monthly_breakdown') or {}).items() | sort(reverse=true) -%}
-          | {{ month }} | {{ item.trip_count }} | {{ item.distance_km }} km | {{ item.energy_used_kwh }} kWh | {{ item.average_consumption_kwh_100km }} kWh/100 km |
-          {% endfor %}
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_vehicle_details') %}
 
-          {% for year, item in (state_attr(driving, 'yearly_summary') or {}).items() | sort(reverse=true) -%}
-          **{{ year }}** · {{ item.trip_count }} drives · {{ item.distance_km }} km · {{ item.energy_used_kwh }} kWh
-          {% endfor %}
-          {% endif %}
 
-      - type: markdown
-        title: Charging
-        content: |-
-          {% set charging = 'sensor.replace_with_triplog_charging_monthly_statistics' %}
-          {% set current = state_attr(charging, 'month') %}
-          {% set currency = state_attr(charging, 'currency') %}
-          {% if not current %}
-          Select your Triplog Charging Monthly Statistics sensor in this card.
-          {% else %}
-          **{{ current }}** · {{ state_attr(charging, 'total_charge_count_month') }} sessions · {{ state_attr(charging, 'total_energy_month_kwh') }} kWh
+              {% set e = 'sensor.replace_with_triplog_vehicle_details' %}
 
-          | Month | Sessions | Home | Work | External | Total | Cost |
-          | --- | ---: | ---: | ---: | ---: | ---: | ---: |
-          {% for month, item in (state_attr(charging, 'monthly_breakdown') or {}).items() | sort(reverse=true) -%}
-          | {{ month }} | {{ item.total_charge_count }} | {{ item.home_energy_kwh }} kWh | {{ item.get('work_energy_kwh', '–') }} | {{ item.external_energy_kwh }} kWh | {{ item.total_energy_kwh }} kWh | {{ ('%.2f' | format(item.total_cost)) ~ ' ' ~ currency if currency else '–' }} |
-          {% endfor %}
 
-          {% for year, item in (state_attr(charging, 'yearly_summary') or {}).items() | sort(reverse=true) -%}
-          **{{ year }}** · {{ item.total_charge_count }} sessions · {{ item.total_energy_kwh }} kWh{% if currency %} · {{ '%.2f' | format(item.total_cost) }} {{ currency }}{% endif %}
+              # 🚗 {{ states(e) }}
 
-          {% endfor %}
-          {% endif %}
+
+              <small>
+
+              <b>{{ state_attr(e, 'make') or '' }} {{ state_attr(e, 'model') or
+              '' }}</b> · {{ state_attr(e, 'registration_number') or '–' }} ·
+              <b>{{ "{:,.0f}".format((state_attr(e, 'odometer_km') or 0) |
+              float).replace(',', "'") }} km</b><br>
+
+
+              Erstzulassung: <b>{{ state_attr(e, 'first_registration') or '–'
+              }}</b> · Leistung: <b>{{ state_attr(e, 'power_kw') or '–' }}
+              kW</b><br>
+
+
+              Leer/Gesamt: <b>{{ state_attr(e, 'empty_weight_kg') or '–' }} / {{
+              state_attr(e, 'gross_weight_kg') or '–' }} kg</b><br>
+
+
+              VIN: <code>{{ state_attr(e, 'vin') or '–' }}</code> · Typ: <b>{{
+              state_attr(e, 'type_approval') or '–' }}</b>
+
+              </small>
+            grid_options:
+              columns: full
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_vehicle_details') %}
+
+
+              {% set e = 'sensor.replace_with_triplog_vehicle_details' %}
+
+              {% set w = state_attr(e, 'warranties') or {} %}
+
+              {% set vf = w.get('vehicle', {}) %}
+
+              {% set ev = w.get('ev_components', {}) %}
+
+              {% set hv = w.get('hv_battery', {}) %}
+
+
+              # 🛡️ Garantie
+
+
+              <small>
+
+              <b>Fahrzeuggarantie</b> · bis {{
+              as_timestamp(vf.get('valid_until')) | timestamp_custom('%d.%m.%Y',
+              true) if vf.get('valid_until') else '–' }} · noch <b>{{
+              vf.get('remaining_years', 0) }} J.{% if vf.get('remaining_months',
+              0) | int > 0 %} {{ vf.get('remaining_months') }} M.{% endif %}{%
+              if vf.get('remaining_days', 0) | int > 0 %} {{
+              vf.get('remaining_days') }} T.{% endif %} · {{
+              "{:,.0f}".format((vf.get('remaining_km', 0) or 0) |
+              float).replace(',', "'") }} km</b><br>
+
+
+              <b>EV-Komponenten</b> · bis {{ as_timestamp(ev.get('valid_until'))
+              | timestamp_custom('%d.%m.%Y', true) if ev.get('valid_until') else
+              '–' }} · noch <b>{{ ev.get('remaining_years', 0) }} J.{% if
+              ev.get('remaining_months', 0) | int > 0 %} {{
+              ev.get('remaining_months') }} M.{% endif %}{% if
+              ev.get('remaining_days', 0) | int > 0 %} {{
+              ev.get('remaining_days') }} T.{% endif %} · {{
+              "{:,.0f}".format((ev.get('remaining_km', 0) or 0) |
+              float).replace(',', "'") }} km</b><br>
+
+
+              <b>HV-Batterie</b> · bis {{ as_timestamp(hv.get('valid_until')) |
+              timestamp_custom('%d.%m.%Y', true) if hv.get('valid_until') else
+              '–' }} · noch <b>{{ hv.get('remaining_years', 0) }} J.{% if
+              hv.get('remaining_months', 0) | int > 0 %} {{
+              hv.get('remaining_months') }} M.{% endif %}{% if
+              hv.get('remaining_days', 0) | int > 0 %} {{
+              hv.get('remaining_days') }} T.{% endif %} · {{
+              "{:,.0f}".format((hv.get('remaining_km', 0) or 0) |
+              float).replace(',', "'") }} km</b>
+
+              </small>
+            grid_options:
+              columns: full
+          - type: markdown
+            title: Fahrzeugkosten
+            content: >-
+              {% set s =
+              states['sensor.replace_with_triplog_cost_overview_tco'] %}
+
+              {% set a = s.attributes if s else {} %}
+
+              {% set currency = a.get('currency') or '' %}
+
+
+              **Kosten {{ now().strftime('%m/%Y') }}**
+
+
+              Finanzierung: **{{ currency }} {{ a.get('financing', 0) | round(2) }}**<br>
+
+              Versicherung: **{{ currency }} {{ a.get('insurance', 0) | round(2) }}**<br>
+
+              Strassensteuer: **{{ currency }} {{ a.get('road_tax', 0) | round(2) }}**<br>
+
+              Laden: **{{ currency }} {{ a.get('charging', 0) | round(2) }}**<br>
+
+              Wartung / Reparaturen: **{{ currency }} {{ a.get('maintenance_repairs', 0) |
+              round(2) }}**<br>
+
+              Maut / Vignetten: **{{ currency }} {{ a.get('tolls_vignettes', 0) | round(2)
+              }}**<br>
+
+              Sonstiges: **{{ currency }} {{ a.get('other_costs', 0) | round(2) }}**
+
+
+              ---
+
+              **Fixkosten: {{ currency }} {{ a.get('fixed_costs', 0) | round(2) }}**<br>
+
+              **Gesamtkosten: {{ currency }} {{ a.get('total_costs', 0) | round(2) }}**
+
+
+              Fixkosten/km: **{{ currency }} {{ a.get('fixed_cost_per_km', 0) | round(2)
+              }}**<br>
+
+              Gesamtkosten/km: **{{ currency }} {{ a.get('total_cost_per_km', 0) | round(2)
+              }}**
+
+
+              ---
+
+
+              **Jahresübersicht**
+
+
+              {% for y in a.get('yearly_summary', []) %}
+
+              **{{ y.year }} — {{ currency }} {{ y.total_costs | round(2) }}**
+
+
+              Fixkosten: {{ currency }} {{ y.fixed_costs | round(2) }} · Variabel: {{ currency }} {{
+              y.variable_costs | round(2) }}<br>
+
+              Finanzierung: {{ currency }} {{ y.financing | round(2) }} · Versicherung: {{ currency }}
+              {{ y.insurance | round(2) }} · Steuer: {{ currency }} {{ y.road_tax |
+              round(2) }}<br>
+
+              Laden: {{ currency }} {{ y.charging | round(2) }} · Wartung: {{ currency }} {{
+              y.maintenance_repairs | round(2) }} · Vignetten/Maut: {{ currency }} {{
+              y.tolls_vignettes | round(2) }} · Sonstiges: {{ currency }} {{ y.other_costs
+              | round(2) }}
+
+              {% if y.distance_km > 0 %}
+
+              Distanz: {{ y.distance_km | round(0) }} km · Gesamtkosten/km: {{ currency }}
+              {{ y.total_cost_per_km | round(2) }}
+
+              {% endif %}
+
+
+              {% endfor %}
+      - type: grid
+        cards:
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_driving_monthly_statistics') %}
+
+
+              # 🚗 Fahrstatistik
+
+
+              {% set s = 'sensor.replace_with_triplog_driving_monthly_statistics' %}
+
+              {% set distance = state_attr(s, 'distance_month_km') or 0 %}
+
+              {% set trip_count = state_attr(s, 'trip_count_month') or 0 %}
+
+              {% set journey_count = state_attr(s, 'journey_count_month') or 0
+              %}
+
+              {% set duration = state_attr(s, 'driving_duration_month_seconds')
+              or 0 %}
+
+              {% set energy = state_attr(s, 'energy_used_month_kwh') or 0 %}
+
+              {% set consumption = state_attr(s,
+              'average_consumption_month_kwh_100km') or 0 %}
+
+              {% set soc_used = state_attr(s, 'soc_used_month') or 0 %}
+
+              {% set soc_recovered = state_attr(s, 'soc_recovered_month') or 0
+              %}
+
+              {% set regen_energy = state_attr(s,
+              'regenerated_energy_month_kwh') or 0 %}
+
+              {% set regen_count = state_attr(s, 'regen_trip_count_month') or 0
+              %}
+
+
+              {% set current_month = state_attr(s, 'month') or '' %}
+
+              {% set month_names = {
+                '01':'Januar', '02':'Februar', '03':'März', '04':'April',
+                '05':'Mai', '06':'Juni', '07':'Juli', '08':'August',
+                '09':'September', '10':'Oktober', '11':'November', '12':'Dezember'
+              } %}
+
+
+              {% set hours = (duration | int) // 3600 %}
+
+              {% set minutes = ((duration | int) % 3600) // 60 %}
+
+
+              # {{ month_names.get(current_month[5:7], current_month[5:7]) }} {{
+              current_month[0:4] }}
+
+
+              <small>
+
+              🚗 Strecke: <b>{{ '%.0f' | format(distance | float) }} km</b> · 🛣
+              Fahrten: <b>{{ trip_count | int }}</b> · 🧭 Journeys: <b>{{
+              journey_count | int }}</b><br>
+
+              ⏱ Fahrzeit: <b>{{ hours }} h {{ minutes }} min</b> · ⚡ Energie:
+              <b>{{ '%.2f' | format(energy | float) }} kWh</b><br>
+
+              📊 Ø Verbrauch: <b>{{ '%.1f' | format(consumption | float) }}
+              kWh/100 km</b> · 🔋 SOC: <b>{{ soc_used | int }} %</b>{% if
+              regen_count | int > 0 %}<br>
+
+              ♻️ Rekuperation: <b>{{ '%.2f' | format(regen_energy | float) }}
+              kWh</b> · {{ soc_recovered | int }} % · {{ regen_count | int }}
+              Fahrten{% endif %}
+
+              </small>
+
+
+              {% set monthly = state_attr(s, 'monthly_breakdown') or {} %}
+
+
+              ## Monatsübersicht
+
+
+              {% for m, d in monthly.items() %}
+                {% set trip_count = d.get('trip_count', 0) or 0 %}
+                {% if trip_count | int > 0 %}
+                  {% set duration = d.get('driving_duration_seconds', 0) or 0 %}
+                  {% set hours = (duration | int) // 3600 %}
+                  {% set minutes = ((duration | int) % 3600) // 60 %}
+                  {% set regen_count = d.get('regen_trip_count', 0) or 0 %}
+
+              ## {{ month_names.get(m[5:7], m[5:7]) }} {{ m[0:4] }}
+
+
+              <small>
+
+              🚗 Strecke: <b>{{ '%.0f' | format((d.get('distance_km', 0) or 0) |
+              float) }} km</b> · {{ trip_count | int }} Fahrten · {{
+              d.get('journey_count', 0) or 0 }} Journeys<br>
+
+              ⏱ Fahrzeit: <b>{{ hours }} h {{ minutes }} min</b> · ⚡ Energie:
+              <b>{{ '%.2f' | format((d.get('energy_used_kwh', 0) or 0) | float)
+              }} kWh</b><br>
+
+              📊 Verbrauch: <b>{{ '%.1f' |
+              format((d.get('average_consumption_kwh_100km', 0) or 0) | float)
+              }} kWh/100 km</b> · 🔋 SOC: {{ d.get('soc_used', 0) or 0 }} %{% if
+              regen_count | int > 0 %}<br>
+
+              ♻️ Rekuperation: <b>{{ '%.2f' |
+              format((d.get('regenerated_energy_kwh', 0) or 0) | float) }}
+              kWh</b> · {{ d.get('soc_recovered', 0) or 0 }} % · {{ regen_count
+              | int }} Fahrten{% endif %}
+
+              </small>
+
+
+              ---
+                {% endif %}
+              {% endfor %}
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %} {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_top_trip') %}
+
+              🏆 Top Trip
+
+                {% set e = 'sensor.replace_with_triplog_top_trip' %}
+
+              ## {{ states(e) }} km
+
+              **{{ state_attr(e, 'start_location') }}**   ↓   **{{ state_attr(e,
+              'end_location') }}**
+
+              🕒 Fahrzeit: **{{ state_attr(e, 'duration') }}**
+
+              ⚡ Energie: **{{ state_attr(e, 'energy_used_kwh') }} kWh** · 🚗
+              Verbrauch: **{{ state_attr(e, 'consumption_kwh_100km') }} kWh/100
+              km**
+
+              📅 Start: {{ as_timestamp(state_attr(e, 'start_time')) |
+              timestamp_custom('%d.%m.%Y %H:%M', true) }}
+
+              🏁 Ende: {{ as_timestamp(state_attr(e, 'end_time')) |
+              timestamp_custom('%d.%m.%Y %H:%M', true) }}
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %} {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_top_day') %}
+
+              🏆 Top Day
+
+                {% set e = 'sensor.replace_with_triplog_top_day' %}
+
+              ## {{ states(e) }} km
+
+              **{{ state_attr(e, 'start_location') }}**   ↓   **{{ state_attr(e,
+              'end_location') }}**
+
+              📅 {{ as_timestamp(state_attr(e, 'start_time')) |
+              timestamp_custom('%d.%m.%Y', true) }}
+
+              🕒 Gesamt: **{{ state_attr(e, 'total_duration') }}** · Fahrzeit:
+              **{{ state_attr(e, 'driving_duration') }}**
+
+              🧭 {{ state_attr(e, 'journey_count') }} Journeys · 🛣️ {{
+              state_attr(e, 'trip_count') }} Trips
+
+              ⚡ {{ state_attr(e, 'energy_used_kwh') }} kWh · 🚙 Ø {{
+              state_attr(e, 'average_consumption_kwh_100km') }} kWh/100 km
+
+              🔌 {{ state_attr(e, 'charge_count') }} Ladungen · 🔋 {{
+              state_attr(e, 'energy_charged_kwh') }} kWh · 💰 {{ state_attr(e,
+              'charging_cost_total') }} {{ state_attr(e, 'currency') or '' }}
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %} {% set _ft_watch_2 = states('sensor.replace_with_triplog_top_routes') %}
+
+              🏆 Top-Strecken
+
+                {% set routes = state_attr('sensor.replace_with_triplog_top_routes', 'top_routes') or [] %}
+
+              {% for item in routes %} **{{ loop.index }}. {{ 'Zuhause' if
+              item.start == 'Home' else item.start }} → {{ 'Zuhause' if
+              item.destination == 'Home' else item.destination }}**   {{
+              item.trips }} Fahrten · Ø {{ item.average_distance_km }} km{% if
+              item.average_consumption_kwh_100km is not none %} · Ø {{
+              item.average_consumption_kwh_100km }} kWh/100 km{% endif %}
+
+              {% endfor %}
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              🏆 Top-Startorte & Ziele
+
+                {% set departures = state_attr('sensor.replace_with_triplog_top_locations', 'top_departures') or [] %}
+                {% set destinations = state_attr('sensor.replace_with_triplog_top_locations', 'top_destinations') or [] %}
+
+              ### Abfahrten
+
+              {% for item in departures %} **{{ loop.index }}. {{ 'Zuhause' if
+              item.location == 'Home' else item.location }}**   {{ item.trips }}
+              Fahrten · {{ item.distance_km }} km
+
+              {% endfor %}
+
+              ### Ziele
+
+              {% for item in destinations %} **{{ loop.index }}. {{ 'Zuhause' if
+              item.location == 'Home' else item.location }}**   {{ item.trips }}
+              Fahrten · {{ item.distance_km }} km
+
+              {% endfor %}
+      - type: grid
+        cards:
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_charging_monthly_statistics') %}
+
+
+              ## ⚡ Ladestatistik
+
+
+              {% set s = 'sensor.replace_with_triplog_charging_monthly_statistics' %}
+
+              {% set currency = state_attr(s, 'currency') or '' %}
+
+              {% set home_energy = state_attr(s, 'home_energy_month_kwh') or 0
+              %}
+
+              {% set home_cost = state_attr(s, 'home_cost_month') or 0 %}
+
+              {% set home_count = state_attr(s, 'home_charge_count_month') or 0
+              %}
+
+              {% set work_energy = state_attr(s, 'work_energy_month_kwh') or 0
+              %}
+
+              {% set work_cost = state_attr(s, 'work_cost_month') or 0 %}
+
+              {% set work_count = state_attr(s, 'work_charge_count_month') or 0
+              %}
+
+              {% set ext_energy = state_attr(s, 'external_energy_month_kwh') or
+              0 %}
+
+              {% set ext_cost = state_attr(s, 'external_cost_month') or 0 %}
+
+              {% set ext_count = state_attr(s, 'external_charge_count_month') or
+              0 %}
+
+              {% set total_energy = state_attr(s, 'total_energy_month_kwh') or 0
+              %}
+
+              {% set total_cost = state_attr(s, 'total_cost_month') or 0 %}
+
+              {% set total_count = state_attr(s, 'total_charge_count_month') or
+              0 %}
+
+
+              {% set current_month = state_attr(s, 'month') or '' %}
+
+              {% set month_names = {
+                '01':'Januar', '02':'Februar', '03':'März', '04':'April',
+                '05':'Mai', '06':'Juni', '07':'Juli', '08':'August',
+                '09':'September', '10':'Oktober', '11':'November', '12':'Dezember'
+              } %}
+
+
+              ## {{ month_names.get(current_month[5:7], current_month[5:7]) }}
+              {{ current_month[0:4] }}
+
+
+              <small>
+
+              🏠 Zuhause: <b>{{ '%.2f' | format(home_energy | float) }} kWh</b>
+              · {{ '%.2f' | format(home_cost | float) }} {{ currency }} · {{ home_count |
+              int }} Ladungen<br>
+
+              {% if work_count | int > 0 %}🏢 Arbeit: <b>{{ '%.2f' |
+              format(work_energy | float) }} kWh</b> · {{ '%.2f' |
+              format(work_cost | float) }} {{ currency }} · {{ work_count | int }}
+              Ladungen<br>{% endif %}
+
+              🌍 Extern: <b>{{ '%.2f' | format(ext_energy | float) }} kWh</b> ·
+              {{ '%.2f' | format(ext_cost | float) }} {{ currency }} · {{ ext_count | int
+              }} Ladungen<br>
+
+              ⚡ Gesamt: <b>{{ '%.2f' | format(total_energy | float) }} kWh</b> ·
+              💳 <b>{{ '%.2f' | format(total_cost | float) }} {{ currency }}</b> · {{
+              total_count | int }} Ladevorgänge
+
+              </small>
+
+
+              {% set monthly = state_attr(s, 'monthly_breakdown') or {} %}
+
+
+              ## Monatsübersicht
+
+
+              {% for m, d in monthly.items() %}
+                {% set total_count = d.get('total_charge_count', 0) or 0 %}
+                {% if total_count | int > 0 %}
+                  {% set home_count = d.get('home_charge_count', 0) or 0 %}
+                  {% set work_count = d.get('work_charge_count', 0) or 0 %}
+                  {% set ext_count = d.get('external_charge_count', 0) or 0 %}
+
+              ### {{ month_names.get(m[5:7], m[5:7]) }} {{ m[0:4] }}
+
+
+              <small>
+
+              {% if home_count | int > 0 %}🏠 Zuhause: <b>{{ '%.1f' |
+              format((d.get('home_energy_kwh', 0) or 0) | float) }} kWh</b> · {{
+              '%.2f' | format((d.get('home_cost', 0) or 0) | float) }} {{ currency }} · {{
+              home_count | int }} Ladungen<br>{% endif %}
+
+              {% if work_count | int > 0 %}🏢 Arbeit: <b>{{ '%.1f' |
+              format((d.get('work_energy_kwh', 0) or 0) | float) }} kWh</b> · {{
+              '%.2f' | format((d.get('work_cost', 0) or 0) | float) }} {{ currency }} · {{
+              work_count | int }} Ladungen<br>{% endif %}
+
+              {% if ext_count | int > 0 %}🌍 Extern: <b>{{ '%.1f' |
+              format((d.get('external_energy_kwh', 0) or 0) | float) }} kWh</b>
+              · {{ '%.2f' | format((d.get('external_cost', 0) or 0) | float) }}
+              {{ currency }} · {{ ext_count | int }} Ladungen<br>{% endif %}
+
+              <b>⚡ Gesamt: {{ '%.1f' | format((d.get('total_energy_kwh', 0) or
+              0) | float) }} kWh · {{ '%.2f' | format((d.get('total_cost', 0) or
+              0) | float) }} {{ currency }} · {{ total_count | int }} Ladungen</b>
+
+              </small>
+
+
+              ---
+                {% endif %}
+              {% endfor %}
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_top_journey') %}
+
+
+              🏆 Top Journey
+
+
+              {% set e = 'sensor.replace_with_triplog_top_journey' %}
+
+              {% set start = state_attr(e, 'start_location') %}
+
+              {% set ende = state_attr(e, 'end_location') %}
+
+
+              ## {{ states(e) }} km
+
+
+              <small>
+
+              <b>{{ start }}</b> ↓ <b>{{ ende }}</b><br>
+
+              🕒 Gesamt: <b>{{ state_attr(e, 'total_duration') }}</b> ·
+              Fahrzeit: <b>{{ state_attr(e, 'driving_duration') }}</b><br>
+
+              🛣️ {{ state_attr(e, 'trip_count') }} Trips · ⚡ <b>{{
+              state_attr(e, 'energy_used_kwh') }} kWh</b><br>
+
+              🚙 Ø <b>{{ state_attr(e, 'average_consumption_kwh_100km') }}
+              kWh/100 km</b><br>
+
+              🔌 {{ state_attr(e, 'charge_count') }} Ladungen · 🔋 {{
+              state_attr(e, 'energy_charged_kwh') }} kWh · 💰 <b>{{
+              state_attr(e, 'charging_cost_total') }} {{ state_attr(e,
+              'currency') or '' }}</b><br>
+
+              📅 {{ as_timestamp(state_attr(e, 'start_time')) |
+              timestamp_custom('%d.%m.%Y %H:%M', true) }} → {{
+              as_timestamp(state_attr(e, 'end_time')) |
+              timestamp_custom('%d.%m.%Y %H:%M', true) }}
+
+              </small>
+          - type: markdown
+            content: >-
+              {% set _ft_watch_1 = states('select.replace_with_triplog_vehicle_selector')
+              %}
+
+              {% set _ft_watch_2 =
+              states('sensor.replace_with_triplog_top_charging') %}
+
+
+              ⚡ Top Charging
+
+
+              {% set e = 'sensor.replace_with_triplog_top_charging' %}
+
+              {% set currency = state_attr('sensor.replace_with_triplog_charging_monthly_statistics', 'currency') or '' %}
+
+              {% set providers = state_attr(e, 'top_providers') or [] %}
+
+              {% set locations = state_attr(e, 'top_locations') or [] %}
+
+              {% set largest = state_attr(e, 'largest_session') or {} %}
+
+
+              ### Top Anbieter
+
+
+              <small>
+
+              {% for p in providers %}
+
+              <b>{{ loop.index }}. {{ p.provider }}</b> · {{ p.sessions }}
+              Ladungen · <b>{{ p.energy_kwh }} kWh</b> · {{ p.total_cost }} {{ currency }}
+              · Ø {{ p.avg_price_per_kwh }} {{ currency }}/kWh<br>
+
+              {% endfor %}
+
+              </small>
+
+
+              ### Top Ladeorte
+
+
+              <small>
+
+              {% for l in locations %}
+
+              <b>{{ loop.index }}. {{ l.location }}</b> · {{ l.provider }} · {{
+              l.sessions }} Ladungen · <b>{{ l.energy_kwh }} kWh</b> · {{
+              l.total_cost }} {{ currency }}<br>
+
+              {% endfor %}
+
+              </small>
+
+
+              {% if largest %}
+
+              ### Grösster Ladevorgang
+
+
+              <small>
+
+              <b>{{ largest.location }}</b><br>
+
+              ⚡ <b>{{ largest.energy_kwh }} kWh</b> · {{ largest.price_per_kwh
+              }} {{ currency }}/kWh<br>
+
+              💳 <b>{{ largest.total_cost }} {{ largest.currency or '' }}</b>
+              · 🔌 {{ largest.provider }}<br>
+
+              📅 {{ as_timestamp(largest.start_time) |
+              timestamp_custom('%d.%m.%Y %H:%M', true) }} → {{
+              as_timestamp(largest.end_time) | timestamp_custom('%d.%m.%Y
+              %H:%M', true) }}
+
+              </small>
+
+              {% endif %}
+    header:
+      layout: responsive
+      badges_position: bottom
+      badges_wrap: wrap
+      card:
+        type: horizontal-stack
+        cards:
+          - type: tile
+            entity: select.replace_with_triplog_vehicle_selector
+            name: Fahrzeug
+            icon: mdi:car
+            vertical: false
+            features_position: inline
+            features:
+              - type: select-options

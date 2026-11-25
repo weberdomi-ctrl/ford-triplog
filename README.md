@@ -587,10 +587,13 @@ Ready-to-use Home Assistant dashboard examples are available in:
 `docs/examples/`
 
 Copy the [statistics dashboard YAML](docs/examples/ford_triplog_statistics_dashboard.yaml)
-into the raw configuration editor of an empty Lovelace dashboard. Replace the
-two sensor IDs with the Driving Monthly Statistics and Charging Monthly
-Statistics entity IDs in your installation. The template uses standard
-Home Assistant cards and follows the vehicle selected in Triplog.
+into the raw configuration editor of an empty Lovelace dashboard. Replace every
+`replace_with_triplog_*` reference with the corresponding entity ID in your
+installation, including the vehicle selector in the header. The placeholder
+suffixes identify the Triplog sensors, for example `top_routes` for Top Routes
+and `cost_overview_tco` for Cost Overview (TCO). Entity IDs vary with the Home
+Assistant language and installation. The template uses built-in cards and its
+labels are in German.
 
 Examples include:
 
