@@ -62,6 +62,7 @@ async def async_logbook(hass, connection, msg):
         return
     entry_id = entry_id or next(iter(vehicles), None)
     rows = []
+    journeys = []
     if entry_id:
         runtime = hass.data[DOMAIN][entry_id]
 
@@ -113,6 +114,25 @@ async def async_logbook(hass, connection, msg):
             )
 
         for journey in await runtime["journey_storage"].get_all_journeys():
+            if str(journey.date) == selected_date.isoformat():
+                summary = {
+                    key: getattr(journey, key)
+                    for key in (
+                        "trip_count", "charge_count", "distance_km",
+                        "total_duration_seconds", "driving_duration_seconds",
+                        "energy_used_kwh", "energy_charged_kwh",
+                    )
+                }
+                for endpoint, index in (("start", 0), ("end", -1)):
+                    timestamp = _timestamp(getattr(journey, f"{endpoint}_time"))
+                    summary[f"{endpoint}_time"] = timestamp.isoformat() if timestamp else None
+                    address = getattr(journey, f"{endpoint}_address")
+                    if isinstance(address, dict):
+                        address = address.get("display_name") or format_address_short(address)
+                    item = journey.items[index] if journey.items else None
+                    location = getattr(item, f"{endpoint}_location", None)
+                    summary[f"{endpoint}_location"] = location or address
+                journeys.append(summary)
             for current, following in zip(journey.items, journey.items[1:]):
                 start = _timestamp(current.end_time)
                 end = _timestamp(following.start_time)
@@ -136,6 +156,7 @@ async def async_logbook(hass, connection, msg):
         "vehicles": vehicles,
         "entry_id": entry_id,
         "date": selected_date.isoformat(),
+        "journeys": journeys,
         "rows": [row for _, row in sorted(rows, key=lambda item: item[0])],
     })
 

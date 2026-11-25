@@ -157,10 +157,13 @@ class FordTriplogLogbook extends HTMLElement {
     filterCard.append(filters);
     this.rows = element("section");
     this.rows.className = "timeline";
+    this.journeys = element("section");
+    this.journeys.className = "timeline";
+    this.journeys.style.marginTop = ".75rem";
     this.routeCard = element("ha-card");
     this.routeCard.className = "route-card";
     this.routeCard.hidden = true;
-    this.main.append(header, filterCard, this.status, this.error, this.rows, this.routeCard);
+    this.main.append(header, filterCard, this.status, this.error, this.rows, this.journeys, this.routeCard);
     const mapStyle = element("link");
     mapStyle.rel = "stylesheet";
     mapStyle.href = `${MAPLIBRE_ASSETS}/maplibre-gl.css`;
@@ -191,6 +194,7 @@ class FordTriplogLogbook extends HTMLElement {
     this.status.textContent = this.t("Loading…", "Wird geladen…");
     this.error.textContent = "";
     this.rows.replaceChildren();
+    this.journeys.replaceChildren();
     this.routeRequest = null;
     this.routeRow = null;
     this.clearMap();
@@ -211,8 +215,9 @@ class FordTriplogLogbook extends HTMLElement {
       }
       this.vehicle.value = data.entry_id ?? "";
       this.day.value = data.date;
-      this.status.textContent = data.rows.length ? "" : this.t("No entries for this date.", "Keine Einträge an diesem Tag.");
+      this.status.textContent = (data.rows.length || data.journeys?.length) ? "" : this.t("No entries for this date.", "Keine Einträge an diesem Tag.");
       for (const row of data.rows) this.rows.append(this.renderRow(row));
+      for (const journey of data.journeys ?? []) this.journeys.append(this.renderJourney(journey));
       const latest = data.rows.findLast((row) => row.trip_id);
       if (latest) void this.showRoute(latest);
     } catch (error) {
@@ -221,6 +226,31 @@ class FordTriplogLogbook extends HTMLElement {
       this.error.textContent = error.message ?? String(error);
       if (error.code === "not_found") this.vehicle.replaceChildren();
     }
+  }
+
+  renderJourney(journey) {
+    const card = element("ha-card");
+    card.className = "entry-card";
+    card.append(element("h2", this.t("Journey", "Journey")));
+    const fields = element("dl");
+    const number = new Intl.NumberFormat(this.lang, { maximumFractionDigits: 2 });
+    const measure = (value, unit) => value == null ? null : `${number.format(value)} ${unit}`;
+    for (const [label, value] of [
+      [this.t("Time", "Zeitraum"), [journey.start_time, journey.end_time].filter(Boolean).map((time) => this.clock(time)).join("–")],
+      [this.t("From", "Start"), journey.start_location],
+      [this.t("To", "Ziel"), journey.end_location],
+      [this.t("Distance", "Distanz"), measure(journey.distance_km, "km")],
+      [this.t("Total time", "Gesamtdauer"), journey.total_duration_seconds == null ? null : this.duration(journey.total_duration_seconds)],
+      [this.t("Driving time", "Fahrzeit"), journey.driving_duration_seconds == null ? null : this.duration(journey.driving_duration_seconds)],
+      [this.t("Drives", "Fahrten"), journey.trip_count],
+      [this.t("Charges", "Ladungen"), journey.charge_count],
+      [this.t("Energy used", "Fahrenergie"), measure(journey.energy_used_kwh, "kWh")],
+      [this.t("Energy added", "Ladeenergie"), measure(journey.energy_charged_kwh, "kWh")],
+    ]) {
+      if (value != null && value !== "") fields.append(element("dt", label), element("dd", value));
+    }
+    card.append(fields);
+    return card;
   }
 
   renderRow(row) {
