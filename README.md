@@ -585,16 +585,39 @@ Ready-to-use Home Assistant dashboard examples are available in:
 
 `docs/examples/`
 
-Copy the [statistics dashboard YAML](docs/examples/ford_triplog_statistics_dashboard.yaml)
-into the raw configuration editor of an empty Lovelace dashboard. Replace every
-`replace_with_triplog_*` reference with the corresponding entity ID in your
-installation, including the vehicle selector in the header. The placeholder
-suffixes identify the Triplog sensors, for example `top_routes` for Top Routes
-and `cost_overview_tco` for Cost Overview (TCO). Entity IDs vary with the Home
-Assistant language and installation. The template uses built-in cards and its
-labels are in German.
+### Install the statistics dashboard
 
-Examples include:
+The [Triplog statistics dashboard](docs/examples/ford_triplog_statistics_dashboard.yaml)
+is an optional Lovelace template with German labels. It uses built-in Home
+Assistant cards and needs no additional frontend components.
+
+1. Open the linked YAML file on GitHub. Select **Raw** and copy the full file.
+2. In Home Assistant, sign in as an administrator. Go to **Settings → Dashboards
+   → Add dashboard → New dashboard from scratch**. Give it a name, such as
+   **Triplog Statistics**, and enable **Show in sidebar** if you want quick access.
+3. Open the new dashboard. Select the pencil icon, then **⋮ → Raw configuration
+   editor**. Paste the template over the default contents of the new dashboard.
+4. Go to **Settings → Devices & services → Entities** and filter by **Ford
+   Triplog**. Open each entity listed below and copy its **Entity ID**.
+5. In the raw editor, replace **every occurrence** of each placeholder with its
+   actual entity ID. IDs vary by installation and language. Save and select a
+   vehicle at the top of the dashboard to check the cards.
+
+| Placeholder | Ford Triplog entity (English name) |
+| --- | --- |
+| `select.replace_with_triplog_vehicle_selector` | Vehicle |
+| `sensor.replace_with_triplog_vehicle_details` | Vehicle details |
+| `sensor.replace_with_triplog_cost_overview_tco` | TCO cost overview |
+| `sensor.replace_with_triplog_driving_monthly_statistics` | Monthly driving statistics |
+| `sensor.replace_with_triplog_charging_monthly_statistics` | Monthly charging statistics |
+| `sensor.replace_with_triplog_top_trip` | Top Trip |
+| `sensor.replace_with_triplog_top_day` | Top Day |
+| `sensor.replace_with_triplog_top_journey` | Top Journey |
+| `sensor.replace_with_triplog_top_charging` | Top Charging |
+| `sensor.replace_with_triplog_top_locations` | Top Departures & Destinations |
+| `sensor.replace_with_triplog_top_routes` | Top Routes |
+
+### Other examples
 
 - Vehicle overview
 - Last Trip
