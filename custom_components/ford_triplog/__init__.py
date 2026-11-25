@@ -51,6 +51,7 @@ from .database import FordTriplogDatabase
 from .geo import FordTriplogGeo
 from .storage import FordTriplogStorage
 from .services import async_register_services
+from .panel import async_register_logbook, async_remove_logbook_if_unused
 from .progress_manager import ProgressManager
 from .journey_storage import FordTriplogJourneyStorage
 from .journey_manager import FordTriplogJourneyManager
@@ -604,6 +605,8 @@ async def async_setup_entry(
         integration_build=BUILD,
     )
 
+    await async_register_logbook(hass)
+
     _LOGGER.info(
         "Ford Triplog %s (build %s) initialized",
         VERSION,
@@ -644,6 +647,7 @@ async def async_unload_entry(
             entry.entry_id,
             None,
         )
+        async_remove_logbook_if_unused(hass)
         remove_vehicle_context_if_unloaded(
             hass,
             int(runtime_data.get("vehicle_id") or 1),

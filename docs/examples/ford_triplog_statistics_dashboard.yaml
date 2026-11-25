@@ -1,0 +1,51 @@
+# Paste into an empty dashboard using the Lovelace raw configuration editor.
+# Replace the statistics sensor IDs below with those from your installation.
+title: Triplog Statistics
+views:
+  - title: Statistics
+    path: statistics
+    icon: mdi:chart-box-outline
+    cards:
+      - type: markdown
+        title: Driving
+        content: |-
+          {% set driving = 'sensor.replace_with_triplog_driving_monthly_statistics' %}
+          {% set current = state_attr(driving, 'month') %}
+          {% if not current %}
+          Select your Triplog Driving Monthly Statistics sensor in this card.
+          {% else %}
+          **{{ current }}** · {{ state_attr(driving, 'trip_count_month') }} drives · {{ state_attr(driving, 'distance_month_km') }} km
+
+          | Month | Drives | Distance | Battery energy | Consumption |
+          | --- | ---: | ---: | ---: | ---: |
+          {% for month, item in (state_attr(driving, 'monthly_breakdown') or {}).items() | sort(reverse=true) -%}
+          | {{ month }} | {{ item.trip_count }} | {{ item.distance_km }} km | {{ item.energy_used_kwh }} kWh | {{ item.average_consumption_kwh_100km }} kWh/100 km |
+          {% endfor %}
+
+          {% for year, item in (state_attr(driving, 'yearly_summary') or {}).items() | sort(reverse=true) -%}
+          **{{ year }}** · {{ item.trip_count }} drives · {{ item.distance_km }} km · {{ item.energy_used_kwh }} kWh
+          {% endfor %}
+          {% endif %}
+
+      - type: markdown
+        title: Charging
+        content: |-
+          {% set charging = 'sensor.replace_with_triplog_charging_monthly_statistics' %}
+          {% set current = state_attr(charging, 'month') %}
+          {% set currency = state_attr(charging, 'currency') %}
+          {% if not current %}
+          Select your Triplog Charging Monthly Statistics sensor in this card.
+          {% else %}
+          **{{ current }}** · {{ state_attr(charging, 'total_charge_count_month') }} sessions · {{ state_attr(charging, 'total_energy_month_kwh') }} kWh
+
+          | Month | Sessions | Home | Work | External | Total | Cost |
+          | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+          {% for month, item in (state_attr(charging, 'monthly_breakdown') or {}).items() | sort(reverse=true) -%}
+          | {{ month }} | {{ item.total_charge_count }} | {{ item.home_energy_kwh }} kWh | {{ item.get('work_energy_kwh', '–') }} | {{ item.external_energy_kwh }} kWh | {{ item.total_energy_kwh }} kWh | {{ ('%.2f' | format(item.total_cost)) ~ ' ' ~ currency if currency else '–' }} |
+          {% endfor %}
+
+          {% for year, item in (state_attr(charging, 'yearly_summary') or {}).items() | sort(reverse=true) -%}
+          **{{ year }}** · {{ item.total_charge_count }} sessions · {{ item.total_energy_kwh }} kWh{% if currency %} · {{ '%.2f' | format(item.total_cost) }} {{ currency }}{% endif %}
+
+          {% endfor %}
+          {% endif %}

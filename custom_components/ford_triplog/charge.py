@@ -79,6 +79,7 @@ class Charge:
         self.start_address: dict[str, Any] | None = None
         self.end_address: dict[str, Any] | None = None
 
+        self.manual_location: str | None = None
         self.notes: str | None = None
         self.tags: list[str] = []
         self.auto_memo: str | None = None
@@ -454,6 +455,7 @@ class Charge:
             "end_longitude": self.end_longitude,
             "start_address": self.start_address,
             "end_address": self.end_address,
+            "manual_location": self.manual_location,
             "notes": self.notes,
             "tags": self.tags,
             "auto_memo": self.auto_memo,
@@ -630,6 +632,7 @@ class Charge:
         charge.start_address = data.get("start_address")
         charge.end_address = data.get("end_address")
 
+        charge.manual_location = data.get("manual_location")
         charge.notes = data.get("notes")
         charge.tags = data.get("tags", [])
         charge.auto_memo = data.get("auto_memo")

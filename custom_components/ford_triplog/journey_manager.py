@@ -1581,7 +1581,7 @@ class FordTriplogJourneyManager:
     ) -> tuple[str | None, str | None, Any, Any, str | None]:
         """Resolve a charging location.
 
-        Priority: Home Assistant zone, FordPass, OSM, address.
+        Priority: manual location, Home Assistant zone, FordPass, OSM, address.
         """
 
         fordpass_location = self._fordpass_location(charge)
@@ -1623,6 +1623,8 @@ class FordTriplogJourneyManager:
         )
         address = fordpass_address or stored_address
 
+        if manual_location := self._address_value(charge.get("manual_location")):
+            return manual_location, address, latitude, longitude, "manual"
         if zone_name:
             return zone_name, address, latitude, longitude, "zone"
         if fordpass_name:

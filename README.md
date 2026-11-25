@@ -569,11 +569,28 @@ average kWh/100 km values.
 
 ------------------------------------------------------------------------
 
+## Triplog Sidebar
+
+Home Assistant administrators can open **Triplog** in the sidebar, select a
+vehicle and date, and review drives, charging sessions and stops in time order.
+Edit a charging session's location, note or total cost, or add a completed
+charging session with billed energy. The charge is stored in the normal
+Triplog archive used by history and statistics.
+
+Stops appear between consecutive items in an archived journey. Select a stop
+to enter its title, category, location, note or cost.
+
 ## Dashboard Examples
 
 Ready-to-use Home Assistant dashboard examples are available in:
 
 `docs/examples/`
+
+Copy the [statistics dashboard YAML](docs/examples/ford_triplog_statistics_dashboard.yaml)
+into the raw configuration editor of an empty Lovelace dashboard. Replace the
+two sensor IDs with the Driving Monthly Statistics and Charging Monthly
+Statistics entity IDs in your installation. The template uses standard
+Home Assistant cards and follows the vehicle selected in Triplog.
 
 Examples include:
 

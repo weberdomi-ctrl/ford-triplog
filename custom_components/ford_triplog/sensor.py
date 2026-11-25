@@ -2951,6 +2951,7 @@ class FordTriplogChargingHistorySensor(SensorEntity):
     @staticmethod
     def _display_location(data: dict[str, Any]) -> str | None:
         for key in (
+            "manual_location",
             "charging_site_name",
             "charging_site_brand",
             "charging_site_operator",
@@ -6880,7 +6881,8 @@ class FordTriplogLastChargeSensor(FordTriplogSensorBase):
         )
 
         display_location = (
-            zone_name
+            last_charge.get("manual_location")
+            or zone_name
             or charging_location
             or address
             or self.translations["unknown"]

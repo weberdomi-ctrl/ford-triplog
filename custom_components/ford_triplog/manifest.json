@@ -8,7 +8,9 @@
   "config_flow": true,
   "dependencies": [
     "file_upload",
-    "http"
+    "http",
+    "panel_custom",
+    "websocket_api"
   ],
   "documentation": "https://github.com/weberdomi-ctrl/ford-triplog",
   "integration_type": "device",

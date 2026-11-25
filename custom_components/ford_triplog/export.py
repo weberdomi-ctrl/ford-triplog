@@ -198,6 +198,7 @@ CHARGE_EXPORT_FIELDS = (
     "receipt_filename",
     "notes",
     "tags",
+    "manual_location",
 )
 
 def _parse_local_date(value: Any) -> date | None:
@@ -524,6 +525,7 @@ def _charge_row(charge: Any) -> dict[str, Any]:
         "receipt_filename": _csv_value(data.get("receipt_filename")),
         "notes": _csv_value(data.get("notes")),
         "tags": tags_text,
+        "manual_location": _csv_value(data.get("manual_location")),
     }
 
 
