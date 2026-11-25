@@ -15,6 +15,8 @@ from homeassistant.util import dt as dt_util
 
 from .const import BUILD, DOMAIN
 from .journey import build_pause_id
+from .route_history import async_build_route_feature_collection
+from .utils import format_address_short
 
 _PANEL_PATH = "ford-triplog-logbook"
 _SCRIPT_PATH = "/ford_triplog/logbook.js"
@@ -71,7 +73,22 @@ async def async_logbook(hass, connection, msg):
                 }))
 
         for trip in await runtime["history"].get_all_trips():
-            add_row("trip", trip.get("start_time"), distance_km=trip.get("distance_km"))
+            details = {
+                key: trip.get(key)
+                for key in (
+                    "trip_id", "end_time", "distance_km", "duration_seconds",
+                    "energy_used_kwh", "consumption_kwh_100km", "average_speed_kmh",
+                    "start_soc", "end_soc", "soc_used", "soc_recovered",
+                )
+            }
+            end = _timestamp(details["end_time"])
+            details["end_time"] = end.isoformat() if end else None
+            for endpoint in ("start", "end"):
+                address = trip.get(f"{endpoint}_address")
+                if isinstance(address, dict):
+                    address = address.get("display_name") or format_address_short(address)
+                details[f"{endpoint}_location"] = address if isinstance(address, str) else None
+            add_row("trip", trip.get("start_time"), **details)
 
         receipts_by_charge = {}
         for receipt in await runtime["receipt_storage"].async_list():
@@ -121,6 +138,24 @@ async def async_logbook(hass, connection, msg):
         "date": selected_date.isoformat(),
         "rows": [row for _, row in sorted(rows, key=lambda item: item[0])],
     })
+
+
+@websocket_api.require_admin
+@websocket_api.websocket_command({
+    vol.Required("type"): "ford_triplog/logbook/route",
+    vol.Required("entry_id"): str,
+    vol.Required("trip_id"): vol.All(str, vol.Length(min=1)),
+})
+@websocket_api.async_response
+async def async_logbook_route(hass, connection, msg):
+    """Return stored route segments for one trip on the selected vehicle."""
+    entry_id = msg["entry_id"]
+    if entry_id not in _vehicles(hass):
+        connection.send_error(msg["id"], "not_found", "Vehicle is unavailable")
+        return
+    storage = hass.data[DOMAIN][entry_id]["route_storage"]
+    route = await async_build_route_feature_collection(storage, [msg["trip_id"]])
+    connection.send_result(msg["id"], route)
 
 
 @websocket_api.require_admin
@@ -209,6 +244,7 @@ async def async_register_logbook(hass: HomeAssistant) -> None:
                 StaticPathConfig(_SCRIPT_PATH, str(script), cache_headers=False)
             ])
             websocket_api.async_register_command(hass, async_logbook)
+            websocket_api.async_register_command(hass, async_logbook_route)
             websocket_api.async_register_command(hass, async_attach_receipt)
             websocket_api.async_register_command(hass, async_edit_charge)
             domain_data[_API_REGISTERED] = True

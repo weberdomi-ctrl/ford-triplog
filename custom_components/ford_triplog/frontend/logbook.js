@@ -67,6 +67,13 @@ class FordTriplogLogbook extends HTMLElement {
       p { white-space: pre-wrap; margin: .4rem 0; }
       [role=alert] { color: var(--error-color); }
       p:empty { display: none; }
+      details { margin-top: .65rem; }
+      summary { cursor: pointer; }
+      dl { display: grid; grid-template-columns: auto 1fr; gap: .4rem .75rem; }
+      dd { margin: 0; overflow-wrap: anywhere; }
+      .route-card { display: block; padding: 1rem; margin-top: .75rem; }
+      .route-card[hidden] { display: none; }
+      ha-map { display: block; height: clamp(18rem, 50vh, 32rem); border-radius: 12px; overflow: hidden; }
     `;
     this.main = element("main");
     const header = element("header");
@@ -97,7 +104,10 @@ class FordTriplogLogbook extends HTMLElement {
     filterCard.append(filters);
     this.rows = element("section");
     this.rows.className = "timeline";
-    this.main.append(header, filterCard, this.status, this.error, this.rows);
+    this.routeCard = element("ha-card");
+    this.routeCard.className = "route-card";
+    this.routeCard.hidden = true;
+    this.main.append(header, filterCard, this.status, this.error, this.rows, this.routeCard);
     root.append(style, this.main);
     this.load();
   }
@@ -119,6 +129,8 @@ class FordTriplogLogbook extends HTMLElement {
     this.status.textContent = this.t("Loading…", "Wird geladen…");
     this.error.textContent = "";
     this.rows.replaceChildren();
+    this.routeRequest = null;
+    this.routeCard.hidden = true;
     const query = { type: "ford_triplog/logbook" };
     if (this.vehicle.value) query.entry_id = this.vehicle.value;
     if (this.day.value) query.date = this.day.value;
@@ -136,6 +148,8 @@ class FordTriplogLogbook extends HTMLElement {
       this.day.value = data.date;
       this.status.textContent = data.rows.length ? "" : this.t("No entries for this date.", "Keine Einträge an diesem Tag.");
       for (const row of data.rows) this.rows.append(this.renderRow(row));
+      const latest = data.rows.findLast((row) => row.trip_id);
+      if (latest) void this.showRoute(latest);
     } catch (error) {
       if (request !== this.request) return;
       this.status.textContent = "";
@@ -152,8 +166,9 @@ class FordTriplogLogbook extends HTMLElement {
       charge: this.t("Charge", "Ladung"),
       pause: this.t("Stop", "Pause"),
     };
-    const timeZone = this._hass.config.time_zone;
-    const time = new Intl.DateTimeFormat(this.lang, { timeStyle: "short", timeZone }).format(new Date(row.start_time));
+    const time = row.end_time && row.type === "trip"
+      ? `${this.clock(row.start_time)}–${this.clock(row.end_time)}`
+      : this.clock(row.start_time);
     const heading = element("h2");
     heading.className = "entry-title";
     const icon = element("ha-icon");
@@ -166,7 +181,7 @@ class FordTriplogLogbook extends HTMLElement {
       details.category,
       row.distance_km == null ? null : `${row.distance_km} km`,
       row.energy_kwh == null ? null : `${row.energy_kwh} kWh`,
-      row.duration_seconds == null ? null : this.duration(row.duration_seconds),
+      row.duration_seconds == null || row.type === "trip" ? null : this.duration(row.duration_seconds),
       (details.cost_total ?? row.cost_total) == null ? null
         : `${details.cost_total ?? row.cost_total} ${details.currency ?? row.currency ?? ""}`,
     ].filter(Boolean);
@@ -186,7 +201,83 @@ class FordTriplogLogbook extends HTMLElement {
       const label = row.charge_id ? this.t("Costs and receipts", "Kosten und Belege") : this.t("Edit", "Bearbeiten");
       card.append(this.button(label, () => this.editRow(row, card)));
     }
+    if (row.type === "trip") card.append(this.tripDetails(row));
     return card;
+  }
+
+  clock(value) {
+    return new Intl.DateTimeFormat(this.lang, {
+      timeStyle: "short", timeZone: this._hass.config.time_zone,
+    }).format(new Date(value));
+  }
+
+  tripDetails(row) {
+    const details = element("details");
+    details.append(element("summary", this.t("Drive details", "Fahrtdetails")));
+    const fields = element("dl");
+    const measure = (value, unit) => value == null ? null
+      : `${new Intl.NumberFormat(this.lang, { maximumFractionDigits: 2 }).format(value)} ${unit}`;
+    const seconds = row.duration_seconds == null ? null : Math.round(row.duration_seconds);
+    const duration = seconds == null ? null : `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+    const soc = [row.start_soc, row.end_soc].every((value) => value != null)
+      ? `${row.start_soc} → ${row.end_soc} %`
+      : measure(row.start_soc ?? row.end_soc, "%");
+    for (const [label, value] of [
+      [this.t("From", "Start"), row.start_location],
+      [this.t("To", "Ziel"), row.end_location],
+      [this.t("Driving time", "Fahrzeit"), duration],
+      [this.t("Energy", "Energie"), measure(row.energy_used_kwh, "kWh")],
+      [this.t("Consumption", "Verbrauch"), measure(row.consumption_kwh_100km, "kWh/100 km")],
+      [this.t("Average speed", "Ø Tempo"), measure(row.average_speed_kmh, "km/h")],
+      [this.t("Battery", "Batterie"), soc],
+      [this.t("SOC used", "SOC-Verbrauch"), measure(row.soc_used, "%")],
+      [this.t("SOC recovered", "SOC-Rekuperation"), row.soc_recovered > 0 ? measure(row.soc_recovered, "%") : null],
+    ]) {
+      if (value != null && value !== "") fields.append(element("dt", label), element("dd", value));
+    }
+    details.append(fields);
+    if (row.trip_id) details.append(this.button(this.t("Show route", "Route anzeigen"), () => this.showRoute(row, true)));
+    return details;
+  }
+
+  async showRoute(row, scroll = false) {
+    const request = Symbol();
+    this.routeRequest = request;
+    this.routeCard.hidden = false;
+    const label = this.t("Route", "Route");
+    const status = element("p", this.t("Loading route…", "Route wird geladen…"));
+    this.routeCard.replaceChildren(element("h2", `${label} · ${this.clock(row.start_time)}`), status);
+    if (scroll) this.routeCard.scrollIntoView({ block: "nearest", behavior: "smooth" });
+
+    try {
+      const route = await this._hass.callWS({
+        type: "ford_triplog/logbook/route", entry_id: this.vehicle.value, trip_id: row.trip_id,
+      });
+      if (this.routeRequest !== request) return;
+      if (!route.features.length) {
+        status.textContent = this.t("No route recorded for this drive.", "Für diese Fahrt ist keine Route gespeichert.");
+        return;
+      }
+      if (!customElements.get("ha-map")) {
+        const helpers = await window.loadCardHelpers();
+        helpers.createCardElement({ type: "map", entities: [] });
+        await Promise.race([
+          customElements.whenDefined("ha-map"),
+          new Promise((_, reject) => setTimeout(() => reject(new Error(this.t("Map could not be loaded.", "Karte konnte nicht geladen werden."))), 5000)),
+        ]);
+      }
+      if (this.routeRequest !== request) return;
+      const map = element("ha-map");
+      map.hass = this._hass;
+      map.autoFit = true;
+      map.paths = route.features.map(({ geometry }) => ({
+        color: "#ff304f",
+        points: geometry.coordinates.map(([lng, lat]) => ({ point: [lat, lng], timestamp: new Date(row.start_time) })),
+      }));
+      status.replaceWith(map);
+    } catch (error) {
+      if (this.routeRequest === request) status.textContent = error.message ?? String(error);
+    }
   }
 
   duration(seconds) {
